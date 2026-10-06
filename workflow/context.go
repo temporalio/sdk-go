@@ -92,6 +92,7 @@ type ValueWithTransferTypeConverter = internal.ValueWithTransferTypeConverter
 
 // TransferTypeConverter is an opaque handle that converts application values to
 // serializable transfer values and back. Create one using [NewTransferTypeConverter].
+// Use [NewContextualTransferTypeConverter] if the callbacks need access to a context.
 // Do not embed this interface.
 //
 // NOTE: Experimental.
@@ -99,19 +100,35 @@ type TransferTypeConverter = internal.TransferTypeConverter
 
 // NewTransferTypeConverter builds a [TransferTypeConverter] that can map
 // something of type ModelType into a serializable "transfer value", and back.
-// Callbacks must be pure, safe to call concurrently, and produce replay-stable
-// output. They receive non-nil pointers to values. Encoding callbacks must
-// return a non-nil transfer pointer on success.
+// Callbacks must be pure, safe to call concurrently, contain no workflow commands,
+// and produce replay-stable output. They receive non-nil pointers to values.
+// Encoding callbacks must return a non-nil transfer pointer on success.
 // Returns an error if ModelType or TransferType is a pointer type.
 //
 // NOTE: Experimental.
 func NewTransferTypeConverter[ModelType ValueWithTransferTypeConverter, TransferType any](
+	toTransferType func(*ModelType) (*TransferType, error),
+	fromTransferType func(*TransferType, *ModelType) error,
+) (TransferTypeConverter, error) {
+	return internal.NewTransferTypeConverter(toTransferType, fromTransferType)
+}
+
+// NewContextualTransferTypeConverter builds a [TransferTypeConverter] that can map
+// something of type ModelType into a serializable "transfer value", and back using
+// separate callbacks for Go and workflow contexts.
+// Callbacks must be pure, safe to call concurrently, contain no workflow commands,
+// and produce replay-stable output. They receive non-nil pointers to values.
+// Encoding callbacks must return a non-nil transfer pointer on success.
+// Returns an error if ModelType or TransferType is a pointer type.
+//
+// NOTE: Experimental.
+func NewContextualTransferTypeConverter[ModelType ValueWithTransferTypeConverter, TransferType any](
 	toTransferType func(context.Context, *ModelType) (*TransferType, error),
 	fromTransferType func(context.Context, *TransferType, *ModelType) error,
 	toTransferTypeWithWorkflowContext func(Context, *ModelType) (*TransferType, error),
 	fromTransferTypeWithWorkflowContext func(Context, *TransferType, *ModelType) error,
 ) (TransferTypeConverter, error) {
-	return internal.NewTransferTypeConverter(
+	return internal.NewContextualTransferTypeConverter(
 		toTransferType,
 		fromTransferType,
 		toTransferTypeWithWorkflowContext,

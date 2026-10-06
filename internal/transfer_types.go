@@ -26,8 +26,9 @@ var DefaultInternalDataConverter *transferAwareDataConverter = makeTransferAware
 // converter and decodes it with the transfer type converter.
 //
 // TransferTypeConverter returns a value's transfer type converter.
-// Create one with [NewTransferTypeConverter]. The method must be pure and
-// safe to call concurrently. The converter will be cached and reused for other
+// Create one with [NewTransferTypeConverter] or [NewContextualTransferTypeConverter].
+// The method must be pure and safe to call concurrently.
+// The converter will be cached and reused for other
 // values with the same concrete type, so the method should not depend on any
 // state in the value itself. The method must be implemented with a value
 // receiver, not a pointer receiver. Inheriting this method via embedding
@@ -46,7 +47,7 @@ type ValueWithTransferTypeConverter interface {
 }
 
 // TransferTypeConverter is an opaque handle created by
-// [NewTransferTypeConverter]. Do not embed this interface.
+// [NewTransferTypeConverter] or [NewContextualTransferTypeConverter]. Do not embed this interface.
 //
 // NOTE: Experimental.
 //
@@ -73,7 +74,7 @@ type TransferTypeConverter interface {
 
 // NewTransferTypeConverter builds a transfer type converter that can map
 // Model values into Transfer values and back. The callbacks should be
-// pure, threadsafe, and produce replay-stable output.
+// pure, threadsafe, contain no workflow commands, and produce replay-stable output.
 // The callbacks receive non-nil pointers to values. Encoding callbacks must
 // return a non-nil transfer pointer on success.
 //
@@ -83,6 +84,38 @@ type TransferTypeConverter interface {
 //
 // Exposed as: [go.temporal.io/sdk/workflow.NewTransferTypeConverter]
 func NewTransferTypeConverter[Model ValueWithTransferTypeConverter, Transfer any](
+	toTransferType func(*Model) (*Transfer, error),
+	fromTransferType func(*Transfer, *Model) error,
+) (TransferTypeConverter, error) {
+	return NewContextualTransferTypeConverter(
+		func(_ context.Context, value *Model) (*Transfer, error) {
+			return toTransferType(value)
+		},
+		func(_ context.Context, transfer *Transfer, value *Model) error {
+			return fromTransferType(transfer, value)
+		},
+		func(_ Context, value *Model) (*Transfer, error) {
+			return toTransferType(value)
+		},
+		func(_ Context, transfer *Transfer, value *Model) error {
+			return fromTransferType(transfer, value)
+		},
+	)
+}
+
+// NewContextualTransferTypeConverter builds a transfer type converter that can map
+// Model values into Transfer values and back using separate callbacks for Go and
+// workflow contexts. The callbacks should be pure, threadsafe, contain no workflow
+// commands, and produce replay-stable output.
+// The callbacks receive non-nil pointers to values. Encoding callbacks must
+// return a non-nil transfer pointer on success.
+//
+// Returns an error if Model or Transfer is a pointer type.
+//
+// NOTE: Experimental.
+//
+// Exposed as: [go.temporal.io/sdk/workflow.NewContextualTransferTypeConverter]
+func NewContextualTransferTypeConverter[Model ValueWithTransferTypeConverter, Transfer any](
 	toTransferType func(context.Context, *Model) (*Transfer, error),
 	fromTransferType func(context.Context, *Transfer, *Model) error,
 	toTransferTypeWithWorkflowContext func(Context, *Model) (*Transfer, error),

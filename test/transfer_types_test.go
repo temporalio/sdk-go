@@ -17,17 +17,10 @@ type intTestTransferType struct {
 
 func (intTestTransferType) TransferTypeConverter() (workflow.TransferTypeConverter, error) {
 	return workflow.NewTransferTypeConverter(
-		func(_ context.Context, value *intTestTransferType) (*int, error) {
+		func(value *intTestTransferType) (*int, error) {
 			return &value.value, nil
 		},
-		func(_ context.Context, transferType *int, value *intTestTransferType) error {
-			value.value = *transferType
-			return nil
-		},
-		func(_ workflow.Context, value *intTestTransferType) (*int, error) {
-			return &value.value, nil
-		},
-		func(_ workflow.Context, transferType *int, value *intTestTransferType) error {
+		func(transferType *int, value *intTestTransferType) error {
 			value.value = *transferType
 			return nil
 		},
