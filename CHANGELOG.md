@@ -43,15 +43,6 @@ to docs, or any other relevant information.
 
 ### :boom: Breaking Changes
 
-- Context-aware data converters now receive workflow context for mutable-side-effect values
-  and update handlers, and caller context for workflow results, termination details, query
-  arguments/results, and successful update results. Mutable side effects and update handlers
-  also honor workflow-local data converter overrides. Context-sensitive converters can change
-  payload formats or encryption keys. Before upgrading, ensure they can decode previously
-  recorded payloads and preserve mutable-side-effect equality behavior during replay and
-  workflow resumption. This change has no automatic compatibility gate and does not rewrite
-  existing history. Context-independent converters are unaffected.
-
 - Bulk sticky workflow cache cleanup, including `PurgeStickyWorkflowCache` and final-worker
   shutdown, no longer increments `temporal_sticky_cache_total_forced_eviction`. This aligns bulk
   cleanup with Java and Core-based SDKs. Qualifying capacity and other per-workflow removals remain
@@ -59,14 +50,12 @@ to docs, or any other relevant information.
 
 ### Fixed
 
-- Context-aware data converters now receive caller context when decoding canceled workflow
-  details, workflow description metadata, and schedule action metadata in `Describe` and
-  `Update`, and when encoding worker-deployment version metadata.
+- Context-aware data converters now receive context in various places where they didn't
+  before, such as `WorkflowRun.Get`.
 - Activity heartbeat details and cancellation details now use the activity-context-bound
   data converter. Nexus handler inputs and synchronous results now use the handler context.
 - Mocked side effects in the workflow test environment now use the workflow-context-bound
   data converter, matching real workflow execution.
-
 - Child context cancellation now follows creation order by default.
 - Legacy query failure responses (`RespondQueryTaskCompletedRequest`) now set
   `WorkflowTaskFailedCause` for workflow task failures: `PAYLOADS_TOO_LARGE` for oversized payloads,
