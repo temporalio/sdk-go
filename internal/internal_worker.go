@@ -1918,8 +1918,6 @@ type WorkflowReplayerOptions struct {
 	//
 	// Plugins themselves should never mutate this field, the behavior is
 	// undefined.
-	//
-	// NOTE: Experimental
 	Plugins []WorkerPlugin
 
 	// ExternalStorage configures external payload storage for replay.
