@@ -211,19 +211,18 @@ var _ DataConverter = (*transferAwareDataConverter)(nil)
 var _ DataConverterWithSerializationContext = (*transferAwareDataConverter)(nil)
 var _ ContextAware = (*transferAwareDataConverter)(nil)
 
-// NewTransferAwareDataConverter wraps dc to support transfer type conversion.
+// MakeTransferAware wraps dc to support transfer type conversion.
 // If dc is nil, it returns [GetDefaultDataConverter]. If dc is already a
 // transfer-aware wrapper, it returns dc unchanged.
 //
 // NOTE: Experimental.
-func NewTransferAwareDataConverter(dc DataConverter) DataConverter {
+func MakeTransferAware(dc DataConverter) DataConverter {
 	if dc == nil {
 		return GetDefaultDataConverter()
 	}
 	return newTransferAwareDataConverter(dc)
 }
 
-// Keep default resolution outside this helper to avoid an initialization cycle.
 func newTransferAwareDataConverter(dc DataConverter) *transferAwareDataConverter {
 	if tadc, ok := dc.(*transferAwareDataConverter); ok {
 		return tadc

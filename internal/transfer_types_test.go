@@ -166,7 +166,7 @@ func TestTransferAwareDataConverter_PointerValueRoundTrip(t *testing.T) {
 		}
 		for _, batch := range []bool{false, true} {
 			t.Run(fmt.Sprintf("compressed=%v/batch=%v", compressed, batch), func(t *testing.T) {
-				dc := converter.NewTransferAwareDataConverter(parent)
+				dc := converter.MakeTransferAware(parent)
 				want := &temperature{kelvin: 300}
 				got := temperature{kelvin: 99}
 				if batch {
@@ -230,7 +230,7 @@ func sliceToAny[T any](values []T) []any {
 func TestTransferAwareDataConverter_MatchesParentForPlainValues(t *testing.T) {
 	t.Parallel()
 	parent := converter.NewCompositeDataConverter(converter.NewJSONPayloadConverter())
-	dc := converter.NewTransferAwareDataConverter(parent)
+	dc := converter.MakeTransferAware(parent)
 
 	requireSamePayloads := func(t *testing.T, want, got *commonpb.Payloads) {
 		t.Helper()
@@ -332,13 +332,13 @@ func TestTransferAwareDataConverter_PlainNilPointerInput(t *testing.T) {
 	want, err := parent.ToPayload(input)
 	require.NoError(t, err)
 
-	got, err := converter.NewTransferAwareDataConverter(parent).ToPayload(input)
+	got, err := converter.MakeTransferAware(parent).ToPayload(input)
 	require.NoError(t, err)
 	require.True(t, proto.Equal(want, got))
 
 	wantBatch, err := parent.ToPayloads(input, 300.0, input)
 	require.NoError(t, err)
-	gotBatch, err := converter.NewTransferAwareDataConverter(parent).ToPayloads(input, temperature{kelvin: 300}, input)
+	gotBatch, err := converter.MakeTransferAware(parent).ToPayloads(input, temperature{kelvin: 300}, input)
 	require.NoError(t, err)
 	require.True(t, proto.Equal(wantBatch, gotBatch))
 }
@@ -347,7 +347,7 @@ func TestTransferAwareDataConverter_ContextDelegation(t *testing.T) {
 	t.Parallel()
 
 	t.Run("context-aware parent", func(t *testing.T) {
-		dc := converter.NewTransferAwareDataConverter(NewContextAwareDataConverter(converter.GetDefaultDataConverter()))
+		dc := converter.MakeTransferAware(NewContextAwareDataConverter(converter.GetDefaultDataConverter()))
 
 		ctx := context.WithValue(t.Context(), ContextAwareDataConverterContextKey, "300")
 		masked := WithContext(ctx, dc)
@@ -692,6 +692,20 @@ func TestTransferTypes_DefaultFailureConverterRoundTrip(t *testing.T) {
 	t.Parallel()
 	value := temperature{kelvin: 300}
 	fc := GetDefaultFailureConverter()
+	failure := fc.ErrorToFailure(NewApplicationError("message", "customType", false, nil, value))
+	var applicationErr *ApplicationError
+	require.ErrorAs(t, fc.FailureToError(failure), &applicationErr)
+	var got temperature
+	require.NoError(t, applicationErr.Details(&got))
+	require.Equal(t, value, got)
+}
+
+func TestTransferTypes_CustomFailureConverterRoundTrip(t *testing.T) {
+	t.Parallel()
+	value := temperature{kelvin: 300}
+	fc := NewDefaultFailureConverter(DefaultFailureConverterOptions{
+		DataConverter: converter.NewCompositeDataConverter(converter.NewJSONPayloadConverter()),
+	})
 	failure := fc.ErrorToFailure(NewApplicationError("message", "customType", false, nil, value))
 	var applicationErr *ApplicationError
 	require.ErrorAs(t, fc.FailureToError(failure), &applicationErr)

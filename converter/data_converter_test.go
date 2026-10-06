@@ -39,8 +39,8 @@ func TestDefaultDataConverter(t *testing.T) {
 	t.Run("transfer-aware wrapping is idempotent", func(t *testing.T) {
 		t.Parallel()
 		dc := GetDefaultDataConverter()
-		require.Same(t, dc, NewTransferAwareDataConverter(dc))
-		require.Same(t, dc, NewTransferAwareDataConverter(nil))
+		require.Same(t, dc, MakeTransferAware(dc))
+		require.Same(t, dc, MakeTransferAware(nil))
 	})
 	t.Run("result", func(t *testing.T) {
 		t.Parallel()

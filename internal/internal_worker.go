@@ -1962,7 +1962,7 @@ func NewWorkflowReplayer(options WorkflowReplayerOptions) (*WorkflowReplayer, er
 	registry.interceptors = options.Interceptors
 	return &WorkflowReplayer{
 		registry:                    registry,
-		dataConverter:               converter.NewTransferAwareDataConverter(options.DataConverter),
+		dataConverter:               converter.MakeTransferAware(options.DataConverter),
 		failureConverter:            options.FailureConverter,
 		contextPropagators:          options.ContextPropagators,
 		enableLoggingInReplay:       options.EnableLoggingInReplay,

@@ -1888,7 +1888,7 @@ func (s *workflowClientTestSuite) TestExecuteWorkflowWithDataConverter() {
 		})
 
 	resp, err := client.ExecuteWorkflow(context.Background(), options, f1, input)
-	s.Equal(converter.NewTransferAwareDataConverter(iconverter.NewTestDataConverter()), client.dataConverter)
+	s.Equal(converter.MakeTransferAware(iconverter.NewTestDataConverter()), client.dataConverter)
 	s.Nil(err)
 	s.Equal(createResponse.GetRunId(), resp.GetRunID())
 }
