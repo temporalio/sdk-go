@@ -34,8 +34,12 @@ var DefaultInternalDataConverter *transferAwareDataConverter = makeTransferAware
 // receiver, not a pointer receiver. Inheriting this method via embedding
 // is not supported.
 //
-// Transfer conversion applies only to top-level payload values. For a
-// non-pointer model type T, encode T or a non-nil *T and decode into a non-nil
+// Transfer type converters apply to top-level payloads handled by a data converter.
+// Transfer type converters do not apply to errors handled by a failure converter.
+// This can occasionally lead to inconsistency where a transfer-convertible value
+// shows up as its transfer type, rather than its model type.
+//
+// For a non-pointer model type T, encode T or a non-nil *T and decode into a non-nil
 // *T. Workflow and activity parameters must use T rather than *T. Nil model
 // pointers and decoding into **T are unsupported.
 //
