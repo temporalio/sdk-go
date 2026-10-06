@@ -23,6 +23,7 @@ to docs, or any other relevant information.
 ### Added
 
 - Added experimental `converter.NewTransferTypeConverter` API that implements transfer type conversion.
+  `converter.GetDefaultDataConverter()` now supports transfer type conversion.
 - Added autoscaling support for server poller groups, with per-group coverage and
   sticky-backlog prioritization. `SimpleMaximum` is unchanged, and autoscaling
   behaves as before when no poller groups are configured.

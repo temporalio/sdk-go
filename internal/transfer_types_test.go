@@ -118,7 +118,7 @@ type transferEnvelope struct{ Value contextualString }
 
 func TestTransferAwareDataConverter_PayloadRoundTrip(t *testing.T) {
 	t.Parallel()
-	dc := makeTransferAware(nil)
+	dc := converter.GetDefaultDataConverter()
 
 	t.Run("scalar transfer values", func(t *testing.T) {
 		values := make([]temperature, 10)
@@ -166,7 +166,7 @@ func TestTransferAwareDataConverter_PointerValueRoundTrip(t *testing.T) {
 		}
 		for _, batch := range []bool{false, true} {
 			t.Run(fmt.Sprintf("compressed=%v/batch=%v", compressed, batch), func(t *testing.T) {
-				dc := makeTransferAware(parent)
+				dc := converter.NewTransferAwareDataConverter(parent)
 				want := &temperature{kelvin: 300}
 				got := temperature{kelvin: 99}
 				if batch {
@@ -186,7 +186,7 @@ func TestTransferAwareDataConverter_PointerValueRoundTrip(t *testing.T) {
 
 func TestTransferAwareDataConverter_PayloadsRoundTrip(t *testing.T) {
 	t.Parallel()
-	dc := DefaultInternalDataConverter
+	dc := converter.GetDefaultDataConverter()
 
 	t.Run("scalar transfer values", func(t *testing.T) {
 		values := make([]temperature, 10)
@@ -229,8 +229,8 @@ func sliceToAny[T any](values []T) []any {
 
 func TestTransferAwareDataConverter_MatchesParentForPlainValues(t *testing.T) {
 	t.Parallel()
-	parent := converter.GetDefaultDataConverter()
-	dc := makeTransferAware(parent)
+	parent := converter.NewCompositeDataConverter(converter.NewJSONPayloadConverter())
+	dc := converter.NewTransferAwareDataConverter(parent)
 
 	requireSamePayloads := func(t *testing.T, want, got *commonpb.Payloads) {
 		t.Helper()
@@ -284,7 +284,7 @@ func TestTransferAwareDataConverter_MatchesParentForPlainValues(t *testing.T) {
 
 func TestTransferAwareDataConverter_ConversionErrors(t *testing.T) {
 	t.Parallel()
-	dc := DefaultInternalDataConverter
+	dc := converter.GetDefaultDataConverter()
 
 	t.Run("encoding one value", func(t *testing.T) {
 		_, err := dc.ToPayload(unencodable{})
@@ -314,7 +314,7 @@ func TestTransferAwareDataConverter_ConversionErrors(t *testing.T) {
 
 func TestTransferAwareDataConverter_AbsentBatchPayload(t *testing.T) {
 	t.Parallel()
-	dc := makeTransferAware(nil)
+	dc := converter.GetDefaultDataConverter()
 	payload, err := dc.ToPayload(temperature{kelvin: 300})
 	require.NoError(t, err)
 	single, batch := temperature{kelvin: 99}, temperature{kelvin: 99}
@@ -332,13 +332,13 @@ func TestTransferAwareDataConverter_PlainNilPointerInput(t *testing.T) {
 	want, err := parent.ToPayload(input)
 	require.NoError(t, err)
 
-	got, err := makeTransferAware(parent).ToPayload(input)
+	got, err := converter.NewTransferAwareDataConverter(parent).ToPayload(input)
 	require.NoError(t, err)
 	require.True(t, proto.Equal(want, got))
 
 	wantBatch, err := parent.ToPayloads(input, 300.0, input)
 	require.NoError(t, err)
-	gotBatch, err := makeTransferAware(parent).ToPayloads(input, temperature{kelvin: 300}, input)
+	gotBatch, err := converter.NewTransferAwareDataConverter(parent).ToPayloads(input, temperature{kelvin: 300}, input)
 	require.NoError(t, err)
 	require.True(t, proto.Equal(wantBatch, gotBatch))
 }
@@ -347,7 +347,7 @@ func TestTransferAwareDataConverter_ContextDelegation(t *testing.T) {
 	t.Parallel()
 
 	t.Run("context-aware parent", func(t *testing.T) {
-		dc := makeTransferAware(NewContextAwareDataConverter(converter.GetDefaultDataConverter()))
+		dc := converter.NewTransferAwareDataConverter(NewContextAwareDataConverter(converter.GetDefaultDataConverter()))
 
 		ctx := context.WithValue(t.Context(), ContextAwareDataConverterContextKey, "300")
 		masked := WithContext(ctx, dc)
@@ -361,7 +361,7 @@ func TestTransferAwareDataConverter_ContextDelegation(t *testing.T) {
 	// Even when the parent has no use for a context, we hold on to it: transfer
 	// converters may still want it.
 	t.Run("parent that is not context aware", func(t *testing.T) {
-		dc := DefaultInternalDataConverter
+		dc := converter.GetDefaultDataConverter()
 		require.NotSame(t, dc, WithContext(t.Context(), dc))
 		require.NotSame(t, dc, WithWorkflowContext(Background(), dc))
 		// Serialization contexts are only forwarded, so there is nothing to keep.
@@ -373,7 +373,7 @@ func TestTransferAwareDataConverter_ConversionContext(t *testing.T) {
 	t.Parallel()
 	parent := converter.GetDefaultDataConverter()
 	ctx := WithValue(Background(), transferContextKey{}, "workflow")
-	dc := WithWorkflowContext(ctx, DefaultInternalDataConverter)
+	dc := WithWorkflowContext(ctx, converter.GetDefaultDataConverter())
 
 	payload, err := dc.ToPayload(contextualString("value"))
 	require.NoError(t, err)
@@ -663,7 +663,7 @@ func TestTransferTypesWorkflowTestEnvironmentExecutionConversionContext(t *testi
 func TestTransferTypes_DataConverterWrapping(t *testing.T) {
 	t.Parallel()
 	value := temperature{kelvin: 300}
-	payloads, err := DefaultInternalDataConverter.ToPayloads(value)
+	payloads, err := converter.GetDefaultDataConverter().ToPayloads(value)
 	require.NoError(t, err)
 
 	t.Run("workflow replayer", func(t *testing.T) {
@@ -688,6 +688,18 @@ func TestTransferTypes_DataConverterWrapping(t *testing.T) {
 	})
 }
 
+func TestTransferTypes_DefaultFailureConverterRoundTrip(t *testing.T) {
+	t.Parallel()
+	value := temperature{kelvin: 300}
+	fc := GetDefaultFailureConverter()
+	failure := fc.ErrorToFailure(NewApplicationError("message", "customType", false, nil, value))
+	var applicationErr *ApplicationError
+	require.ErrorAs(t, fc.FailureToError(failure), &applicationErr)
+	var got temperature
+	require.NoError(t, applicationErr.Details(&got))
+	require.Equal(t, value, got)
+}
+
 // -- VALIDATION TESTS --
 
 func TestNewContextualTransferTypeConverter_RejectsPointerTypes(t *testing.T) {
@@ -702,7 +714,7 @@ func TestNewContextualTransferTypeConverter_RejectsPointerTypes(t *testing.T) {
 
 func TestTransferTypeConverter_InvalidTypes(t *testing.T) {
 	t.Parallel()
-	dc := converter.NewTransferAwareDataConverter(nil)
+	dc := converter.GetDefaultDataConverter()
 	payload, err := converter.GetDefaultDataConverter().ToPayload(300.0)
 	require.NoError(t, err)
 	payloads := &commonpb.Payloads{Payloads: []*commonpb.Payload{payload}}
@@ -728,7 +740,7 @@ func TestTransferTypeConverter_InvalidTypes(t *testing.T) {
 
 func TestTransferAwareDataConverter_DiscoveryError(t *testing.T) {
 	t.Parallel()
-	dc := makeTransferAware(nil)
+	dc := converter.GetDefaultDataConverter()
 	_, err := dc.ToPayload(invalidTransferConverter{})
 	require.ErrorIs(t, err, errNoEncoding)
 	_, err = dc.ToPayloads(invalidTransferConverter{})

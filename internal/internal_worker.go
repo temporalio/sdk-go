@@ -305,7 +305,7 @@ func ensureRequiredParams(params *workerExecutionParameters) {
 		params.Logger.Info("No metrics handler configured for temporal worker. Use NopHandler as default.")
 	}
 	if params.DataConverter == nil {
-		params.DataConverter = DefaultInternalDataConverter
+		params.DataConverter = converter.GetDefaultDataConverter()
 		params.Logger.Info("No DataConverter configured for temporal worker. Use default one.")
 	}
 	if params.FailureConverter == nil {
@@ -1309,7 +1309,7 @@ func getDataConverterFromActivityCtx(ctx context.Context) converter.DataConverte
 	if env != nil && env.dataConverter != nil {
 		dataConverter = env.dataConverter
 	} else {
-		dataConverter = DefaultInternalDataConverter
+		dataConverter = converter.GetDefaultDataConverter()
 	}
 	return WithContext(ctx, dataConverter)
 }
@@ -1962,7 +1962,7 @@ func NewWorkflowReplayer(options WorkflowReplayerOptions) (*WorkflowReplayer, er
 	registry.interceptors = options.Interceptors
 	return &WorkflowReplayer{
 		registry:                    registry,
-		dataConverter:               makeTransferAware(options.DataConverter),
+		dataConverter:               converter.NewTransferAwareDataConverter(options.DataConverter),
 		failureConverter:            options.FailureConverter,
 		contextPropagators:          options.ContextPropagators,
 		enableLoggingInReplay:       options.EnableLoggingInReplay,
@@ -2099,7 +2099,7 @@ func (aw *WorkflowReplayer) GetWorkflowResult(workflowID string, valuePtr any) e
 	}
 	dc := aw.dataConverter
 	if dc == nil {
-		dc = DefaultInternalDataConverter
+		dc = converter.GetDefaultDataConverter()
 	}
 	return dc.FromPayloads(payloads, valuePtr)
 }
@@ -3002,7 +3002,7 @@ func setWorkerOptionsDefaults(options *WorkerOptions) autoEnrollEligibility {
 
 func setClientDefaults(client *WorkflowClient) {
 	if client.dataConverter == nil {
-		client.dataConverter = DefaultInternalDataConverter
+		client.dataConverter = converter.GetDefaultDataConverter()
 	}
 	if client.namespace == "" {
 		client.namespace = DefaultNamespace

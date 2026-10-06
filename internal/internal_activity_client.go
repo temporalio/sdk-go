@@ -822,7 +822,7 @@ func (w *workflowClientInterceptor) ExecuteActivity(
 ) (ClientActivityHandle, error) {
 	dataConverter := WithContext(ctx, w.client.dataConverter)
 	if dataConverter == nil {
-		dataConverter = DefaultInternalDataConverter
+		dataConverter = converter.GetDefaultDataConverter()
 	}
 	dataConverter = converter.WithDataConverterSerializationContext(dataConverter,
 		converter.ActivitySerializationContext{

@@ -2063,7 +2063,7 @@ func GetWorkflowMemo(input map[string]any, dc converter.DataConverter, useUserDC
 	}
 
 	if dc == nil {
-		dc = DefaultInternalDataConverter
+		dc = converter.GetDefaultDataConverter()
 	}
 
 	memo := make(map[string]*commonpb.Payload, len(input))
@@ -2123,7 +2123,7 @@ func (w *workflowClientInterceptor) createStartWorkflowRequest(
 
 	dataConverter := WithContext(ctx, w.client.dataConverter)
 	if dataConverter == nil {
-		dataConverter = DefaultInternalDataConverter
+		dataConverter = converter.GetDefaultDataConverter()
 	}
 	dataConverter = converter.WithDataConverterSerializationContext(dataConverter, converter.WorkflowSerializationContext{
 		Namespace:  w.client.namespace,
@@ -2990,7 +2990,7 @@ func (w *workflowClientInterceptor) createUpdateWorkflowRequest(
 ) (*workflowservice.UpdateWorkflowExecutionRequest, error) {
 	dataConverter := WithContext(ctx, w.client.dataConverter)
 	if dataConverter == nil {
-		dataConverter = DefaultInternalDataConverter
+		dataConverter = converter.GetDefaultDataConverter()
 	}
 	dataConverter = converter.WithDataConverterSerializationContext(dataConverter, converter.WorkflowSerializationContext{
 		Namespace:  w.client.namespace,
