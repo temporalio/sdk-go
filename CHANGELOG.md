@@ -59,6 +59,8 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- mTLS client setup and schedule creation no longer modify caller-owned TLS
+  configs or workflow actions, allowing safe reuse.
 - Child context cancellation now follows creation order by default.
 - Legacy query failure responses (`RespondQueryTaskCompletedRequest`) now set
   `WorkflowTaskFailedCause` for workflow task failures: `PAYLOADS_TOO_LARGE` for oversized payloads,
