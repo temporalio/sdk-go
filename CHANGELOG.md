@@ -22,6 +22,8 @@ to docs, or any other relevant information.
 
 ### Added
 
+- Added experimental `converter.NewTransferTypeConverter` API that implements transfer type conversion.
+  `converter.GetDefaultDataConverter()` now supports transfer type conversion.
 - Added autoscaling support for server poller groups, with per-group coverage and
   sticky-backlog prioritization. `SimpleMaximum` is unchanged, and autoscaling
   behaves as before when no poller groups are configured.
@@ -29,15 +31,22 @@ to docs, or any other relevant information.
   `SetWorkerOptions(worker.Options{Plugins: ...})`, which were previously ignored. Once plugins are
   set, `SetWorkerOptions` may not be called again on that environment, and what a plugin registers
   in `StartWorker` is undone at `StopWorker`.
+- `TestActivityEnvironment` now has `RegisterDynamicActivity` and implements `worker.ActivityRegistry`
+  again.
 - `temporalnexus.ConvertNexusLinkToLinkWorkflow`, the decoding counterpart of
   `ConvertWorkflowLinkToNexusLink`.
 
 ### Changed
 
+- Removed experimental labels from the core plugin APIs.
 - Task queue priority is no longer marked as experimental.
 - Nexus link conversion now handles all four link types. Workflow links on an inbound Nexus
   request are converted rather than dropped, and `temporalnexus.ConvertCommonLinkToNexusLink`
   converts NexusOperation and Activity links rather than returning an empty `nexus.Link`.
+- The `[TMPRL1104]` workflow task duration log now uses a single warning threshold, configurable
+  with the `TEMPORAL_WORKFLOW_TASK_DURATION_WARN_SECONDS` environment variable and defaulting to 5
+  seconds. It previously warned above a fixed 10 seconds, logged at info above a fixed 5 seconds,
+  and logged at debug below that when trace logging was enabled.
 
 ### Deprecated
 

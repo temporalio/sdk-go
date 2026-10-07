@@ -502,8 +502,6 @@ type (
 		//
 		// Plugins themselves should never mutate this field, the behavior is
 		// undefined.
-		//
-		// NOTE: Experimental
 		Plugins []WorkerPlugin
 
 		// MaxConcurrentWorkflowTaskExternalStorageVisits sets how many external
