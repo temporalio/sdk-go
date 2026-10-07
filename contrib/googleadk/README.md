@@ -40,10 +40,11 @@ This package depends on the deterministic ADK `platform` seams
 and the `model.NewLLM` registry lookup from upstream `google.golang.org/adk/v2`
 (the registry itself stays application-owned; this package never registers into it).
 Those seams have been in tagged ADK releases since v2.1.0; `go.mod` requires
-v2.2.0, the first release with the request-order confirmation resume
+v2.3.0, which includes the request-order confirmation resume
 (google/adk-go#1169) that makes multi-decision confirmation resumes
-replay-stable. The adk/v2 requirement also sets the Go floor: 1.26.5+. The
-replay-safe telemetry gate composes `workflow.IsReadOnly`.
+replay-stable and supports OpenTelemetry Logs v0.21.0. The adk/v2 requirement
+also sets the Go floor to 1.26.6+. The replay-safe telemetry gate composes
+`workflow.IsReadOnly`.
 
 ## Module versioning
 
@@ -458,7 +459,7 @@ contexts too, harmlessly so: they never execute during replay at all — their
 recorded markers supply the value.
 
 **OTel Logs API status:** `NewReplaySafeLoggerProvider` is built on the
-pre-1.0 `go.opentelemetry.io/otel/log` (`v0.19.x` at this pin), which may
+pre-1.0 `go.opentelemetry.io/otel/log` (`v0.21.x` at this pin), which may
 change shape between minor releases; upgrading it can require a matching
 upgrade of this package. A surface test in this package fails on any method
 an upgrade would newly pass through ungated.
