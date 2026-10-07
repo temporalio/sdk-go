@@ -1,10 +1,6 @@
 package workflow
 
-import (
-	"context"
-
-	"go.temporal.io/sdk/internal"
-)
+import "go.temporal.io/sdk/internal"
 
 // Context is a clone of context.Context with Done() returning Channel instead
 // of native channel.
@@ -66,55 +62,4 @@ func WithValue(parent Context, key any, val any) Context {
 //	}
 func NewDisconnectedContext(parent Context) (ctx Context, cancel CancelFunc) {
 	return internal.NewDisconnectedContext(parent)
-}
-
-// ValueWithTransferTypeConverter is an optional interface that values can implement to provide
-// the SDK with a transfer type converter.
-//
-// When implemented, the SDK calls [ValueWithTransferTypeConverter.TransferTypeConverter] before
-// serializing the value. The returned TransferTypeConverter will be used to turn the value
-// into a serializable representation, called a transfer value. The converter will also
-// be used to turn the transfer value back into the original value after deserialization.
-//
-// TransferTypeConverter must be implemented with a value receiver, without
-// inheriting it through embedding. The method must be pure and safe to call
-// concurrently. Its result is cached by concrete model type, so it must not
-// depend on state in the value.
-//
-// Transfer conversion applies only to top-level payload values. For a
-// non-pointer model type T, encode T or a non-nil *T and decode into a non-nil
-// *T. Workflow and activity parameters must use T rather than *T. Nil model
-// pointers and decoding into **T are unsupported; represent optional values
-// explicitly in the model or transfer type instead.
-//
-// NOTE: Experimental.
-type ValueWithTransferTypeConverter = internal.ValueWithTransferTypeConverter
-
-// TransferTypeConverter is an opaque handle that converts application values to
-// serializable transfer values and back. Create one using [NewTransferTypeConverter].
-// Do not embed this interface.
-//
-// NOTE: Experimental.
-type TransferTypeConverter = internal.TransferTypeConverter
-
-// NewTransferTypeConverter builds a [TransferTypeConverter] that can map
-// something of type ModelType into a serializable "transfer value", and back.
-// Callbacks must be pure, safe to call concurrently, and produce replay-stable
-// output. They receive non-nil pointers to values. Encoding callbacks must
-// return a non-nil transfer pointer on success.
-// Returns an error if ModelType or TransferType is a pointer type.
-//
-// NOTE: Experimental.
-func NewTransferTypeConverter[ModelType ValueWithTransferTypeConverter, TransferType any](
-	toTransferType func(context.Context, *ModelType) (*TransferType, error),
-	fromTransferType func(context.Context, *TransferType, *ModelType) error,
-	toTransferTypeWithWorkflowContext func(Context, *ModelType) (*TransferType, error),
-	fromTransferTypeWithWorkflowContext func(Context, *TransferType, *ModelType) error,
-) (TransferTypeConverter, error) {
-	return internal.NewTransferTypeConverter(
-		toTransferType,
-		fromTransferType,
-		toTransferTypeWithWorkflowContext,
-		fromTransferTypeWithWorkflowContext,
-	)
 }

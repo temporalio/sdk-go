@@ -13,8 +13,8 @@ import (
 
 type registryModel struct{ Value string }
 
-func (registryModel) TransferTypeConverter() (TransferTypeConverter, error) {
-	return NewTransferTypeConverter[registryModel, commonpb.Payload](nil, nil,
+func (registryModel) TransferTypeConverter() (converter.TransferTypeConverter, error) {
+	return converter.NewContextualTransferTypeConverter[registryModel, commonpb.Payload](nil, nil,
 		func(ctx Context, value *registryModel) (*commonpb.Payload, error) {
 			return GetDataConverterFromWorkflowContext(ctx).ToPayload(value.Value)
 		},
@@ -28,7 +28,8 @@ func (registryModel) TransferTypeConverter() (TransferTypeConverter, error) {
 type registryBindingDC struct {
 	converter.DataConverter
 	scope   converter.SerializationContext
-	binding converter.SerializationContext
+	binding Context
+	bound   *[]*registryBindingDC
 }
 
 func (dc *registryBindingDC) WithSerializationContext(sc converter.SerializationContext) converter.DataConverter {
@@ -39,10 +40,8 @@ func (dc *registryBindingDC) WithSerializationContext(sc converter.Serialization
 }
 func (dc *registryBindingDC) WithWorkflowContext(ctx Context) converter.DataConverter {
 	result := *dc
-	installed := makeTransferAware(getWorkflowEnvOptions(ctx).DataConverter).parent
-	if bound, ok := installed.(*registryBindingDC); ok {
-		result.binding = bound.scope
-	}
+	result.binding = ctx
+	*result.bound = append(*result.bound, &result)
 	return &result
 }
 func (dc *registryBindingDC) WithContext(context.Context) converter.DataConverter { return dc }
@@ -67,7 +66,11 @@ func TestNexusOperationRegistry(t *testing.T) {
 	RegisterNexusOperationRegistry(registry)
 	t.Cleanup(func() { nexusOperationRegistries.Lock(); defer nexusOperationRegistries.Unlock(); clear(registry) })
 	env := new(WorkflowUnitTest).NewTestWorkflowEnvironment()
-	env.SetDataConverter(&registryBindingDC{DataConverter: converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), &serCtxSigningCodec{})})
+	var bound []*registryBindingDC
+	env.SetDataConverter(&registryBindingDC{
+		DataConverter: converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), &serCtxSigningCodec{}),
+		bound:         &bound,
+	})
 	fc := newNexusCapturingFailureConverter()
 	env.SetFailureConverter(fc)
 	interceptor, ctx, err := newWorkflowContext(env.impl, env.impl.GetRegistry().interceptors)
@@ -91,11 +94,15 @@ func TestNexusOperationRegistry(t *testing.T) {
 		}
 		for i := len(capture.calls) - 1; i >= 0; i-- {
 			call := capture.calls[i]
-			dc := call.params.dataConverter.(*transferAwareDataConverter)
-			outer := dc.parent.(*registryBindingDC)
-			require.IsType(t, converter.NexusSerializationContext{}, outer.scope)
-			require.Nil(t, outer.binding)
-			require.NotEqual(t, converter.WorkflowSerializationContext{Namespace: call.params.operation, WorkflowID: call.params.operation + ":target"}, outer.binding)
+			dc := call.params.dataConverter
+			var outer *registryBindingDC
+			for _, binding := range bound {
+				if scope, ok := binding.scope.(converter.NexusSerializationContext); ok && scope.Operation == call.params.operation {
+					require.Same(t, getWorkflowEnvOptions(ctx).DataConverter, getWorkflowEnvOptions(binding.binding).DataConverter)
+					outer = binding
+				}
+			}
+			require.NotNil(t, outer)
 			inner := NexusOperationPayloadContext(ctx, futures[i])
 			require.Same(t, call.params.payloadContext, inner)
 			var wire commonpb.Payload

@@ -24,8 +24,9 @@ to docs, or any other relevant information.
 
 - Added an internal experimental system Nexus operation registry for SDK-owned inner payload serialization. Policies run against native input after interceptors for `__temporal_system` and legacy `temporal-system` endpoints. The SDK captures each selection once for input, result, and failure conversion (unlike Python policy reevaluation), while preserving the existing outer Nexus envelope context. Registry entries use `NexusOperationRegistryEntry`, with an optional `InputType` guard that preserves ordinary Nexus conversion for raw wire requests and other nonmatching inputs. Their optional `InputToTransfer` callback runs even without a selected serialization context, using the caller context and converter in that case. Generated eager adapters can retrieve the captured context with `NexusOperationPayloadContext`. Future-wrapping interceptors must forward the optional `NexusOperationPayloadContext() Context` carrier method; the public future interface is unchanged. No model-provider API or generator context values are required.
 
-- Added experimental `workflow.NewTransferTypeConverter` for transfer conversions that do not depend on a context.
-- Added experimental `workflow.NewTransferTypeConverter` API that implements transfer type conversion.
+- Added experimental `converter.WithTransferWorkflowContext` to bind transfer callbacks to a workflow context without changing the outer data converter's workflow or serialization context.
+- Added experimental `converter.NewTransferTypeConverter` API that implements transfer type conversion.
+  `converter.GetDefaultDataConverter()` now supports transfer type conversion.
 - Added autoscaling support for server poller groups, with per-group coverage and
   sticky-backlog prioritization. `SimpleMaximum` is unchanged, and autoscaling
   behaves as before when no poller groups are configured.
@@ -38,10 +39,15 @@ to docs, or any other relevant information.
 
 ### Changed
 
+- Removed experimental labels from the core plugin APIs.
 - Task queue priority is no longer marked as experimental.
 - Nexus link conversion now handles all four link types. Workflow links on an inbound Nexus
   request are converted rather than dropped, and `temporalnexus.ConvertCommonLinkToNexusLink`
   converts NexusOperation and Activity links rather than returning an empty `nexus.Link`.
+- The `[TMPRL1104]` workflow task duration log now uses a single warning threshold, configurable
+  with the `TEMPORAL_WORKFLOW_TASK_DURATION_WARN_SECONDS` environment variable and defaulting to 5
+  seconds. It previously warned above a fixed 10 seconds, logged at info above a fixed 5 seconds,
+  and logged at debug below that when trace logging was enabled.
 
 ### Deprecated
 
