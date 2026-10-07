@@ -369,6 +369,44 @@ func TestTransferAwareDataConverter_ContextDelegation(t *testing.T) {
 	})
 }
 
+func TestTransferAwareDataConverter_TransferWorkflowContext(t *testing.T) {
+	t.Parallel()
+	outerCtx := WithValue(Background(), ContextAwareDataConverterContextKey, "value")
+	innerCtx := WithValue(Background(), ContextAwareDataConverterContextKey, "inner")
+	innerCtx = WithValue(innerCtx, transferContextKey{}, "inner")
+	parent := NewContextAwareDataConverter(converter.NewCompositeDataConverter(converter.NewJSONPayloadConverter()))
+	dc := WithWorkflowContext(outerCtx, converter.MakeTransferAware(parent))
+
+	for _, tc := range []struct {
+		name string
+		dc   converter.DataConverter
+		want string
+	}{
+		{
+			name: "transfer callbacks only",
+			dc:   converter.WithTransferWorkflowContext(dc, innerCtx),
+			want: `"wf:inner:?"`,
+		},
+		{
+			name: "transfer callbacks and parent",
+			dc:   WithWorkflowContext(innerCtx, dc),
+			want: `"wf:?:value"`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			payload, err := tc.dc.ToPayload(contextualString("value"))
+			require.NoError(t, err)
+			require.Equal(t, tc.want, string(payload.GetData()))
+
+			payload, err = converter.GetDefaultDataConverter().ToPayload("value")
+			require.NoError(t, err)
+			var got contextualString
+			require.NoError(t, tc.dc.FromPayload(payload, &got))
+			require.Equal(t, contextualString("wf:inner:value"), got)
+		})
+	}
+}
+
 func TestTransferAwareDataConverter_ConversionContext(t *testing.T) {
 	t.Parallel()
 	parent := converter.GetDefaultDataConverter()

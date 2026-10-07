@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"reflect"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -51,7 +50,7 @@ func TestNexusOperationRegistry(t *testing.T) {
 	service := "registry-test"
 	registry := map[NexusOperationKey]NexusOperationRegistryEntry{}
 	calls := 0
-	for _, operation := range []string{"first", "second", "eager"} {
+	for _, operation := range []string{"first", "second", "wrapped"} {
 		registry[NexusOperationKey{service, operation}] = NexusOperationRegistryEntry{
 			SerializationContext: func(input any) converter.SerializationContext {
 				calls++
@@ -59,11 +58,6 @@ func TestNexusOperationRegistry(t *testing.T) {
 			},
 		}
 	}
-	eager := registry[NexusOperationKey{service, "eager"}]
-	eager.InputToTransfer = func(ctx Context, input any) (any, error) {
-		return GetDataConverterFromWorkflowContext(ctx).ToPayload(input.(registryModel).Value)
-	}
-	registry[NexusOperationKey{service, "eager"}] = eager
 	RegisterNexusOperationRegistry(registry)
 	t.Cleanup(func() {
 		for key := range registry {
@@ -85,7 +79,7 @@ func TestNexusOperationRegistry(t *testing.T) {
 	var futures []NexusOperationFuture
 	var results [3]registryModel
 	d, _ := newDispatcher(ctx, interceptor, func(ctx Context) {
-		for i, operation := range []string{"first", "second", "eager"} {
+		for i, operation := range []string{"first", "second", "wrapped"} {
 			client := NewSystemNexusClient(service)
 			if i == 1 {
 				client = NewNexusClient("temporal-system", service)
@@ -133,7 +127,7 @@ func TestNexusOperationRegistry(t *testing.T) {
 	require.Equal(t, 3, calls)
 	require.Equal(t, [3]registryModel{{"result"}, {"result"}, {"result"}}, results)
 	for i, conversion := range fc.captured() {
-		operation := []string{"eager", "second", "first"}[i/2]
+		operation := []string{"wrapped", "second", "first"}[i/2]
 		require.Equal(t, converter.WorkflowSerializationContext{Namespace: operation, WorkflowID: operation + ":target"}, conversion.context)
 	}
 }
@@ -162,22 +156,18 @@ func (i *registryInputInterceptor) ExecuteNexusOperation(ctx Context, input Exec
 }
 
 func TestNexusOperationRegistryAfterInterceptors(t *testing.T) {
-	key := NexusOperationKey{Service: "registry-interceptor", Operation: "eager"}
-	var selected, converted any
-	conversionErr := errors.New("input transfer failed")
+	key := NexusOperationKey{Service: "registry-interceptor", Operation: "operation"}
+	var selected any
 	registry := map[NexusOperationKey]NexusOperationRegistryEntry{key: {
 		SerializationContext: func(input any) converter.SerializationContext {
 			selected = input
 			return converter.WorkflowSerializationContext{WorkflowID: input.(registryModel).Value}
 		},
-		InputToTransfer: func(ctx Context, input any) (any, error) {
-			converted = input
-			return nil, conversionErr
-		},
 	}}
 	RegisterNexusOperationRegistry(registry)
 	t.Cleanup(func() { delete(nexusOperationRegistry, key) })
 	env := new(WorkflowUnitTest).NewTestWorkflowEnvironment()
+	env.SetDataConverter(converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), &serCtxSigningCodec{}))
 	interceptor, ctx, err := newWorkflowContext(env.impl, nil)
 	require.NoError(t, err)
 	capture := &captureNexusSerializationEnv{WorkflowEnvironment: interceptor.env}
@@ -186,175 +176,39 @@ func TestNexusOperationRegistryAfterInterceptors(t *testing.T) {
 	d, _ := newDispatcher(ctx, interceptor, func(ctx Context) {
 		ctx = WithValue(ctx, workflowInterceptorContextKey, replacer)
 		future := NewSystemNexusClient(key.Service).ExecuteOperation(ctx, key.Operation, registryModel{Value: "original"}, NexusOperationOptions{})
-		require.ErrorIs(t, future.Get(ctx, nil), conversionErr)
-		require.ErrorIs(t, future.GetNexusOperationExecution().Get(ctx, nil), conversionErr)
+		require.Len(t, capture.calls, 1)
+		call := capture.calls[0]
+		var wire commonpb.Payload
+		require.NoError(t, call.params.dataConverter.FromPayload(call.params.input, &wire))
+		require.Equal(t, "replacement", string(wire.Metadata["ctx-signature"]))
+		var value string
+		targetDC := withRootDataConverterSerializationContext(ctx, converter.WorkflowSerializationContext{WorkflowID: "replacement"})
+		require.NoError(t, targetDC.FromPayload(&wire, &value))
+		require.Equal(t, "replacement", value)
+		call.started("token", nil)
+		call.completed(nil, nil)
+		require.NoError(t, future.Get(ctx, nil))
+		require.NoError(t, future.GetNexusOperationExecution().Get(ctx, nil))
 	}, func() bool { return false })
 	d.interceptor = interceptor
 	defer d.Close()
 	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout))
 	require.Equal(t, registryModel{Value: "original"}, replacer.seen)
 	require.Equal(t, registryModel{Value: "replacement"}, selected)
-	require.Equal(t, selected, converted)
-	require.Empty(t, capture.calls)
 }
 
-func TestNexusOperationRegistryExternalInputWithoutSelectedContext(t *testing.T) {
-	// This external model deliberately has no transfer converter of its own.
-	type externalRequest struct{ Value string }
-	for _, endpoint := range []string{systemNexusEndpoint, "temporal-system", "ordinary"} {
-		for _, nilCallback := range []bool{true, false} {
-			name := endpoint + "/nil-result"
-			if nilCallback {
-				name = endpoint + "/nil-callback"
-			}
-			t.Run(name, func(t *testing.T) {
-				key := NexusOperationKey{Service: t.Name(), Operation: "external"}
-				env := new(WorkflowUnitTest).NewTestWorkflowEnvironment()
-				interceptor, ctx, err := newWorkflowContext(env.impl, nil)
-				require.NoError(t, err)
-				callerDC := converter.WithDataConverterSerializationContext(
-					converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), &serCtxSigningCodec{}),
-					converter.WorkflowSerializationContext{WorkflowID: "caller"},
-				)
-				ctx = WithDataConverter(ctx, callerDC)
-				calls := 0
-				entry := NexusOperationRegistryEntry{
-					InputType: reflect.TypeFor[externalRequest](),
-					InputToTransfer: func(transferCtx Context, input any) (any, error) {
-						calls++
-						require.Same(t, ctx, transferCtx)
-						require.Equal(t, externalRequest{Value: "native"}, input)
-						return GetDataConverterFromWorkflowContext(transferCtx).ToPayload(input.(externalRequest).Value)
-					},
-				}
-				if !nilCallback {
-					entry.SerializationContext = func(input any) converter.SerializationContext {
-						require.Equal(t, externalRequest{Value: "native"}, input)
-						return nil
-					}
-				}
-				registry := map[NexusOperationKey]NexusOperationRegistryEntry{key: entry}
-				RegisterNexusOperationRegistry(registry)
-				t.Cleanup(func() { delete(nexusOperationRegistry, key) })
-				params, err := interceptor.prepareNexusOperationParams(ctx, ExecuteNexusOperationInput{
-					Client: nexusClient{endpoint, key.Service}, Operation: key.Operation, Input: externalRequest{Value: "native"},
-				})
-				require.NoError(t, err)
-				require.Equal(t, 1, calls)
-				require.Equal(t, endpoint+":"+key.Service+":"+key.Operation, string(params.input.Metadata["ctx-signature"]))
-				var wire commonpb.Payload
-				require.NoError(t, params.dataConverter.FromPayload(params.input, &wire))
-				require.Equal(t, "caller", string(wire.Metadata["ctx-signature"]))
-				var value string
-				require.NoError(t, callerDC.FromPayload(&wire, &value))
-				require.Equal(t, "native", value)
-
-				conversionErr := errors.New("external conversion failed")
-				entry.InputToTransfer = func(transferCtx Context, input any) (any, error) {
-					require.Same(t, ctx, transferCtx)
-					return nil, conversionErr
-				}
-				nexusOperationRegistry[key] = entry
-				_, err = interceptor.prepareNexusOperationParams(ctx, ExecuteNexusOperationInput{
-					Client: nexusClient{endpoint, key.Service}, Operation: key.Operation, Input: externalRequest{Value: "native"},
-				})
-				require.ErrorIs(t, err, conversionErr)
-			})
-		}
-	}
-}
-
-func TestNexusOperationRegistryInputType(t *testing.T) {
-	type nativeRequest struct{ Value string }
-	wire := &commonpb.Payload{Data: []byte("raw wire request")}
-	for _, endpoint := range []string{systemNexusEndpoint, "temporal-system", "ordinary"} {
-		for _, tc := range []struct {
-			name          string
-			inputType     reflect.Type
-			input         any
-			wantCallbacks bool
-		}{
-			{name: "raw proto", inputType: reflect.TypeFor[nativeRequest](), input: wire},
-			{name: "untyped nil", inputType: reflect.TypeFor[nativeRequest]()},
-			{name: "wrong native type", inputType: reflect.TypeFor[nativeRequest](), input: "native"},
-			{name: "matching native", inputType: reflect.TypeFor[nativeRequest](), input: nativeRequest{"native"}, wantCallbacks: true},
-			{name: "assignable interface", inputType: reflect.TypeFor[any](), input: nativeRequest{"native"}, wantCallbacks: true},
-			{name: "unrestricted proto", input: wire, wantCallbacks: true},
-			{name: "unrestricted nil", wantCallbacks: true},
-		} {
-			t.Run(endpoint+"/"+tc.name, func(t *testing.T) {
-				key := NexusOperationKey{Service: t.Name(), Operation: "operation"}
-				policyCalls, transferCalls := 0, 0
-				registry := map[NexusOperationKey]NexusOperationRegistryEntry{key: {
-					InputType: tc.inputType,
-					SerializationContext: func(input any) converter.SerializationContext {
-						policyCalls++
-						require.Equal(t, tc.input, input)
-						return converter.WorkflowSerializationContext{WorkflowID: "target"}
-					},
-					InputToTransfer: func(ctx Context, input any) (any, error) {
-						transferCalls++
-						require.Equal(t, tc.input, input)
-						return "converted", nil
-					},
-				}}
-				RegisterNexusOperationRegistry(registry)
-				t.Cleanup(func() { delete(nexusOperationRegistry, key) })
-				env := new(WorkflowUnitTest).NewTestWorkflowEnvironment()
-				env.SetDataConverter(converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), &serCtxSigningCodec{}))
-				interceptor, ctx, err := newWorkflowContext(env.impl, nil)
-				require.NoError(t, err)
-				capture := &captureNexusSerializationEnv{WorkflowEnvironment: interceptor.env}
-				interceptor.env = capture
-				d, _ := newDispatcher(ctx, interceptor, func(ctx Context) {
-					future := nexusClient{endpoint, key.Service}.ExecuteOperation(ctx, key.Operation, tc.input, NexusOperationOptions{})
-					require.Len(t, capture.calls, 1)
-					call := capture.calls[0]
-					want := tc.input
-					if tc.wantCallbacks {
-						want = "converted"
-					}
-					ordinaryDC := withRootDataConverterSerializationContext(ctx, converter.NexusSerializationContext{
-						Endpoint: endpoint, Service: key.Service, Operation: key.Operation,
-					})
-					wantPayload, err := ordinaryDC.ToPayload(want)
-					require.NoError(t, err)
-					require.Equal(t, wantPayload, call.params.input)
-					call.started("token", nil)
-					call.completed(wantPayload, nil)
-					require.NoError(t, future.Get(ctx, nil))
-				}, func() bool { return false })
-				d.interceptor = interceptor
-				defer d.Close()
-				requireNoExecuteErr(t, d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout))
-				wantCalls := 0
-				if tc.wantCallbacks {
-					wantCalls = 1
-				}
-				require.Equal(t, wantCalls, policyCalls)
-				require.Equal(t, wantCalls, transferCalls)
-			})
-		}
-	}
-}
-
-func TestNexusOperationRegistryFallbackAndDuplicates(t *testing.T) {
-	key := NexusOperationKey{Service: "registry-fallback", Operation: "nil"}
-	registry := map[NexusOperationKey]NexusOperationRegistryEntry{key: {}}
-	RegisterNexusOperationRegistry(registry)
-	t.Cleanup(func() { delete(nexusOperationRegistry, key) })
-	require.Panics(t, func() { RegisterNexusOperationRegistry(map[NexusOperationKey]NexusOperationRegistryEntry{key: {}}) })
+func TestNexusOperationRegistryMissingEntry(t *testing.T) {
 	env := new(WorkflowUnitTest).NewTestWorkflowEnvironment()
 	interceptor, ctx, err := newWorkflowContext(env.impl, nil)
 	require.NoError(t, err)
 	for _, endpoint := range []string{systemNexusEndpoint, "temporal-system", "ordinary"} {
-		for _, operation := range []string{"nil", "missing"} {
-			params, err := interceptor.prepareNexusOperationParams(ctx, ExecuteNexusOperationInput{Client: nexusClient{endpoint, key.Service}, Operation: operation, Input: "native"})
-			require.NoError(t, err)
-			var value string
-			require.NoError(t, params.dataConverter.FromPayload(params.input, &value))
-			require.Equal(t, "native", value)
-		}
+		params, err := interceptor.prepareNexusOperationParams(ctx, ExecuteNexusOperationInput{
+			Client: nexusClient{endpoint, t.Name()}, Operation: "missing", Input: "native",
+		})
+		require.NoError(t, err)
+		var value string
+		require.NoError(t, params.dataConverter.FromPayload(params.input, &value))
+		require.Equal(t, "native", value)
 	}
 }
 
@@ -365,18 +219,21 @@ func TestNexusOperationRegistryMergesEntries(t *testing.T) {
 		delete(nexusOperationRegistry, first)
 		delete(nexusOperationRegistry, second)
 	})
-	entry := NexusOperationRegistryEntry{InputType: reflect.TypeFor[registryModel]()}
+	sc := converter.WorkflowSerializationContext{WorkflowID: "target"}
+	entry := NexusOperationRegistryEntry{
+		SerializationContext: func(any) converter.SerializationContext { return sc },
+	}
 	registry := map[NexusOperationKey]NexusOperationRegistryEntry{first: entry}
 	RegisterNexusOperationRegistry(registry)
 	clear(registry)
 	RegisterNexusOperationRegistry(map[NexusOperationKey]NexusOperationRegistryEntry{second: entry})
-	require.Equal(t, entry.InputType, lookupNexusOperationRegistryEntry(first.Service, first.Operation).InputType)
-	require.Equal(t, entry.InputType, lookupNexusOperationRegistryEntry(second.Service, second.Operation).InputType)
+	require.Equal(t, sc, nexusOperationRegistry[first].SerializationContext(registryModel{}))
+	require.Equal(t, sc, nexusOperationRegistry[second].SerializationContext(registryModel{}))
 	require.PanicsWithValue(t,
 		fmt.Sprintf("Nexus operation registry already contains service %q operation %q", first.Service, first.Operation),
 		func() {
-			RegisterNexusOperationRegistry(map[NexusOperationKey]NexusOperationRegistryEntry{first: {}})
+			RegisterNexusOperationRegistry(map[NexusOperationKey]NexusOperationRegistryEntry{first: entry})
 		},
 	)
-	require.Equal(t, entry.InputType, lookupNexusOperationRegistryEntry(first.Service, first.Operation).InputType)
+	require.Equal(t, sc, nexusOperationRegistry[first].SerializationContext(registryModel{}))
 }

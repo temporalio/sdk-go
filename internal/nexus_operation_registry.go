@@ -2,7 +2,6 @@ package internal
 
 import (
 	"fmt"
-	"reflect"
 
 	"go.temporal.io/sdk/converter"
 )
@@ -12,9 +11,7 @@ type NexusOperationKey struct {
 }
 
 type NexusOperationRegistryEntry struct {
-	InputType            reflect.Type
 	SerializationContext func(any) converter.SerializationContext
-	InputToTransfer      func(Context, any) (any, error)
 }
 
 var nexusOperationRegistry = make(map[NexusOperationKey]NexusOperationRegistryEntry)
@@ -26,8 +23,4 @@ func RegisterNexusOperationRegistry(registry map[NexusOperationKey]NexusOperatio
 		}
 		nexusOperationRegistry[key] = entry
 	}
-}
-
-func lookupNexusOperationRegistryEntry(service, operation string) NexusOperationRegistryEntry {
-	return nexusOperationRegistry[NexusOperationKey{Service: service, Operation: operation}]
 }

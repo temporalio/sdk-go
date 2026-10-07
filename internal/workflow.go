@@ -3070,34 +3070,14 @@ func (wc *workflowEnvironmentInterceptor) prepareNexusOperationParams(ctx Contex
 	dc := withRootDataConverterSerializationContext(ctx, nsc)
 	fc := converter.WithFailureConverterSerializationContext(getRootFailureConverterFromWorkflowContext(ctx), nsc)
 
-	var payloadContext Context
-	info := lookupNexusOperationRegistryEntry(nsc.Service, nsc.Operation)
-	if info.InputType != nil {
-		inputType := reflect.TypeOf(input.Input)
-		if inputType == nil || !inputType.AssignableTo(info.InputType) {
-			info = NexusOperationRegistryEntry{}
-		}
-	}
-	if info.SerializationContext != nil {
-		if sc := info.SerializationContext(input.Input); sc != nil {
-			targetDC := withRootDataConverterSerializationContext(ctx, sc)
-			payloadContext = WithDataConverter(ctx, targetDC)
-			// Only transfer callbacks get the target context. The parent converter
-			// must retain the outer Nexus envelope's existing bindings.
-			dc = converter.WithTransferWorkflowContext(dc, payloadContext)
-			fc = converter.WithFailureConverterSerializationContext(getRootFailureConverterFromWorkflowContext(ctx), sc)
-		}
-	}
-	if info.InputToTransfer != nil {
-		transferContext := payloadContext
-		if transferContext == nil {
-			transferContext = ctx
-		}
-		var err error
-		input.Input, err = info.InputToTransfer(transferContext, input.Input)
-		if err != nil {
-			return ExecuteNexusOperationParams{}, err
-		}
+	if info, ok := nexusOperationRegistry[NexusOperationKey{Service: nsc.Service, Operation: nsc.Operation}]; ok {
+		sc := info.SerializationContext(input.Input)
+		targetDC := withRootDataConverterSerializationContext(ctx, sc)
+		payloadContext := WithDataConverter(ctx, targetDC)
+		// Only transfer callbacks get the target context. The parent converter
+		// must retain the outer Nexus envelope's existing bindings.
+		dc = converter.WithTransferWorkflowContext(dc, payloadContext)
+		fc = converter.WithFailureConverterSerializationContext(getRootFailureConverterFromWorkflowContext(ctx), sc)
 	}
 
 	payload, err := dc.ToPayload(input.Input)
