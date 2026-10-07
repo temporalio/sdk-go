@@ -59,6 +59,12 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- Context-aware data converters now receive context in various places where they didn't
+  before, such as `WorkflowRun.Get`.
+- Activity heartbeat details and cancellation details now use the activity-context-bound
+  data converter. Nexus handler inputs and synchronous results now use the handler context.
+- Mocked side effects in the workflow test environment now use the workflow-context-bound
+  data converter, matching real workflow execution.
 - Child context cancellation now follows creation order by default.
 - Legacy query failure responses (`RespondQueryTaskCompletedRequest`) now set
   `WorkflowTaskFailedCause` for workflow task failures: `PAYLOADS_TOO_LARGE` for oversized payloads,

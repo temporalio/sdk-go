@@ -1965,7 +1965,7 @@ func (workflowRun *workflowRunImpl) GetWithOptions(
 		if rf.Type().Kind() != reflect.Pointer {
 			return errors.New("value parameter is not a pointer")
 		}
-		return workflowRun.dataConverter.FromPayloads(attributes.Result, valuePtr)
+		return WithContext(ctx, workflowRun.dataConverter).FromPayloads(attributes.Result, valuePtr)
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_FAILED:
 		attributes := closeEvent.GetWorkflowExecutionFailedEventAttributes()
 		if !options.DisableFollowingRuns && attributes.NewExecutionRunId != "" {
@@ -1974,7 +1974,7 @@ func (workflowRun *workflowRunImpl) GetWithOptions(
 		err = workflowRun.failureConverter.FailureToError(attributes.GetFailure())
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_CANCELED:
 		attributes := closeEvent.GetWorkflowExecutionCanceledEventAttributes()
-		details := newEncodedValues(attributes.Details, workflowRun.dataConverter)
+		details := newEncodedValues(attributes.Details, WithContext(ctx, workflowRun.dataConverter))
 		err = NewCanceledError(details)
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_TERMINATED:
 		err = newTerminatedError()
@@ -2705,7 +2705,7 @@ func (w *workflowClientInterceptor) CancelWorkflow(ctx context.Context, in *Clie
 }
 
 func (w *workflowClientInterceptor) TerminateWorkflow(ctx context.Context, in *ClientTerminateWorkflowInput) error {
-	dc := converter.WithDataConverterSerializationContext(w.client.dataConverter, converter.WorkflowSerializationContext{
+	dc := converter.WithDataConverterSerializationContext(WithContext(ctx, w.client.dataConverter), converter.WorkflowSerializationContext{
 		Namespace:  w.client.namespace,
 		WorkflowID: in.WorkflowID,
 	})
@@ -2811,7 +2811,7 @@ func (w *workflowClientInterceptor) DescribeWorkflow(
 	}
 	o := &WorkflowExecutionDescription{
 		WorkflowExecutionMetadata: m,
-		dc: converter.WithDataConverterSerializationContext(w.client.dataConverter, converter.WorkflowSerializationContext{
+		dc: converter.WithDataConverterSerializationContext(WithContext(ctx, w.client.dataConverter), converter.WorkflowSerializationContext{
 			Namespace:  w.client.namespace,
 			WorkflowID: in.WorkflowID,
 		}),
@@ -2829,7 +2829,7 @@ func (w *workflowClientInterceptor) QueryWorkflow(
 	ctx context.Context,
 	in *ClientQueryWorkflowInput,
 ) (converter.EncodedValue, error) {
-	dc := converter.WithDataConverterSerializationContext(w.client.dataConverter, converter.WorkflowSerializationContext{
+	dc := converter.WithDataConverterSerializationContext(WithContext(ctx, w.client.dataConverter), converter.WorkflowSerializationContext{
 		Namespace:  w.client.namespace,
 		WorkflowID: in.WorkflowID,
 	})
@@ -3042,7 +3042,7 @@ func (w *workflowClientInterceptor) PollWorkflowUpdate(
 		Namespace:  w.client.namespace,
 		WorkflowID: in.UpdateRef.GetWorkflowExecution().GetWorkflowId(),
 	}
-	dc := converter.WithDataConverterSerializationContext(w.client.dataConverter, wfCtx)
+	dc := converter.WithDataConverterSerializationContext(WithContext(parentCtx, w.client.dataConverter), wfCtx)
 	fc := converter.WithFailureConverterSerializationContext(w.client.failureConverter, wfCtx)
 
 	pollReq := workflowservice.PollWorkflowExecutionUpdateRequest{
@@ -3130,7 +3130,7 @@ func (w *workflowClientInterceptor) updateHandleFromResponse(
 		Namespace:  w.client.namespace,
 		WorkflowID: resp.GetUpdateRef().GetWorkflowExecution().GetWorkflowId(),
 	}
-	dc := converter.WithDataConverterSerializationContext(w.client.dataConverter, uhCtx)
+	dc := converter.WithDataConverterSerializationContext(WithContext(ctx, w.client.dataConverter), uhCtx)
 	fc := converter.WithFailureConverterSerializationContext(w.client.failureConverter, uhCtx)
 
 	switch v := resp.GetOutcome().GetValue().(type) {

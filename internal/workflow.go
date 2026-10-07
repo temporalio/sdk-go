@@ -2277,7 +2277,7 @@ func (wc *workflowEnvironmentInterceptor) SideEffectWithOptions(ctx Context, opt
 	resultCallback := func(result *commonpb.Payloads, err error) {
 		settable.Set(EncodedValue{result, dc}, err)
 	}
-	wc.env.SideEffect(wrapperFunc, resultCallback, options.Summary)
+	wc.env.SideEffect(wrapperFunc, resultCallback, options.Summary, dc)
 	var encoded EncodedValue
 	if err := future.Get(ctx, &encoded); err != nil {
 		panic(err)
@@ -2335,7 +2335,7 @@ func (wc *workflowEnvironmentInterceptor) MutableSideEffectWithOptions(ctx Conte
 		coroutineState.dispatcher.setIsReadOnly(true)
 		return f(ctx)
 	}
-	return wc.env.MutableSideEffect(id, wrapperFunc, equals, options.Summary)
+	return wc.env.MutableSideEffect(id, wrapperFunc, equals, options.Summary, GetDataConverterFromWorkflowContext(ctx))
 }
 
 // DefaultVersion is a version returned by GetVersion for code that wasn't versioned before

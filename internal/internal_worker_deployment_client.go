@@ -474,7 +474,7 @@ func (h *workerDeploymentHandleImpl) UpdateVersionMetadata(ctx context.Context, 
 		//lint:ignore SA1019 retain the canonical version string for older servers
 		Version:           options.Version.toCanonicalString(),
 		DeploymentVersion: options.Version.toProto(),
-		UpsertEntries:     workerDeploymentUpsertEntriesMetadataToProto(h.workflowClient.dataConverter, options.MetadataUpdate),
+		UpsertEntries:     workerDeploymentUpsertEntriesMetadataToProto(WithContext(ctx, h.workflowClient.dataConverter), options.MetadataUpdate),
 		RemoveEntries:     options.MetadataUpdate.RemoveEntries,
 	}
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
