@@ -3,6 +3,7 @@ package internal
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"testing"
 
@@ -64,7 +65,11 @@ func TestNexusOperationRegistry(t *testing.T) {
 	}
 	registry[NexusOperationKey{service, "eager"}] = eager
 	RegisterNexusOperationRegistry(registry)
-	t.Cleanup(func() { nexusOperationRegistries.Lock(); defer nexusOperationRegistries.Unlock(); clear(registry) })
+	t.Cleanup(func() {
+		for key := range registry {
+			delete(nexusOperationRegistry, key)
+		}
+	})
 	env := new(WorkflowUnitTest).NewTestWorkflowEnvironment()
 	var bound []*registryBindingDC
 	env.SetDataConverter(&registryBindingDC{
@@ -84,6 +89,8 @@ func TestNexusOperationRegistry(t *testing.T) {
 			client := NewSystemNexusClient(service)
 			if i == 1 {
 				client = NewNexusClient("temporal-system", service)
+			} else if i == 2 {
+				client = NewNexusClient("ordinary", service)
 			}
 			callCtx := ctx
 			if i == 2 {
@@ -103,8 +110,6 @@ func TestNexusOperationRegistry(t *testing.T) {
 				}
 			}
 			require.NotNil(t, outer)
-			inner := NexusOperationPayloadContext(ctx, futures[i])
-			require.Same(t, call.params.payloadContext, inner)
 			var wire commonpb.Payload
 			require.NoError(t, outer.FromPayload(call.params.input, &wire))
 			require.Equal(t, call.params.operation+":target", string(wire.Metadata["ctx-signature"]))
@@ -118,12 +123,8 @@ func TestNexusOperationRegistry(t *testing.T) {
 		for i, future := range futures {
 			if i == 2 {
 				require.IsType(t, &registryWrappedFuture{}, future)
-				var wire commonpb.Payload
-				require.NoError(t, future.Get(ctx, &wire))
-				require.NoError(t, GetDataConverterFromWorkflowContext(NexusOperationPayloadContext(ctx, future)).FromPayload(&wire, &results[i].Value))
-			} else {
-				require.NoError(t, future.Get(ctx, &results[i]))
 			}
+			require.NoError(t, future.Get(ctx, &results[i]))
 		}
 	}, func() bool { return false })
 	d.interceptor = interceptor
@@ -139,11 +140,6 @@ func TestNexusOperationRegistry(t *testing.T) {
 
 type registryWrappedFuture struct {
 	NexusOperationFuture
-	ctx Context
-}
-
-func (f *registryWrappedFuture) NexusOperationPayloadContext() Context {
-	return NexusOperationPayloadContext(f.ctx, f.NexusOperationFuture)
 }
 
 type registryWrappingInterceptor struct {
@@ -151,7 +147,7 @@ type registryWrappingInterceptor struct {
 }
 
 func (i *registryWrappingInterceptor) ExecuteNexusOperation(ctx Context, input ExecuteNexusOperationInput) NexusOperationFuture {
-	return &registryWrappedFuture{NexusOperationFuture: i.Next.ExecuteNexusOperation(ctx, input), ctx: ctx}
+	return &registryWrappedFuture{NexusOperationFuture: i.Next.ExecuteNexusOperation(ctx, input)}
 }
 
 type registryInputInterceptor struct {
@@ -180,7 +176,7 @@ func TestNexusOperationRegistryAfterInterceptors(t *testing.T) {
 		},
 	}}
 	RegisterNexusOperationRegistry(registry)
-	t.Cleanup(func() { nexusOperationRegistries.Lock(); defer nexusOperationRegistries.Unlock(); clear(registry) })
+	t.Cleanup(func() { delete(nexusOperationRegistry, key) })
 	env := new(WorkflowUnitTest).NewTestWorkflowEnvironment()
 	interceptor, ctx, err := newWorkflowContext(env.impl, nil)
 	require.NoError(t, err)
@@ -205,7 +201,7 @@ func TestNexusOperationRegistryAfterInterceptors(t *testing.T) {
 func TestNexusOperationRegistryExternalInputWithoutSelectedContext(t *testing.T) {
 	// This external model deliberately has no transfer converter of its own.
 	type externalRequest struct{ Value string }
-	for _, endpoint := range []string{systemNexusEndpoint, "temporal-system"} {
+	for _, endpoint := range []string{systemNexusEndpoint, "temporal-system", "ordinary"} {
 		for _, nilCallback := range []bool{true, false} {
 			name := endpoint + "/nil-result"
 			if nilCallback {
@@ -239,13 +235,12 @@ func TestNexusOperationRegistryExternalInputWithoutSelectedContext(t *testing.T)
 				}
 				registry := map[NexusOperationKey]NexusOperationRegistryEntry{key: entry}
 				RegisterNexusOperationRegistry(registry)
-				t.Cleanup(func() { nexusOperationRegistries.Lock(); defer nexusOperationRegistries.Unlock(); clear(registry) })
+				t.Cleanup(func() { delete(nexusOperationRegistry, key) })
 				params, err := interceptor.prepareNexusOperationParams(ctx, ExecuteNexusOperationInput{
 					Client: nexusClient{endpoint, key.Service}, Operation: key.Operation, Input: externalRequest{Value: "native"},
 				})
 				require.NoError(t, err)
 				require.Equal(t, 1, calls)
-				require.Nil(t, params.payloadContext)
 				require.Equal(t, endpoint+":"+key.Service+":"+key.Operation, string(params.input.Metadata["ctx-signature"]))
 				var wire commonpb.Payload
 				require.NoError(t, params.dataConverter.FromPayload(params.input, &wire))
@@ -259,7 +254,7 @@ func TestNexusOperationRegistryExternalInputWithoutSelectedContext(t *testing.T)
 					require.Same(t, ctx, transferCtx)
 					return nil, conversionErr
 				}
-				registry[key] = entry
+				nexusOperationRegistry[key] = entry
 				_, err = interceptor.prepareNexusOperationParams(ctx, ExecuteNexusOperationInput{
 					Client: nexusClient{endpoint, key.Service}, Operation: key.Operation, Input: externalRequest{Value: "native"},
 				})
@@ -272,7 +267,7 @@ func TestNexusOperationRegistryExternalInputWithoutSelectedContext(t *testing.T)
 func TestNexusOperationRegistryInputType(t *testing.T) {
 	type nativeRequest struct{ Value string }
 	wire := &commonpb.Payload{Data: []byte("raw wire request")}
-	for _, endpoint := range []string{systemNexusEndpoint, "temporal-system"} {
+	for _, endpoint := range []string{systemNexusEndpoint, "temporal-system", "ordinary"} {
 		for _, tc := range []struct {
 			name          string
 			inputType     reflect.Type
@@ -304,7 +299,7 @@ func TestNexusOperationRegistryInputType(t *testing.T) {
 					},
 				}}
 				RegisterNexusOperationRegistry(registry)
-				t.Cleanup(func() { nexusOperationRegistries.Lock(); defer nexusOperationRegistries.Unlock(); clear(registry) })
+				t.Cleanup(func() { delete(nexusOperationRegistry, key) })
 				env := new(WorkflowUnitTest).NewTestWorkflowEnvironment()
 				env.SetDataConverter(converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), &serCtxSigningCodec{}))
 				interceptor, ctx, err := newWorkflowContext(env.impl, nil)
@@ -318,12 +313,8 @@ func TestNexusOperationRegistryInputType(t *testing.T) {
 					want := tc.input
 					if tc.wantCallbacks {
 						want = "converted"
-						require.NotNil(t, call.params.payloadContext)
-					} else {
-						require.Nil(t, call.params.payloadContext)
-						require.Same(t, ctx, NexusOperationPayloadContext(ctx, future))
 					}
-					ordinaryDC := WithRootDataConverterSerializationContext(ctx, converter.NexusSerializationContext{
+					ordinaryDC := withRootDataConverterSerializationContext(ctx, converter.NexusSerializationContext{
 						Endpoint: endpoint, Service: key.Service, Operation: key.Operation,
 					})
 					wantPayload, err := ordinaryDC.ToPayload(want)
@@ -347,21 +338,11 @@ func TestNexusOperationRegistryInputType(t *testing.T) {
 	}
 }
 
-func TestNexusOperationPayloadContextCarrierFallback(t *testing.T) {
-	ctx := Background()
-	future := &nexusOperationFutureImpl{}
-	require.Same(t, ctx, NexusOperationPayloadContext(ctx, future))
-	// Embedding the public future interface alone must remain valid, without
-	// implicitly opting into the carrier contract.
-	wrapped := struct{ NexusOperationFuture }{future}
-	require.Same(t, ctx, NexusOperationPayloadContext(ctx, wrapped))
-}
-
 func TestNexusOperationRegistryFallbackAndDuplicates(t *testing.T) {
 	key := NexusOperationKey{Service: "registry-fallback", Operation: "nil"}
 	registry := map[NexusOperationKey]NexusOperationRegistryEntry{key: {}}
 	RegisterNexusOperationRegistry(registry)
-	t.Cleanup(func() { nexusOperationRegistries.Lock(); defer nexusOperationRegistries.Unlock(); clear(registry) })
+	t.Cleanup(func() { delete(nexusOperationRegistry, key) })
 	require.Panics(t, func() { RegisterNexusOperationRegistry(map[NexusOperationKey]NexusOperationRegistryEntry{key: {}}) })
 	env := new(WorkflowUnitTest).NewTestWorkflowEnvironment()
 	interceptor, ctx, err := newWorkflowContext(env.impl, nil)
@@ -370,15 +351,32 @@ func TestNexusOperationRegistryFallbackAndDuplicates(t *testing.T) {
 		for _, operation := range []string{"nil", "missing"} {
 			params, err := interceptor.prepareNexusOperationParams(ctx, ExecuteNexusOperationInput{Client: nexusClient{endpoint, key.Service}, Operation: operation, Input: "native"})
 			require.NoError(t, err)
-			require.Nil(t, params.payloadContext)
+			var value string
+			require.NoError(t, params.dataConverter.FromPayload(params.input, &value))
+			require.Equal(t, "native", value)
 		}
 	}
-	registry[key] = NexusOperationRegistryEntry{
-		SerializationContext: func(any) converter.SerializationContext { panic("ordinary endpoint must not look up policy") },
-		InputToTransfer:      func(Context, any) (any, error) { panic("ordinary endpoint must not convert input") },
-	}
-	_, err = interceptor.prepareNexusOperationParams(ctx, ExecuteNexusOperationInput{Client: NewNexusClient("ordinary", key.Service), Operation: key.Operation, Input: "native"})
-	require.NoError(t, err)
-	require.Same(t, ctx, NexusOperationPayloadContext(ctx, nil))
-	registry[key] = NexusOperationRegistryEntry{}
+}
+
+func TestNexusOperationRegistryMergesEntries(t *testing.T) {
+	first := NexusOperationKey{Service: t.Name(), Operation: "first"}
+	second := NexusOperationKey{Service: t.Name(), Operation: "second"}
+	t.Cleanup(func() {
+		delete(nexusOperationRegistry, first)
+		delete(nexusOperationRegistry, second)
+	})
+	entry := NexusOperationRegistryEntry{InputType: reflect.TypeFor[registryModel]()}
+	registry := map[NexusOperationKey]NexusOperationRegistryEntry{first: entry}
+	RegisterNexusOperationRegistry(registry)
+	clear(registry)
+	RegisterNexusOperationRegistry(map[NexusOperationKey]NexusOperationRegistryEntry{second: entry})
+	require.Equal(t, entry.InputType, lookupNexusOperationRegistryEntry(first.Service, first.Operation).InputType)
+	require.Equal(t, entry.InputType, lookupNexusOperationRegistryEntry(second.Service, second.Operation).InputType)
+	require.PanicsWithValue(t,
+		fmt.Sprintf("Nexus operation registry already contains service %q operation %q", first.Service, first.Operation),
+		func() {
+			RegisterNexusOperationRegistry(map[NexusOperationKey]NexusOperationRegistryEntry{first: {}})
+		},
+	)
+	require.Equal(t, entry.InputType, lookupNexusOperationRegistryEntry(first.Service, first.Operation).InputType)
 }
