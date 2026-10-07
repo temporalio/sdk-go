@@ -3,12 +3,14 @@ package converter
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	commonpb "go.temporal.io/api/common/v1"
@@ -355,3 +357,134 @@ func TestCodecDataConverter_ToPayload_EncodeError(t *testing.T) {
 	// Also assert that the original payload is returned on error.
 	require.True(proto.Equal(originalPayload, payload))
 }
+
+func TestRemotePayloadCodec_RetrySuccess(t *testing.T) {
+	attempts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		if attempts < 3 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte("temporarily unavailable"))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"payloads":[{"metadata":{"encoding":"anNvbi9wbGFpbg=="},"data":"InN1Y2Nlc3Mi"}]}`))
+	}))
+	defer server.Close()
+
+	codec := NewRemotePayloadCodec(RemotePayloadCodecOptions{
+		Endpoint: server.URL,
+		RetryOptions: RemotePayloadCodecRetryOptions{
+			InitialInterval:    1 * time.Millisecond,
+			BackoffCoefficient: 1.0,
+			MaximumAttempts:    4,
+		},
+	})
+
+	inPayload := &commonpb.Payload{
+		Metadata: map[string][]byte{MetadataEncoding: []byte("json/plain")},
+		Data:     []byte(`"test"`),
+	}
+
+	outPayloads, err := codec.Encode([]*commonpb.Payload{inPayload})
+	require.NoError(t, err)
+	require.Len(t, outPayloads, 1)
+	require.Equal(t, 3, attempts)
+}
+
+func TestRemotePayloadCodec_NonRetryableStatus(t *testing.T) {
+	attempts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte("bad request"))
+	}))
+	defer server.Close()
+
+	codec := NewRemotePayloadCodec(RemotePayloadCodecOptions{
+		Endpoint: server.URL,
+		RetryOptions: RemotePayloadCodecRetryOptions{
+			InitialInterval:    1 * time.Millisecond,
+			BackoffCoefficient: 1.0,
+			MaximumAttempts:    5,
+		},
+	})
+
+	inPayload := &commonpb.Payload{
+		Metadata: map[string][]byte{MetadataEncoding: []byte("json/plain")},
+		Data:     []byte(`"test"`),
+	}
+
+	_, err := codec.Encode([]*commonpb.Payload{inPayload})
+	require.Error(t, err)
+	require.Equal(t, 1, attempts)
+	var httpErr *HTTPStatusError
+	require.ErrorAs(t, err, &httpErr)
+	require.Equal(t, http.StatusBadRequest, httpErr.StatusCode)
+}
+
+func TestRemotePayloadCodec_CustomIsRetryable(t *testing.T) {
+	attempts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		if attempts < 2 {
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			_, _ = w.Write([]byte("retryable custom"))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"payloads":[{"metadata":{"encoding":"anNvbi9wbGFpbg=="},"data":"Im9rIg=="}]}`))
+	}))
+	defer server.Close()
+
+	codec := NewRemotePayloadCodec(RemotePayloadCodecOptions{
+		Endpoint: server.URL,
+		RetryOptions: RemotePayloadCodecRetryOptions{
+			InitialInterval:    1 * time.Millisecond,
+			BackoffCoefficient: 1.0,
+			MaximumAttempts:    3,
+			IsRetryable: func(err error) bool {
+				var httpErr *HTTPStatusError
+				if errors.As(err, &httpErr) {
+					return httpErr.StatusCode == http.StatusUnprocessableEntity
+				}
+				return false
+			},
+		},
+	})
+
+	inPayload := &commonpb.Payload{
+		Metadata: map[string][]byte{MetadataEncoding: []byte("json/plain")},
+		Data:     []byte(`"test"`),
+	}
+
+	outPayloads, err := codec.Decode([]*commonpb.Payload{inPayload})
+	require.NoError(t, err)
+	require.Len(t, outPayloads, 1)
+	require.Equal(t, 2, attempts)
+}
+
+func TestRemotePayloadCodec_DefaultNoRetry(t *testing.T) {
+	attempts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("server error"))
+	}))
+	defer server.Close()
+
+	// Default options has MaximumAttempts == 0 -> should only make 1 attempt
+	codec := NewRemotePayloadCodec(RemotePayloadCodecOptions{
+		Endpoint: server.URL,
+	})
+
+	inPayload := &commonpb.Payload{
+		Metadata: map[string][]byte{MetadataEncoding: []byte("json/plain")},
+		Data:     []byte(`"test"`),
+	}
+
+	_, err := codec.Encode([]*commonpb.Payload{inPayload})
+	require.Error(t, err)
+	require.Equal(t, 1, attempts)
+}
+
