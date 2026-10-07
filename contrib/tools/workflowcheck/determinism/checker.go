@@ -377,11 +377,12 @@ func (c *collector) checkRangeType(rangeType types.Type, n ast.Node, fn *types.F
 	return nil
 }
 
+// A function is non-deterministic if it has a direct reason or calls another
+// non-deterministic function in the same package. Start with functions that
+// have direct reasons, then mark their callers transitively to handle cycles.
+//
 // Expects to be called as second pass after all func infos collected.
 func (c *collector) applyFacts() PackageNonDeterminisms {
-	// A function is non-deterministic if it has reasons of its own or calls a
-	// same-package function that is. Walking from the functions with their own
-	// reasons back through callers handles call cycles without special casing.
 	callers := map[*funcInfo][]*funcInfo{}
 	nonDet := map[*funcInfo]bool{}
 	var pending []*funcInfo
