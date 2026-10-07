@@ -390,9 +390,11 @@ type SimplePluginOptions struct {
 	// of a replayer. Implementers can use this to close something started
 	// before.
 	//
-	// During worker stop, this callback runs before the supplied StopWorker next
-	// function stops polling and task work. Stop callers wait for both this
-	// callback and the remaining SDK cleanup to finish.
+	// During worker stop, this callback runs before SimplePlugin calls the
+	// StopWorker next function to stop polling and task work. Stop callers wait
+	// for both this callback and the remaining worker cleanup to finish.
+	// This callback receives no next function and must not synchronously call
+	// the same worker's Stop: that call waits for this callback and deadlocks.
 	RunContextAfter func(context.Context, SimplePluginRunContextAfterOptions)
 }
 

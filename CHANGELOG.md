@@ -38,6 +38,9 @@ to docs, or any other relevant information.
 
 ### :boom: Breaking Changes
 
+- Plugin cleanup must not synchronously call the same worker's `Stop`: it now waits
+  for that cleanup to finish and deadlocks. This includes `SimplePlugin.RunContextAfter`,
+  whose callback receives no `next` function.
 - Bulk sticky workflow cache cleanup, including `PurgeStickyWorkflowCache` and final-worker
   shutdown, no longer increments `temporal_sticky_cache_total_forced_eviction`. This aligns bulk
   cleanup with Java and Core-based SDKs. Qualifying capacity and other per-workflow removals remain
@@ -45,15 +48,11 @@ to docs, or any other relevant information.
 
 ### Fixed
 
-- Fatal worker notification and automatic stopping now run outside polling
-  goroutines, allowing pollers to retire without waiting for their own stop.
-  The first fatal error signals remote-task polling to stop before notification.
-  Polling loops recheck that signal after capacity, slot, and pacing waits;
-  attempts already past their final stop check may still start or complete.
-  Concurrent `Worker.Stop` calls join one complete SDK cleanup operation, and
-  `Worker.Run` joins that cleanup and returns the first fatal cause even when
-  interruption races with it. `OnFatalError` may call `Stop`; an independent stop
-  can finish before that asynchronous callback finishes.
+- Fatal worker errors now signal polling to stop before notification and run
+  notification and automatic stopping outside polling goroutines to avoid waiting
+  for the reporting poller itself. Concurrent `Worker.Stop` calls and `Worker.Run`
+  wait for worker cleanup, and `Run` returns the first fatal error even when
+  interruption races with it.
 - Child context cancellation now follows creation order by default.
 - Legacy query failure responses (`RespondQueryTaskCompletedRequest`) now set
   `WorkflowTaskFailedCause` for workflow task failures: `PAYLOADS_TOO_LARGE` for oversized payloads,

@@ -359,7 +359,7 @@ type (
 		// here and in client options.
 		Interceptors []WorkerInterceptor
 
-		// Optional: Callback invoked once for the first fatal error. The SDK
+		// Optional: Callback invoked once for the first fatal error. The worker
 		// records that error and signals remote-task polling to stop before
 		// scheduling the callback on a goroutine outside the worker's polling
 		// and task shutdown waits. Attempts already past their final stop check

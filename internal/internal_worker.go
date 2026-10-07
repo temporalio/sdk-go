@@ -1344,7 +1344,7 @@ type AggregatedWorker struct {
 	// Child worker stop channels are closed later by their own Stop methods.
 	stopC    chan struct{}
 	stopOnce sync.Once
-	// stopDone closes after the selected Stop caller finishes all SDK cleanup.
+	// stopDone closes after the selected Stop caller finishes all worker cleanup.
 	// Other Stop callers wait here without holding the owner selection lock.
 	stopDone     chan struct{}
 	fatalErr     error
@@ -1676,9 +1676,10 @@ func getBinaryChecksum() string {
 // Pass worker.InterruptCh() to stop the worker with SIGINT or SIGTERM.
 // Pass nil to stop the worker with external Stop() call.
 // Pass any other `<-chan interface{}` and Run will wait for signal from that channel.
-// Returns the startup error if Start fails. After a successful start, joins SDK
-// stop cleanup and returns the first fatal error, even if interruption races
-// with that error. Returns nil when the worker stops without a fatal error.
+// Returns the startup error if Start fails. After a successful start, waits for
+// worker cleanup and returns the first fatal error, even if interruption races
+// with that error. Returns nil if no fatal error was recorded, even if cleanup
+// encounters errors.
 func (aw *AggregatedWorker) Run(interruptCh <-chan any) error {
 	if err := aw.Start(); err != nil {
 		return err
@@ -1696,7 +1697,7 @@ func (aw *AggregatedWorker) Run(interruptCh <-chan any) error {
 	return aw.fatalErr
 }
 
-// Stop prevents new polling and waits for the worker's SDK cleanup to return.
+// Stop prevents new polling and waits for worker cleanup to return.
 // Concurrent calls wait for the same cleanup operation.
 func (aw *AggregatedWorker) Stop() {
 	ownsStop := false
