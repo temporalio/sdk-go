@@ -122,9 +122,10 @@ func NewProviders(ctx context.Context, cfg Config) (*sdkmetric.MeterProvider, *s
 // buildResource merges the default resource with service.name and any caller
 // supplied resource options, so metrics and traces share one resource.
 func buildResource(ctx context.Context, cfg Config) (*resource.Resource, error) {
+	// service.name is stable; inherit the default resource's schema.
 	res, err := resource.Merge(
 		resource.Default(),
-		resource.NewWithAttributes(semconv.SchemaURL, semconv.ServiceName(cfg.ServiceName)),
+		resource.NewSchemaless(semconv.ServiceName(cfg.ServiceName)),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("creating OpenTelemetry resource: %w", err)
