@@ -88,6 +88,7 @@ func (m *heartbeatManager) sharedNamespaceWorkerForLocked(namespace string) *sha
 		stopC:                         make(chan struct{}),
 		stoppedC:                      make(chan struct{}),
 		logger:                        m.logger,
+		pollerGroups:                  newPollerGroupManager(newPollerGroupSnapshotStore()),
 	}
 	m.workers[namespace] = hw
 	return hw
@@ -113,6 +114,7 @@ func (m *heartbeatManager) registerWorker(
 	defer m.workersMutex.Unlock()
 
 	hw := m.sharedNamespaceWorkerForLocked(namespace)
+	hw.pollerGroups.updateGroups(nsData.pollerGroupsInfo)
 
 	hw.callbacksMutex.Lock()
 	hw.callbacks[worker.workerInstanceKey] = worker.heartbeatCallback
@@ -173,6 +175,7 @@ type sharedNamespaceWorker struct {
 	workerControlTaskQueue        string
 	workerInstanceKey             string
 	metricsHandler                metrics.Handler
+	pollerGroups                  *pollerGroupManager
 
 	// stopC is created when the namespace heartbeat worker starts and closed by
 	// sharedNamespaceWorker.stop() to tell run() to exit.
@@ -246,8 +249,8 @@ func (hw *sharedNamespaceWorker) sendHeartbeats() error {
 		Namespace:       hw.namespace,
 		Identity:        hw.client.identity,
 		WorkerHeartbeat: heartbeats,
+		ResourceId:      fmt.Sprintf("worker:%s", hw.client.workerGroupingKey),
 	})
-
 	if err != nil {
 		if status.Code(err) == codes.Unimplemented {
 			// Server doesn't support heartbeats; return error to stop the worker.
@@ -265,41 +268,81 @@ func (hw *sharedNamespaceWorker) sendHeartbeats() error {
 }
 
 func (hw *sharedNamespaceWorker) runWorkerCommands() {
+	pollerRunner := newAutoscalingTaskPollerRunner(
+		newPollerAutoscaler(pollerAutoscalerOptions{
+			initialPollerCount: 1,
+			maxPollerCount:     1,
+			minPollerCount:     1,
+		}),
+		hw.pollerGroups,
+	)
+	var pollWG sync.WaitGroup
+	defer pollWG.Wait()
+
 	for {
-		select {
-		case <-hw.workerCtx.Done():
+		if hw.workerCtx.Err() != nil {
 			return
-		default:
 		}
 
-		task, err := hw.pollWorkerCommandTask()
+		admission, err := pollerRunner.acquire(hw.workerCtx)
 		if err != nil {
-			if hw.workerCtx.Err() != nil {
-				return
-			}
-			hw.logger.Warn("Failed polling worker command task", "Error", err)
-			select {
-			case <-time.After(time.Second):
-			case <-hw.workerCtx.Done():
-				return
-			}
-			continue
-		}
-		if task == nil || len(task.TaskToken) == 0 {
-			continue
-		}
-		if task.GetRequest() == nil {
-			hw.logger.Warn("Received worker command task with nil request")
-			continue
+			return
 		}
 
-		if err := hw.handleWorkerCommandTask(task); err != nil {
-			hw.logger.Warn("Failed handling worker command task", "Error", err)
-		}
+		pollWG.Go(func() {
+			defer admission.release()
+
+			task, err := hw.pollWorkerCommand(admission.groupLease)
+			if err != nil {
+				if hw.workerCtx.Err() == nil {
+					hw.logger.Warn("Failed polling worker command task", "Error", err)
+				}
+				timer := time.NewTimer(time.Second)
+				defer timer.Stop()
+				select {
+				case <-timer.C:
+				case <-hw.workerCtx.Done():
+				}
+				return
+			}
+
+			if task == nil {
+				return
+			}
+
+			if err := hw.handleWorkerCommandTask(task); err != nil {
+				hw.logger.Warn("Failed handling worker command task", "Error", err)
+			}
+		})
 	}
 }
 
-func (hw *sharedNamespaceWorker) pollWorkerCommandTask() (*workflowservice.PollNexusTaskQueueResponse, error) {
+func (hw *sharedNamespaceWorker) pollWorkerCommand(
+	lease pollerGroupLease,
+) (
+	*workflowservice.PollNexusTaskQueueResponse,
+	error,
+) {
+	task, err := hw.pollWorkerCommandTask(lease.groupIDOrEmpty())
+	if err != nil {
+		return nil, err
+	}
+	if task != nil {
+		hw.pollerGroups.updateGroups(task.GetPollerGroupsInfo())
+	}
+	if task == nil || len(task.TaskToken) == 0 {
+		return nil, nil
+	}
+	if task.GetRequest() == nil {
+		hw.logger.Warn("Received worker command task with nil request")
+		return nil, nil
+	}
+	return task, nil
+}
+
+func (hw *sharedNamespaceWorker) pollWorkerCommandTask(
+	pollerGroupID string,
+) (*workflowservice.PollNexusTaskQueueResponse, error) {
 	rpcMetricsHandler := hw.metricsHandler.WithTags(metrics.TaskQueueTags(hw.workerControlTaskQueue))
 	grpcCtx, cancel := newGRPCContext(
 		hw.workerCtx,
@@ -322,6 +365,7 @@ func (hw *sharedNamespaceWorker) pollWorkerCommandTask() (*workflowservice.PollN
 			BuildId:              "1.0",
 			WorkerVersioningMode: enumspb.WORKER_VERSIONING_MODE_UNVERSIONED,
 		},
+		PollerGroupId: pollerGroupID,
 	})
 }
 

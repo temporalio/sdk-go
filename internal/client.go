@@ -970,8 +970,6 @@ type (
 		//
 		// Plugins themselves should never mutate this field, the behavior is
 		// undefined.
-		//
-		// NOTE: Experimental
 		Plugins []ClientPlugin
 
 		// WorkerHeartbeatInterval is the interval at which the worker will send heartbeats to the server.
@@ -1304,8 +1302,6 @@ type (
 
 		// Priority - Optional priority settings that control relative ordering of
 		// task processing when tasks are backed up in a queue.
-		//
-		// WARNING: Task queue priority is currently experimental.
 		Priority Priority
 
 		// responseInfo - Optional pointer to store information of StartWorkflowExecution response.
@@ -1400,8 +1396,6 @@ type (
 	// For all fields, the field not present or equal to zero/empty string means to
 	// inherit the value from the calling workflow, or if there is no calling
 	// workflow, then use the default value.
-	//
-	// WARNING: Task queue priority is currently experimental.
 	//
 	// Exposed as: [go.temporal.io/sdk/temporal.Priority]
 	Priority struct {
@@ -1646,6 +1640,7 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 	if options.DataConverter == nil {
 		options.DataConverter = converter.GetDefaultDataConverter()
 	}
+	options.DataConverter = converter.MakeTransferAware(options.DataConverter)
 
 	if options.FailureConverter == nil {
 		options.FailureConverter = GetDefaultFailureConverter()

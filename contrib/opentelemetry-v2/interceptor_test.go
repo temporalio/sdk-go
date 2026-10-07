@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/suite"
 	"go.opentelemetry.io/otel/codes"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 
 	"go.temporal.io/sdk/temporal"
@@ -24,6 +25,10 @@ func spanKindWorkflow(ctx workflow.Context) error {
 func benignErrorWorkflow(workflow.Context) error {
 	return temporal.NewApplicationErrorWithOptions("expected error", "BenignError",
 		temporal.ApplicationErrorOptions{Category: temporal.ApplicationErrorCategoryBenign})
+}
+
+func continueAsNewWorkflow(ctx workflow.Context) error {
+	return workflow.NewContinueAsNewError(ctx, continueAsNewWorkflow)
 }
 
 type interceptorTestSuite struct {
@@ -69,5 +74,25 @@ func (s *interceptorTestSuite) TestSpanErrorStatus() {
 		spans := recorder.Ended()
 		s.Require().Len(spans, 1)
 		s.Require().Equal(codes.Error, spans[0].Status().Code)
+	})
+
+	s.Run("continue-as-new", func() {
+		recorder, env := s.newTestWorkflowEnvironment()
+		env.ExecuteWorkflow(continueAsNewWorkflow)
+		var continueAsNewErr *workflow.ContinueAsNewError
+		s.Require().ErrorAs(env.GetWorkflowError(), &continueAsNewErr)
+		spans := recorder.Ended()
+		s.Require().Len(spans, 2)
+		var runSpan sdktrace.ReadOnlySpan
+		for _, sp := range spans {
+			if sp.Name() == "RunWorkflow:continueAsNewWorkflow" {
+				runSpan = sp
+			}
+		}
+		s.Require().NotNil(runSpan)
+		// Continue-as-new is normal control flow: no error status, no
+		// recorded exception event.
+		s.Require().Equal(codes.Unset, runSpan.Status().Code)
+		s.Require().Empty(runSpan.Events())
 	})
 }

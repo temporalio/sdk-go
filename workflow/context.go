@@ -1,8 +1,6 @@
 package workflow
 
-import (
-	"go.temporal.io/sdk/internal"
-)
+import "go.temporal.io/sdk/internal"
 
 // Context is a clone of context.Context with Done() returning Channel instead
 // of native channel.
