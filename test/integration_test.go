@@ -5531,6 +5531,9 @@ func (ts *IntegrationTestSuite) testWorkerFatalError(useWorkerRun bool) {
 	// Create a worker that uses that client
 	callbackErrCh := make(chan error, 1)
 	w := worker.New(c, "ignored-task-queue", worker.Options{OnFatalError: func(err error) { callbackErrCh <- err }})
+	// Fatal notification can arrive before SDK cleanup finishes. Join that
+	// cleanup before the client's deferred Close runs.
+	defer w.Stop()
 
 	// Do run-based or start-based worker
 	runErrCh := make(chan error, 1)

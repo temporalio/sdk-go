@@ -1,6 +1,8 @@
 package internal
 
-// All code in this file is private to the package.
+// Worker constructors allocate the SDK polling resources in this file. Startup
+// uses Stop's mutex to finish each launch before cleanup can inspect that child.
+// Custom metrics and logging run outside launch, so their callbacks can Stop.
 
 import (
 	"context"
@@ -219,6 +221,7 @@ type (
 		logger                       log.Logger
 		stopTimeout                  time.Duration
 		fatalErrCb                   func(error)
+		noRepoll                     *atomic.Bool
 		backgroundContextCancel      context.CancelCauseFunc
 		metricsHandler               metrics.Handler
 		sessionTokenBucket           *sessionTokenBucket
@@ -258,7 +261,7 @@ type (
 		lastPollTaskErrStarted time.Time
 		lastPollTaskErrLock    sync.Mutex
 
-		noRepoll atomic.Bool
+		noRepoll *atomic.Bool
 		pollerWG sync.WaitGroup
 	}
 
@@ -372,8 +375,20 @@ func createPollResourceExhaustedRetryPolicy() backoff.RetryPolicy {
 func newBaseWorker(
 	options baseWorkerOptions,
 ) *baseWorker {
-	ctx, cancel := context.WithCancel(context.Background())
-	taskLimiterCtx, taskLimiterCancel := context.WithCancel(context.Background())
+	bw := prepareBaseWorker(options)
+	bw.initializeResources()
+	return bw
+}
+
+// prepareBaseWorker calls constructor instrumentation before allocating worker
+// contexts or channels. A caller can discard the result if shutdown prevents
+// construction without leaving resources that need worker cleanup.
+func prepareBaseWorker(options baseWorkerOptions) *baseWorker {
+	// A separately constructed worker gets its own polling-stop flag. Children
+	// of one SDK worker share its flag so a fatal error stops their remote polls.
+	if options.noRepoll == nil {
+		options.noRepoll = &atomic.Bool{}
+	}
 	logger := log.With(options.logger, tagWorkerType, options.workerType)
 	if heartbeatHandler, isHeartbeat := options.metricsHandler.(*heartbeatMetricsHandler); isHeartbeat {
 		options.metricsHandler = heartbeatHandler.forWorker(options.workerType)
@@ -385,37 +400,39 @@ func newBaseWorker(
 		workerBuildId:  options.buildId,
 		workerIdentity: options.identity,
 	})
-	bw := &baseWorker{
+	return &baseWorker{
 		options:        options,
-		stopCh:         make(chan struct{}),
-		taskLimiter:    rate.NewLimiter(rate.Limit(options.maxTaskPerSecond), 1),
-		retrier:        backoff.NewConcurrentRetrier(pollOperationRetryPolicy),
 		logger:         logger,
 		metricsHandler: metricsHandler,
-
-		slotSupplier: tss,
-		// No buffer, so pollers are only able to poll for new tasks after the previous one is
-		// dispatched.
-		taskQueueCh: make(chan eagerOrPolledTask),
-		// Allow enough capacity so that eager dispatch will not block. There's an upper limit of
-		// 2k pending activities so this channel never needs to be larger than that.
-		eagerTaskQueueCh: make(chan eagerTask, 2000),
-		fatalErrCb:       options.fatalErrCb,
-
-		limiterContext:           ctx,
-		limiterContextCancel:     cancel,
-		taskLimiterContext:       taskLimiterCtx,
-		taskLimiterContextCancel: taskLimiterCancel,
-		sessionTokenBucket:       options.sessionTokenBucket,
+		slotSupplier:   tss,
+		noRepoll:       options.noRepoll,
 	}
+}
+
+// initializeResources receives prepared instrumentation and allocates the SDK
+// channels, limiters, and contexts. It invokes no custom callback; its caller
+// owns cancellation until the complete worker is returned or published.
+func (bw *baseWorker) initializeResources() {
+	bw.validatePollers(bw.options.taskPollers)
+	bw.stopCh = make(chan struct{})
+	bw.taskLimiter = rate.NewLimiter(rate.Limit(bw.options.maxTaskPerSecond), 1)
+	bw.retrier = backoff.NewConcurrentRetrier(pollOperationRetryPolicy)
+	// No buffer, so pollers are only able to poll for new tasks after the previous one is
+	// dispatched.
+	bw.taskQueueCh = make(chan eagerOrPolledTask)
+	// Allow enough capacity so that eager dispatch will not block. There's an upper limit of
+	// 2k pending activities so this channel never needs to be larger than that.
+	bw.eagerTaskQueueCh = make(chan eagerTask, 2000)
+	bw.fatalErrCb = bw.options.fatalErrCb
+	bw.sessionTokenBucket = bw.options.sessionTokenBucket
 	// Set secondary retrier as resource exhausted
 	bw.retrier.SetSecondaryRetryPolicy(pollResourceExhaustedRetryPolicy)
-	if options.pollerRate > 0 {
-		bw.pollLimiter = rate.NewLimiter(rate.Limit(options.pollerRate), 1)
+	if bw.options.pollerRate > 0 {
+		bw.pollLimiter = rate.NewLimiter(rate.Limit(bw.options.pollerRate), 1)
 	}
-	bw.validatePollers(options.taskPollers)
-
-	return bw
+	// Allocate contexts last so earlier validation cannot leave them unowned.
+	bw.limiterContext, bw.limiterContextCancel = context.WithCancel(context.Background())
+	bw.taskLimiterContext, bw.taskLimiterContextCancel = context.WithCancel(context.Background())
 }
 
 // initializeTaskPollers must be called at most once and before Start().
@@ -461,7 +478,14 @@ func (bw *baseWorker) Start() {
 	}
 
 	bw.metricsHandler.Counter(metrics.WorkerStartCounter).Inc(1)
+	bw.startPolling()
+	bw.logStarted()
+}
 
+// With startup accepted, startPolling launches the SDK polling and dispatch
+// groups without a synchronous custom callback. Aggregate startup holds Stop's
+// mutex for this call, so its cleanup sees every registered group.
+func (bw *baseWorker) startPolling() {
 	for _, taskWorker := range bw.options.taskPollers {
 		if taskWorker.autoscalingRunner != nil {
 			// Autoscaling pollers are created with both a runner and an autoscaler.
@@ -499,6 +523,12 @@ func (bw *baseWorker) Start() {
 	go bw.runEagerTaskDispatcher()
 
 	bw.isWorkerStarted = true
+}
+
+// After polling launches, logStarted emits the existing verbose startup event.
+// The synchronous logger runs outside Stop's mutex, so it can call Stop and
+// return to the original startup caller.
+func (bw *baseWorker) logStarted() {
 	traceLog(func() {
 		bw.logger.Info("Started Worker",
 			"MaxTaskPerSecond", bw.options.maxTaskPerSecond,
@@ -545,6 +575,10 @@ func (bw *baseWorker) runPoller(taskWorker scalableTaskPoller) {
 				}
 				continue
 			}
+			if bw.noRepoll.Load() {
+				bw.releaseSlot(permit, SlotReleaseReasonUnused)
+				return
+			}
 			if bw.sessionTokenBucket != nil && !bw.sessionTokenBucket.waitForAvailableToken() {
 				bw.releaseSlot(permit, SlotReleaseReasonUnused)
 				return
@@ -578,6 +612,12 @@ func (bw *baseWorker) runAutoscalingPoller(taskWorker scalableTaskPoller) {
 		if err != nil {
 			return
 		}
+		// A fatal poll can release capacity while this manager waits for it.
+		// Return that capacity instead of opening a replacement poll.
+		if bw.noRepoll.Load() {
+			admission.release()
+			return
+		}
 
 		bw.reserveSlotAsync(ctx, reserveChan, taskWorker)
 
@@ -595,6 +635,11 @@ func (bw *baseWorker) runAutoscalingPoller(taskWorker scalableTaskPoller) {
 				time.Sleep(time.Second)
 			}
 			continue
+		}
+		if bw.noRepoll.Load() {
+			bw.releaseSlot(permit, SlotReleaseReasonUnused)
+			admission.release()
+			return
 		}
 
 		if bw.sessionTokenBucket != nil && !bw.sessionTokenBucket.waitForAvailableToken() {
@@ -804,6 +849,11 @@ func (bw *baseWorker) pollTask(
 
 	bw.retrier.Throttle(bw.stopCh)
 	if bw.pollLimiter == nil || bw.pollLimiter.Wait(bw.limiterContext) == nil {
+		// Shutdown or a fatal error may arrive while pacing holds this poll.
+		// The deferred release returns its unused slot without polling.
+		if bw.noRepoll.Load() {
+			return
+		}
 		task, err = taskWorker.taskPoller.PollTask(lease)
 		bw.logPollTaskError(err)
 		if err != nil {
@@ -899,6 +949,13 @@ func isNonRetriableError(err error) bool {
 // Stop is a blocking call and cleans up all the resources associated with worker.
 func (bw *baseWorker) Stop() {
 	if !bw.isWorkerStarted {
+		// A constructed child that never launched still owns these contexts.
+		// Cancel them without waiting for any polling or dispatch group.
+		bw.limiterContextCancel()
+		bw.taskLimiterContextCancel()
+		if bw.options.backgroundContextCancel != nil {
+			bw.options.backgroundContextCancel(ErrWorkerShutdown)
+		}
 		return
 	}
 	close(bw.stopCh)
@@ -923,10 +980,6 @@ func (bw *baseWorker) Stop() {
 	}
 
 	bw.isWorkerStarted = false
-}
-
-func (bw *baseWorker) stopPolling() {
-	bw.noRepoll.Store(true)
 }
 
 func newPollerAutoscaler(options pollerAutoscalerOptions) *pollerAutoscaler {

@@ -1,3 +1,7 @@
+// Nexus startup supplies this poller with its already-created metric handle, so
+// construction stores dependencies without calling custom instrumentation.
+// Polling and task processing invoke those dependencies after the worker starts
+// and return their errors to the worker's polling and dispatch loops.
 package internal
 
 import (
@@ -14,24 +18,26 @@ import (
 	"go.temporal.io/sdk/log"
 )
 
-type nexusTaskPoller struct {
-	basePoller
-	namespace              string
-	taskQueueName          string
-	identity               string
-	service                workflowservice.WorkflowServiceClient
-	taskHandler            *nexusTaskHandler
-	logger                 log.Logger
-	numPollerMetric        *numPollerMetric
-	inboundPayloadVisitor  PayloadVisitor
-	outboundPayloadVisitor PayloadVisitor
-	backgroundContext      context.Context
-	pollerGroups           *pollerGroupManager
-}
+type (
+	nexusTaskPoller struct {
+		basePoller
+		namespace              string
+		taskQueueName          string
+		identity               string
+		service                workflowservice.WorkflowServiceClient
+		taskHandler            *nexusTaskHandler
+		logger                 log.Logger
+		numPollerMetric        *numPollerMetric
+		inboundPayloadVisitor  PayloadVisitor
+		outboundPayloadVisitor PayloadVisitor
+		backgroundContext      context.Context
+		pollerGroups           *pollerGroupManager
+	}
 
-type nexusTask struct {
-	task *workflowservice.PollNexusTaskQueueResponse
-}
+	nexusTask struct {
+		task *workflowservice.PollNexusTaskQueueResponse
+	}
+)
 
 var _ taskPoller = &nexusTaskPoller{}
 
@@ -40,6 +46,7 @@ func newNexusTaskPoller(
 	service workflowservice.WorkflowServiceClient,
 	params workerExecutionParameters,
 	pollerGroups *pollerGroupManager,
+	numPollerMetric *numPollerMetric,
 ) *nexusTaskPoller {
 	backgroundContext := params.BackgroundContext
 	if backgroundContext == nil {
@@ -64,7 +71,7 @@ func newNexusTaskPoller(
 		taskQueueName:   params.TaskQueue,
 		identity:        params.Identity,
 		logger:          params.Logger,
-		numPollerMetric: newNumPollerMetric(params.MetricsHandler, metrics.PollerTypeNexusTask),
+		numPollerMetric: numPollerMetric,
 
 		inboundPayloadVisitor:  params.inboundPayloadVisitor,
 		outboundPayloadVisitor: params.outboundPayloadVisitor,

@@ -113,11 +113,11 @@ type WorkerPlugin interface {
 		next func(context.Context, WorkerPluginStartWorkerOptions) error,
 	) error
 
-	// StopWorker is called to stop a worker. This is called on Worker.Stop or
-	// if Worker.Run is interrupted via its interrupt channel. However, if a
-	// fatal worker error occurs during Worker.Run, this may not be called.
-	// Implementers can account for this situation by setting OnFatalError in
-	// the worker options. Implementers should invoke next.
+	// StopWorker is called once when worker cleanup runs, including explicit
+	// Stop, interrupted Run, and fatal worker errors. Implementers must invoke
+	// the supplied next function to stop the worker's polling and task work.
+	// Calling Worker.Stop from this function would wait for its own cleanup;
+	// use next instead.
 	StopWorker(
 		ctx context.Context,
 		options WorkerPluginStopWorkerOptions,
@@ -360,8 +360,9 @@ type SimplePluginOptions struct {
 	// of a replayer. Implementers can use this to close something started
 	// before.
 	//
-	// See the note on [WorkerPlugin.StopWorker] about rare situations in which
-	// this may not run on worker completion.
+	// During worker stop, this callback runs before the supplied StopWorker next
+	// function stops polling and task work. Stop callers wait for both this
+	// callback and the remaining SDK cleanup to finish.
 	RunContextAfter func(context.Context, SimplePluginRunContextAfterOptions)
 }
 
