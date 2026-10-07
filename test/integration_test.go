@@ -3644,9 +3644,8 @@ func (ts *IntegrationTestSuite) testOpenTelemetryTracing(withMessages bool, upda
 	ts.NoError(ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "finish-signal", nil))
 	ts.NoError(run.Get(ctx, nil))
 
-	// Finish span and collect
+	// Finish span
 	rootSpan.End()
-	spans := ts.openTelemetrySpanRecorder.Ended()
 
 	updateOpName := "UpdateWorkflow"
 	if updateWithStart {
@@ -3678,8 +3677,6 @@ func (ts *IntegrationTestSuite) testOpenTelemetryTracing(withMessages bool, upda
 	}
 
 	// Confirm expected
-	actual := interceptortest.Span("root-span")
-	ts.addOpenTelemetryChildren(rootSpan.SpanContext().SpanID(), actual, spans)
 	expected := span("root-span",
 		span("SignalWithStartWorkflow:SignalsQueriesAndUpdate",
 			span("HandleSignal:start-signal"),
@@ -3783,7 +3780,11 @@ func (ts *IntegrationTestSuite) testOpenTelemetryTracing(withMessages bool, upda
 			span("HandleSignal:finish-signal"),
 		),
 	)
-	ts.Equal(expected, actual)
+	ts.EventuallyWithT(func(c *assert.CollectT) {
+		actual := interceptortest.Span("root-span")
+		ts.addOpenTelemetryChildren(rootSpan.SpanContext().SpanID(), actual, ts.openTelemetrySpanRecorder.Ended())
+		assert.Equal(c, expected, actual)
+	}, time.Second, 10*time.Millisecond)
 }
 
 func (ts *IntegrationTestSuite) addOpenTelemetryChildren(
