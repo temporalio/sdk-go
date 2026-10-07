@@ -96,6 +96,7 @@ func (t *tracerImpl) Options() interceptor.TracerOptions {
 		HeaderKey:            headerKey,
 		DisableSignalTracing: t.opts.DisableSignalTracing,
 		DisableQueryTracing:  t.opts.DisableQueryTracing,
+		DisableUpdateTracing: t.opts.DisableUpdateTracing,
 	}
 }
 
