@@ -479,6 +479,16 @@ type (
 		// WARNING: Worker versioning is currently experimental
 		VersioningIntent VersioningIntent
 
+		// VersioningOverride sets an explicit versioning configuration for the child workflow.
+		// When set, this takes precedence over versioning inherited from the parent workflow.
+		//
+		// Optional: defaults to no override.
+		//
+		// This option requires Temporal Server 1.32.0 or later.
+		//
+		// NOTE: Experimental
+		VersioningOverride VersioningOverride
+
 		// StaticSummary is a single-line fixed summary for this child workflow execution that will appear in UI/CLI. This can be
 		// in single-line Temporal Markdown format.
 		//
@@ -1993,6 +2003,7 @@ func WithChildWorkflowOptions(ctx Context, cwo ChildWorkflowOptions) Context {
 	wfOptions.TypedSearchAttributes = cwo.TypedSearchAttributes
 	wfOptions.ParentClosePolicy = cwo.ParentClosePolicy
 	wfOptions.VersioningIntent = cwo.VersioningIntent
+	wfOptions.VersioningOverride = cwo.VersioningOverride
 	wfOptions.StaticSummary = cwo.StaticSummary
 	wfOptions.StaticDetails = cwo.StaticDetails
 	wfOptions.Priority = ConvertToPBPriority(cwo.Priority)
@@ -2025,6 +2036,7 @@ func GetChildWorkflowOptions(ctx Context) ChildWorkflowOptions {
 		TypedSearchAttributes:    opts.TypedSearchAttributes,
 		ParentClosePolicy:        opts.ParentClosePolicy,
 		VersioningIntent:         opts.VersioningIntent,
+		VersioningOverride:       opts.VersioningOverride,
 		StaticSummary:            opts.StaticSummary,
 		StaticDetails:            opts.StaticDetails,
 	}
@@ -2679,8 +2691,13 @@ func WithLocalActivityOptions(ctx Context, options LocalActivityOptions) Context
 }
 
 func applyRetryPolicyDefaultsForLocalActivity(policy *RetryPolicy) *RetryPolicy {
+	// Copy the policy so the defaults do not modify the value the caller owns.
+	// The caller can share one policy between workflows that run concurrently.
 	if policy == nil {
 		policy = &RetryPolicy{}
+	} else {
+		policyCopy := *policy
+		policy = &policyCopy
 	}
 	if policy.BackoffCoefficient == 0 {
 		policy.BackoffCoefficient = 2
