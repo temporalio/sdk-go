@@ -74,6 +74,9 @@ to docs, or any other relevant information.
   `WORKFLOW_WORKER_UNHANDLED_FAILURE` when the workflow panicked.
 - Autoscaling pollers now honor configured bounds at startup, preventing excess polls and workflow
   polling delays.
+- `workflow.WithLocalActivityOptions` no longer modifies the `RetryPolicy` passed in
+  `LocalActivityOptions`. It applies the default retry values to a copy, so sharing one policy between
+  workflows no longer writes to it from several goroutines.
 - Worker plugin registry callbacks: `RegisterDynamicWorkflow` now passes the real options to
   `OnRegisterDynamicWorkflow`, and `RegisterDynamicActivity` no longer panics when a plugin set
   `OnRegisterActivity` but not `OnRegisterDynamicActivity`.
