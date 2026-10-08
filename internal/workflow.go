@@ -2679,8 +2679,13 @@ func WithLocalActivityOptions(ctx Context, options LocalActivityOptions) Context
 }
 
 func applyRetryPolicyDefaultsForLocalActivity(policy *RetryPolicy) *RetryPolicy {
+	// Copy the policy so the defaults do not modify the value the caller owns.
+	// The caller can share one policy between workflows that run concurrently.
 	if policy == nil {
 		policy = &RetryPolicy{}
+	} else {
+		policyCopy := *policy
+		policy = &policyCopy
 	}
 	if policy.BackoffCoefficient == 0 {
 		policy.BackoffCoefficient = 2
