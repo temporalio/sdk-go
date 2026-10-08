@@ -2269,6 +2269,7 @@ func (s *internalWorkerTestSuite) TestWorkerFatalErrorReleasesCacheOwnership() {
 	worker := createWorker(s.service)
 	s.NoError(worker.Start())
 	worker.executionParams.WorkerFatalErrorCallback(errors.New("fatal worker error"))
+	worker.Stop()
 
 	select {
 	case <-worker.stopC:
@@ -3574,7 +3575,7 @@ func TestWorkerOptionNonDefaults(t *testing.T) {
 		namespace:          "worker-options-test",
 		registry:           nil,
 		identity:           "143@worker-options-test-1",
-		dataConverter:      &converter.CompositeDataConverter{},
+		dataConverter:      converter.MakeTransferAware(&converter.CompositeDataConverter{}),
 		failureConverter:   GetDefaultFailureConverter(),
 		contextPropagators: nil,
 		logger:             ilog.NewNopLogger(),
@@ -3625,7 +3626,7 @@ func TestWorkerOptionNonDefaults(t *testing.T) {
 		TaskQueueActivitiesPerSecond:   options.TaskQueueActivitiesPerSecond,
 		WorkerLocalActivitiesPerSecond: options.WorkerLocalActivitiesPerSecond,
 		StickyScheduleToStartTimeout:   options.StickyScheduleToStartTimeout,
-		DataConverter:                  client.dataConverter,
+		DataConverter:                  converter.MakeTransferAware(client.dataConverter),
 		FailureConverter:               client.failureConverter,
 		Logger:                         client.logger,
 		MetricsHandler:                 client.metricsHandler,

@@ -359,8 +359,16 @@ type (
 		// here and in client options.
 		Interceptors []WorkerInterceptor
 
-		// Optional: Callback invoked on fatal error. Immediately after this
-		// returns, Worker.Stop() will be called.
+		// Optional: Callback invoked once for the first fatal error. The worker
+		// records that error and signals remote-task polling to stop before
+		// scheduling the callback on a goroutine outside the worker's polling
+		// and task shutdown waits. Attempts already past their final stop check
+		// may still start or complete. After the callback returns, Worker.Stop()
+		// is called.
+		//
+		// The callback may call Worker.Stop(). An independently requested Stop
+		// or Run may finish before this callback finishes; stop completion does
+		// not mean the callback has delivered its notification.
 		OnFatalError func(error)
 
 		// Optional: Disable eager activities. If set to true, activities will not
@@ -502,8 +510,6 @@ type (
 		//
 		// Plugins themselves should never mutate this field, the behavior is
 		// undefined.
-		//
-		// NOTE: Experimental
 		Plugins []WorkerPlugin
 
 		// MaxConcurrentWorkflowTaskExternalStorageVisits sets how many external
