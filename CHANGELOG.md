@@ -57,8 +57,8 @@ to docs, or any other relevant information.
 
 ### Fixed
 
-- Local activity mock lookup in `TestWorkflowEnvironment` now preserves the resolved activity name,
-  preventing mocks from being selected under another registered name when function names collide.
+- Local activity mock lookup in `TestWorkflowEnvironment` no longer tries re-resolving the activity name.
+  This fixes a bug where two closures with different registered names would alias each other.
 - Child context cancellation now follows creation order by default.
 - Legacy query failure responses (`RespondQueryTaskCompletedRequest`) now set
   `WorkflowTaskFailedCause` for workflow task failures: `PAYLOADS_TOO_LARGE` for oversized payloads,
