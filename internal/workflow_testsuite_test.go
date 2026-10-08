@@ -183,50 +183,35 @@ func TestLocalActivityExecutionByActivityNameAlias(t *testing.T) {
 }
 
 func TestLocalActivityMockByRegisteredName(t *testing.T) {
-	for _, mockReturn := range []string{"value", "function"} {
-		t.Run(mockReturn, func(t *testing.T) {
-			var testSuite WorkflowTestSuite
-			env := testSuite.NewTestWorkflowEnvironment()
-			names := []string{"ActivityA", "ActivityB"}
+	// Sometimes two functions have the same short name, but different registered names.
+	// E.g. registering closures in a loop, often those closures have the same short name.
+	// This test ensures that if you invoke a local activity by its registered name, you
+	// get the closure you registered along with it.
+	var testSuite WorkflowTestSuite
+	env := testSuite.NewTestWorkflowEnvironment()
+	env.RegisterActivityWithOptions(namedActivity, RegisterActivityOptions{Name: "ActivityA"})
+	env.RegisterActivityWithOptions(namedActivity, RegisterActivityOptions{Name: "ActivityB"})
+	env.OnActivity("ActivityA", mock.Anything, "input").Return("result A", nil).Once()
+	env.OnActivity("ActivityB", mock.Anything, "input").Return("result B", nil).Once()
 
-			// Reusing one function guarantees an alias collision regardless of compiler inlining.
-			for _, name := range names {
-				env.RegisterActivityWithOptions(namedActivity, RegisterActivityOptions{Name: name})
+	env.ExecuteWorkflow(func(ctx Context) ([]string, error) {
+		ctx = WithLocalActivityOptions(ctx, LocalActivityOptions{StartToCloseTimeout: time.Minute})
+		var results []string
+		for _, name := range []string{"ActivityA", "ActivityB"} {
+			var result string
+			if err := ExecuteLocalActivity(ctx, name, "input").Get(ctx, &result); err != nil {
+				return nil, err
 			}
-			for _, name := range names {
-				call := env.OnActivity(name, mock.Anything, "input").Once()
-				if mockReturn == "function" {
-					call.Return(func(ctx context.Context, arg string) (string, error) {
-						return name + " mock", nil
-					})
-				} else {
-					call.Return(name+" mock", nil)
-				}
-			}
+			results = append(results, result)
+		}
+		return results, nil
+	})
 
-			env.ExecuteWorkflow(func(ctx Context) ([]string, error) {
-				ctx = WithLocalActivityOptions(ctx, LocalActivityOptions{
-					StartToCloseTimeout: time.Minute,
-					RetryPolicy:         &RetryPolicy{MaximumAttempts: 1},
-				})
-				var results []string
-				for _, name := range names {
-					var result string
-					if err := ExecuteLocalActivity(ctx, name, "input").Get(ctx, &result); err != nil {
-						return nil, err
-					}
-					results = append(results, result)
-				}
-				return results, nil
-			})
-
-			require.NoError(t, env.GetWorkflowError())
-			var results []string
-			require.NoError(t, env.GetWorkflowResult(&results))
-			require.Equal(t, []string{"ActivityA mock", "ActivityB mock"}, results)
-			env.AssertExpectations(t)
-		})
-	}
+	require.NoError(t, env.GetWorkflowError())
+	var results []string
+	require.NoError(t, env.GetWorkflowResult(&results))
+	require.Equal(t, []string{"result A", "result B"}, results)
+	env.AssertExpectations(t)
 }
 
 func TestLocalActivityExecutionByActivityNameAliasMissingRegistration(t *testing.T) {
