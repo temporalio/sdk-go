@@ -65,6 +65,8 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- mTLS client setup and schedule creation no longer modify caller-owned TLS
+  configs or workflow actions, allowing safe reuse.
 - Fatal worker errors now signal polling to stop before notification and run
   notification and automatic stopping outside polling goroutines to avoid waiting
   for the reporting poller itself. Concurrent `Worker.Stop` calls and `Worker.Run`

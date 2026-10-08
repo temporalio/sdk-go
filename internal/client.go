@@ -1893,8 +1893,12 @@ func (m mTLSCredentials) applyToOptions(opts *ConnectionOptions) error {
 		opts.TLS = &tls.Config{}
 	} else if len(opts.TLS.Certificates) != 0 {
 		return fmt.Errorf("cannot apply mTLS credentials, certificates already exist on TLS options")
+	} else {
+		opts.TLS = opts.TLS.Clone()
 	}
-	opts.TLS.Certificates = append(opts.TLS.Certificates, tls.Certificate(m))
+
+	// Use a new slice because Clone shares the certificate backing array.
+	opts.TLS.Certificates = []tls.Certificate{tls.Certificate(m)}
 	return nil
 }
 
