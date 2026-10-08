@@ -22,6 +22,9 @@ to docs, or any other relevant information.
 
 ### Added
 
+- Added `workflow.ChildWorkflowOptions.VersioningOverride` for explicitly pinning,
+  auto-upgrading, or one-time routing a child workflow independently of its parent.
+  This requires Temporal Server 1.32.0 or later.
 - Added experimental `converter.NewTransferTypeConverter` API that implements transfer type conversion.
   `converter.GetDefaultDataConverter()` now supports transfer type conversion.
 - Added autoscaling support for server poller groups, with per-group coverage and
@@ -62,6 +65,8 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- mTLS client setup and schedule creation no longer modify caller-owned TLS
+  configs or workflow actions, allowing safe reuse.
 - Fatal worker errors now signal polling to stop before notification and run
   notification and automatic stopping outside polling goroutines to avoid waiting
   for the reporting poller itself. Concurrent `Worker.Stop` calls and `Worker.Run`

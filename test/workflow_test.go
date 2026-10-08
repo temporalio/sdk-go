@@ -2482,6 +2482,63 @@ func (w *Workflows) WaitSignalToStartVersionedTwo(ctx workflow.Context) (string,
 	return value + "_v2", nil
 }
 
+type childWorkflowVersioningOverride int
+
+const (
+	childWorkflowVersioningOverridePinned childWorkflowVersioningOverride = iota
+	childWorkflowVersioningOverrideAutoUpgrade
+	childWorkflowVersioningOverrideOneTime
+)
+
+func (w *Workflows) ChildWorkflowWithVersioningOverride(
+	ctx workflow.Context,
+	targetVersion worker.WorkerDeploymentVersion,
+	overrideType childWorkflowVersioningOverride,
+) (string, error) {
+	var versioningOverride client.VersioningOverride
+	switch overrideType {
+	case childWorkflowVersioningOverridePinned:
+		versioningOverride = &client.PinnedVersioningOverride{
+			Version: targetVersion,
+		}
+	case childWorkflowVersioningOverrideAutoUpgrade:
+		versioningOverride = &client.AutoUpgradeVersioningOverride{}
+	case childWorkflowVersioningOverrideOneTime:
+		versioningOverride = &client.OneTimeVersioningOverride{
+			TargetVersion: targetVersion,
+		}
+	default:
+		return "", fmt.Errorf("unknown child workflow versioning override type: %d", overrideType)
+	}
+
+	childWorkflowID := workflow.GetInfo(ctx).WorkflowExecution.ID + "-child"
+	childCtx := workflow.WithChildOptions(ctx, workflow.ChildWorkflowOptions{
+		WorkflowID:         childWorkflowID,
+		VersioningOverride: versioningOverride,
+	})
+	child := workflow.ExecuteChildWorkflow(childCtx, "WaitSignalToStartVersioned")
+
+	var childExecution workflow.Execution
+	if err := child.GetChildWorkflowExecution().Get(ctx, &childExecution); err != nil {
+		return "", err
+	}
+
+	workflow.GetSignalChannel(ctx, "start-child").Receive(ctx, nil)
+	if err := workflow.SignalExternalWorkflow(
+		ctx,
+		childExecution.ID,
+		childExecution.RunID,
+		"start-signal",
+		"prefix",
+	).Get(ctx, nil); err != nil {
+		return "", err
+	}
+
+	var result string
+	err := child.Get(ctx, &result)
+	return result, err
+}
+
 func (w *Workflows) BuildIDWorkflow(ctx workflow.Context) error {
 	activityRan := false
 	_ = workflow.SetQueryHandler(ctx, "get-last-build-id", func() (string, error) {

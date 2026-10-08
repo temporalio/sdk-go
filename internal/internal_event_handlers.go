@@ -608,6 +608,7 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 	attributes.Header = params.Header
 	attributes.Memo = memo
 	attributes.SearchAttributes = searchAttr
+	attributes.VersioningOverride = VersioningOverrideToProto(params.VersioningOverride)
 	if len(params.CronSchedule) > 0 {
 		attributes.CronSchedule = params.CronSchedule
 	}
@@ -1908,6 +1909,8 @@ func (weh *workflowExecutionEventHandlerImpl) handleStartChildWorkflowExecutionF
 		causeErr = &ChildWorkflowExecutionAlreadyStartedError{}
 	case enumspb.START_CHILD_WORKFLOW_EXECUTION_FAILED_CAUSE_NAMESPACE_NOT_FOUND:
 		causeErr = &NamespaceNotFoundError{}
+	case enumspb.START_CHILD_WORKFLOW_EXECUTION_FAILED_CAUSE_INVALID_VERSIONING_OVERRIDE:
+		causeErr = &InvalidVersioningOverrideError{}
 	default:
 		causeErr = fmt.Errorf("unable to start child workflow for unknown cause: %v", attributes.GetCause())
 	}
