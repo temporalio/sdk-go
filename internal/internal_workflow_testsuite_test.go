@@ -323,13 +323,22 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowMixedClock() {
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_WorkflowActivityCancellation() {
+	stop := make(chan struct{})
+	defer close(stop)
+
 	slowStarted := make(chan struct{})
 	activityFn := func(ctx context.Context, msg string) (string, error) {
 		if msg == "slow" {
 			close(slowStarted)
-			<-ctx.Done()
-			return "", ctx.Err()
+
+			select {
+			case <-ctx.Done():
+				return "", ctx.Err()
+			case <-stop:
+				return "", nil
+			}
 		}
+
 		<-slowStarted
 		return msg, nil
 	}
