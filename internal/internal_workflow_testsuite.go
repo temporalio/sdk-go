@@ -2006,11 +2006,7 @@ func ensureDefaultRetryPolicy(parameters *ExecuteActivityParams) {
 
 func (env *testWorkflowEnvironmentImpl) ExecuteLocalActivity(params ExecuteLocalActivityParams, callback LocalActivityResultHandler) LocalActivityID {
 	activityID := getStringID(env.nextID())
-	ae := &activityExecutor{name: getActivityFunctionName(env.registry, params.ActivityFn), fn: params.ActivityFn}
-	if at, _ := getValidatedActivityFunction(params.ActivityFn, params.InputArgs, env.registry); at != nil {
-		// local activity could be registered, if so use the registered name. This name is only used to find a mock.
-		ae.name = at.Name
-	}
+	ae := &activityExecutor{name: params.ActivityType, fn: params.ActivityFn}
 	// We have to skip the interceptors on the first call because
 	// ExecuteWithActualArgs is actually invoked twice to support a mock activity
 	// function result

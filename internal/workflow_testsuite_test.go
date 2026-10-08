@@ -182,6 +182,53 @@ func TestLocalActivityExecutionByActivityNameAlias(t *testing.T) {
 	require.Equal(t, "Hello World!", result)
 }
 
+func TestLocalActivityMockByRegisteredName(t *testing.T) {
+	for _, mockReturn := range []string{"value", "function"} {
+		t.Run(mockReturn, func(t *testing.T) {
+			var testSuite WorkflowTestSuite
+			env := testSuite.NewTestWorkflowEnvironment()
+			names := []string{"ActivityA", "ActivityB"}
+
+			// Reusing one function guarantees an alias collision regardless of compiler inlining.
+			for _, name := range names {
+				env.RegisterActivityWithOptions(namedActivity, RegisterActivityOptions{Name: name})
+			}
+			for _, name := range names {
+				call := env.OnActivity(name, mock.Anything, "input").Once()
+				if mockReturn == "function" {
+					call.Return(func(ctx context.Context, arg string) (string, error) {
+						return name + " mock", nil
+					})
+				} else {
+					call.Return(name+" mock", nil)
+				}
+			}
+
+			env.ExecuteWorkflow(func(ctx Context) ([]string, error) {
+				ctx = WithLocalActivityOptions(ctx, LocalActivityOptions{
+					StartToCloseTimeout: time.Minute,
+					RetryPolicy:         &RetryPolicy{MaximumAttempts: 1},
+				})
+				var results []string
+				for _, name := range names {
+					var result string
+					if err := ExecuteLocalActivity(ctx, name, "input").Get(ctx, &result); err != nil {
+						return nil, err
+					}
+					results = append(results, result)
+				}
+				return results, nil
+			})
+
+			require.NoError(t, env.GetWorkflowError())
+			var results []string
+			require.NoError(t, env.GetWorkflowResult(&results))
+			require.Equal(t, []string{"ActivityA mock", "ActivityB mock"}, results)
+			env.AssertExpectations(t)
+		})
+	}
+}
+
 func TestLocalActivityExecutionByActivityNameAliasMissingRegistration(t *testing.T) {
 	testSuite := &WorkflowTestSuite{}
 	env := testSuite.NewTestWorkflowEnvironment()
