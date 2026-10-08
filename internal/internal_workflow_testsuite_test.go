@@ -323,12 +323,32 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowMixedClock() {
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_WorkflowActivityCancellation() {
+	stop := make(chan struct{})
+	defer close(stop)
+
+	slowStarted := make(chan struct{})
+	activityFn := func(ctx context.Context, msg string) (string, error) {
+		if msg == "slow" {
+			close(slowStarted)
+
+			select {
+			case <-ctx.Done():
+				return "", ctx.Err()
+			case <-stop:
+				return "", nil
+			}
+		}
+
+		<-slowStarted
+		return msg, nil
+	}
+
 	workflowFn := func(ctx Context) error {
 		ctx = WithActivityOptions(ctx, s.activityOptions)
 
 		ctx, cancelHandler := WithCancel(ctx)
-		f1 := ExecuteActivity(ctx, testActivityHeartbeat, "fast", time.Millisecond) // fast activity
-		f2 := ExecuteActivity(ctx, testActivityHeartbeat, "slow", time.Second*3)    // slow activity
+		f1 := ExecuteActivity(ctx, activityFn, "fast")
+		f2 := ExecuteActivity(ctx, activityFn, "slow")
 
 		NewSelector(ctx).AddFuture(f1, func(f Future) {
 			cancelHandler()
@@ -344,7 +364,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowActivityCancellation() {
 	}
 
 	env := s.NewTestWorkflowEnvironment()
-	env.RegisterActivity(testActivityHeartbeat)
+	env.RegisterActivity(activityFn)
 	activityMap := make(map[string]string) // msg -> activityID
 	var completedActivityID, canceledActivityID string
 	env.SetOnActivityStartedListener(func(activityInfo *ActivityInfo, ctx context.Context, args converter.EncodedValues) {

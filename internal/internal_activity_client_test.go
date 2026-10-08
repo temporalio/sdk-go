@@ -12,6 +12,8 @@ import (
 	"go.temporal.io/api/workflowservicemock/v1"
 )
 
+const testActivityResourceID = "activity:activity-id"
+
 // headerCheckInterceptor is a ClientInterceptor that verifies the header is
 // present on the context when ExecuteActivity is called. This ensures that
 // contextWithNewHeader is called before the interceptor chain runs, so
@@ -128,6 +130,7 @@ func TestUpdateActivityOptionsMask(t *testing.T) {
 		require.False(t, request.GetRestoreOriginal())
 		require.Equal(t, "new-tq", request.GetActivityOptions().GetTaskQueue().GetName())
 		require.Equal(t, 90*time.Second, request.GetActivityOptions().GetStartToCloseTimeout().AsDuration())
+		require.Equal(t, testActivityResourceID, request.GetResourceId())
 	})
 
 	t.Run("a zero Value sends an explicit zero", func(t *testing.T) {
@@ -228,6 +231,8 @@ func TestActivityOperatorCommandRequestFields(t *testing.T) {
 	require.Equal(t, "pause-reason", pause.GetReason())
 	require.Equal(t, "unpause-reason", unpause.GetReason())
 	require.Equal(t, 5*time.Second, unpause.GetJitter().AsDuration())
+	require.Equal(t, testActivityResourceID, pause.GetResourceId())
+	require.Equal(t, testActivityResourceID, unpause.GetResourceId())
 
 	// A zero jitter is left off the wire rather than sent as an explicit zero duration, so the
 	// server applies its own default instead of "no jitter".

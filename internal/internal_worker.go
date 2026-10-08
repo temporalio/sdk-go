@@ -77,12 +77,10 @@ const (
 
 	testTagsContextKey = "temporal-testTags"
 
-	workflowLiteralRegistrationHint =
-		"It looks like you registered a function literal (closure) without giving it an alias. " +
+	workflowLiteralRegistrationHint = "It looks like you registered a function literal (closure) without giving it an alias. " +
 		"Register it with RegisterWorkflowWithOptions and set Name to a stable, unique name."
 
-	activityLiteralRegistrationHint =
-		"It looks like you registered a function literal (closure) without giving it an alias. " +
+	activityLiteralRegistrationHint = "It looks like you registered a function literal (closure) without giving it an alias. " +
 		"Register it with RegisterActivityWithOptions and set Name to a stable, unique name."
 )
 
@@ -210,6 +208,10 @@ type (
 		// the worker.
 		WorkerFatalErrorCallback func(error)
 
+		// noRepoll is shared by the aggregate worker's remote-task pollers.
+		// Local activities keep polling so accepted workflow tasks can finish.
+		noRepoll *atomic.Bool
+
 		// SessionResourceID is a unique identifier of the resource the session will consume
 		SessionResourceID string
 
@@ -248,7 +250,8 @@ type (
 
 		workerInstanceKey string
 
-		workerControlTaskQueue string
+		workerControlTaskQueue   string
+		pollerGroupSnapshotStore *pollerGroupSnapshotStore
 
 		activityCancellationCallbacks *activityCancellationCallbacks
 
@@ -388,6 +391,7 @@ func newWorkflowTaskWorkerInternal(
 		logger:                       params.Logger,
 		stopTimeout:                  params.WorkerStopTimeout,
 		fatalErrCb:                   params.WorkerFatalErrorCallback,
+		noRepoll:                     params.noRepoll,
 		metricsHandler:               params.MetricsHandler,
 		workerPollCompleteOnShutdown: params.workerPollCompleteOnShutdown,
 		slotReservationData: slotReservationData{
@@ -428,6 +432,7 @@ func newWorkflowTaskWorkerInternal(
 					},
 				),
 				"",
+				nil,
 				nil,
 			),
 		},
@@ -486,7 +491,8 @@ func (ww *workflowWorker) Stop() {
 // buildWorkflowScalableTaskPollers builds the set of workflow task pollers for
 // the given behavior. A simple-maximum behavior uses a single Mixed poller,
 // while an autoscaling behavior uses a NonSticky poller plus a Sticky poller
-// when the sticky cache is enabled.
+// when the sticky cache is enabled. Each returned poller is a reusable object
+// with independent concurrency control, not one object per poll attempt.
 func buildWorkflowScalableTaskPollers(
 	taskProcessor *workflowTaskProcessor,
 	behavior PollerBehavior,
@@ -495,52 +501,66 @@ func buildWorkflowScalableTaskPollers(
 ) []scalableTaskPoller {
 	switch behavior := behavior.(type) {
 	case *pollerBehaviorAutoscaling:
+		var pollerGroups *pollerGroupManager
+		if taskProcessor.stickyCacheSize <= 0 && params.pollerGroupSnapshotStore != nil {
+			pollerGroups = newPollerGroupManager(params.pollerGroupSnapshotStore)
+		}
+
+		normalTaskPoller := taskProcessor.createPoller(NonSticky, pollerGroups)
 		normalScalablePoller := newScalableTaskPoller(
-			taskProcessor.createPoller(NonSticky),
+			normalTaskPoller,
 			params.Logger,
 			behavior,
 			metrics.PollerTypeWorkflowTask,
 			params.serverSupportsAutoscaling,
+			pollerGroups,
 		)
 		if taskProcessor.stickyCacheSize <= 0 {
 			return []scalableTaskPoller{normalScalablePoller}
 		}
 
-		balancer := newWorkflowAutoscalingBalancer(maxSlots, int64(behavior.initialNumberOfPollers))
-		stickyTaskPoller := taskProcessor.createPoller(Sticky)
+		balancer := newWorkflowAutoscalingBalancer(
+			maxSlots,
+			int64(behavior.initialNumberOfPollers),
+			params.pollerGroupSnapshotStore,
+		)
+		stickyTaskPoller := taskProcessor.createPoller(Sticky, nil)
 		stickyScalablePoller := newScalablePollerWithTarget(
 			stickyTaskPoller,
 			params.Logger,
 			behavior,
 			metrics.PollerTypeWorkflowStickyTask,
 			params.serverSupportsAutoscaling,
+			nil,
 			balancer.setStickyTarget,
 		)
 		normalScalablePoller.autoscalingBalancer = balancer
 		normalScalablePoller.pollKind = enumspb.TASK_QUEUE_KIND_NORMAL
 		stickyScalablePoller.autoscalingBalancer = balancer
 		stickyScalablePoller.pollKind = enumspb.TASK_QUEUE_KIND_STICKY
-		// Sticky poll responses send backlog hints to the shared balancer.
+		normalTaskPoller.autoscalingBalancer = balancer
 		stickyTaskPoller.autoscalingBalancer = balancer
 
 		return []scalableTaskPoller{normalScalablePoller, stickyScalablePoller}
 	default: // *pollerBehaviorSimpleMaximum
 		return []scalableTaskPoller{
 			newScalableTaskPoller(
-				taskProcessor.createPoller(Mixed),
+				taskProcessor.createPoller(Mixed, nil),
 				params.Logger,
 				behavior,
 				metrics.PollerTypeWorkflowTask,
 				params.serverSupportsAutoscaling,
+				nil,
 			),
 		}
 	}
 }
 
 func (ww *workflowWorker) initializeTaskPollers(behavior PollerBehavior) {
+	taskProcessor := ww.worker.options.taskProcessor.(*workflowTaskProcessor)
 	ww.executionParameters.WorkflowTaskPollerBehavior = behavior
 	ww.worker.initializeTaskPollers(buildWorkflowScalableTaskPollers(
-		ww.taskProcessor,
+		taskProcessor,
 		behavior,
 		ww.executionParameters,
 		ww.worker.slotSupplier.inner.MaxSlots(),
@@ -560,6 +580,7 @@ func newSessionWorker(client *WorkflowClient, params workerExecutionParameters, 
 	creationTaskqueue := getCreationTaskqueue(params.TaskQueue)
 	params.BackgroundContext = context.WithValue(params.BackgroundContext, sessionEnvironmentContextKey, sessionEnvironment)
 	params.TaskQueue = sessionEnvironment.GetResourceSpecificTaskqueue()
+	params.pollerGroupSnapshotStore = newPollerGroupSnapshotStore()
 	// For the resource specific task queue, we don't need to include deployment options
 	// Save them to restore later
 	deployments := params.DeploymentOptions
@@ -578,6 +599,7 @@ func newSessionWorker(client *WorkflowClient, params workerExecutionParameters, 
 		},
 	)
 	params.TaskQueue = creationTaskqueue
+	params.pollerGroupSnapshotStore = nil
 	params.DeploymentOptions = deployments
 	params.UseBuildIDForVersioning = useBuildIDForVersioning
 	// Although we have session token bucket to limit session size across creation
@@ -619,11 +641,6 @@ func (sw *sessionWorker) getActivityWorkerTaskQueue() string {
 	return sw.activityWorker.executionParameters.TaskQueue
 }
 
-func (sw *sessionWorker) stopPolling() {
-	sw.creationWorker.worker.stopPolling()
-	sw.activityWorker.worker.stopPolling()
-}
-
 func newActivityWorker(
 	client *WorkflowClient,
 	params workerExecutionParameters,
@@ -647,7 +664,7 @@ func newActivityWorker(
 		taskHandler = newActivityTaskHandler(client, params, env)
 	}
 
-	poller := newActivityTaskPoller(taskHandler, service, params)
+	poller := newActivityTaskPoller(taskHandler, service, params, nil)
 	var slotSupplier SlotSupplier
 	if overrides != nil && overrides.slotSupplier != nil {
 		slotSupplier = overrides.slotSupplier
@@ -665,6 +682,7 @@ func newActivityWorker(
 		logger:                       params.Logger,
 		stopTimeout:                  params.WorkerStopTimeout,
 		fatalErrCb:                   params.WorkerFatalErrorCallback,
+		noRepoll:                     params.noRepoll,
 		backgroundContextCancel:      params.BackgroundContextCancel,
 		metricsHandler:               params.MetricsHandler,
 		sessionTokenBucket:           sessionTokenBucket,
@@ -705,6 +723,13 @@ func (aw *activityWorker) Stop() {
 
 func (aw *activityWorker) initializeTaskPollers(behavior PollerBehavior) {
 	aw.executionParameters.ActivityTaskPollerBehavior = behavior
+	var pollerGroups *pollerGroupManager
+	if _, ok := behavior.(*pollerBehaviorAutoscaling); ok {
+		pollerGroups = newPollerGroupManager(aw.executionParameters.pollerGroupSnapshotStore)
+	}
+	if poller, ok := aw.poller.(*activityTaskPoller); ok {
+		poller.pollerGroups = pollerGroups
+	}
 	aw.worker.initializeTaskPollers([]scalableTaskPoller{
 		newScalableTaskPoller(
 			aw.poller,
@@ -712,6 +737,7 @@ func (aw *activityWorker) initializeTaskPollers(behavior PollerBehavior) {
 			behavior,
 			metrics.PollerTypeActivityTask,
 			aw.executionParameters.serverSupportsAutoscaling,
+			pollerGroups,
 		),
 	})
 }
@@ -1313,10 +1339,14 @@ type AggregatedWorker struct {
 	// Stores a boolean indicating whether the worker has already been started.
 	started      atomic.Bool
 	shuttingDown atomic.Bool
-	// stopC is created in NewAggregatedWorker and closed by AggregatedWorker.Stop()
-	// to mark the aggregated worker stopped, unblock Run(), and prevent restart.
+	// stopC is created in NewAggregatedWorker and closed when stopping begins,
+	// to notify Run() and prevent restart. Stop() joins the entire cleanup.
 	// Child worker stop channels are closed later by their own Stop methods.
-	stopC        chan struct{}
+	stopC    chan struct{}
+	stopOnce sync.Once
+	// stopDone closes after the selected Stop caller finishes all worker cleanup.
+	// Other Stop callers wait here without holding the owner selection lock.
+	stopDone     chan struct{}
 	fatalErr     error
 	fatalErrLock sync.Mutex
 	capabilities *workflowservice.GetSystemInfoResponse_Capabilities
@@ -1328,6 +1358,8 @@ type AggregatedWorker struct {
 	heartbeatMetrics             *heartbeatMetricsHandler
 	heartbeatCallback            func() *workerpb.WorkerHeartbeat
 	workerPollCompleteOnShutdown *atomic.Bool
+	cacheLease                   *workerCacheLease
+
 	// pendingEnvironment is attached to every heartbeat (periodic and shutdown) until the server
 	// accepts one, at which point heartbeatSuccess clears it.
 	pendingEnvironment atomic.Pointer[workerpb.EnvironmentInfo]
@@ -1444,6 +1476,11 @@ func (aw *AggregatedWorker) start() error {
 	if err != nil {
 		return err
 	}
+	// Seed poller groups before the first poll.
+	aw.executionParams.pollerGroupSnapshotStore.updateGroups(nsData.pollerGroupsInfo)
+	if aw.sessionWorker != nil {
+		aw.sessionWorker.activityWorker.executionParameters.pollerGroupSnapshotStore.updateGroups(nsData.pollerGroupsInfo)
+	}
 
 	if aw.executionParams.setErrorLimits != nil {
 		payloadSizeError := int64(0)
@@ -1498,6 +1535,9 @@ func (aw *AggregatedWorker) start() error {
 	// have been resolved.
 	if !util.IsInterfaceNil(aw.workflowWorker) {
 		aw.workflowWorker.initializeTaskPollers(aw.executionParams.WorkflowTaskPollerBehavior)
+	}
+
+	if !util.IsInterfaceNil(aw.workflowWorker) {
 		if err := aw.workflowWorker.Start(); err != nil {
 			return err
 		}
@@ -1636,8 +1676,10 @@ func getBinaryChecksum() string {
 // Pass worker.InterruptCh() to stop the worker with SIGINT or SIGTERM.
 // Pass nil to stop the worker with external Stop() call.
 // Pass any other `<-chan interface{}` and Run will wait for signal from that channel.
-// Returns error if the worker fails to start or there is a fatal error
-// during execution.
+// Returns the startup error if Start fails. After a successful start, waits for
+// worker cleanup and returns the first fatal error, even if interruption races
+// with that error. Returns nil if no fatal error was recorded, even if cleanup
+// encounters errors.
 func (aw *AggregatedWorker) Run(interruptCh <-chan any) error {
 	if err := aw.Start(); err != nil {
 		return err
@@ -1645,42 +1687,36 @@ func (aw *AggregatedWorker) Run(interruptCh <-chan any) error {
 	select {
 	case s := <-interruptCh:
 		aw.logger.Info("Worker has been stopped.", "Signal", s)
-		aw.Stop()
 	case <-aw.stopC:
-		aw.fatalErrLock.Lock()
-		defer aw.fatalErrLock.Unlock()
-		// This may be nil if this wasn't stopped due to fatal error
-		return aw.fatalErr
 	}
-	return nil
+	// Both stop requests join cleanup before reading the first fatal cause,
+	// so an interrupt cannot turn a recorded worker failure into success.
+	aw.Stop()
+	aw.fatalErrLock.Lock()
+	defer aw.fatalErrLock.Unlock()
+	return aw.fatalErr
 }
 
-// Stop the worker.
+// Stop prevents new polling and waits for worker cleanup to return.
+// Concurrent calls wait for the same cleanup operation.
 func (aw *AggregatedWorker) Stop() {
-	// Only attempt stop if we haven't attempted before
-	select {
-	case <-aw.stopC:
+	ownsStop := false
+	aw.stopOnce.Do(func() { ownsStop = true })
+	if ownsStop {
+		aw.stop()
+		close(aw.stopDone)
 		return
-	default:
 	}
+	<-aw.stopDone
+}
 
+func (aw *AggregatedWorker) stop() {
 	// Prevent pollers from re-polling before closing stopC. There is a race
 	// between stopC being closed and the ShutdownWorker RPC: a poll can
 	// complete naturally (e.g. long-poll timeout) right after stopC fires
 	// but before ShutdownWorker is sent, causing the poller to loop and
 	// re-poll.
-	if !util.IsInterfaceNil(aw.activityWorker) {
-		aw.activityWorker.worker.stopPolling()
-	}
-	if !util.IsInterfaceNil(aw.workflowWorker) {
-		aw.workflowWorker.worker.stopPolling()
-	}
-	if !util.IsInterfaceNil(aw.nexusWorker) {
-		aw.nexusWorker.worker.stopPolling()
-	}
-	if !util.IsInterfaceNil(aw.sessionWorker) {
-		aw.sessionWorker.stopPolling()
-	}
+	aw.executionParams.noRepoll.Store(true)
 
 	close(aw.stopC)
 
@@ -1716,8 +1752,20 @@ func (aw *AggregatedWorker) Stop() {
 	})
 
 	aw.unregisterHeartbeatWorker()
+	if aw.cacheLease != nil {
+		aw.cacheLease.release()
+	}
 
 	aw.logger.Info("Stopped Worker")
+}
+
+// handleFatalError runs outside the polling goroutines that Stop waits for.
+// It delivers the recorded cause to the caller's hook, then joins cleanup.
+func (aw *AggregatedWorker) handleFatalError(err error, hook func(error)) {
+	if hook != nil {
+		hook(err)
+	}
+	aw.Stop()
 }
 
 func (aw *AggregatedWorker) registerHeartbeatWorker() error {
@@ -1880,8 +1928,6 @@ type WorkflowReplayerOptions struct {
 	//
 	// Plugins themselves should never mutate this field, the behavior is
 	// undefined.
-	//
-	// NOTE: Experimental
 	Plugins []WorkerPlugin
 
 	// ExternalStorage configures external payload storage for replay.
@@ -1924,7 +1970,7 @@ func NewWorkflowReplayer(options WorkflowReplayerOptions) (*WorkflowReplayer, er
 	registry.interceptors = options.Interceptors
 	return &WorkflowReplayer{
 		registry:                    registry,
-		dataConverter:               options.DataConverter,
+		dataConverter:               converter.MakeTransferAware(options.DataConverter),
 		failureConverter:            options.FailureConverter,
 		contextPropagators:          options.ContextPropagators,
 		enableLoggingInReplay:       options.EnableLoggingInReplay,
@@ -2162,7 +2208,8 @@ func (aw *WorkflowReplayer) replayWorkflowHistoryRoot(
 		},
 		inboundVisitor: aw.inboundPayloadVisitor,
 	}
-	cache := newWorkerCache(&sharedWorkerCache{}, &sync.Mutex{}, 0)
+	cache, cacheLease := newWorkerCache(&sharedWorkerCache{}, &sync.Mutex{}, 0)
+	defer cacheLease.release()
 	params := workerExecutionParameters{
 		Namespace:             namespace,
 		TaskQueue:             taskQueue,
@@ -2378,28 +2425,25 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		panic("MaxConcurrentWorkflowTaskExternalStorageVisits must not be negative")
 	}
 
-	// Need reference to result for fatal error handler
+	// Pollers retain this callback, keeping the worker and cache lease live until they stop.
 	var aw *AggregatedWorker
+	noRepoll := &atomic.Bool{}
 	fatalErrorCallback := func(err error) {
 		// Set the fatal error if not already set
 		aw.fatalErrLock.Lock()
 		alreadySet := aw.fatalErr != nil
 		if !alreadySet {
 			aw.fatalErr = err
+			// A fatal error signals remote-task polling to stop before notification.
+			// Workers created later during startup share this same flag.
+			noRepoll.Store(true)
 		}
 		aw.fatalErrLock.Unlock()
 		// Only do the rest if not already set
 		if !alreadySet {
-			// Invoke the callback if present
-			if options.OnFatalError != nil {
-				options.OnFatalError(err)
-			}
-			// Stop the worker if not already stopped
-			select {
-			case <-aw.stopC:
-			default:
-				aw.Stop()
-			}
+			// The poller must return before Stop can join it. Record its cause
+			// above, then deliver the hook and stop on a separate goroutine.
+			go aw.handleFatalError(err, options.OnFatalError)
 		}
 	}
 	// Because of lazy clients we need to wait till the worker runs to fetch the capabilities.
@@ -2447,7 +2491,13 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 
 	payloadLimitVisitor, setErrorLimits := newPayloadLimitsVisitor(client.payloadWarningLimits, logger)
 
-	cache := NewWorkerCache()
+	cache, cacheLease := NewWorkerCache()
+	constructionComplete := false
+	defer func() {
+		if !constructionComplete {
+			cacheLease.release()
+		}
+	}()
 	workerPollCompleteOnShutdown := &atomic.Bool{}
 	workerParams := workerExecutionParameters{
 		Namespace:                        client.namespace,
@@ -2472,6 +2522,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		FailureConverter:                 client.failureConverter,
 		WorkerStopTimeout:                options.WorkerStopTimeout,
 		WorkerFatalErrorCallback:         fatalErrorCallback,
+		noRepoll:                         noRepoll,
 		ContextPropagators:               client.contextPropagators,
 		DeadlockDetectionTimeout:         options.DeadlockDetectionTimeout,
 		DefaultHeartbeatThrottleInterval: options.DefaultHeartbeatThrottleInterval,
@@ -2487,6 +2538,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		pollTimeTracker:                  &pollTimeTracker{},
 		workerInstanceKey:                workerInstanceKey,
 		workerControlTaskQueue:           workerControlTaskQueue(client.namespace, client.workerGroupingKey),
+		pollerGroupSnapshotStore:         newPollerGroupSnapshotStore(),
 		activityCancellationCallbacks:    activityCancellationCallbacks,
 		workerPollCompleteOnShutdown:     workerPollCompleteOnShutdown,
 		serverSupportsAutoscaling:        &atomic.Bool{},
@@ -2704,6 +2756,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		logger:                       workerParams.Logger,
 		registry:                     registry,
 		stopC:                        make(chan struct{}),
+		stopDone:                     make(chan struct{}),
 		capabilities:                 &capabilities,
 		executionParams:              workerParams,
 		workerInstanceKey:            workerInstanceKey,
@@ -2712,6 +2765,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		heartbeatMetrics:             heartbeatMetrics,
 		heartbeatCallback:            heartbeatCallback,
 		workerPollCompleteOnShutdown: workerPollCompleteOnShutdown,
+		cacheLease:                   cacheLease,
 	}
 	if client.heartbeatManager != nil {
 		aw.pendingEnvironment.Store(client.heartbeatManager.environmentInfo)
@@ -2732,6 +2786,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 			WorkerRegistry:    aw,
 		})
 	})
+	constructionComplete = true
 	return aw
 }
 
@@ -2779,7 +2834,6 @@ func isError(inType reflect.Type) bool {
 	errorElem := reflect.TypeFor[error]()
 	return inType != nil && inType.Implements(errorElem)
 }
-
 
 // mightBeFunctionLiteral returns true if the given function looks like a function literal.
 // BEWARE: False positives are possible! Normal function declarations might look like literals.
@@ -2953,7 +3007,6 @@ func setWorkerOptionsDefaults(options *WorkerOptions) autoEnrollEligibility {
 	return eligibility
 }
 
-// setClientDefaults should be needed only in unit tests.
 func setClientDefaults(client *WorkflowClient) {
 	if client.dataConverter == nil {
 		client.dataConverter = converter.GetDefaultDataConverter()

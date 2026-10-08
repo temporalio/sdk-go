@@ -42,6 +42,42 @@ type contextCapturingDC struct {
 	contexts *[]converter.SerializationContext
 }
 
+type slotSupplierWithSysInfo struct {
+	SlotSupplier
+	provider SysInfoProvider
+}
+
+type startFailWorkerPlugin struct {
+	WorkerPluginBase
+	startErr  error
+	stopCalls atomic.Int32
+}
+
+func (p *startFailWorkerPlugin) Name() string {
+	return "start-fail-worker-plugin"
+}
+
+func (p *startFailWorkerPlugin) StartWorker(
+	context.Context,
+	WorkerPluginStartWorkerOptions,
+	func(context.Context, WorkerPluginStartWorkerOptions) error,
+) error {
+	return p.startErr
+}
+
+func (p *startFailWorkerPlugin) StopWorker(
+	ctx context.Context,
+	options WorkerPluginStopWorkerOptions,
+	next func(context.Context, WorkerPluginStopWorkerOptions),
+) {
+	p.stopCalls.Add(1)
+	next(ctx, options)
+}
+
+func (s *slotSupplierWithSysInfo) SysInfoProvider() SysInfoProvider {
+	return s.provider
+}
+
 func (dc *contextCapturingDC) WithSerializationContext(ctx converter.SerializationContext) converter.DataConverter {
 	*dc.contexts = append(*dc.contexts, ctx)
 	return &contextCapturingDC{
@@ -302,14 +338,19 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory() {
 	replayer, err := NewWorkflowReplayer(WorkflowReplayerOptions{})
 	require.NoError(s.T(), err)
 	replayer.RegisterWorkflow(testReplayWorkflow)
+	sharedWorkerCacheLock.Lock()
+	refcountBeforeReplay := sharedWorkerCachePtr.workerRefcount
+	sharedWorkerCacheLock.Unlock()
 	err = replayer.ReplayWorkflowHistory(logger, history)
 	require.NoError(s.T(), err)
+	sharedWorkerCacheLock.Lock()
+	s.Equal(refcountBeforeReplay, sharedWorkerCachePtr.workerRefcount)
+	sharedWorkerCacheLock.Unlock()
 }
 
 func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_IncompleteWorkflowExecution() {
-	liveWorkerCache := NewWorkerCache()
-	runtime.SetFinalizer(liveWorkerCache, nil)
-	defer liveWorkerCache.close(&sharedWorkerCacheLock)
+	liveWorkerCache, liveWorkerCacheLease := NewWorkerCache()
+	defer liveWorkerCacheLease.release()
 	cacheSizeBeforeReplay := liveWorkerCache.getWorkflowCache().Size()
 
 	taskQueue := "taskQueue1"
@@ -1771,7 +1812,7 @@ func (s *internalWorkerTestSuite) testWorkflowTaskHandlerHelper(params workerExe
 }
 
 func (s *internalWorkerTestSuite) TestWorkflowTaskHandlerWithDataConverter() {
-	cache := NewWorkerCache()
+	cache := newTestWorkerCache(s.T())
 	params := workerExecutionParameters{
 		Namespace:     testNamespace,
 		Identity:      "identity",
@@ -1891,18 +1932,36 @@ func (s *internalWorkerTestSuite) TestPollerAutoscalingAutoEnrollWithDefaults() 
 	s.IsType(&pollerBehaviorAutoscaling{}, worker.executionParams.NexusTaskPollerBehavior)
 
 	// The actual running pollers reflect the autoscaling structure.
-	require.NotEmpty(s.T(), worker.workflowWorker.worker.options.taskPollers)
-	for _, p := range worker.workflowWorker.worker.options.taskPollers {
-		s.NotNil(p.autoscalingRunner)
+	workflowPollers := worker.workflowWorker.worker.options.taskPollers
+	require.NotEmpty(s.T(), workflowPollers)
+	require.NotNil(s.T(), workflowPollers[0].autoscalingRunner)
+	workflowBalancer := workflowPollers[0].autoscalingRunner.workflowBalancer
+	require.NotNil(s.T(), workflowBalancer)
+	require.Same(s.T(), worker.executionParams.pollerGroupSnapshotStore, workflowBalancer.groupStore)
+	for _, p := range workflowPollers {
+		require.NotNil(s.T(), p.autoscalingRunner)
+		require.Same(s.T(), workflowBalancer, p.autoscalingRunner.workflowBalancer)
 	}
-	require.NotEmpty(s.T(), worker.activityWorker.worker.options.taskPollers)
-	for _, p := range worker.activityWorker.worker.options.taskPollers {
-		s.NotNil(p.autoscalingRunner)
+	activityPollers := worker.activityWorker.worker.options.taskPollers
+	require.NotEmpty(s.T(), activityPollers)
+	require.NotNil(s.T(), activityPollers[0].autoscalingRunner)
+	activityGroups := activityPollers[0].autoscalingRunner.pollerGroups
+	require.NotNil(s.T(), activityGroups)
+	require.Same(s.T(), worker.executionParams.pollerGroupSnapshotStore, activityGroups.groupStore)
+	for _, p := range activityPollers {
+		require.NotNil(s.T(), p.autoscalingRunner)
+		require.Same(s.T(), activityGroups, p.autoscalingRunner.pollerGroups)
 	}
 	require.NotNil(s.T(), worker.nexusWorker)
-	require.NotEmpty(s.T(), worker.nexusWorker.worker.options.taskPollers)
-	for _, p := range worker.nexusWorker.worker.options.taskPollers {
-		s.NotNil(p.autoscalingRunner)
+	nexusPollers := worker.nexusWorker.worker.options.taskPollers
+	require.NotEmpty(s.T(), nexusPollers)
+	require.NotNil(s.T(), nexusPollers[0].autoscalingRunner)
+	nexusGroups := nexusPollers[0].autoscalingRunner.pollerGroups
+	require.NotNil(s.T(), nexusGroups)
+	require.Same(s.T(), worker.executionParams.pollerGroupSnapshotStore, nexusGroups.groupStore)
+	for _, p := range nexusPollers {
+		require.NotNil(s.T(), p.autoscalingRunner)
+		require.Same(s.T(), nexusGroups, p.autoscalingRunner.pollerGroups)
 	}
 
 	// Auto-enroll implies full autoscaling support, including scale-down.
@@ -2014,9 +2073,15 @@ func (s *internalWorkerTestSuite) TestPollerAutoscalingAutoEnrollSessionWorker()
 
 	require.NotNil(s.T(), worker.sessionWorker)
 
-	require.NotEmpty(s.T(), worker.sessionWorker.activityWorker.worker.options.taskPollers)
-	for _, p := range worker.sessionWorker.activityWorker.worker.options.taskPollers {
-		s.NotNil(p.autoscalingRunner)
+	activityPollers := worker.sessionWorker.activityWorker.worker.options.taskPollers
+	require.NotEmpty(s.T(), activityPollers)
+	require.NotNil(s.T(), activityPollers[0].autoscalingRunner)
+	activityGroups := activityPollers[0].autoscalingRunner.pollerGroups
+	require.NotNil(s.T(), activityGroups)
+	require.Same(s.T(), worker.sessionWorker.activityWorker.executionParameters.pollerGroupSnapshotStore, activityGroups.groupStore)
+	for _, p := range activityPollers {
+		require.NotNil(s.T(), p.autoscalingRunner)
+		require.Same(s.T(), activityGroups, p.autoscalingRunner.pollerGroups)
 	}
 
 	require.Len(s.T(), worker.sessionWorker.creationWorker.worker.options.taskPollers, 1)
@@ -2100,6 +2165,188 @@ func (s *internalWorkerTestSuite) TestNoActivitiesOrWorkflows() {
 	assert.True(t, w.activityWorker.worker.isWorkerStarted)
 	assert.True(t, w.workflowWorker.worker.isWorkerStarted)
 	w.Stop()
+}
+
+func (s *internalWorkerTestSuite) TestWorkerStopReleasesCacheOwnership() {
+	sharedWorkerCacheLock.Lock()
+	refcountBefore := sharedWorkerCachePtr.workerRefcount
+	sharedWorkerCacheLock.Unlock()
+	s.Zero(refcountBefore)
+
+	worker := createWorker(s.service)
+	workerCache := worker.executionParams.cache
+	workflowContext := &workflowExecutionContextImpl{
+		wth: &workflowTaskHandlerImpl{
+			cache:          workerCache,
+			metricsHandler: metrics.NopHandler,
+		},
+	}
+	_, err := workerCache.putWorkflowContext("retained-run", workflowContext)
+	s.NoError(err)
+	s.Equal(1, workerCache.getWorkflowCache().Size())
+
+	sharedWorkerCacheLock.Lock()
+	s.Equal(refcountBefore+1, sharedWorkerCachePtr.workerRefcount)
+	sharedWorkerCacheLock.Unlock()
+
+	worker.Stop()
+	s.Zero(workerCache.getWorkflowCache().Size())
+	s.NotPanics(worker.Stop)
+
+	sharedWorkerCacheLock.Lock()
+	s.Equal(refcountBefore, sharedWorkerCachePtr.workerRefcount)
+	sharedWorkerCacheLock.Unlock()
+}
+
+func (s *internalWorkerTestSuite) TestWorkersShareCacheUntilFinalStop() {
+	sharedWorkerCacheLock.Lock()
+	refcountBefore := sharedWorkerCachePtr.workerRefcount
+	sharedWorkerCacheLock.Unlock()
+	s.Zero(refcountBefore)
+
+	firstWorker := createWorker(s.service)
+	secondWorker := createWorker(s.service)
+	firstCache := firstWorker.executionParams.cache
+	secondCache := secondWorker.executionParams.cache
+	s.Same(firstCache.getWorkflowCache(), secondCache.getWorkflowCache())
+
+	workflowContext := &workflowExecutionContextImpl{
+		wth: &workflowTaskHandlerImpl{
+			cache:          firstCache,
+			metricsHandler: metrics.NopHandler,
+		},
+	}
+	_, err := firstCache.putWorkflowContext("shared-run", workflowContext)
+	s.NoError(err)
+	s.Same(workflowContext, secondCache.getWorkflowContext("shared-run"))
+
+	firstWorker.Stop()
+	s.Same(workflowContext, secondCache.getWorkflowContext("shared-run"))
+
+	secondWorker.Stop()
+	s.Zero(firstCache.getWorkflowCache().Size())
+
+	thirdWorker := createWorker(s.service)
+	thirdCache := thirdWorker.executionParams.cache
+	s.NotSame(firstCache.getWorkflowCache(), thirdCache.getWorkflowCache())
+	_, err = thirdCache.putWorkflowContext("new-run", &workflowExecutionContextImpl{
+		wth: &workflowTaskHandlerImpl{
+			cache:          thirdCache,
+			metricsHandler: metrics.NopHandler,
+		},
+	})
+	s.NoError(err)
+	s.NotNil(thirdCache.getWorkflowContext("new-run"))
+	thirdWorker.Stop()
+}
+
+func (s *internalWorkerTestSuite) TestWorkerStartFailureReleasesCacheOwnershipOnStop() {
+	service := workflowservicemock.NewMockWorkflowServiceClient(s.mockCtrl)
+	startErr := errors.New("start failed")
+	service.EXPECT().GetSystemInfo(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, startErr).Times(1)
+	service.EXPECT().ShutdownWorker(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.ShutdownWorkerResponse{}, nil).Times(1)
+
+	sharedWorkerCacheLock.Lock()
+	refcountBefore := sharedWorkerCachePtr.workerRefcount
+	sharedWorkerCacheLock.Unlock()
+
+	client := NewServiceClient(service, nil, ClientOptions{Namespace: "testNamespace"})
+	worker := NewAggregatedWorker(client, "testTaskQueue", WorkerOptions{})
+	s.ErrorIs(worker.Start(), startErr)
+
+	sharedWorkerCacheLock.Lock()
+	s.Equal(refcountBefore+1, sharedWorkerCachePtr.workerRefcount)
+	sharedWorkerCacheLock.Unlock()
+
+	worker.Stop()
+
+	sharedWorkerCacheLock.Lock()
+	s.Equal(refcountBefore, sharedWorkerCachePtr.workerRefcount)
+	sharedWorkerCacheLock.Unlock()
+}
+
+func (s *internalWorkerTestSuite) TestWorkerPluginStartFailureDoesNotImplicitlyStop() {
+	service := workflowservicemock.NewMockWorkflowServiceClient(s.mockCtrl)
+	service.EXPECT().ShutdownWorker(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.ShutdownWorkerResponse{}, nil).Times(1)
+	startErr := errors.New("plugin start failed")
+	plugin := &startFailWorkerPlugin{startErr: startErr}
+
+	sharedWorkerCacheLock.Lock()
+	refcountBefore := sharedWorkerCachePtr.workerRefcount
+	sharedWorkerCacheLock.Unlock()
+
+	client := NewServiceClient(service, nil, ClientOptions{Namespace: "testNamespace"})
+	worker := NewAggregatedWorker(client, "testTaskQueue", WorkerOptions{
+		Plugins: []WorkerPlugin{plugin},
+	})
+	s.ErrorIs(worker.Start(), startErr)
+	s.Zero(plugin.stopCalls.Load())
+
+	sharedWorkerCacheLock.Lock()
+	s.Equal(refcountBefore+1, sharedWorkerCachePtr.workerRefcount)
+	sharedWorkerCacheLock.Unlock()
+
+	worker.Stop()
+	s.Equal(int32(1), plugin.stopCalls.Load())
+
+	sharedWorkerCacheLock.Lock()
+	s.Equal(refcountBefore, sharedWorkerCachePtr.workerRefcount)
+	sharedWorkerCacheLock.Unlock()
+}
+
+func (s *internalWorkerTestSuite) TestWorkerFatalErrorReleasesCacheOwnership() {
+	sharedWorkerCacheLock.Lock()
+	refcountBefore := sharedWorkerCachePtr.workerRefcount
+	sharedWorkerCacheLock.Unlock()
+
+	worker := createWorker(s.service)
+	s.NoError(worker.Start())
+	worker.executionParams.WorkerFatalErrorCallback(errors.New("fatal worker error"))
+	worker.Stop()
+
+	select {
+	case <-worker.stopC:
+	default:
+		s.Fail("fatal error did not stop worker")
+	}
+	sharedWorkerCacheLock.Lock()
+	s.Equal(refcountBefore, sharedWorkerCachePtr.workerRefcount)
+	sharedWorkerCacheLock.Unlock()
+}
+
+func (s *internalWorkerTestSuite) TestWorkerConstructionFailureReleasesCacheOwnership() {
+	fixedTuner, err := NewFixedSizeTuner(FixedSizeTunerOptions{})
+	s.NoError(err)
+	workflowSupplier := &slotSupplierWithSysInfo{
+		SlotSupplier: fixedTuner.GetWorkflowTaskSlotSupplier(),
+		provider:     &FakeSystemInfoSupplier{},
+	}
+	tuner, err := NewCompositeTuner(CompositeTunerOptions{
+		WorkflowSlotSupplier:        workflowSupplier,
+		ActivitySlotSupplier:        fixedTuner.GetActivityTaskSlotSupplier(),
+		LocalActivitySlotSupplier:   fixedTuner.GetLocalActivitySlotSupplier(),
+		NexusSlotSupplier:           fixedTuner.GetNexusSlotSupplier(),
+		SessionActivitySlotSupplier: fixedTuner.GetSessionActivitySlotSupplier(),
+	})
+	s.NoError(err)
+
+	sharedWorkerCacheLock.Lock()
+	refcountBefore := sharedWorkerCachePtr.workerRefcount
+	sharedWorkerCacheLock.Unlock()
+
+	client := NewServiceClient(s.service, nil, ClientOptions{Namespace: "testNamespace"})
+	s.Panics(func() {
+		NewAggregatedWorker(client, "testTaskQueue", WorkerOptions{
+			Tuner:           tuner,
+			SysInfoProvider: &FakeSystemInfoSupplier{},
+		})
+	})
+
+	sharedWorkerCacheLock.Lock()
+	s.Equal(refcountBefore, sharedWorkerCachePtr.workerRefcount)
+	sharedWorkerCacheLock.Unlock()
 }
 
 func (s *internalWorkerTestSuite) TestCleanupIsBestEffort() {
@@ -2241,6 +2488,93 @@ func setupPollingMocks(namespace string, service *workflowservicemock.MockWorkfl
 	workflowTask := &workflowservice.PollWorkflowTaskQueueResponse{}
 	service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).Return(workflowTask, nil).AnyTimes()
 	service.EXPECT().RespondWorkflowTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
+}
+
+func (s *internalWorkerTestSuite) TestDescribeNamespacePollerGroupsSeedWorkflowNormalAndStickyPolls() {
+	namespace := "testNamespace"
+	taskQueue := "seeded-workflow-tq"
+	groupID := "seeded-group"
+	service := workflowservicemock.NewMockWorkflowServiceClient(s.mockCtrl)
+	service.EXPECT().GetSystemInfo(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.GetSystemInfoResponse{}, nil).AnyTimes()
+	expectDescribeNamespaceWithPollerGroup(service, namespace, groupID)
+	service.EXPECT().ShutdownWorker(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.ShutdownWorkerResponse{}, nil).AnyTimes()
+	service.EXPECT().PollActivityTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollActivityTaskQueueResponse{}, nil).AnyTimes()
+
+	polls := make(chan *workflowservice.PollWorkflowTaskQueueRequest, 20)
+	releaseNormalPoll := make(chan struct{})
+	var releaseNormalPollOnce sync.Once
+	defer releaseNormalPollOnce.Do(func() { close(releaseNormalPoll) })
+	var blockNormalPollOnce sync.Once
+	service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
+		func(ctx context.Context, req *workflowservice.PollWorkflowTaskQueueRequest, opts ...grpc.CallOption) (*workflowservice.PollWorkflowTaskQueueResponse, error) {
+			select {
+			case polls <- proto.Clone(req).(*workflowservice.PollWorkflowTaskQueueRequest):
+			default:
+			}
+			if req.GetPollerGroupId() == groupID && req.GetTaskQueue().GetKind() == enumspb.TASK_QUEUE_KIND_NORMAL {
+				blockNormalPollOnce.Do(func() {
+					select {
+					case <-releaseNormalPoll:
+					case <-ctx.Done():
+					}
+				})
+			}
+			return &workflowservice.PollWorkflowTaskQueueResponse{}, nil
+		},
+	).AnyTimes()
+
+	client := NewServiceClient(service, nil, ClientOptions{Namespace: namespace})
+	worker := NewAggregatedWorker(client, taskQueue, WorkerOptions{
+		WorkflowTaskPollerBehavior: seededTestAutoscalingPollerBehavior(),
+		ActivityTaskPollerBehavior: NewPollerBehaviorSimpleMaximum(PollerBehaviorSimpleMaximumOptions{MaximumNumberOfPollers: 1}),
+		NexusTaskPollerBehavior:    NewPollerBehaviorSimpleMaximum(PollerBehaviorSimpleMaximumOptions{MaximumNumberOfPollers: 1}),
+	})
+	require.NoError(s.T(), worker.Start())
+	defer worker.Stop()
+
+	var sawNormal, sawSticky bool
+	require.Eventually(s.T(), func() bool {
+		for {
+			select {
+			case req := <-polls:
+				if req.GetPollerGroupId() != groupID {
+					continue
+				}
+				switch req.GetTaskQueue().GetKind() {
+				case enumspb.TASK_QUEUE_KIND_NORMAL:
+					sawNormal = true
+				case enumspb.TASK_QUEUE_KIND_STICKY:
+					sawSticky = true
+				}
+			default:
+				return sawNormal && sawSticky
+			}
+		}
+	}, 2*time.Second, 10*time.Millisecond)
+	releaseNormalPollOnce.Do(func() { close(releaseNormalPoll) })
+}
+
+func expectDescribeNamespaceWithPollerGroup(service *workflowservicemock.MockWorkflowServiceClient, namespace string, groupID string) {
+	service.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.DescribeNamespaceResponse{
+		NamespaceInfo: &namespacepb.NamespaceInfo{
+			Name:  namespace,
+			State: enumspb.NAMESPACE_STATE_REGISTERED,
+			Capabilities: &namespacepb.NamespaceInfo_Capabilities{
+				PollerAutoscaling: true,
+			},
+		},
+		PollerGroupsInfo: testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{
+			{Id: groupID, Weight: 1},
+		}),
+	}, nil).AnyTimes()
+}
+
+func seededTestAutoscalingPollerBehavior() PollerBehavior {
+	return NewPollerBehaviorAutoscaling(PollerBehaviorAutoscalingOptions{
+		InitialNumberOfPollers: 2,
+		MinimumNumberOfPollers: 1,
+		MaximumNumberOfPollers: 2,
+	})
 }
 
 func createWorkerWithDataConverter(service *workflowservicemock.MockWorkflowServiceClient) *AggregatedWorker {
@@ -2406,7 +2740,10 @@ func (s *internalWorkerTestSuite) TestRecordActivityHeartbeatByIDWithOptions_Ser
 	client := NewServiceClient(s.service, nil, ClientOptions{DataConverter: dc})
 
 	heartbeatResponse := workflowservice.RecordActivityTaskHeartbeatByIdResponse{CancelRequested: false}
-	s.service.EXPECT().RecordActivityTaskHeartbeatById(gomock.Any(), gomock.Any(), gomock.Any()).Return(&heartbeatResponse, nil)
+	s.service.EXPECT().RecordActivityTaskHeartbeatById(gomock.Any(), gomock.Any(), gomock.Any()).Return(&heartbeatResponse, nil).
+		Do(func(_ interface{}, req *workflowservice.RecordActivityTaskHeartbeatByIdRequest, _ ...interface{}) {
+			s.Equal("workflow:wid", req.ResourceId)
+		})
 
 	err := client.RecordActivityHeartbeatByIDWithOptions(context.Background(), RecordActivityHeartbeatByIDOptions{
 		Namespace:    DefaultNamespace,
@@ -2436,7 +2773,10 @@ func (s *internalWorkerTestSuite) TestCompleteActivityWithOptions_SerializationC
 	client := NewServiceClient(s.service, nil, ClientOptions{DataConverter: dc})
 
 	response := &workflowservice.RespondActivityTaskCompletedResponse{}
-	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(response, nil)
+	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(response, nil).
+		Do(func(_ interface{}, req *workflowservice.RespondActivityTaskCompletedRequest, _ ...interface{}) {
+			s.Equal("workflow:wid", req.ResourceId)
+		})
 
 	err := client.CompleteActivityWithOptions(context.Background(), CompleteActivityOptions{
 		TaskToken:    []byte("token"),
@@ -2467,6 +2807,7 @@ func (s *internalWorkerTestSuite) TestCompleteActivity_DelegatesToWithOptions() 
 	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(response, nil).
 		Do(func(_ any, req *workflowservice.RespondActivityTaskCompletedRequest, _ ...any) {
 			s.Equal([]byte("token"), req.TaskToken)
+			s.Empty(req.ResourceId)
 		})
 
 	err := client.CompleteActivity(context.Background(), []byte("token"), "result", nil)
@@ -2520,7 +2861,10 @@ func (s *internalWorkerTestSuite) TestRecordActivityHeartbeatWithOptions_Seriali
 	client := NewServiceClient(s.service, nil, ClientOptions{DataConverter: dc})
 
 	heartbeatResponse := workflowservice.RecordActivityTaskHeartbeatResponse{CancelRequested: false}
-	s.service.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).Return(&heartbeatResponse, nil)
+	s.service.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).Return(&heartbeatResponse, nil).
+		Do(func(_ interface{}, req *workflowservice.RecordActivityTaskHeartbeatRequest, _ ...interface{}) {
+			s.Equal("workflow:wid", req.ResourceId)
+		})
 
 	err := client.RecordActivityHeartbeatWithOptions(context.Background(), RecordActivityHeartbeatOptions{
 		TaskToken:    []byte("token"),
@@ -2551,6 +2895,7 @@ func (s *internalWorkerTestSuite) TestRecordActivityHeartbeat_DelegatesToWithOpt
 	s.service.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).Return(&heartbeatResponse, nil).
 		Do(func(_ any, req *workflowservice.RecordActivityTaskHeartbeatRequest, _ ...any) {
 			s.Equal([]byte("token"), req.TaskToken)
+			s.Empty(req.ResourceId)
 		})
 
 	err := client.RecordActivityHeartbeat(context.Background(), []byte("token"), "progress")
@@ -3201,6 +3546,7 @@ func TestWorkerOptionDefaults(t *testing.T) {
 	client := &WorkflowClient{}
 	taskQueue := "worker-options-tq"
 	aggWorker := NewAggregatedWorker(client, taskQueue, WorkerOptions{})
+	t.Cleanup(aggWorker.cacheLease.release)
 
 	workflowWorker := aggWorker.workflowWorker
 	require.Equal(
@@ -3264,7 +3610,7 @@ func TestWorkerOptionNonDefaults(t *testing.T) {
 		namespace:          "worker-options-test",
 		registry:           nil,
 		identity:           "143@worker-options-test-1",
-		dataConverter:      &converter.CompositeDataConverter{},
+		dataConverter:      converter.MakeTransferAware(&converter.CompositeDataConverter{}),
 		failureConverter:   GetDefaultFailureConverter(),
 		contextPropagators: nil,
 		logger:             ilog.NewNopLogger(),
@@ -3287,6 +3633,7 @@ func TestWorkerOptionNonDefaults(t *testing.T) {
 	}
 
 	aggWorker := NewAggregatedWorker(client, taskQueue, options)
+	t.Cleanup(aggWorker.cacheLease.release)
 
 	workflowWorker := aggWorker.workflowWorker
 	require.Equal(
@@ -3314,7 +3661,7 @@ func TestWorkerOptionNonDefaults(t *testing.T) {
 		TaskQueueActivitiesPerSecond:   options.TaskQueueActivitiesPerSecond,
 		WorkerLocalActivitiesPerSecond: options.WorkerLocalActivitiesPerSecond,
 		StickyScheduleToStartTimeout:   options.StickyScheduleToStartTimeout,
-		DataConverter:                  client.dataConverter,
+		DataConverter:                  converter.MakeTransferAware(client.dataConverter),
 		FailureConverter:               client.failureConverter,
 		Logger:                         client.logger,
 		MetricsHandler:                 client.metricsHandler,
@@ -3333,6 +3680,7 @@ func TestLocalActivityWorkerOnly(t *testing.T) {
 	client := &WorkflowClient{}
 	taskQueue := "worker-options-tq"
 	aggWorker := NewAggregatedWorker(client, taskQueue, WorkerOptions{LocalActivityWorkerOnly: true})
+	t.Cleanup(aggWorker.cacheLease.release)
 
 	workflowWorker := aggWorker.workflowWorker
 	require.True(t, workflowWorker.executionParameters.Identity != "")
@@ -3444,9 +3792,11 @@ func TestIsNonRetriableError(t *testing.T) {
 func TestWorkerRegisterDisabledWorkflow(t *testing.T) {
 	// Expect panic
 	var recovered any
+	client := &WorkflowClient{}
 	func() {
 		defer func() { recovered = recover() }()
-		worker := NewAggregatedWorker(&WorkflowClient{}, "some-task-queue", WorkerOptions{DisableWorkflowWorker: true})
+		worker := NewAggregatedWorker(client, "some-task-queue", WorkerOptions{DisableWorkflowWorker: true})
+		t.Cleanup(worker.cacheLease.release)
 		worker.RegisterWorkflow(testReplayWorkflow)
 	}()
 	require.Equal(t, "workflow worker disabled, cannot register workflow", recovered)
@@ -3545,10 +3895,15 @@ func (s *internalWorkerTestSuite) TestSessionWorkerShutdownSetsNoRepollOnSession
 }
 
 func (s *internalWorkerTestSuite) TestSessionWorkerShutdownDrainModeMatchesAggregateWorker() {
+	s.service.EXPECT().ShutdownWorker(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.ShutdownWorkerResponse{}, nil).AnyTimes()
+
 	client := NewServiceClient(s.service, nil, ClientOptions{Namespace: "testNamespace"})
 	worker := NewAggregatedWorker(client, "session-shutdown-task-queue", WorkerOptions{
 		EnableSessionWorker: true,
 	})
+	defer worker.Stop()
+
 	s.NotNil(worker.sessionWorker)
 
 	s.False(worker.sessionWorker.creationWorker.worker.shouldDrainOnShutdown(),

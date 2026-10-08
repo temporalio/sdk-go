@@ -970,8 +970,6 @@ type (
 		//
 		// Plugins themselves should never mutate this field, the behavior is
 		// undefined.
-		//
-		// NOTE: Experimental
 		Plugins []ClientPlugin
 
 		// WorkerHeartbeatInterval is the interval at which the worker will send heartbeats to the server.
@@ -1642,6 +1640,7 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 	if options.DataConverter == nil {
 		options.DataConverter = converter.GetDefaultDataConverter()
 	}
+	options.DataConverter = converter.MakeTransferAware(options.DataConverter)
 
 	if options.FailureConverter == nil {
 		options.FailureConverter = GetDefaultFailureConverter()

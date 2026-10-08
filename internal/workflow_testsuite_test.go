@@ -1234,6 +1234,24 @@ func TestDynamicWorkflows(t *testing.T) {
 	require.Equal(t, "dynamic-activity - grape - cherry", result)
 }
 
+func TestActivityEnvironmentDynamicActivity(t *testing.T) {
+	testSuite := &WorkflowTestSuite{}
+	env := testSuite.NewTestActivityEnvironment()
+	env.RegisterDynamicActivity(func(ctx context.Context, args converter.EncodedValues) (string, error) {
+		var arg string
+		if err := args.Get(&arg); err != nil {
+			return "", err
+		}
+		return GetActivityInfo(ctx).ActivityType.Name + " - " + arg, nil
+	}, DynamicRegisterActivityOptions{})
+
+	val, err := env.ExecuteActivity("some-activity", "grape")
+	require.NoError(t, err)
+	var result string
+	require.NoError(t, val.Get(&result))
+	require.Equal(t, "some-activity - grape", result)
+}
+
 func SleepHour(ctx Context) error {
 	// We need to specifically have a timer that's cancelled, so that the
 	// timer's underlying channel is closed when the workflow is cancelled

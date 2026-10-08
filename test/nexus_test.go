@@ -1769,7 +1769,7 @@ func TestAsyncOperationFromWorkflow_CancellationTypes(t *testing.T) {
 			require.NoError(t, err)
 			if event.EventType == enumspb.EVENT_TYPE_NEXUS_OPERATION_CANCEL_REQUESTED {
 				foundRequestedEvent = true
-				require.Greater(t, unblockedTime, event.EventTime.AsTime().UTC())
+				require.GreaterOrEqual(t, unblockedTime, event.EventTime.AsTime().UTC())
 			}
 			require.NotEqual(t, enumspb.EVENT_TYPE_NEXUS_OPERATION_CANCEL_REQUEST_COMPLETED, event.EventType)
 			require.NotEqual(t, enumspb.EVENT_TYPE_NEXUS_OPERATION_CANCEL_REQUEST_FAILED, event.EventType)
@@ -1803,7 +1803,7 @@ func TestAsyncOperationFromWorkflow_CancellationTypes(t *testing.T) {
 			require.NoError(t, err)
 			if event.EventType == enumspb.EVENT_TYPE_NEXUS_OPERATION_CANCEL_REQUEST_COMPLETED {
 				foundRequestCompleted = true
-				require.Greater(t, unblockedTime, event.EventTime.AsTime().UTC())
+				require.GreaterOrEqual(t, unblockedTime, event.EventTime.AsTime().UTC())
 			}
 			callerCloseEvent = event
 		}

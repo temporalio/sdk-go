@@ -600,3 +600,106 @@ func TestConvertNexusLinkToLinkNexusOperation(t *testing.T) {
 		})
 	}
 }
+
+// ConvertCommonLinkToNexusLink is the encode-side dispatcher, so every variant that has a Nexus
+// link form has to be routed; a variant that falls through is silently unlinked rather than
+// failing, which is why each one is pinned here.
+func TestConvertCommonLinkToNexusLink(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		input    *commonpb.Link
+		wantURL  string
+		wantType string
+	}{
+		{
+			name: "workflow event",
+			input: &commonpb.Link{Variant: &commonpb.Link_WorkflowEvent_{
+				WorkflowEvent: &commonpb.Link_WorkflowEvent{
+					Namespace: "ns", WorkflowId: "wf-id", RunId: "run-id",
+					Reference: &commonpb.Link_WorkflowEvent_EventRef{
+						EventRef: &commonpb.Link_WorkflowEvent_EventReference{
+							EventId: 1, EventType: enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED,
+						},
+					},
+				},
+			}},
+			wantURL: "temporal:///namespaces/ns/workflows/wf-id/run-id/history" +
+				"?eventID=1&eventType=WorkflowExecutionStarted&referenceType=EventReference",
+			wantType: "temporal.api.common.v1.Link.WorkflowEvent",
+		},
+		{
+			name: "workflow",
+			input: &commonpb.Link{Variant: &commonpb.Link_Workflow_{
+				Workflow: &commonpb.Link_Workflow{Namespace: "ns", WorkflowId: "wf-id", RunId: "run-id"},
+			}},
+			wantURL:  "temporal:///namespaces/ns/workflows/wf-id/run-id",
+			wantType: "temporal.api.common.v1.Link.Workflow",
+		},
+		{
+			name: "nexus operation",
+			input: &commonpb.Link{Variant: &commonpb.Link_NexusOperation_{
+				NexusOperation: &commonpb.Link_NexusOperation{Namespace: "ns", OperationId: "op-id", RunId: "run-id"},
+			}},
+			wantURL:  "temporal:///namespaces/ns/nexus-operations/op-id/run-id/details",
+			wantType: "temporal.api.common.v1.Link.NexusOperation",
+		},
+		{
+			name: "activity",
+			input: &commonpb.Link{Variant: &commonpb.Link_Activity_{
+				Activity: &commonpb.Link_Activity{Namespace: "ns", ActivityId: "act-id", RunId: "run-id"},
+			}},
+			wantURL:  "temporal:///namespaces/ns/activities/act-id/run-id/details",
+			wantType: "temporal.api.common.v1.Link.Activity",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := temporalnexus.ConvertCommonLinkToNexusLink(tc.input)
+			require.NotNil(t, got.URL, "variant was not routed")
+			require.Equal(t, tc.wantURL, got.URL.String())
+			require.Equal(t, tc.wantType, got.Type)
+		})
+	}
+}
+
+// A variant with no Nexus link form yields the zero Link, which callers treat as "no link" rather
+// than as an error.
+func TestConvertCommonLinkToNexusLink_NoLinkForm(t *testing.T) {
+	require.Equal(t, nexus.Link{}, temporalnexus.ConvertCommonLinkToNexusLink(&commonpb.Link{}))
+	require.Equal(t, nexus.Link{}, temporalnexus.ConvertCommonLinkToNexusLink(&commonpb.Link{
+		Variant: &commonpb.Link_BatchJob_{BatchJob: &commonpb.Link_BatchJob{JobId: "job-id"}},
+	}))
+}
+
+// The Workflow variant is the only one that had an encoder but no decoder, so the pair is
+// exercised in both directions here.
+func TestConvertNexusLinkToLinkWorkflow(t *testing.T) {
+	input := &commonpb.Link_Workflow{
+		Namespace: "ns", WorkflowId: "wf-id", RunId: "run-id", Reason: "Query processed",
+	}
+
+	link := temporalnexus.ConvertWorkflowLinkToNexusLink(input)
+	require.Equal(t, "temporal:///namespaces/ns/workflows/wf-id/run-id?reason=Query+processed", link.URL.String())
+
+	output, err := temporalnexus.ConvertNexusLinkToLinkWorkflow(link)
+	require.NoError(t, err)
+	require.Empty(t, cmp.Diff(input, output, protocmp.Transform()))
+}
+
+func TestConvertNexusLinkToLinkWorkflow_Invalid(t *testing.T) {
+	workflowURL, err := url.Parse("temporal:///namespaces/ns/workflows/wf-id/run-id")
+	require.NoError(t, err)
+
+	// A workflow-event URL is rejected: it has the event suffix a plain workflow link must not.
+	eventURL, err := url.Parse("temporal:///namespaces/ns/workflows/wf-id/run-id/history")
+	require.NoError(t, err)
+
+	_, err = temporalnexus.ConvertNexusLinkToLinkWorkflow(nexus.Link{
+		URL: workflowURL, Type: "temporal.api.common.v1.Link.Activity",
+	})
+	require.ErrorContains(t, err, "cannot parse link type")
+
+	_, err = temporalnexus.ConvertNexusLinkToLinkWorkflow(nexus.Link{
+		URL: eventURL, Type: "temporal.api.common.v1.Link.Workflow",
+	})
+	require.ErrorContains(t, err, "malformed URL path")
+}
