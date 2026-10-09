@@ -57,6 +57,8 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- Fixed workflow registration alias handling in `TestWorkflowEnvironment`: workflow mocks no longer
+  resolve aliases twice, and unmocked workflows use the same implementation lookup as production workers.
 - Child context cancellation now follows creation order by default.
 - Legacy query failure responses (`RespondQueryTaskCompletedRequest`) now set
   `WorkflowTaskFailedCause` for workflow task failures: `PAYLOADS_TOO_LARGE` for oversized payloads,
