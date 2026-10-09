@@ -87,6 +87,9 @@ to docs, or any other relevant information.
   `OnRegisterActivity` but not `OnRegisterDynamicActivity`.
 - Stopped workers now release sticky workflow cache ownership immediately. When the final worker
   stops, cached workflow state is cleared without waiting for garbage collection.
+- Typed search attributes no longer panic when a stored value does not match its indexed type, for
+  example a Keyword written as a single-item array. Describing a workflow or schedule and reading
+  typed search attributes skips such values and logs a warning.
 
 ### Security
 
