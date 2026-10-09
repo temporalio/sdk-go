@@ -20,9 +20,14 @@ func TestGeneratedValidatorIsUpToDate(t *testing.T) {
 	require.NoError(t, err)
 	got, err := os.ReadFile("../../payloadlimits/validator_gen.go")
 	require.NoError(t, err)
-	if string(got) != string(want) {
+	if !upToDate(got, want) {
 		t.Fatal("internal/payloadlimits/validator_gen.go is out of date; run `go generate ./internal/payloadlimits`")
 	}
+}
+
+func TestUpToDateIgnoresCRLF(t *testing.T) {
+	require.True(t, upToDate([]byte("a\r\nb\r\n"), []byte("a\nb\n")))
+	require.False(t, upToDate([]byte("a\r\nc\r\n"), []byte("a\nb\n")))
 }
 
 func TestUnclassifiedFieldFailsGeneration(t *testing.T) {

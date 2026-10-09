@@ -119,7 +119,7 @@ func main() {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
-		if !bytes.Equal(got, src) {
+		if !upToDate(got, src) {
 			fmt.Fprintf(os.Stderr, "payload-limits: %s is out of date; run `go generate ./internal/payloadlimits`\n", *out)
 			os.Exit(1)
 		}
@@ -129,6 +129,12 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+}
+
+// upToDate reports whether checkedIn matches generated. Line endings are ignored because Windows
+// checkouts convert the checked-in file to CRLF while the generator always emits LF.
+func upToDate(checkedIn, generated []byte) bool {
+	return bytes.Equal(bytes.ReplaceAll(checkedIn, []byte("\r\n"), []byte("\n")), generated)
 }
 
 type generator struct {
