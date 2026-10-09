@@ -38,6 +38,9 @@ to docs, or any other relevant information.
   again.
 - `temporalnexus.ConvertNexusLinkToLinkWorkflow`, the decoding counterpart of
   `ConvertWorkflowLinkToNexusLink`.
+- Added `workflow.NewLocalVar[T](ctx)` for type-safe values bound to a workflow run that can be
+  accessed from workflow code and workflow interceptors. Copies of a `workflow.LocalVar[T]` share
+  identity.
 
 ### Changed
 
