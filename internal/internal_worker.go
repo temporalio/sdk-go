@@ -1078,7 +1078,9 @@ func (r *registry) getWorkflowDefinition(wt WorkflowType) (WorkflowDefinition, e
 	}
 	var dynamic bool
 	if d, ok := wf.(string); ok && d == "dynamic" {
+		r.Lock()
 		wf = r.dynamicWorkflow
+		r.Unlock()
 		dynamic = true
 	}
 	// A dynamic workflow may itself be a WorkflowDefinitionFactory (e.g. the
