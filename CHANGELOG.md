@@ -38,6 +38,9 @@ to docs, or any other relevant information.
   again.
 - `temporalnexus.ConvertNexusLinkToLinkWorkflow`, the decoding counterpart of
   `ConvertWorkflowLinkToNexusLink`.
+- Added `workflow.NewLocalVar[T](ctx)` for type-safe values bound to a workflow run that can be
+  accessed from workflow code and workflow interceptors. Copies of a `workflow.LocalVar[T]` share
+  identity.
 
 ### Changed
 
@@ -109,9 +112,6 @@ to docs, or any other relevant information.
   it for inputs, results, and failures; handlers use it for inputs, synchronous results, and
   failures. Asynchronous handler results and detached standalone handles are not yet supported.
   Standalone `USE_EXISTING` handles use their start request's context.
-- Added `workflow.NewLocalVar[T](ctx)` for type-safe values bound to a workflow run that can be
-  accessed from workflow code and workflow interceptors. Copies of a `workflow.LocalVar[T]` share
-  identity.
 - Added `temporal.NewPayloadValidationError` to create non-retryable application errors with
   optional structured details for payload validation failures. Passing `nil` omits details.
 - Added Go 1.27+ generic methods on the experimental `temporalnexus.NexusClient` for starting
