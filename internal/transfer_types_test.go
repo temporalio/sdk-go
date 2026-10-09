@@ -17,6 +17,7 @@ import (
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
 	"go.temporal.io/sdk/converter"
+	commonconverter "go.temporal.io/sdk/internal/common/converter"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
 )
@@ -88,7 +89,7 @@ type contextualString string
 type transferContextKey struct{}
 
 func (contextualString) TransferTypeConverter() (converter.TransferTypeConverter, error) {
-	return converter.NewContextualTransferTypeConverter(
+	return commonconverter.NewContextualTransferTypeConverter(
 		func(ctx context.Context, value *contextualString) (*string, error) {
 			label, _ := ctx.Value(transferContextKey{}).(string)
 			transferType := fmt.Sprintf("go:%s:%s", label, string(*value))
@@ -718,10 +719,10 @@ func TestTransferTypes_CustomFailureConverterRoundTrip(t *testing.T) {
 
 func TestNewContextualTransferTypeConverter_RejectsPointerTypes(t *testing.T) {
 	t.Parallel()
-	tc, err := converter.NewContextualTransferTypeConverter[*temperature, float64](nil, nil, nil, nil)
+	tc, err := commonconverter.NewContextualTransferTypeConverter[*temperature, float64](nil, nil, nil, nil)
 	require.Nil(t, tc)
 	require.EqualError(t, err, "transfer type converter: model type must not be a pointer, got *internal.temperature")
-	tc, err = converter.NewContextualTransferTypeConverter[temperature, *float64](nil, nil, nil, nil)
+	tc, err = commonconverter.NewContextualTransferTypeConverter[temperature, *float64](nil, nil, nil, nil)
 	require.Nil(t, tc)
 	require.EqualError(t, err, "transfer type converter: transfer type must not be a pointer, got *float64")
 }

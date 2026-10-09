@@ -1,7 +1,9 @@
 package converter
 
+import commonconverter "go.temporal.io/sdk/internal/common/converter"
+
 var (
-	defaultDataConverter = newTransferAwareDataConverter(NewCompositeDataConverter(
+	defaultDataConverter = commonconverter.MakeTransferAware(NewCompositeDataConverter(
 		NewNilPayloadConverter(),
 		NewByteSlicePayloadConverter(),
 
