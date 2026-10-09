@@ -893,6 +893,72 @@ func (ts *IntegrationTestSuite) TestContinueAsNew() {
 	ts.Equal(999, result)
 }
 
+func (ts *IntegrationTestSuite) TestWorkflowLocalVar() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	first, err := ts.client.ExecuteWorkflow(
+		ctx,
+		ts.startWorkflowOptions("test-workflow-local-var-first"),
+		ts.workflows.WorkflowLocalVar,
+		"first",
+	)
+	ts.NoError(err)
+	second, err := ts.client.ExecuteWorkflow(
+		ctx,
+		ts.startWorkflowOptions("test-workflow-local-var-second"),
+		ts.workflows.WorkflowLocalVar,
+		"second",
+	)
+	ts.NoError(err)
+
+	query := func(run client.WorkflowRun) string {
+		value, err := ts.client.QueryWorkflow(ctx, run.GetID(), run.GetRunID(), workflowLocalVarQueryName)
+		ts.NoError(err)
+		var result string
+		ts.NoError(value.Get(&result))
+		return result
+	}
+	ts.Equal("first", query(first))
+	ts.Equal("second", query(second))
+
+	update, err := ts.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+		WorkflowID:   first.GetID(),
+		RunID:        first.GetRunID(),
+		UpdateName:   workflowLocalVarUpdateName,
+		Args:         []any{"updated"},
+		WaitForStage: client.WorkflowUpdateStageCompleted,
+	})
+	ts.NoError(err)
+	var updateResult string
+	ts.NoError(update.Get(ctx, &updateResult))
+	ts.Equal("updated", updateResult)
+	ts.Equal("updated", query(first))
+	ts.Equal("second", query(second))
+
+	ts.NoError(ts.client.SignalWorkflow(ctx, first.GetID(), first.GetRunID(), workflowLocalVarFinishSignal, nil))
+	ts.NoError(ts.client.SignalWorkflow(ctx, second.GetID(), second.GetRunID(), workflowLocalVarFinishSignal, nil))
+	var firstResult string
+	var secondResult string
+	ts.NoError(first.Get(ctx, &firstResult))
+	ts.NoError(second.Get(ctx, &secondResult))
+	ts.Equal("updated", firstResult)
+	ts.Equal("second", secondResult)
+
+	var parentResult string
+	ts.NoError(ts.executeWorkflow("test-workflow-local-var-parent", ts.workflows.WorkflowLocalVarParent, &parentResult))
+	ts.Equal("parent", parentResult)
+
+	var continuedResult string
+	ts.NoError(ts.executeWorkflow(
+		"test-workflow-local-var-continue-as-new",
+		ts.workflows.WorkflowLocalVarContinueAsNew,
+		&continuedResult,
+		false,
+	))
+	ts.Empty(continuedResult)
+}
+
 func (ts *IntegrationTestSuite) TestContinueAsNewCarryOver() {
 	skipOnCloud(ts.T(), cloudNeedsAdaptation, "requires custom namespace search attributes")
 	var result string
@@ -3644,9 +3710,8 @@ func (ts *IntegrationTestSuite) testOpenTelemetryTracing(withMessages bool, upda
 	ts.NoError(ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "finish-signal", nil))
 	ts.NoError(run.Get(ctx, nil))
 
-	// Finish span and collect
+	// Finish span
 	rootSpan.End()
-	spans := ts.openTelemetrySpanRecorder.Ended()
 
 	updateOpName := "UpdateWorkflow"
 	if updateWithStart {
@@ -3678,8 +3743,6 @@ func (ts *IntegrationTestSuite) testOpenTelemetryTracing(withMessages bool, upda
 	}
 
 	// Confirm expected
-	actual := interceptortest.Span("root-span")
-	ts.addOpenTelemetryChildren(rootSpan.SpanContext().SpanID(), actual, spans)
 	expected := span("root-span",
 		span("SignalWithStartWorkflow:SignalsQueriesAndUpdate",
 			span("HandleSignal:start-signal"),
@@ -3783,7 +3846,11 @@ func (ts *IntegrationTestSuite) testOpenTelemetryTracing(withMessages bool, upda
 			span("HandleSignal:finish-signal"),
 		),
 	)
-	ts.Equal(expected, actual)
+	ts.EventuallyWithT(func(c *assert.CollectT) {
+		actual := interceptortest.Span("root-span")
+		ts.addOpenTelemetryChildren(rootSpan.SpanContext().SpanID(), actual, ts.openTelemetrySpanRecorder.Ended())
+		assert.Equal(c, expected, actual)
+	}, time.Second, 10*time.Millisecond)
 }
 
 func (ts *IntegrationTestSuite) addOpenTelemetryChildren(
@@ -5531,6 +5598,9 @@ func (ts *IntegrationTestSuite) testWorkerFatalError(useWorkerRun bool) {
 	// Create a worker that uses that client
 	callbackErrCh := make(chan error, 1)
 	w := worker.New(c, "ignored-task-queue", worker.Options{OnFatalError: func(err error) { callbackErrCh <- err }})
+	// Fatal notification can arrive before SDK cleanup finishes. Join that
+	// cleanup before the client's deferred Close runs.
+	defer w.Stop()
 
 	// Do run-based or start-based worker
 	runErrCh := make(chan error, 1)

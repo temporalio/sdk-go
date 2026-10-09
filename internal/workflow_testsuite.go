@@ -200,6 +200,11 @@ func (t *TestActivityEnvironment) RegisterActivityWithOptions(a any, options Reg
 	t.impl.RegisterActivityWithOptions(a, options)
 }
 
+// RegisterDynamicActivity registers the dynamic activity implementation with TestActivityEnvironment
+func (t *TestActivityEnvironment) RegisterDynamicActivity(a any, options DynamicRegisterActivityOptions) {
+	t.impl.RegisterDynamicActivity(a, options)
+}
+
 // ExecuteActivity executes an activity. The tested activity will be executed synchronously in the calling goroutinue.
 // Caller should use EncodedValue.Get() to extract strong typed result value.
 func (t *TestActivityEnvironment) ExecuteActivity(activityFn any, args ...any) (converter.EncodedValue, error) {

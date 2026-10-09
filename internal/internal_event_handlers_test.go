@@ -15,6 +15,7 @@ import (
 
 	"go.temporal.io/sdk/converter"
 	iconverter "go.temporal.io/sdk/internal/converter"
+	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/internal/protocol"
 )
 
@@ -49,6 +50,78 @@ func TestDecodedValue(t *testing.T) {
 		dataConverter: converter.GetDefaultDataConverter(),
 	}
 	testDecodeValueHelper(t, env)
+}
+
+func Test_ExecuteChildWorkflowVersioningOverride(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name               string
+		versioningOverride VersioningOverride
+	}{
+		{name: "none"},
+		{
+			name: "pinned",
+			versioningOverride: &PinnedVersioningOverride{
+				Version: WorkerDeploymentVersion{
+					DeploymentName: "deployment",
+					BuildID:        "build",
+				},
+			},
+		},
+		{
+			name:               "auto upgrade",
+			versioningOverride: &AutoUpgradeVersioningOverride{},
+		},
+		{
+			name: "one time",
+			versioningOverride: &OneTimeVersioningOverride{
+				TargetVersion: WorkerDeploymentVersion{
+					DeploymentName: "deployment",
+					BuildID:        "build",
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			helper := newCommandsHelper()
+			_, ctx := createRootTestContext()
+			env := &workflowEnvironmentImpl{
+				commandsHelper: helper,
+				workflowInfo:   GetWorkflowInfo(ctx),
+				sdkFlags:       newSDKFlagSet(nil),
+				dataConverter:  converter.GetDefaultDataConverter(),
+				logger:         ilog.NewNopLogger(),
+			}
+
+			env.ExecuteChildWorkflow(
+				ExecuteWorkflowParams{
+					WorkflowOptions: WorkflowOptions{
+						Namespace:          "namespace",
+						WorkflowID:         "child-workflow-id",
+						TaskQueueName:      "task-queue",
+						VersioningOverride: tt.versioningOverride,
+					},
+					WorkflowType: &WorkflowType{Name: "child-workflow"},
+				},
+				func(*commonpb.Payloads, error) {},
+				func(WorkflowExecution, error) {},
+			)
+
+			commands := helper.getCommands(false)
+			require.Len(t, commands, 1)
+			attributes := commands[0].GetStartChildWorkflowExecutionCommandAttributes()
+			require.Equal(
+				t,
+				VersioningOverrideToProto(tt.versioningOverride),
+				attributes.GetVersioningOverride(),
+			)
+		})
+	}
 }
 
 func TestDecodedValueWithDataConverter(t *testing.T) {

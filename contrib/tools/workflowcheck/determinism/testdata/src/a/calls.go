@@ -35,6 +35,28 @@ func MultipleCalls() { // want MultipleCalls:"calls non-deterministic function t
 	CallsTime()
 }
 
+func MultipleSamePackageCalls() { // want MultipleSamePackageCalls:"calls non-deterministic function a.CallsTime, calls non-deterministic function a.CallsLog"
+	CallsTime()
+	CallsLog()
+}
+
+func MutualRecursionA() { // want MutualRecursionA:"calls non-deterministic function a.MutualRecursionB, calls non-deterministic function a.CallsTime"
+	MutualRecursionB()
+	CallsTime()
+}
+
+func MutualRecursionB() { // want MutualRecursionB:"calls non-deterministic function a.MutualRecursionA"
+	MutualRecursionA()
+}
+
+func DeterministicRecursionA() {
+	DeterministicRecursionB()
+}
+
+func DeterministicRecursionB() {
+	DeterministicRecursionA()
+}
+
 func BadCall() { // want BadCall:"declared non-deterministic"
 	Recursion()
 }
