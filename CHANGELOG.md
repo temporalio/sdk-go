@@ -65,6 +65,8 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- Local activity mock lookup in `TestWorkflowEnvironment` no longer tries re-resolving the activity name.
+  This fixes a bug where two closures with different registered names would alias each other.
 - mTLS client setup and schedule creation no longer modify caller-owned TLS
   configs or workflow actions, allowing safe reuse.
 - Fatal worker errors now signal polling to stop before notification and run
