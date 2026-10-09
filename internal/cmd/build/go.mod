@@ -5,7 +5,7 @@ go 1.26.0
 require (
 	github.com/Antonboom/testifylint v1.6.4
 	github.com/BurntSushi/toml v1.4.1-0.20240526193622-a339e1f7089c
-	github.com/kisielk/errcheck v1.8.0
+	github.com/kisielk/errcheck v1.20.0
 	github.com/ldez/usetesting v0.5.0
 	go.temporal.io/sdk v1.32.1
 	golang.org/x/tools v0.48.0
