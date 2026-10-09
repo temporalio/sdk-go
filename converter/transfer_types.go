@@ -417,6 +417,20 @@ func (dc *transferAwareDataConverter) WithSerializationContext(ctx Serialization
 	return &result
 }
 
+// WithTransferWorkflowContext passes ctx to workflow transfer conversion callbacks
+// without calling the underlying data converter's WithWorkflowContext method.
+// dc must already be transfer-aware, as returned by [MakeTransferAware].
+// The underlying converter's workflow and serialization contexts are unchanged.
+// The original converter is not modified.
+//
+// NOTE: Experimental.
+func WithTransferWorkflowContext(dc DataConverter, ctx WorkflowContext) DataConverter {
+	result := *dc.(*transferAwareDataConverter)
+	result.context = nil
+	result.workflowContext = ctx
+	return &result
+}
+
 func (dc *transferAwareDataConverter) WithWorkflowContext(ctx WorkflowContext) DataConverter {
 	result := *dc
 	if parent, ok := dc.parent.(ContextAware); ok {

@@ -3087,6 +3087,16 @@ func (wc *workflowEnvironmentInterceptor) prepareNexusOperationParams(ctx Contex
 	dc := withRootDataConverterSerializationContext(ctx, nsc)
 	fc := converter.WithFailureConverterSerializationContext(getRootFailureConverterFromWorkflowContext(ctx), nsc)
 
+	if info, ok := nexusOperationRegistry[NexusOperationKey{Service: nsc.Service, Operation: nsc.Operation}]; ok {
+		sc := info.SerializationContext(input.Input)
+		targetDC := withRootDataConverterSerializationContext(ctx, sc)
+		payloadContext := WithDataConverter(ctx, targetDC)
+		// Only transfer callbacks get the target context. The parent converter
+		// must retain the outer Nexus envelope's existing bindings.
+		dc = converter.WithTransferWorkflowContext(dc, payloadContext)
+		fc = converter.WithFailureConverterSerializationContext(getRootFailureConverterFromWorkflowContext(ctx), sc)
+	}
+
 	payload, err := dc.ToPayload(input.Input)
 	if err != nil {
 		return ExecuteNexusOperationParams{}, err
