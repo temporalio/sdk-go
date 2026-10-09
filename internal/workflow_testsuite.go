@@ -514,9 +514,6 @@ func (e *TestWorkflowEnvironment) OnWorkflow(workflow any, args ...any) *MockCal
 			panic(err)
 		}
 		fnName, _ := GetWorkflowFunctionName(e.impl.registry, workflow)
-		if alias, ok := e.impl.registry.getWorkflowAlias(fnName); ok {
-			fnName = alias
-		}
 		e.impl.registry.RegisterWorkflowWithOptions(workflow, RegisterWorkflowOptions{DisableAlreadyRegisteredCheck: true})
 		call = e.workflowMock.On(fnName, args...)
 	case reflect.String:

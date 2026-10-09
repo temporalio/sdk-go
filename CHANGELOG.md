@@ -68,6 +68,8 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- Fixed workflow registration alias handling in `TestWorkflowEnvironment`: workflow mocks no longer
+  resolve aliases twice, and unmocked workflows use the same implementation lookup as production workers.
 - Local activity mock lookup in `TestWorkflowEnvironment` no longer tries re-resolving the activity name.
   This fixes a bug where two closures with different registered names would alias each other.
 - mTLS client setup and schedule creation no longer modify caller-owned TLS
