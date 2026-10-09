@@ -804,8 +804,21 @@ func (ts *IntegrationTestSuite) TestLongRunningActivityWithHBAndGrpcRetries() {
 	err := ts.executeWorkflow("test-long-running-activity-with-hb", ts.workflows.LongRunningActivityWithHB, &expected)
 	ts.NoError(err)
 	ts.EqualValues(expected, ts.activities.invoked())
-	// we induce 2 failures, but they all should be retried
-	ts.assertReportedOperationCount("temporal_request_failure", "RecordActivityTaskHeartbeat", 0)
+	// Activity completion can cancel the final heartbeat RPC while its retry is still in flight.
+	var canceledFailures, unexpectedFailures int64
+	for _, counter := range ts.metricsHandler.Counters() {
+		if counter.Name != metrics.TemporalRequestFailure ||
+			counter.Tags[metrics.OperationTagName] != "RecordActivityTaskHeartbeat" {
+			continue
+		}
+		if counter.Tags[metrics.RequestFailureCode] == "CANCELLED" {
+			canceledFailures += counter.Value()
+		} else {
+			unexpectedFailures += counter.Value()
+		}
+	}
+	ts.Zero(unexpectedFailures, "unexpected terminal heartbeat RPC failures")
+	ts.LessOrEqual(canceledFailures, int64(1), "activity completion should cancel at most one terminal heartbeat RPC")
 	// expect 2 retry attempts
 	ts.assertReportedOperationCount("temporal_request_failure_attempt", "RecordActivityTaskHeartbeat", 2)
 	// save number of heartbeats sent to the server
