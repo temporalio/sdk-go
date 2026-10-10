@@ -182,7 +182,8 @@ func awaitWaitGroup(wg *sync.WaitGroup, timeout time.Duration) bool {
 	}
 }
 
-// InterruptCh returns channel which will get data when system receives interrupt signal. Pass it to worker.Run() func to stop worker with Ctrl+C.
+// InterruptCh returns a channel that receives the first SIGINT or SIGTERM signal
+// and then closes. Pass it to worker.Run to initiate graceful worker shutdown.
 func InterruptCh() <-chan any {
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
