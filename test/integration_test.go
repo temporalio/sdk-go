@@ -8756,7 +8756,10 @@ func (ts *IntegrationTestSuite) TestLocalActivityCancelFromWorkerShutdown() {
 func (ts *IntegrationTestSuite) TestLocalActivityWorkerShutdownNoHeartbeat() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	localActivityStarted := make(chan struct{})
+	var localActivityStartedOnce sync.Once
 	localActivityFn := func(ctx context.Context) error {
+		localActivityStartedOnce.Do(func() { close(localActivityStarted) })
 		// Wait for the LA to return context canceled, so we can test failed LA will not heartbeat on worker shutdown
 		time.Sleep(100 * time.Millisecond)
 		return ctx.Err()
@@ -8791,7 +8794,7 @@ func (ts *IntegrationTestSuite) TestLocalActivityWorkerShutdownNoHeartbeat() {
 	run, err := ts.client.ExecuteWorkflow(ctx, startOptions, workflowFn)
 	ts.NoError(err)
 	// Stop the worker
-	time.Sleep(100 * time.Millisecond)
+	<-localActivityStarted
 	ts.worker.Stop()
 	ts.workerStopped = true
 	time.Sleep(1500 * time.Millisecond)
