@@ -798,20 +798,77 @@ func (ts *IntegrationTestSuite) TestLongRunningActivityWithHB() {
 }
 
 func (ts *IntegrationTestSuite) TestLongRunningActivityWithHBAndGrpcRetries() {
+	const (
+		heartbeatOperation = "RecordActivityTaskHeartbeat"
+		heartbeatMethod    = "/temporal.api.workflowservice.v1.WorkflowService/" + heartbeatOperation
+		heartbeatCount     = 3
+		retryCount         = 2
+	)
+
+	// The completion interceptor must be installed at dial time, so replace the suite's client and worker
+	// to let the activity wait for heartbeat retries and metrics before returning and canceling its context.
+	ts.worker.Stop()
+	ts.workerStopped = true
+	// The first heartbeat is synchronous, so its result must be buffered.
+	heartbeatResults := make(chan error, 1)
+	c, err := ts.newDefaultClient(func(options *client.Options) {
+		options.MetricsHandler = ts.metricsHandler
+		options.TrafficController = ts.trafficController
+		options.ConnectionOptions.DialOptions = []grpc.DialOption{
+			grpc.WithUnaryInterceptor(func(
+				ctx context.Context, method string, req, reply any, cc *grpc.ClientConn,
+				invoker grpc.UnaryInvoker, opts ...grpc.CallOption,
+			) error {
+				if method != heartbeatMethod {
+					return invoker(ctx, method, req, reply, cc, opts...)
+				}
+
+				// Notify the activity after retries and their metrics have finished.
+				err := invoker(ctx, method, req, reply, cc, opts...)
+				heartbeatResults <- err
+				return err
+			}),
+		}
+	})
+	ts.NoError(err)
+	defer c.Close()
+
+	w := worker.New(c, ts.taskQueueName, worker.Options{})
+	w.RegisterWorkflow(ts.workflows.LongRunningActivityWithHB)
+	w.RegisterActivityWithOptions(func(ctx context.Context, _, _ time.Duration) error {
+		ts.activities.append("longRunningHeartbeat")
+		// Send no further heartbeats while a batched RPC is outstanding.
+		for range heartbeatCount {
+			activity.RecordHeartbeat(ctx)
+			select {
+			case err := <-heartbeatResults:
+				if err != nil {
+					return err
+				}
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+
+		return nil
+	}, activity.RegisterOptions{Name: "LongRunningHeartbeat"})
+	ts.NoError(w.Start())
+	defer w.Stop()
+
 	var expected []string
 	// Fail every other HB attempt, otherwise it's too easy to exceed the HB timeout.
-	ts.trafficController.AddError("RecordActivityTaskHeartbeat", errors.New("call not allowed"), 1, 3)
-	err := ts.executeWorkflow("test-long-running-activity-with-hb", ts.workflows.LongRunningActivityWithHB, &expected)
+	ts.trafficController.AddError(heartbeatOperation, errors.New("call not allowed"), 1, 3)
+	err = ts.executeWorkflow("test-long-running-activity-with-hb", ts.workflows.LongRunningActivityWithHB, &expected)
 	ts.NoError(err)
 	ts.EqualValues(expected, ts.activities.invoked())
 	// we induce 2 failures, but they all should be retried
-	ts.assertReportedOperationCount("temporal_request_failure", "RecordActivityTaskHeartbeat", 0)
+	ts.assertReportedOperationCount("temporal_request_failure", heartbeatOperation, 0)
 	// expect 2 retry attempts
-	ts.assertReportedOperationCount("temporal_request_failure_attempt", "RecordActivityTaskHeartbeat", 2)
+	ts.assertReportedOperationCount("temporal_request_failure_attempt", heartbeatOperation, retryCount)
 	// save number of heartbeats sent to the server
-	totalHeartbeats := ts.getReportedOperationCount("temporal_request", "RecordActivityTaskHeartbeat")
+	totalHeartbeats := ts.getReportedOperationCount("temporal_request", heartbeatOperation)
 	// and make sure that number of reported attempts is 2 more, because of retries.
-	ts.assertReportedOperationCount("temporal_request_attempt", "RecordActivityTaskHeartbeat", int(totalHeartbeats+2))
+	ts.assertReportedOperationCount("temporal_request_attempt", heartbeatOperation, int(totalHeartbeats)+retryCount)
 }
 
 func (ts *IntegrationTestSuite) TestHeartbeatOnActivityFailure() {
