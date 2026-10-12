@@ -181,6 +181,74 @@ func (ts *WorkerDeploymentTestSuite) waitForWorkflowRunningOnVersion(ctx context
 	}, 5*time.Second, 100*time.Millisecond)
 }
 
+func (ts *WorkerDeploymentTestSuite) waitForChildWorkflowRunningOnVersion(
+	ctx context.Context,
+	handle client.WorkflowRun,
+	expectedBuildID string,
+	waitForOverrideCleared bool,
+) {
+	ts.Eventually(func() bool {
+		describeResp, err := ts.client.DescribeWorkflowExecution(ctx, handle.GetID(), handle.GetRunID())
+		if err != nil {
+			ts.T().Logf("describing child workflow: %v", err)
+			return false
+		}
+		if status := describeResp.WorkflowExecutionInfo.Status; status != enumspb.WORKFLOW_EXECUTION_STATUS_RUNNING {
+			ts.T().Logf("child workflow status: %v", status)
+			return false
+		}
+		versioningInfo := describeResp.WorkflowExecutionInfo.GetVersioningInfo()
+		if versioningInfo.GetDeploymentVersion().GetBuildId() != expectedBuildID {
+			ts.T().Logf("child workflow version build id: %v", versioningInfo.GetDeploymentVersion().GetBuildId())
+			return false
+		}
+		if waitForOverrideCleared && versioningInfo.GetVersioningOverride() != nil {
+			ts.T().Log("child workflow versioning override has not cleared")
+			return false
+		}
+		return true
+	}, 5*time.Second, 100*time.Millisecond)
+}
+
+func (ts *WorkerDeploymentTestSuite) runChildWorkflowWithVersioningOverride(
+	ctx context.Context,
+	workflowID string,
+	targetVersion worker.WorkerDeploymentVersion,
+	overrideType childWorkflowVersioningOverride,
+	parentOverride client.VersioningOverride,
+) string {
+	options := ts.startWorkflowOptions(workflowID)
+	options.VersioningOverride = parentOverride
+	handle, err := ts.client.ExecuteWorkflow(
+		ctx,
+		options,
+		"ChildWorkflowWithVersioningOverride",
+		targetVersion,
+		overrideType,
+	)
+	ts.NoError(err)
+
+	childHandle := ts.client.GetWorkflow(ctx, handle.GetID()+"-child", "")
+	ts.waitForChildWorkflowRunningOnVersion(
+		ctx,
+		childHandle,
+		targetVersion.BuildID,
+		overrideType == childWorkflowVersioningOverrideOneTime,
+	)
+
+	ts.NoError(ts.client.SignalWorkflow(
+		ctx,
+		handle.GetID(),
+		handle.GetRunID(),
+		"start-child",
+		nil,
+	))
+
+	var result string
+	ts.NoError(handle.Get(ctx, &result))
+	return result
+}
+
 func (ts *WorkerDeploymentTestSuite) waitForDrainage(ctx context.Context, dHandle client.WorkerDeploymentHandle, buildID string, target client.WorkerDeploymentVersionDrainageStatus) {
 	ts.Eventually(func() bool {
 		desc, err := dHandle.DescribeVersion(ctx, client.WorkerDeploymentDescribeVersionOptions{
@@ -599,6 +667,13 @@ func (ts *WorkerDeploymentTestSuite) TestPinnedOverrideInWorkflowOptions() {
 		Name:               "WaitSignalToStartVersioned",
 		VersioningBehavior: workflow.VersioningBehaviorPinned,
 	})
+	worker1.RegisterWorkflowWithOptions(
+		ts.workflows.ChildWorkflowWithVersioningOverride,
+		workflow.RegisterOptions{
+			Name:               "ChildWorkflowWithVersioningOverride",
+			VersioningBehavior: workflow.VersioningBehaviorPinned,
+		},
+	)
 
 	ts.NoError(worker1.Start())
 	defer worker1.Stop()
@@ -666,6 +741,33 @@ func (ts *WorkerDeploymentTestSuite) TestPinnedOverrideInWorkflowOptions() {
 	ts.NoError(handle2.Get(ctx, &result))
 	// No Override
 	ts.True(IsWorkerVersionOne(result))
+
+	result = ts.runChildWorkflowWithVersioningOverride(
+		ctx,
+		"pinned-child-override-"+uuid.NewString(),
+		v2,
+		childWorkflowVersioningOverridePinned,
+		nil,
+	)
+	ts.True(IsWorkerVersionTwo(result))
+
+	describeResponse, err := dHandle.Describe(ctx, client.WorkerDeploymentDescribeOptions{})
+	ts.NoError(err)
+	_, err = dHandle.SetCurrentVersion(ctx, client.WorkerDeploymentSetCurrentVersionOptions{
+		BuildID:       v2.BuildID,
+		ConflictToken: describeResponse.ConflictToken,
+	})
+	ts.NoError(err)
+	ts.waitForWorkerDeploymentRoutingConfigPropagation(ctx, deploymentName, v2.BuildID, "")
+
+	result = ts.runChildWorkflowWithVersioningOverride(
+		ctx,
+		"auto-upgrade-child-override-"+uuid.NewString(),
+		v2,
+		childWorkflowVersioningOverrideAutoUpgrade,
+		&client.PinnedVersioningOverride{Version: v1},
+	)
+	ts.True(IsWorkerVersionTwo(result))
 }
 
 func (ts *WorkerDeploymentTestSuite) TestOneTimeOverrideInWorkflowOptions() {
@@ -702,6 +804,13 @@ func (ts *WorkerDeploymentTestSuite) TestOneTimeOverrideInWorkflowOptions() {
 		Name:               "WaitSignalToStartVersioned",
 		VersioningBehavior: workflow.VersioningBehaviorPinned,
 	})
+	worker1.RegisterWorkflowWithOptions(
+		ts.workflows.ChildWorkflowWithVersioningOverride,
+		workflow.RegisterOptions{
+			Name:               "ChildWorkflowWithVersioningOverride",
+			VersioningBehavior: workflow.VersioningBehaviorPinned,
+		},
+	)
 
 	ts.NoError(worker1.Start())
 	defer worker1.Stop()
@@ -763,6 +872,15 @@ func (ts *WorkerDeploymentTestSuite) TestOneTimeOverrideInWorkflowOptions() {
 
 	var result string
 	ts.NoError(handle.Get(ctx, &result))
+	ts.True(IsWorkerVersionOne(result))
+
+	result = ts.runChildWorkflowWithVersioningOverride(
+		ctx,
+		"one-time-child-override-"+uuid.NewString(),
+		v2,
+		childWorkflowVersioningOverrideOneTime,
+		nil,
+	)
 	ts.True(IsWorkerVersionOne(result))
 }
 

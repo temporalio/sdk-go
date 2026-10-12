@@ -11,6 +11,10 @@ or Security.
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- Require Go 1.26.6+ (ADK v2.3.0's minimum; previously 1.26.5).
+
 ## [0.3.0] - 2026-09-30
 
 ### Added

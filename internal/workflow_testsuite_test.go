@@ -182,6 +182,38 @@ func TestLocalActivityExecutionByActivityNameAlias(t *testing.T) {
 	require.Equal(t, "Hello World!", result)
 }
 
+func TestLocalActivityMockByRegisteredName(t *testing.T) {
+	// Sometimes two functions have the same short name, but different registered names.
+	// E.g. registering closures in a loop, often those closures have the same short name.
+	// This test ensures that if you invoke a local activity by its registered name, you
+	// get the closure you registered along with it.
+	var testSuite WorkflowTestSuite
+	env := testSuite.NewTestWorkflowEnvironment()
+	env.RegisterActivityWithOptions(namedActivity, RegisterActivityOptions{Name: "ActivityA"})
+	env.RegisterActivityWithOptions(namedActivity, RegisterActivityOptions{Name: "ActivityB"})
+	env.OnActivity("ActivityA", mock.Anything, "input").Return("result A", nil).Once()
+	env.OnActivity("ActivityB", mock.Anything, "input").Return("result B", nil).Once()
+
+	env.ExecuteWorkflow(func(ctx Context) ([]string, error) {
+		ctx = WithLocalActivityOptions(ctx, LocalActivityOptions{StartToCloseTimeout: time.Minute})
+		var results []string
+		for _, name := range []string{"ActivityA", "ActivityB"} {
+			var result string
+			if err := ExecuteLocalActivity(ctx, name, "input").Get(ctx, &result); err != nil {
+				return nil, err
+			}
+			results = append(results, result)
+		}
+		return results, nil
+	})
+
+	require.NoError(t, env.GetWorkflowError())
+	var results []string
+	require.NoError(t, env.GetWorkflowResult(&results))
+	require.Equal(t, []string{"result A", "result B"}, results)
+	env.AssertExpectations(t)
+}
+
 func TestLocalActivityExecutionByActivityNameAliasMissingRegistration(t *testing.T) {
 	testSuite := &WorkflowTestSuite{}
 	env := testSuite.NewTestWorkflowEnvironment()

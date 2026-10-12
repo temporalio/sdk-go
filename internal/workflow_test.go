@@ -37,9 +37,15 @@ func TestGetChildWorkflowOptions(t *testing.T) {
 		},
 		ParentClosePolicy: enums.PARENT_CLOSE_POLICY_REQUEST_CANCEL,
 		VersioningIntent:  VersioningIntentDefault,
-		StaticSummary:     "child workflow summary",
-		StaticDetails:     "child workflow details",
-		Priority:          newPriority(),
+		VersioningOverride: &PinnedVersioningOverride{
+			Version: WorkerDeploymentVersion{
+				DeploymentName: "deployment",
+				BuildID:        "build",
+			},
+		},
+		StaticSummary: "child workflow summary",
+		StaticDetails: "child workflow details",
+		Priority:      newPriority(),
 	}
 
 	// Require test options to have non-zero value for each field. This ensures that we update tests (and the

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/golang/mock/gomock"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/suite"
 	commonpb "go.temporal.io/api/common/v1"
 	schedulepb "go.temporal.io/api/schedule/v1"
@@ -97,6 +98,38 @@ func (s *scheduleClientTestSuite) TestCreateScheduleNoID() {
 
 	_, err := s.client.ScheduleClient().Create(context.Background(), options)
 	s.NotNil(err)
+}
+
+func (s *scheduleClientTestSuite) TestCreateActionReuse() {
+	for _, id := range []string{"", workflowID} {
+		s.Run("workflow ID="+id, func() {
+			action := &ScheduleWorkflowAction{ID: id, Workflow: "test-workflow", TaskQueue: taskqueue}
+			options := ScheduleOptions{ID: scheduleID, Action: action}
+			var sentIDs []string
+
+			s.service.EXPECT().CreateSchedule(gomock.Any(), gomock.Any(), gomock.Any()).
+				Do(func(_ any, req *workflowservice.CreateScheduleRequest, _ ...any) {
+					sentID := req.Schedule.Action.GetStartWorkflow().WorkflowId
+					if id == "" {
+						_, err := uuid.Parse(sentID)
+						s.NoError(err)
+					} else {
+						s.Equal(id, sentID)
+					}
+					sentIDs = append(sentIDs, sentID)
+				}).Return(&workflowservice.CreateScheduleResponse{}, nil).Times(2)
+
+			// Each creation gets its own default without changing the shared action.
+			for range 2 {
+				_, err := s.client.ScheduleClient().Create(s.T().Context(), options)
+				s.NoError(err)
+				s.Equal(id, action.ID)
+			}
+			if id == "" {
+				s.NotEqual(sentIDs[0], sentIDs[1])
+			}
+		})
+	}
 }
 
 func (s *scheduleClientTestSuite) TestCreateScheduleWithMemoAndSearchAttr() {

@@ -604,6 +604,10 @@ func convertToPBScheduleAction(
 ) (*schedulepb.ScheduleAction, error) {
 	switch action := scheduleAction.(type) {
 	case *ScheduleWorkflowAction:
+		// Apply defaults to a copy so callers can reuse the action.
+		actionCopy := *action
+		action = &actionCopy
+
 		// Set header before interceptor run
 		dataConverter := WithContext(ctx, client.dataConverter)
 

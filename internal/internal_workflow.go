@@ -213,6 +213,7 @@ type (
 		// runningUpdatesHandles is a map of update handlers that are currently running.
 		runningUpdatesHandles     map[string]UpdateInfo
 		VersioningIntent          VersioningIntent
+		VersioningOverride        VersioningOverride
 		InitialVersioningBehavior ContinueAsNewVersioningBehavior
 		// currentDetails is the user-set string returned on metadata query as
 		// WorkflowMetadata.current_details
@@ -499,6 +500,7 @@ func newWorkflowContext(
 ) (*workflowEnvironmentInterceptor, Context, error) {
 	// Create context with default values
 	ctx := WithValue(background, workflowEnvironmentContextKey, env)
+	ctx = workflowContextWithLocalStore(ctx)
 	var resultPtr *workflowResult
 	ctx = WithValue(ctx, workflowResultContextKey, &resultPtr)
 	info := env.WorkflowInfo()

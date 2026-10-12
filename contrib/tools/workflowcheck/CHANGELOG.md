@@ -11,6 +11,20 @@ or Security.
 
 ## [Unreleased]
 
+### Added
+
+### Changed
+
+### Deprecated
+
+### :boom: Breaking Changes
+
+### Fixed
+
+### Security
+
+## [0.6.0] - 2026-10-08
+
 ### Fixed
 
 - Fixed `workflowcheck` sometimes missing non-deterministic code reached through
@@ -20,3 +34,4 @@ or Security.
   become consistent.
 - Reasons are now reported in a stable source order instead of varying between
   runs.
+
