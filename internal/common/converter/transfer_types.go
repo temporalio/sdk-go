@@ -153,7 +153,8 @@ func (tc *transferTypeConverterImpl[ModelType, TransferType]) fromTransferType(d
 // transfer type conversion to values that implement
 // [ValueWithTransferTypeConverter].
 type transferAwareDataConverter struct {
-	parent DataConverter
+	parent     DataConverter
+	transferDC DataConverter
 	// transferTypeConverters is a cache that maps transfer-convertible types
 	// to their transfer type converters.
 	transferTypeConverters *sync.Map
@@ -175,6 +176,22 @@ func MakeTransferAware(dc DataConverter) DataConverter {
 		parent:                 dc,
 		transferTypeConverters: new(sync.Map),
 	}
+}
+
+// WithTransferDataConverter supplies transferDC to model conversion callbacks
+// without changing the parent that encodes and decodes wire values.
+// dc must already be transfer-aware. The original converter is not modified.
+func WithTransferDataConverter(dc, transferDC DataConverter) DataConverter {
+	result := *dc.(*transferAwareDataConverter)
+	result.transferDC = transferDC
+	return &result
+}
+
+func (dc *transferAwareDataConverter) transferDataConverter() DataConverter {
+	if dc.transferDC != nil {
+		return dc.transferDC
+	}
+	return dc
 }
 
 // transferTypeConverter fetches a converter from cache using the value's
@@ -241,7 +258,7 @@ func (dc *transferAwareDataConverter) encodeAsTransferTypeOrReturn(value any) (a
 	if err != nil {
 		return nil, false, err
 	}
-	transferType, err := tc.toTransferType(dc, value)
+	transferType, err := tc.toTransferType(dc.transferDataConverter(), value)
 	return transferType, true, err
 }
 
@@ -262,7 +279,7 @@ func (dc *transferAwareDataConverter) FromPayload(payload *commonpb.Payload, val
 	if err != nil {
 		return err
 	}
-	return tc.fromTransferType(dc, transferTypePtr, valuePtr)
+	return tc.fromTransferType(dc.transferDataConverter(), transferTypePtr, valuePtr)
 }
 
 func (dc *transferAwareDataConverter) FromPayloads(payloads *commonpb.Payloads, valuePtrs ...any) error {
@@ -318,7 +335,7 @@ func (dc *transferAwareDataConverter) FromPayloads(payloads *commonpb.Payloads, 
 		if err != nil {
 			return err
 		}
-		if err := tc.fromTransferType(dc, transferTypePtrs[i], valuePtr); err != nil {
+		if err := tc.fromTransferType(dc.transferDataConverter(), transferTypePtrs[i], valuePtr); err != nil {
 			return err
 		}
 	}

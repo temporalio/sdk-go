@@ -19,6 +19,7 @@ import (
 	failurepb "go.temporal.io/api/failure/v1"
 
 	"go.temporal.io/sdk/converter"
+	commonconverter "go.temporal.io/sdk/internal/common/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/common/workflowcontext"
 	"go.temporal.io/sdk/log"
@@ -3086,6 +3087,13 @@ func (wc *workflowEnvironmentInterceptor) prepareNexusOperationParams(ctx Contex
 	}
 	dc := withRootDataConverterSerializationContext(ctx, nsc)
 	fc := converter.WithFailureConverterSerializationContext(getRootFailureConverterFromWorkflowContext(ctx), nsc)
+
+	if info, ok := nexusOperationRegistry[NexusOperationKey{Service: nsc.Service, Operation: nsc.Operation}]; ok {
+		sc := info.SerializationContext(input.Input)
+		targetDC := withRootDataConverterSerializationContext(ctx, sc)
+		dc = commonconverter.WithTransferDataConverter(dc, targetDC)
+		fc = converter.WithFailureConverterSerializationContext(getRootFailureConverterFromWorkflowContext(ctx), sc)
+	}
 
 	payload, err := dc.ToPayload(input.Input)
 	if err != nil {
