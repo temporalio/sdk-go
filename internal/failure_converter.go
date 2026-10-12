@@ -54,7 +54,7 @@ type DefaultFailureConverter struct {
 //
 // Exposed as: [go.temporal.io/sdk/temporal.NewDefaultFailureConverter]
 func NewDefaultFailureConverter(opt DefaultFailureConverterOptions) *DefaultFailureConverter {
-	opt.DataConverter = converter.MakeTransferAware(opt.DataConverter)
+	opt.DataConverter = MakeTransferAware(opt.DataConverter)
 	return &DefaultFailureConverter{
 		dataConverter:          opt.DataConverter,
 		encodeCommonAttributes: opt.EncodeCommonAttributes,
