@@ -44,6 +44,10 @@ to docs, or any other relevant information.
 
 ### Changed
 
+- Moved the Google ADK integration from `contrib/googleadk` to
+  [temporalio/ai-integrations](https://github.com/temporalio/ai-integrations/tree/main/go/googleadk).
+  Its module path is now `go.temporal.io/googleadk` instead of
+  `go.temporal.io/sdk/contrib/googleadk`; see the integration README for installation and usage.
 - Removed experimental labels from the core plugin APIs.
 - Task queue priority is no longer marked as experimental.
 - Nexus link conversion now handles all four link types. Workflow links on an inbound Nexus

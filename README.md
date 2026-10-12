@@ -30,6 +30,10 @@ import (
 The integrations and tools under [`contrib`](contrib) are released as separate
 Go modules. See each package's README for its module path and version.
 
+The Google ADK integration is maintained in
+[temporalio/ai-integrations](https://github.com/temporalio/ai-integrations/tree/main/go/googleadk)
+as `go.temporal.io/googleadk`. See its README for installation and usage.
+
 ## Getting started
 
 See [samples](https://github.com/temporalio/samples-go) to get started.
