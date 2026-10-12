@@ -33,14 +33,3 @@ func NewTransferTypeConverter[Model ValueWithTransferTypeConverter, Transfer any
 ) (TransferTypeConverter, error) {
 	return commonconverter.NewTransferTypeConverter(toTransferType, fromTransferType)
 }
-
-// MakeTransferAware wraps dc to support transfer type conversion. A nil dc uses
-// [GetDefaultDataConverter]; an already transfer-aware converter is unchanged.
-//
-// NOTE: Experimental.
-func MakeTransferAware(dc DataConverter) DataConverter {
-	if dc == nil {
-		return GetDefaultDataConverter()
-	}
-	return commonconverter.MakeTransferAware(dc)
-}
