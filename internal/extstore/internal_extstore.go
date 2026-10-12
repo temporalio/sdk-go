@@ -36,8 +36,7 @@ type StorageParameters struct {
 	logger log.Logger
 }
 
-// WithLogger returns a copy of p that reports drivers which do not use the
-// limiter. The instance-wide limit is shared, not rebuilt.
+// WithLogger returns a copy of p that logs through logger.
 func (p StorageParameters) WithLogger(logger log.Logger) StorageParameters {
 	p.logger = logger
 	return p
@@ -63,23 +62,43 @@ func (l *semaphoreLimiter[T]) Permit(ctx context.Context, item T, fn func() erro
 	return fn()
 }
 
-func newLimiter[T any](p StorageParameters) *semaphoreLimiter[T] {
-	// A zero-value StorageParameters has no limits set and would never grant a permit.
-	maxPerMessage := p.maxOperationsPerMessage
-	if maxPerMessage <= 0 {
-		maxPerMessage = defaultMaxOperationsPerMessage
+// MaxOperationsPerMessage returns the resolved per message operation limit.
+func (p StorageParameters) MaxOperationsPerMessage() int {
+	if p.maxOperationsPerMessage <= 0 {
+		return defaultMaxOperationsPerMessage
 	}
+	return p.maxOperationsPerMessage
+}
+
+// perMessageBudgetKey is the context key for a message's operation budget.
+type perMessageBudgetKey struct{}
+
+// WithMessageBudget returns ctx carrying one budget of MaxOperationsPerMessage operations.
+func (p StorageParameters) WithMessageBudget(ctx context.Context) context.Context {
+	budget := semaphore.NewWeighted(int64(p.MaxOperationsPerMessage()))
+	return context.WithValue(ctx, perMessageBudgetKey{}, budget)
+}
+
+// perMessageBudget returns the budget on ctx, or a new one if ctx carries none.
+func perMessageBudget(ctx context.Context, p StorageParameters) *semaphore.Weighted {
+	if budget, ok := ctx.Value(perMessageBudgetKey{}).(*semaphore.Weighted); ok && budget != nil {
+		return budget
+	}
+	return semaphore.NewWeighted(int64(p.MaxOperationsPerMessage()))
+}
+
+func newLimiter[T any](ctx context.Context, p StorageParameters) *semaphoreLimiter[T] {
 	perInstanceSemaphore := p.perInstanceSemaphore
 	if perInstanceSemaphore == nil {
 		perInstanceSemaphore = semaphore.NewWeighted(defaultMaxDriverOperations)
 	}
 	return &semaphoreLimiter[T]{
-		perMessageSemaphore:  semaphore.NewWeighted(int64(maxPerMessage)),
+		perMessageSemaphore:  perMessageBudget(ctx, p),
 		perInstanceSemaphore: perInstanceSemaphore,
 	}
 }
 
-// warnIfLimiterUnused warns when a driver did not use the limiter.
+// permitUsage reports whether a limiter was used.
 type permitUsage interface{ tookPermit() bool }
 
 func (l *semaphoreLimiter[T]) tookPermit() bool { return l.permitTaken.Load() }
@@ -351,7 +370,7 @@ func (v *externalRetrievalVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloa
 	for i, name := range driverOrder {
 		batch := driverBatches[name]
 		externalCount += len(batch.claims)
-		limiter := newLimiter[StorageDriverClaim](v.params)
+		limiter := newLimiter[StorageDriverClaim](ctx.Context, v.params)
 		limiters[i] = limiter
 		driverCtx := StorageDriverRetrieveContext{Context: egCtx, Limiter: limiter}
 		eg.Go(func() error {
@@ -462,7 +481,7 @@ func (v *externalStorageVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloads
 	for i, name := range driverOrder {
 		batch := driverBatches[name]
 		externalCount += len(batch.payloads)
-		limiter := newLimiter[*commonpb.Payload](v.params)
+		limiter := newLimiter[*commonpb.Payload](ctx.Context, v.params)
 		limiters[i] = limiter
 		storeDrCtx := StorageDriverStoreContext{Context: egCtx, Target: target, Limiter: limiter}
 		eg.Go(func() error {

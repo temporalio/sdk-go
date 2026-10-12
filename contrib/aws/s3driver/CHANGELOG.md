@@ -24,6 +24,9 @@ or Security.
 ### Security
 
 ## [0.3.0] - 2026-10-08
+### Changed
+
+- **Experimental**: Store and retrieve operations now respect `ExternalStorage.Concurrency`.
 
 ### Breaking Changes
 

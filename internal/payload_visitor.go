@@ -2,10 +2,11 @@ package internal
 
 import (
 	"context"
-	"math"
 
 	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/api/proxy"
+
+	"go.temporal.io/sdk/internal/extstore"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -55,10 +56,6 @@ func newCompositePayloadVisitor(visitors ...PayloadVisitor) PayloadVisitor {
 	}
 }
 
-// unboundedPayloadVisitorConcurrency visits every payload in a message at once.
-// ExternalStorage.Concurrency does the limiting.
-const unboundedPayloadVisitorConcurrency = math.MaxInt32
-
 // visitProtoPayloads runs visitor over all payloads in msg, skipping search
 // attributes. If visitor is nil, msg is unchanged.
 func visitProtoPayloads(ctx context.Context, visitor PayloadVisitor, msg proto.Message, concurrencyLimit int) error {
@@ -76,6 +73,17 @@ func visitProtoPayloads(ctx context.Context, visitor PayloadVisitor, msg proto.M
 		ConcurrencyLimit:     concurrencyLimit,
 	}
 	return proxy.VisitPayloads(ctx, msg, opts)
+}
+
+// visitMessagePayloads runs visitor over one message under the external storage limits.
+func visitMessagePayloads(
+	ctx context.Context,
+	visitor PayloadVisitor,
+	msg proto.Message,
+	params extstore.StorageParameters,
+) error {
+	return visitProtoPayloads(
+		params.WithMessageBudget(ctx), visitor, msg, params.MaxOperationsPerMessage())
 }
 
 // visitPayload runs visitor over a single payload. If visitor is nil

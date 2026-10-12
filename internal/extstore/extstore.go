@@ -93,13 +93,11 @@ type StorageDriverStoreContext struct {
 	// being stored. Use a type switch on [StorageDriverWorkflowInfo] and
 	// [StorageDriverActivityInfo] to access the concrete values.
 	Target StorageDriverTargetInfo
-	// Limiter limits the concurrent operations this driver performs. Read it
-	// through GetLimiter, which supplies a non-blocking limiter when unset.
+	// Limiter limits the concurrent operations this driver performs.
 	Limiter StorageDriverLimiter[*commonpb.Payload]
 }
 
-// GetLimiter returns the limiter to wrap each operation in. It returns a
-// limiter that never blocks when Limiter is unset.
+// GetLimiter returns Limiter, or a limiter that never blocks when Limiter is unset.
 //
 // NOTE: Experimental
 func (c StorageDriverStoreContext) GetLimiter() StorageDriverLimiter[*commonpb.Payload] {
@@ -133,13 +131,11 @@ type StorageDriverRetrieveContext struct {
 	// Drivers should use it to respect cancellation and to propagate deadlines
 	// and trace information to downstream calls (e.g. cloud storage SDKs).
 	Context context.Context
-	// Limiter limits the concurrent operations this driver performs. Read it
-	// through GetLimiter, which supplies a non-blocking limiter when unset.
+	// Limiter limits the concurrent operations this driver performs.
 	Limiter StorageDriverLimiter[StorageDriverClaim]
 }
 
-// GetLimiter returns the limiter to wrap each operation in. It returns a
-// limiter that never blocks when Limiter is unset.
+// GetLimiter returns Limiter, or a limiter that never blocks when Limiter is unset.
 //
 // NOTE: Experimental
 func (c StorageDriverRetrieveContext) GetLimiter() StorageDriverLimiter[StorageDriverClaim] {

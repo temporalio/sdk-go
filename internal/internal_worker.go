@@ -267,6 +267,8 @@ type (
 
 		outboundPayloadVisitor PayloadVisitor
 
+		storageParams extstore.StorageParameters
+
 		setErrorLimits func(*payloadLimits)
 	}
 
@@ -1881,6 +1883,7 @@ type WorkflowReplayer struct {
 	enableLoggingInReplay       bool
 	disableDeadlockDetection    bool
 	inboundPayloadVisitor       PayloadVisitor
+	storageParams               extstore.StorageParameters
 	mu                          sync.Mutex
 	workflowExecutionResults    map[string]*commonpb.Payloads
 	workflowReplayerInstanceKey string
@@ -1974,6 +1977,7 @@ func NewWorkflowReplayer(options WorkflowReplayerOptions) (*WorkflowReplayer, er
 		enableLoggingInReplay:       options.EnableLoggingInReplay,
 		disableDeadlockDetection:    options.DisableDeadlockDetection,
 		inboundPayloadVisitor:       extstore.NewExternalRetrievalVisitor(storageParams),
+		storageParams:               storageParams,
 		workflowExecutionResults:    make(map[string]*commonpb.Payloads),
 		workflowReplayerInstanceKey: workflowReplayerInstanceKey,
 		plugins:                     options.Plugins,
@@ -2205,6 +2209,7 @@ func (aw *WorkflowReplayer) replayWorkflowHistoryRoot(
 			taskQueue:     taskQueue,
 		},
 		inboundVisitor: aw.inboundPayloadVisitor,
+		storageParams:  aw.storageParams,
 	}
 	cache, cacheLease := newWorkerCache(&sharedWorkerCache{}, &sync.Mutex{}, 0)
 	defer cacheLease.release()
@@ -2542,6 +2547,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 			extstore.NewExternalStorageVisitor(client.storageParams.WithLogger(logger)),
 			payloadLimitVisitor,
 		),
+		storageParams: client.storageParams,
 		setErrorLimits: func(limits *payloadLimits) {
 			if !options.DisablePayloadErrorLimit {
 				setErrorLimits(limits)

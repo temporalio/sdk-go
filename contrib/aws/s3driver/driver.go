@@ -107,62 +107,48 @@ func (d *s3StorageDriver) Name() string { return d.driverName }
 // Type returns the driver implementation type.
 func (d *s3StorageDriver) Type() string { return driverType }
 
-type preparedPayload struct {
-	data      []byte
-	hexDigest string
-	bucket    string
-}
-
-// Store serializes each payload, validates sizes, then uploads concurrently to
-// S3 if not already present, and returns a claim per payload.
-//
-// Two phases are used to avoid partial S3 uploads when validation fails:
-//  1. Marshal and validate all payloads sequentially.
-//  2. Upload concurrently — only reached if all payloads passed validation.
+// Store validates each payload size, then serializes, hashes and uploads
+// concurrently to S3 if not already present, and returns a claim per payload.
 func (d *s3StorageDriver) Store(
 	ctx converter.StorageDriverStoreContext,
 	payloads []*commonpb.Payload,
 ) ([]converter.StorageDriverClaim, error) {
-	prepared := make([]preparedPayload, len(payloads))
-	for i, p := range payloads {
-		data, err := proto.Marshal(p)
-		if err != nil {
-			return nil, fmt.Errorf("failed to marshal payload: %w", err)
-		}
-		if len(data) > d.maxPayloadSize {
+	for _, p := range payloads {
+		if size := proto.Size(p); size > d.maxPayloadSize {
 			return nil, fmt.Errorf(
 				"payload size %d exceeds maximum %d",
-				len(data), d.maxPayloadSize,
+				size, d.maxPayloadSize,
 			)
-		}
-		prepared[i] = preparedPayload{
-			data:      data,
-			hexDigest: sha256Hex(data),
-			bucket:    d.bucketFunc(ctx, p),
 		}
 	}
 
 	claims := make([]converter.StorageDriverClaim, len(payloads))
 	g, gctx := errgroup.WithContext(ctx.Context)
-	for i, pp := range prepared {
+	for i, p := range payloads {
 		g.Go(func() error {
-			return ctx.GetLimiter().Permit(gctx, payloads[i], func() error {
-				key := objectKey(ctx.Target, pp.hexDigest)
-				exists, err := d.client.ObjectExists(gctx, pp.bucket, key)
+			return ctx.GetLimiter().Permit(gctx, p, func() error {
+				data, err := proto.Marshal(p)
 				if err != nil {
-					return fmt.Errorf("existence check failed [bucket=%s, key=%s%s]: %w", pp.bucket, key, describeClient(d.client), err)
+					return fmt.Errorf("failed to marshal payload: %w", err)
+				}
+				hexDigest := sha256Hex(data)
+				bucket := d.bucketFunc(ctx, p)
+				key := objectKey(ctx.Target, hexDigest)
+				exists, err := d.client.ObjectExists(gctx, bucket, key)
+				if err != nil {
+					return fmt.Errorf("existence check failed [bucket=%s, key=%s%s]: %w", bucket, key, describeClient(d.client), err)
 				}
 				if !exists {
-					if err := d.client.PutObject(gctx, pp.bucket, key, pp.data); err != nil {
-						return fmt.Errorf("upload failed [bucket=%s, key=%s%s]: %w", pp.bucket, key, describeClient(d.client), err)
+					if err := d.client.PutObject(gctx, bucket, key, data); err != nil {
+						return fmt.Errorf("upload failed [bucket=%s, key=%s%s]: %w", bucket, key, describeClient(d.client), err)
 					}
 				}
 				claims[i] = converter.StorageDriverClaim{
 					ClaimData: map[string]string{
-						claimKeyBucket:        pp.bucket,
+						claimKeyBucket:        bucket,
 						claimKeyKey:           key,
 						claimKeyHashAlgorithm: hashAlgorithm,
-						claimKeyHashValue:     pp.hexDigest,
+						claimKeyHashValue:     hexDigest,
 					},
 				}
 				return nil

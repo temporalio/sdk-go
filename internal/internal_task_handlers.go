@@ -177,6 +177,7 @@ type (
 		workerDeploymentOptions          *deploymentpb.WorkerDeploymentOptions
 		inboundPayloadVisitor            PayloadVisitor
 		outboundPayloadVisitor           PayloadVisitor
+		storageParams                    extstore.StorageParameters
 		activityCancellationCallbacks    *activityCancellationCallbacks
 	}
 
@@ -2122,6 +2123,7 @@ func newActivityTaskHandlerWithCustomProvider(
 		),
 		inboundPayloadVisitor:         params.inboundPayloadVisitor,
 		outboundPayloadVisitor:        params.outboundPayloadVisitor,
+		storageParams:                 params.storageParams,
 		activityCancellationCallbacks: params.activityCancellationCallbacks,
 	}
 }
@@ -2403,7 +2405,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 		defer unregister()
 	}
 
-	if err := visitProtoPayloads(canCtx, ath.inboundPayloadVisitor, t, unboundedPayloadVisitorConcurrency); err != nil {
+	if err := visitMessagePayloads(canCtx, ath.inboundPayloadVisitor, t, ath.storageParams); err != nil {
 		return activityTaskResult{
 			response:   ath.visitorErrorToActivityFailure("Activity task preprocess error: ", t, err),
 			failureErr: err,
@@ -2541,7 +2543,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 			outboundBase = context.Background()
 		}
 		outboundCtx := extstore.WithStorageTarget(outboundBase, storageTarget)
-		if err := visitProtoPayloads(outboundCtx, ath.outboundPayloadVisitor, msg, unboundedPayloadVisitorConcurrency); err != nil {
+		if err := visitMessagePayloads(outboundCtx, ath.outboundPayloadVisitor, msg, ath.storageParams); err != nil {
 			return activityTaskResult{
 				response:   ath.visitorErrorToActivityFailure("Activity task postprocess error: ", t, err),
 				failureErr: err,
