@@ -2145,8 +2145,6 @@ func (w *workflowClientInterceptor) createStartWorkflowRequest(
 		Namespace:  w.client.namespace,
 		WorkflowID: workflowID,
 	})
-	// Only the input uses the Nexus context. Memo and user metadata stay on the workflow context
-	// because List/visibility responses do not carry the propagated context needed to decode them.
 	inputDataConverter := dataConverter
 	propagatedNexusSerializationContext := propagatedNexusSerializationContextFromGoContext(ctx)
 	if propagatedNexusSerializationContext != nil {
