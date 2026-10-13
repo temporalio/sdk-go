@@ -210,7 +210,7 @@ func TestPreparePR(t *testing.T) {
 		      Done.
 
 		After merging the PR, create draft releases with:
-		  prepare-release release <MERGE_COMMIT> .=1.48.0
+		  yeet release <MERGE_COMMIT> .=1.48.0
 
 		To close the PR and delete the branch:
 		  gh pr close https://github.com/temporalio/sdk-go/pull/123 --delete-branch
@@ -333,7 +333,7 @@ func TestPreparePRForContribModule(t *testing.T) {
 		      Done.
 
 		After merging the PR, create draft releases with:
-		  prepare-release release <MERGE_COMMIT> contrib/envconfig=1.0.3
+		  yeet release <MERGE_COMMIT> contrib/envconfig=1.0.3
 
 		To close the PR and delete the branch:
 		  gh pr close https://github.com/temporalio/sdk-go/pull/123 --delete-branch
@@ -488,7 +488,7 @@ func TestPreparePRForMultipleModules(t *testing.T) {
 		      Done.
 
 		After merging the PR, create draft releases with:
-		  prepare-release release <MERGE_COMMIT> .=1.48.0 contrib/envconfig=1.0.3
+		  yeet release <MERGE_COMMIT> .=1.48.0 contrib/envconfig=1.0.3
 
 		To close the PR and delete the branch:
 		  gh pr close https://github.com/temporalio/sdk-go/pull/123 --delete-branch
@@ -1258,7 +1258,7 @@ func TestLintCheckout(t *testing.T) {
 		      contrib/envconfig=1.1.0: ready for pr
 
 		Suggested PR command:
-		  prepare-release pr contrib/envconfig=1.1.0
+		  yeet pr contrib/envconfig=1.1.0
 	`)
 }
 
@@ -1367,7 +1367,7 @@ func TestLintReportsAllBlockedModules(t *testing.T) {
 	}
 	if !strings.Contains(eff.output.String(), "contrib/envconfig=0.1.0: blocked for pr") ||
 		!strings.Contains(eff.output.String(), "contrib/tally=0.1.0: blocked for pr") ||
-		!strings.Contains(eff.output.String(), "prepare-release pr contrib/envconfig=0.1.0 contrib/tally=0.1.0") {
+		!strings.Contains(eff.output.String(), "yeet pr contrib/envconfig=0.1.0 contrib/tally=0.1.0") {
 		t.Fatalf("missing module reports or suggested command:\n%s", eff.output.String())
 	}
 }
