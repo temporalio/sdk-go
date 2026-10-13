@@ -495,6 +495,114 @@ func TestPreparePRForMultipleModules(t *testing.T) {
 	`)
 }
 
+func TestPreparePRAllowsDependencyFixes(t *testing.T) {
+	date := time.Date(2026, time.August, 4, 0, 0, 0, 0, time.UTC)
+	release := releaseSpec{target: contribEnvconfig(t), version: semver{0, 2, 0}}
+	goMod := stripIndentation(`
+		module go.temporal.io/sdk/contrib/envconfig
+		require go.temporal.io/sdk v1.48.0-0.20260804123456-abcdef123456
+	`)
+	changelog := stripIndentation(`
+		## [Unreleased]
+
+		### Fixed
+
+		- A fix.
+	`)
+	updatedChangelog := stripIndentation(`
+		## [Unreleased]
+
+		### Added
+
+		### Changed
+
+		### Deprecated
+
+		### :boom: Breaking Changes
+
+		### Fixed
+
+		### Security
+
+		## [0.2.0] - 2026-08-04
+
+		### Fixed
+
+		- A fix.
+	`)
+	a, eff := newMockApp(app{releases: []releaseSpec{release}, releaseDate: date}, func(cmd string) (string, error) {
+		switch cmd {
+		case "git ls-files -z -- go.mod **/go.mod":
+			return "contrib/envconfig/go.mod\x00", nil
+		case "git tag --list *", "git tag --list contrib/envconfig/v*":
+			return "contrib/envconfig/v0.1.0\n", nil
+		case "git diff --name-only --no-renames -z contrib/envconfig/v0.1.0 -- contrib/envconfig":
+			return "contrib/envconfig/go.mod\x00", nil
+		case "git rev-parse --verify --end-of-options abc123^{commit}":
+			return "abc123\n", nil
+		case `gh pr create --draft --base main --head chore/release-2026-08-04 --label skip-changelog --title "Prepare release 2026-08-04" --body contrib/envconfig=0.2.0`:
+			return "https://github.com/temporalio/sdk-go/pull/123\n", nil
+		case "gh release create contrib/envconfig/v0.2.0 --draft --target abc123 --title contrib/envconfig/v0.2.0 --notes-file /tmp/prepare-go-release-123456/prepare-release-notes.md --latest=false":
+			return "https://github.com/temporalio/sdk-go/releases/tag/untagged-abc\n", nil
+		}
+		return "", nil
+	})
+	published := false
+	eff.moduleLookupHandler = func(string, string) (bool, error) { return published, nil }
+	goModPath := filepath.Join(eff.tempDir, "contrib", "envconfig", "go.mod")
+	changelogPath := filepath.Join(eff.tempDir, "contrib", "envconfig", "CHANGELOG.md")
+	eff.files[goModPath] = goMod
+	eff.files[changelogPath] = changelog
+	eff.files[filepath.Join(mockRepoRoot, "contrib", "envconfig", "go.mod")] = goMod
+	eff.files[filepath.Join(mockRepoRoot, "contrib", "envconfig", "CHANGELOG.md")] = changelog
+
+	err := a.lint()
+	if err == nil || !strings.Contains(err.Error(), "must use an official release") {
+		t.Fatalf("expected dependency readiness failure, got %v", err)
+	}
+	err = a.preparePR()
+	if err != nil {
+		t.Fatal(err)
+	}
+	testEqual(t, eff.files[goModPath], goMod)
+	testEqual(t, eff.files[changelogPath], updatedChangelog)
+	if !strings.Contains(eff.output.String(), "Draft PR: https://github.com/temporalio/sdk-go/pull/123") {
+		t.Fatalf("missing draft PR:\n%s", eff.output.String())
+	}
+
+	// Fix the dependency in the PR, then inspect its commit.
+	eff.files[goModPath] = stripIndentation(`
+		module go.temporal.io/sdk/contrib/envconfig
+		require go.temporal.io/sdk v1.48.0
+	`)
+	a.commit = "abc123"
+	err = a.lint()
+	if err == nil || !strings.Contains(err.Error(), "not published") {
+		t.Fatalf("expected unpublished dependency failure, got %v", err)
+	}
+	err = a.prepareRelease()
+	if err == nil || !strings.Contains(err.Error(), "not published") {
+		t.Fatalf("expected release to reject unpublished dependency, got %v", err)
+	}
+	if strings.Contains(eff.commands.String(), "gh release create") {
+		t.Fatalf("release was created before dependencies were ready:\n%s", eff.commands.String())
+	}
+
+	published = true
+	err = a.lint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = a.prepareRelease()
+	if err != nil {
+		t.Fatal(err)
+	}
+	testEqual(t, eff.files[filepath.Join(eff.tempDir, "prepare-release-notes.md")], "## Highlights\n\n### Fixed\n\n- A fix.\n")
+	if !strings.Contains(eff.output.String(), "Draft release: https://github.com/temporalio/sdk-go/releases/tag/untagged-abc") {
+		t.Fatalf("missing draft release:\n%s", eff.output.String())
+	}
+}
+
 func TestPreparePRValidatesAllModulesBeforeWriting(t *testing.T) {
 	releases := []releaseSpec{
 		{target: sdkTarget(), version: semver{1, 48, 0}},
@@ -567,8 +675,7 @@ func TestPreparePRLeavesDirectoryIfWorktreeCreationFails(t *testing.T) {
 
 func TestPreparePRValidatesBeforePushingBranch(t *testing.T) {
 	goMod := stripIndentation(`
-		module go.temporal.io/sdk
-		require go.temporal.io/api v1.63.1-0.20260730213819-7f6a96199578
+		module go.temporal.io/sdk/contrib/envconfig
 	`)
 
 	a, eff := newMockApp(app{releases: []releaseSpec{{target: sdkTarget(), version: semver{1, 48, 0}}}, releaseDate: time.Date(2026, time.August, 4, 0, 0, 0, 0, time.UTC)}, func(cmd string) (string, error) {
@@ -581,8 +688,8 @@ func TestPreparePRValidatesBeforePushingBranch(t *testing.T) {
 	eff.files[filepath.Join(eff.tempDir, "go.mod")] = goMod
 
 	err := a.preparePR()
-	if err == nil || !strings.Contains(err.Error(), "must use an official release") {
-		t.Fatalf("expected API version validation failure, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), `expected "go.temporal.io/sdk"`) {
+		t.Fatalf("expected module path validation failure, got %v", err)
 	}
 	if !strings.Contains(err.Error(), "Worktree preserved at "+eff.tempDir) ||
 		!strings.Contains(err.Error(), "git branch --delete --force chore/release-2026-08-04") {

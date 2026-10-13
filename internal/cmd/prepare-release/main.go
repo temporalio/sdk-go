@@ -165,7 +165,7 @@ func (app *app) preparePR() (retErr error) {
 	}()
 	var files []releaseFile
 	for _, release := range app.releases {
-		err = worktree.validateEverything(release, "pr")
+		err = worktree.validatePreparation(release, "pr")
 		if err != nil {
 			return err
 		}

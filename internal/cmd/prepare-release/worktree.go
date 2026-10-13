@@ -56,6 +56,23 @@ func (w *worktree) validateEverything(release releaseSpec, command string) error
 		return fmt.Errorf("%s: %w", modulePath, err)
 	}
 
+	return w.validatePreparation(release, command)
+}
+
+// validatePreparation checks module identity, versions, and changelog structure.
+// Dependency readiness is left to lint and release, so it can be fixed in the PR.
+func (w *worktree) validatePreparation(release releaseSpec, command string) error {
+	target := release.target
+	modulePath := target.modulePath()
+	goMod, err := w.eff.readFile(w.pathToGoMod(target))
+	if err != nil {
+		return fmt.Errorf("%s: %w", modulePath, err)
+	}
+	err = validateModulePath(goMod, modulePath)
+	if err != nil {
+		return fmt.Errorf("%s: %w", modulePath, err)
+	}
+
 	// Validate version number
 	tags, err := w.listTags(target.tagPattern())
 	if err != nil {
