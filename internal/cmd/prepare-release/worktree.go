@@ -23,6 +23,12 @@ type worktree struct {
 	branch string
 }
 
+// releaseFile holds a prepared file so the entire batch can be checked before writing.
+type releaseFile struct {
+	path     string
+	contents string
+}
+
 // validateEverything validates everything about the module release before
 // anything gets written. The command is "pr" or "release". For "release", the version
 // constant and changelog must match the requested release instead of the latest tag:
@@ -141,31 +147,41 @@ func (w *worktree) validateVersionConstant(target releaseTarget, expectedVersion
 	return nil
 }
 
-// updateReleaseFiles updates the changelog and version.go (if the module has one).
-func (w *worktree) updateReleaseFiles(release releaseSpec) error {
-	_, err := w.updateFile(w.pathToChangelog(release.target), func(text string) (string, error) {
-		return computeNewChangelog(text, release.version, w.releaseDate)
-	})
+// computeReleaseFiles prepares the changelog and version.go (if the module has one)
+// without writing them.
+func (w *worktree) computeReleaseFiles(release releaseSpec) ([]releaseFile, error) {
+	changelogPath := w.pathToChangelog(release.target)
+	changelog, err := w.eff.readFile(changelogPath)
 	if err != nil {
-		return err
+		return nil, err
 	}
+	changelog, err = computeNewChangelog(changelog, release.version, w.releaseDate)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", changelogPath, err)
+	}
+	files := []releaseFile{{path: changelogPath, contents: changelog}}
 
 	versionFile := w.pathToVersionFile(release.target)
 	if versionFile != "" {
-		_, err = w.updateFile(versionFile, func(text string) (string, error) {
-			return computeNewVersionFile(text, release.version)
-		})
+		text, err := w.eff.readFile(versionFile)
 		if err != nil {
-			return err
+			return nil, err
 		}
+		text, err = computeNewVersionFile(text, release.version)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", versionFile, err)
+		}
+		files = append(files, releaseFile{path: versionFile, contents: text})
 	}
 
-	return nil
+	return files, nil
 }
 
-func (w *worktree) commitRelease(release releaseSpec) error {
-	target := release.target
-	gitArgs := append([]string{"commit", "-m", target.releaseCommitMessage(release.version), "--"}, target.releaseFiles()...)
+func (w *worktree) commitRelease(releases []releaseSpec) error {
+	gitArgs := []string{"commit", "-m", releaseCommitMessage(releases, w.releaseDate), "--"}
+	for _, release := range releases {
+		gitArgs = append(gitArgs, release.target.releaseFiles()...)
+	}
 	_, err := w.eff.runCommand(w.worktreeRoot, "git", gitArgs...)
 	if err != nil {
 		return fmt.Errorf("commit release files: %w", err)
@@ -181,13 +197,14 @@ func (w *worktree) pushBranch() error {
 	return nil
 }
 
-func (w *worktree) openDraftPR(release releaseSpec) (string, error) {
+func (w *worktree) openDraftPR(releases []releaseSpec) (string, error) {
+	title, body, _ := strings.Cut(releaseCommitMessage(releases, w.releaseDate), "\n\n")
 	url, err := w.eff.runCommand(w.worktreeRoot, "gh", "pr", "create", "--draft",
 		"--base", "main",
 		"--head", w.branch,
 		"--label", "skip-changelog",
-		"--title", release.target.releaseCommitMessage(release.version),
-		"--body", release.target.releaseCommitMessage(release.version))
+		"--title", title,
+		"--body", body)
 	if err != nil {
 		return "", fmt.Errorf("create draft PR: %w", err)
 	}
@@ -196,9 +213,8 @@ func (w *worktree) openDraftPR(release releaseSpec) (string, error) {
 	return url, nil
 }
 
-func (w *worktree) createDraftRelease(release releaseSpec, commit string) (string, error) {
+func (w *worktree) readReleaseNotes(release releaseSpec) (string, error) {
 	target := release.target
-	tag := target.tag(release.version)
 	changelog, err := w.eff.readFile(w.pathToChangelog(target))
 	if err != nil {
 		return "", err
@@ -207,8 +223,14 @@ func (w *worktree) createDraftRelease(release releaseSpec, commit string) (strin
 	if err != nil {
 		return "", fmt.Errorf("%s: %w", target.changelog(), err)
 	}
+	return releaseNotes, nil
+}
+
+func (w *worktree) createDraftRelease(release releaseSpec, commit, releaseNotes string) (string, error) {
+	target := release.target
+	tag := target.tag(release.version)
 	releaseNotesPath := filepath.Join(w.worktreeRoot, "prepare-release-notes.md")
-	err = w.eff.writeFile(releaseNotesPath, releaseNotes)
+	err := w.eff.writeFile(releaseNotesPath, releaseNotes)
 	if err != nil {
 		return "", fmt.Errorf("write release notes to %s: %w", releaseNotesPath, err)
 	}
@@ -223,7 +245,7 @@ func (w *worktree) createDraftRelease(release releaseSpec, commit string) (strin
 	}
 	url, err := w.eff.runCommand(w.worktreeRoot, "gh", ghArgs...)
 	if err != nil {
-		return "", fmt.Errorf("create draft release: %w", err)
+		return "", fmt.Errorf("create draft release %s: %w", tag, err)
 	}
 	url = strings.TrimSpace(url)
 	printDetail(w.out, "Draft release: %s", url)
@@ -256,18 +278,12 @@ func (w *worktree) pathToVersionFile(target releaseTarget) string {
 	return filepath.Join(w.worktreeRoot, filepath.FromSlash(target.versionFile))
 }
 
-func (w *worktree) updateFile(path string, update func(string) (string, error)) (string, error) {
-	data, err := w.eff.readFile(path)
-	if err != nil {
-		return "", err
+func (w *worktree) writeReleaseFiles(files []releaseFile) error {
+	for _, file := range files {
+		err := w.eff.writeFile(file.path, file.contents)
+		if err != nil {
+			return fmt.Errorf("write %s: %w", file.path, err)
+		}
 	}
-	updated, err := update(data)
-	if err != nil {
-		return "", err
-	}
-	err = w.eff.writeFile(path, updated)
-	if err != nil {
-		return "", fmt.Errorf("write %s: %w", path, err)
-	}
-	return updated, nil
+	return nil
 }
