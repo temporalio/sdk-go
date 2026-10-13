@@ -1,4 +1,4 @@
-// Command prepare-release prepares PRs and Github Releases for a Go SDK release.
+// Command yeet prepares PRs and Github Releases for a Go SDK release.
 package main
 
 import (
@@ -14,9 +14,9 @@ import (
 	"time"
 )
 
-const usage = "usage: prepare-release lint [COMMIT]\n" +
-	"       prepare-release pr [--release-date YYYY-MM-DD] MODULE=VERSION [MODULE=VERSION ...]\n" +
-	"       prepare-release release COMMIT MODULE=VERSION [MODULE=VERSION ...]\n" +
+const usage = "usage: yeet lint [COMMIT]\n" +
+	"       yeet pr [--release-date YYYY-MM-DD] MODULE=VERSION [MODULE=VERSION ...]\n" +
+	"       yeet release COMMIT MODULE=VERSION [MODULE=VERSION ...]\n" +
 	"MODULE is '.' for the Go SDK or a slash-separated contrib module directory like 'contrib/envconfig'"
 
 type app struct {
@@ -72,7 +72,7 @@ func newApp(out, errOut io.Writer, args []string) (*app, error) {
 	}
 
 	// Declare flags
-	flags := flag.NewFlagSet("prepare-release "+command, flag.ContinueOnError)
+	flags := flag.NewFlagSet("yeet "+command, flag.ContinueOnError)
 	flags.SetOutput(errOut)
 	flags.Usage = func() {
 		printLine(flags.Output(), "%s", usage)
@@ -204,7 +204,7 @@ func (app *app) preparePR() (retErr error) {
 	printDetail(app.out, "Done.")
 
 	printLine(app.out, "\nAfter merging the PR, create draft releases with:")
-	printLine(app.out, "  prepare-release release <MERGE_COMMIT> %s", formatReleaseSpecs(app.releases))
+	printLine(app.out, "  yeet release <MERGE_COMMIT> %s", formatReleaseSpecs(app.releases))
 	printLine(app.out, "\nTo close the PR and delete the branch:")
 	printLine(app.out, "  %s", formatCommand("gh", "pr", "close", prURL, "--delete-branch"))
 
@@ -321,7 +321,7 @@ func (app *app) lint() (retErr error) {
 	}
 	if len(proposed) > 0 {
 		printLine(app.out, "\nSuggested PR command:")
-		printLine(app.out, "  prepare-release pr %s", formatReleaseSpecs(proposed))
+		printLine(app.out, "  yeet pr %s", formatReleaseSpecs(proposed))
 	}
 	return errors.Join(problems...)
 }
@@ -407,7 +407,7 @@ func printDetail(out io.Writer, format string, args ...any) {
 func repoRoot() (string, error) {
 	_, file, _, ok := runtime.Caller(0)
 	if !ok {
-		return "", errors.New("could not locate prepare-release source file")
+		return "", errors.New("could not locate yeet source file")
 	}
 	return filepath.Clean(filepath.Join(filepath.Dir(file), "../../..")), nil
 }
