@@ -3086,11 +3086,20 @@ func (wc *workflowEnvironmentInterceptor) prepareNexusOperationParams(ctx Contex
 	}
 	var dc converter.DataConverter
 	var fc converter.FailureConverter
-	if info, ok := nexusOperationRegistry[NexusOperationKey{Service: nsc.Service, Operation: nsc.Operation}]; ok {
-		sc := info.SerializationContext(input.Input)
-		targetDC := withRootDataConverterSerializationContext(ctx, sc)
+	if nsc.Endpoint == systemNexusEndpoint {
+		var sc converter.SerializationContext
+		if info, ok := nexusOperationRegistry[NexusOperationKey{Service: nsc.Service, Operation: nsc.Operation}]; ok {
+			sc = info.SerializationContext(input.Input)
+		}
+		var targetDC converter.DataConverter
+		fc = getRootFailureConverterFromWorkflowContext(ctx)
+		if sc != nil {
+			targetDC = withRootDataConverterSerializationContext(ctx, sc)
+			fc = converter.WithFailureConverterSerializationContext(fc, sc)
+		} else {
+			targetDC = WithWorkflowContext(ctx, rootDataConverterFromEnvironment(GetWorkflowEnvironment(ctx)))
+		}
 		dc = newSystemNexusDataConverter(targetDC)
-		fc = converter.WithFailureConverterSerializationContext(getRootFailureConverterFromWorkflowContext(ctx), sc)
 	} else {
 		dc = withRootDataConverterSerializationContext(ctx, nsc)
 		fc = converter.WithFailureConverterSerializationContext(getRootFailureConverterFromWorkflowContext(ctx), nsc)
