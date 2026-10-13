@@ -2340,9 +2340,12 @@ func (w *workflowClientInterceptor) UpdateWithStartWorkflow(
 		return w.client.getWorkflowHistory(fnCtx, startOp.input.Options.ID, fnRunID, true,
 			enumspb.HISTORY_EVENT_FILTER_TYPE_CLOSE_EVENT, metricsHandler, onSerializationContext)
 	}
-	startWfCtx := converter.WorkflowSerializationContext{
+	startWfCtx := converter.SerializationContext(converter.WorkflowSerializationContext{
 		Namespace:  w.client.namespace,
 		WorkflowID: startOp.input.Options.ID,
+	})
+	if propagated := startReq.GetPropagatedNexusSerializationContext(); propagated != nil {
+		startWfCtx = nexusSerializationContextFromProto(propagated)
 	}
 	onStart := func(startResp *workflowservice.StartWorkflowExecutionResponse) {
 		runID := startResp.RunId
