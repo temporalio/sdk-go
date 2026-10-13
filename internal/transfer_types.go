@@ -18,3 +18,8 @@ func MakeTransferAware(dc converter.DataConverter) converter.DataConverter {
 	}
 	return commonconverter.MakeTransferAware(dc)
 }
+
+func newSystemNexusDataConverter(targetDC converter.DataConverter) converter.DataConverter {
+	envelopeDC := MakeTransferAware(converter.NewCompositeDataConverter(converter.NewProtoPayloadConverter()))
+	return commonconverter.WithSystemNexusDataConverter(envelopeDC, targetDC)
+}

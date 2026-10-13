@@ -16,7 +16,7 @@ type NexusOperationRegistryEntry struct {
 
 var nexusOperationRegistry = make(map[NexusOperationKey]NexusOperationRegistryEntry)
 
-func RegisterNexusOperationRegistry(registry map[NexusOperationKey]NexusOperationRegistryEntry) {
+func UpdateNexusOperationRegistry(registry map[NexusOperationKey]NexusOperationRegistryEntry) {
 	for key, entry := range registry {
 		if _, ok := nexusOperationRegistry[key]; ok {
 			panic(fmt.Sprintf("Nexus operation registry already contains service %q operation %q", key.Service, key.Operation))
