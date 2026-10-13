@@ -29,6 +29,12 @@ type releaseTarget struct {
 	generateNotes bool
 }
 
+// releaseSpec describes a module and the version to release.
+type releaseSpec struct {
+	target  releaseTarget
+	version semver
+}
+
 // sdkTarget describes the main go.temporal.io/sdk module
 func sdkTarget() releaseTarget {
 	return releaseTarget{

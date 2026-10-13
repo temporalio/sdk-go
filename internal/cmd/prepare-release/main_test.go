@@ -41,7 +41,7 @@ func TestNewApp(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if gotDir := got.target.dir; gotDir != test.wantDir {
+			if gotDir := got.release.target.dir; gotDir != test.wantDir {
 				t.Fatalf("unexpected module directory: got %q, want %q", gotDir, test.wantDir)
 			}
 
@@ -114,7 +114,7 @@ func TestPrepareEverything(t *testing.T) {
 		)
 	`)
 
-	a, eff := newMockApp(app{target: sdkTarget(), version: version, releaseDate: date}, nil)
+	a, eff := newMockApp(app{release: releaseSpec{target: sdkTarget(), version: version}, releaseDate: date}, nil)
 	eff.commandHandler = func(cmd string) (string, error) {
 		switch cmd {
 		case `git log -1 "--format=%s (%h)"`:
@@ -246,7 +246,7 @@ func TestPrepareEverythingForContribModule(t *testing.T) {
 	changelogPath := filepath.Join(mockTempDir, "contrib", "envconfig", "CHANGELOG.md")
 	goModPath := filepath.Join(mockTempDir, "contrib", "envconfig", "go.mod")
 
-	a, eff := newMockApp(app{target: target, version: semver{1, 0, 3}, releaseDate: date}, nil)
+	a, eff := newMockApp(app{release: releaseSpec{target: target, version: semver{1, 0, 3}}, releaseDate: date}, nil)
 	eff.commandHandler = func(cmd string) (string, error) {
 		switch cmd {
 		case `git log -1 "--format=%s (%h)"`:
@@ -315,7 +315,7 @@ func TestPrepareEverythingForContribModule(t *testing.T) {
 }
 
 func TestPrepareReleaseStopsBeforePush(t *testing.T) {
-	a, eff := newMockApp(app{target: sdkTarget(), version: semver{1, 2, 3}, stopBeforePush: true}, func(cmd string) (string, error) {
+	a, eff := newMockApp(app{release: releaseSpec{target: sdkTarget(), version: semver{1, 2, 3}}, stopBeforePush: true}, func(cmd string) (string, error) {
 		if cmd == "git tag --list v*" {
 			return "v1.2.2\n", nil
 		}
@@ -347,7 +347,7 @@ func TestPrepareReleaseStopsBeforePush(t *testing.T) {
 }
 
 func TestPrepareReleaseLeavesDirectoryIfWorktreeCreationFails(t *testing.T) {
-	a, eff := newMockApp(app{target: sdkTarget(), version: semver{1, 48, 0}, releaseDate: time.Date(2026, time.August, 4, 0, 0, 0, 0, time.UTC)}, nil)
+	a, eff := newMockApp(app{release: releaseSpec{target: sdkTarget(), version: semver{1, 48, 0}}, releaseDate: time.Date(2026, time.August, 4, 0, 0, 0, 0, time.UTC)}, nil)
 	eff.commandHandler = func(cmd string) (string, error) {
 		if cmd == "git worktree add -b chore/release-1.48.0 "+eff.tempDir+" origin/main" {
 			return "", errors.New("command failed")
@@ -379,7 +379,7 @@ func TestPrepareReleaseValidatesBeforePushingBranch(t *testing.T) {
 		require go.temporal.io/api v1.63.1-0.20260730213819-7f6a96199578
 	`)
 
-	a, eff := newMockApp(app{target: sdkTarget(), version: semver{1, 48, 0}, releaseDate: time.Date(2026, time.August, 4, 0, 0, 0, 0, time.UTC)}, func(cmd string) (string, error) {
+	a, eff := newMockApp(app{release: releaseSpec{target: sdkTarget(), version: semver{1, 48, 0}}, releaseDate: time.Date(2026, time.August, 4, 0, 0, 0, 0, time.UTC)}, func(cmd string) (string, error) {
 		if cmd == `git log -1 "--format=%s (%h)"` {
 			return "Initial commit (abc123)\n", nil
 		}
@@ -438,7 +438,7 @@ func TestPrepareReleaseLeavesWorktreeAfterFailure(t *testing.T) {
 		)
 	`)
 
-	a, eff := newMockApp(app{target: sdkTarget(), version: semver{1, 48, 0}, releaseDate: time.Date(2026, time.August, 4, 0, 0, 0, 0, time.UTC)}, func(cmd string) (string, error) {
+	a, eff := newMockApp(app{release: releaseSpec{target: sdkTarget(), version: semver{1, 48, 0}}, releaseDate: time.Date(2026, time.August, 4, 0, 0, 0, 0, time.UTC)}, func(cmd string) (string, error) {
 		switch cmd {
 		case `git log -1 "--format=%s (%h)"`:
 			return "Initial commit (abc123)\n", nil

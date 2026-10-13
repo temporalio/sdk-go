@@ -13,7 +13,8 @@ The package is organized as follows:
 - `worktree.go` implements specific operations performed on a temporary worktree, like validation.
 - `effects.go` dependency injection object for working with the filesystem and the network.
 - Pure helper functions and definitions:
-  - `target.go` defines a release target, like the Go SDK or `contrib/envconfig`.
+  - `target.go` defines a release target, like the Go SDK or `contrib/envconfig`, and a release
+    specification pairing a target with the version to release.
   - `changelog.go` pure functions that validate and update changelog contents.
   - `gomod.go` pure functions that validate and update `go.mod` contents.
   - `version.go` pure functions that validate and update version numbers and `version.go`.
