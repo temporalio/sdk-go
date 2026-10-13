@@ -1362,7 +1362,7 @@ func TestLintReportsAllBlockedModules(t *testing.T) {
 	eff.files[filepath.Join(mockRepoRoot, "contrib", "envconfig", "go.mod")] = "module go.temporal.io/sdk/contrib/envconfig\n"
 
 	err := a.lint()
-	if err == nil || !strings.Contains(err.Error(), "appears to be empty") || !strings.Contains(err.Error(), "contrib/tally/CHANGELOG.md") {
+	if err == nil || !strings.Contains(err.Error(), "appears to be empty") || !strings.Contains(err.Error(), filepath.Join("contrib", "tally", "CHANGELOG.md")) {
 		t.Fatalf("expected both module failures, got %v", err)
 	}
 	if !strings.Contains(eff.output.String(), "contrib/envconfig=0.1.0: blocked for pr") ||
