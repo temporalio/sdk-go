@@ -16,6 +16,10 @@ func TestNewApp(t *testing.T) {
 		wantDirs []string
 		wantErr  string
 	}{
+		{name: "lint checkout", args: []string{"lint"}, wantDirs: []string{}},
+		{name: "lint commit", args: []string{"lint", "abc123"}, wantDirs: []string{}},
+		{name: "lint extra arguments", args: []string{"lint", "abc123", "extra"}, wantErr: "usage:"},
+		{name: "lint rejects PR flags", args: []string{"lint", "--release-date", "2026-08-04"}, wantErr: "flag provided but not defined"},
 		{name: "SDK PR", args: []string{"pr", ".=1.48.0"}},
 		{name: "contrib PR", args: []string{"pr", "contrib/envconfig=1.0.3"}, wantDirs: []string{"contrib/envconfig"}},
 		{name: "nested contrib module", args: []string{"pr", "contrib/aws/s3driver/awssdkv2=0.2.2"}, wantDirs: []string{"contrib/aws/s3driver/awssdkv2"}},
@@ -58,8 +62,11 @@ func TestNewApp(t *testing.T) {
 			if got.command != test.args[0] {
 				t.Fatalf("unexpected command: got %q, want %q", got.command, test.args[0])
 			}
-			if got.command == "release" && got.commit != "abc123" {
-				t.Fatalf("unexpected release commit: %q", got.commit)
+			if (got.command == "release" || (got.command == "lint" && len(test.args) == 2)) && got.commit != "abc123" {
+				t.Fatalf("unexpected commit: %q", got.commit)
+			}
+			if got.command == "lint" && len(test.args) == 1 && got.commit != "" {
+				t.Fatalf("unexpected commit for checkout lint: %q", got.commit)
 			}
 			wantDirs := test.wantDirs
 			if wantDirs == nil {
@@ -1084,6 +1091,178 @@ func TestPrepareReleaseReportsCreatedDraftsOnFailure(t *testing.T) {
 	testEqual(t, rollback, `
 		  gh release delete contrib/envconfig/v0.1.0 --yes
 	`)
+}
+
+func TestLintCheckout(t *testing.T) {
+	goMod := stripIndentation(`
+		module go.temporal.io/sdk/contrib/envconfig
+		require go.temporal.io/sdk v1.48.0
+	`)
+	changelog := stripIndentation(`
+		## [Unreleased]
+
+		### Fixed
+
+		- A fix.
+	`)
+	a, eff := newMockApp(app{releaseDate: time.Date(2026, time.August, 4, 0, 0, 0, 0, time.UTC)}, func(cmd string) (string, error) {
+		switch cmd {
+		case "git ls-files -z -- go.mod **/go.mod":
+			return "contrib/envconfig/go.mod\x00", nil
+		case "git tag --list *", "git tag --list contrib/envconfig/v*":
+			return "contrib/envconfig/v1.0.2\n", nil
+		case "git diff --name-only --no-renames -z contrib/envconfig/v1.0.2 -- contrib/envconfig":
+			return "contrib/envconfig/file.go\x00", nil
+		}
+		return "", nil
+	})
+	eff.files[filepath.Join(mockRepoRoot, "contrib", "envconfig", "go.mod")] = goMod
+	eff.files[filepath.Join(mockRepoRoot, "contrib", "envconfig", "CHANGELOG.md")] = changelog
+
+	err := a.lint()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	testEqual(t, eff.files[filepath.Join(mockRepoRoot, "contrib", "envconfig", "go.mod")], goMod)
+	testEqual(t, eff.files[filepath.Join(mockRepoRoot, "contrib", "envconfig", "CHANGELOG.md")], changelog)
+	if len(eff.files) != 2 {
+		t.Fatalf("lint wrote files: %v", eff.files)
+	}
+	testEqual(t, eff.commands.String(), `
+		/repo: git fetch --tags origin main
+		/repo: git ls-files -z -- go.mod **/go.mod
+		/repo: git tag --list *
+		/repo: git diff --name-only --no-renames -z contrib/envconfig/v1.0.2 -- contrib/envconfig
+		/repo: git tag --list contrib/envconfig/v*
+	`)
+	testEqual(t, eff.output.String(), `
+		Checking release readiness
+
+		[1/3] Fetch main
+		      $ git fetch --tags origin main
+		[2/3] Inspect checkout
+		      Worktree: /repo (including local edits)
+		      $ git ls-files -z -- go.mod **/go.mod
+		      $ git tag --list *
+		      $ git diff --name-only --no-renames -z contrib/envconfig/v1.0.2 -- contrib/envconfig
+		[3/3] Lint changed modules
+		      $ git tag --list contrib/envconfig/v*
+		      contrib/envconfig=1.1.0: ready for pr
+
+		Suggested PR command:
+		  prepare-release pr contrib/envconfig=1.1.0
+	`)
+}
+
+func TestLintCommit(t *testing.T) {
+	commit := "1234567890abcdef1234567890abcdef12345678"
+	goMod := stripIndentation(`
+		module go.temporal.io/sdk
+		require go.temporal.io/api v1.63.4
+	`)
+	changelog := stripIndentation(`
+		## [Unreleased]
+
+		### Added
+
+		### Fixed
+
+		## [1.48.0] - 2026-08-04
+
+		### Fixed
+
+		- A fix reviewed in the PR.
+	`)
+	versionGo := stripIndentation(`
+		const (
+			SDKVersion = "1.48.0"
+		)
+	`)
+	a, eff := newMockApp(app{commit: "1234567"}, func(cmd string) (string, error) {
+		switch cmd {
+		case "git rev-parse --verify --end-of-options 1234567^{commit}":
+			return commit + "\n", nil
+		case `git log -1 "--format=%s (%h)"`:
+			return "Prepare release 2026-08-04 (1234567)\n", nil
+		case "git ls-files -z -- go.mod **/go.mod":
+			return "go.mod\x00", nil
+		case "git tag --list *", "git tag --list v*":
+			return "v1.47.0\n", nil
+		case "git diff --name-only --no-renames -z v1.47.0 -- .":
+			return "CHANGELOG.md\x00internal/version.go\x00", nil
+		}
+		return "", nil
+	})
+	eff.files[filepath.Join(eff.tempDir, "go.mod")] = goMod
+	eff.files[filepath.Join(eff.tempDir, "CHANGELOG.md")] = changelog
+	eff.files[filepath.Join(eff.tempDir, "internal", "version.go")] = versionGo
+	eff.files[filepath.Join(mockRepoRoot, "CHANGELOG.md")] = "Local edits must not be inspected."
+
+	err := a.lint()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	testEqual(t, eff.files[filepath.Join(eff.tempDir, "go.mod")], goMod)
+	testEqual(t, eff.files[filepath.Join(eff.tempDir, "CHANGELOG.md")], changelog)
+	testEqual(t, eff.files[filepath.Join(eff.tempDir, "internal", "version.go")], versionGo)
+	testEqual(t, eff.files[filepath.Join(mockRepoRoot, "CHANGELOG.md")], "Local edits must not be inspected.")
+	if len(eff.files) != 4 {
+		t.Fatalf("lint wrote files: %v", eff.files)
+	}
+	testEqual(t, eff.commands.String(), `
+		/repo: git fetch --tags origin main
+		/repo: git rev-parse --verify --end-of-options 1234567^{commit}
+		/repo: git worktree add --detach `+eff.tempDir+` `+commit+`
+		`+eff.tempDir+`: git log -1 "--format=%s (%h)"
+		`+eff.tempDir+`: git ls-files -z -- go.mod **/go.mod
+		`+eff.tempDir+`: git tag --list *
+		`+eff.tempDir+`: git diff --name-only --no-renames -z v1.47.0 -- .
+		`+eff.tempDir+`: git tag --list v*
+		/repo: git worktree remove --force `+eff.tempDir,
+	)
+	testEqual(t, eff.output.String(), `
+		Checking release readiness
+
+		[1/3] Fetch main
+		      $ git fetch --tags origin main
+		[2/3] Inspect checkout
+		      $ git rev-parse --verify --end-of-options 1234567^{commit}
+		      $ git worktree add --detach /tmp/prepare-go-release-123456 `+commit+`
+		      $ git log -1 "--format=%s (%h)"
+		      Worktree: /tmp/prepare-go-release-123456
+		      HEAD: Prepare release 2026-08-04 (1234567)
+		      $ git ls-files -z -- go.mod **/go.mod
+		      $ git tag --list *
+		      $ git diff --name-only --no-renames -z v1.47.0 -- .
+		[3/3] Lint changed modules
+		      $ git tag --list v*
+		      .=1.48.0: ready for release
+		      $ git worktree remove --force /tmp/prepare-go-release-123456
+	`)
+}
+
+func TestLintReportsAllBlockedModules(t *testing.T) {
+	a, eff := newMockApp(app{}, func(cmd string) (string, error) {
+		switch cmd {
+		case "git ls-files -z -- go.mod **/go.mod":
+			return "contrib/envconfig/go.mod\x00contrib/tally/go.mod\x00", nil
+		}
+		return "", nil
+	})
+	eff.files[filepath.Join(mockRepoRoot, "contrib", "envconfig", "CHANGELOG.md")] = "## [Unreleased]\n"
+	eff.files[filepath.Join(mockRepoRoot, "contrib", "envconfig", "go.mod")] = "module go.temporal.io/sdk/contrib/envconfig\n"
+
+	err := a.lint()
+	if err == nil || !strings.Contains(err.Error(), "appears to be empty") || !strings.Contains(err.Error(), "contrib/tally/CHANGELOG.md") {
+		t.Fatalf("expected both module failures, got %v", err)
+	}
+	if !strings.Contains(eff.output.String(), "contrib/envconfig=0.1.0: blocked for pr") ||
+		!strings.Contains(eff.output.String(), "contrib/tally=0.1.0: blocked for pr") ||
+		!strings.Contains(eff.output.String(), "prepare-release pr contrib/envconfig=0.1.0 contrib/tally=0.1.0") {
+		t.Fatalf("missing module reports or suggested command:\n%s", eff.output.String())
+	}
 }
 
 // Release tags are the only record of a contrib module's current version, so the

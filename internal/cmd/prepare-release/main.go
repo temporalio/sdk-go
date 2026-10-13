@@ -14,7 +14,8 @@ import (
 	"time"
 )
 
-const usage = "usage: prepare-release pr [--release-date YYYY-MM-DD] MODULE=VERSION [MODULE=VERSION ...]\n" +
+const usage = "usage: prepare-release lint [COMMIT]\n" +
+	"       prepare-release pr [--release-date YYYY-MM-DD] MODULE=VERSION [MODULE=VERSION ...]\n" +
 	"       prepare-release release COMMIT MODULE=VERSION [MODULE=VERSION ...]\n" +
 	"MODULE is '.' for the Go SDK or a slash-separated contrib module directory like 'contrib/envconfig'"
 
@@ -48,6 +49,9 @@ func run(out, errOut io.Writer, args []string) error {
 	if err != nil {
 		return err
 	}
+	if a.command == "lint" {
+		return a.lint()
+	}
 	if a.command == "pr" {
 		return a.preparePR()
 	}
@@ -63,7 +67,7 @@ func newApp(out, errOut io.Writer, args []string) (*app, error) {
 		printLine(errOut, "%s", usage)
 		return nil, flag.ErrHelp
 	}
-	if command != "pr" && command != "release" {
+	if command != "lint" && command != "pr" && command != "release" {
 		return nil, fmt.Errorf("unknown command %q\n%s", command, usage)
 	}
 
@@ -74,12 +78,12 @@ func newApp(out, errOut io.Writer, args []string) (*app, error) {
 		printLine(flags.Output(), "%s", usage)
 		flags.PrintDefaults()
 	}
-	var releaseDate string
+	releaseDate := time.Now().Format(time.DateOnly)
 	if command == "pr" {
 		flags.StringVar(
 			&releaseDate,
 			"release-date",
-			time.Now().Format(time.DateOnly),
+			releaseDate,
 			"release date in YYYY-MM-DD format",
 		)
 	}
@@ -90,7 +94,7 @@ func newApp(out, errOut io.Writer, args []string) (*app, error) {
 
 	// Store flags and positional args
 	a := &app{out: out, eff: realWorld{out: out}, command: command}
-	if command == "pr" {
+	if command == "pr" || command == "lint" {
 		a.releaseDate, err = time.Parse(time.DateOnly, releaseDate)
 		if err != nil {
 			return nil, fmt.Errorf("invalid release date %q; expected YYYY-MM-DD: %w", releaseDate, err)
@@ -98,19 +102,28 @@ func newApp(out, errOut io.Writer, args []string) (*app, error) {
 	}
 
 	positional := flags.Args()
-	if command == "release" {
-		if len(positional) < 2 {
+	if command == "lint" {
+		if len(positional) > 1 {
 			return nil, errors.New(usage)
 		}
-		a.commit = positional[0]
-		positional = positional[1:]
-	}
-	if len(positional) == 0 {
-		return nil, errors.New(usage)
-	}
-	a.releases, err = parseReleaseSpecs(positional)
-	if err != nil {
-		return nil, err
+		if len(positional) == 1 {
+			a.commit = positional[0]
+		}
+	} else {
+		if command == "release" {
+			if len(positional) < 2 {
+				return nil, errors.New(usage)
+			}
+			a.commit = positional[0]
+			positional = positional[1:]
+		}
+		if len(positional) == 0 {
+			return nil, errors.New(usage)
+		}
+		a.releases, err = parseReleaseSpecs(positional)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	a.repoRoot, err = repoRoot()
@@ -255,6 +268,64 @@ func (app *app) prepareRelease() (retErr error) {
 	return nil
 }
 
+func (app *app) lint() (retErr error) {
+	printLine(app.out, "Checking release readiness\n")
+
+	printLine(app.out, "[1/3] Fetch main")
+	err := app.fetchMain()
+	if err != nil {
+		return err
+	}
+
+	printLine(app.out, "[2/3] Inspect checkout")
+	var worktree *worktree
+	if app.commit == "" {
+		worktree = app.worktreeAt(app.repoRoot, "")
+		printDetail(app.out, "Worktree: %s (including local edits)", app.repoRoot)
+	} else {
+		commit, err := app.resolveCommit()
+		if err != nil {
+			return err
+		}
+		worktree, err = app.createWorktree("", commit)
+		if err != nil {
+			return err
+		}
+		defer func() {
+			retErr = errors.Join(retErr, worktree.cleanup())
+		}()
+	}
+	candidates, err := worktree.changedModules()
+	if err != nil {
+		return err
+	}
+
+	printLine(app.out, "[3/3] Lint changed modules")
+	if len(candidates) == 0 {
+		printDetail(app.out, "No changed modules.")
+		return nil
+	}
+	var proposed []releaseSpec
+	var problems []error
+	for _, candidate := range candidates {
+		release, command, err := worktree.lintRelease(candidate)
+		if command == "pr" {
+			proposed = append(proposed, release)
+		}
+		if err != nil {
+			printDetail(app.out, "%s: blocked for %s", formatReleaseSpecs([]releaseSpec{release}), command)
+			problems = append(problems, err)
+			continue
+		}
+		printDetail(app.out, "%s: ready for %s", formatReleaseSpecs([]releaseSpec{release}), command)
+	}
+	if len(proposed) > 0 {
+		printLine(app.out, "\nSuggested PR command:")
+		printLine(app.out, "  prepare-release pr %s", formatReleaseSpecs(proposed))
+	}
+	return errors.Join(problems...)
+}
+
 func (app *app) fetchMain() error {
 	_, err := app.eff.runCommand(app.repoRoot, "git", "fetch", "--tags", "origin", "main")
 	if err != nil {
@@ -264,16 +335,23 @@ func (app *app) fetchMain() error {
 }
 
 func (app *app) resolveReleaseCommit() (string, error) {
-	commit, err := app.eff.runCommand(app.repoRoot, "git", "rev-parse", "--verify", "--end-of-options", app.commit+"^{commit}")
+	commit, err := app.resolveCommit()
 	if err != nil {
-		return "", fmt.Errorf("resolve release commit %q: %w", app.commit, err)
+		return "", err
 	}
-	commit = strings.TrimSpace(commit)
 	_, err = app.eff.runCommand(app.repoRoot, "git", "merge-base", "--is-ancestor", commit, "origin/main")
 	if err != nil {
 		return "", fmt.Errorf("release commit %s must be reachable from origin/main: %w", commit, err)
 	}
 	return commit, nil
+}
+
+func (app *app) resolveCommit() (string, error) {
+	commit, err := app.eff.runCommand(app.repoRoot, "git", "rev-parse", "--verify", "--end-of-options", app.commit+"^{commit}")
+	if err != nil {
+		return "", fmt.Errorf("resolve commit %q: %w", app.commit, err)
+	}
+	return strings.TrimSpace(commit), nil
 }
 
 func (app *app) createWorktree(branch, commit string) (*worktree, error) {

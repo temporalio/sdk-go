@@ -93,6 +93,36 @@ func (w *worktree) validateEverything(release releaseSpec, command string) error
 	return nil
 }
 
+// lintRelease checks either Unreleased changes or an already prepared release.
+// It returns the release and validation command even when readiness checks fail,
+// so callers can report the module and suggest PR preparation.
+func (w *worktree) lintRelease(candidate releaseCandidate) (releaseSpec, string, error) {
+	changelog, err := w.eff.readFile(w.pathToChangelog(candidate.target))
+	if err != nil {
+		return releaseSpec{target: candidate.target, version: suggestReleaseVersion(candidate.oldVersion)}, "pr", err
+	}
+	pending := pendingChangelogVersion(changelog, candidate.oldVersion)
+	var release releaseSpec
+	var command string
+	if pending == nil {
+		release = releaseSpec{target: candidate.target, version: suggestReleaseVersion(candidate.oldVersion)}
+		command = "pr"
+	} else {
+		release = releaseSpec{target: candidate.target, version: *pending}
+		command = "release"
+	}
+	err = w.validateEverything(release, command)
+	if err != nil {
+		return release, command, err
+	}
+	if command == "pr" {
+		_, err = w.computeReleaseFiles(release)
+	} else {
+		_, err = w.readReleaseNotes(release)
+	}
+	return release, command, err
+}
+
 func (w *worktree) validateRequirementsPublished(requirements []moduleRequirement) error {
 	for _, requirement := range requirements {
 		published, err := w.eff.checkModulePublished(requirement.modulePath, requirement.version)
