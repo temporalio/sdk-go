@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestChangedModulesWithoutReleases(t *testing.T) {
@@ -113,6 +114,67 @@ func TestChangedModulesTracksMovesAcrossModules(t *testing.T) {
 		.: 1.0.0
 		contrib/envconfig: 0.1.0
 	`)
+}
+
+func TestLintRealCheckoutAndSnapshot(t *testing.T) {
+	w := newDiscoveryWorktree(t, "contrib/envconfig")
+	writeDiscoveryFile(t, w, "contrib/envconfig/CHANGELOG.md", "## [Unreleased]\n")
+	runDiscoveryGit(t, w, "add", ".")
+	runDiscoveryGit(t, w, "commit", "-m", "Add changelog")
+	runDiscoveryGit(t, w, "branch", "-M", "main")
+	runDiscoveryGit(t, w, "remote", "add", "origin", w.worktreeRoot)
+	runDiscoveryGit(t, w, "tag", "v1.0.0")
+	runDiscoveryGit(t, w, "tag", "contrib/envconfig/v0.1.0")
+	runDiscoveryGit(t, w, "checkout", "-b", "release-pr")
+	writeDiscoveryFile(t, w, "contrib/envconfig/file.txt", "An unreleased fix.\n")
+
+	var out strings.Builder
+	a := &app{
+		out:         &out,
+		eff:         realWorld{out: &out},
+		repoRoot:    w.worktreeRoot,
+		releaseDate: time.Date(2026, time.August, 4, 0, 0, 0, 0, time.UTC),
+	}
+	err := a.lint()
+	if err == nil || !strings.Contains(err.Error(), "appears to be empty") {
+		t.Fatalf("expected empty Unreleased error, got %v", err)
+	}
+	writeDiscoveryFile(t, w, "contrib/envconfig/CHANGELOG.md", "## [Unreleased]\n\n- An unreleased fix.\n")
+	err = a.lint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "prepare-release pr contrib/envconfig=0.2.0") {
+		t.Fatalf("missing minor suggestion:\n%s", out.String())
+	}
+
+	// Prepare and commit the release on an unmerged PR branch.
+	w.releaseDate = a.releaseDate
+	files, err := w.computeReleaseFiles(releaseSpec{target: contribEnvconfig(t), version: semver{0, 1, 1}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = w.writeReleaseFiles(files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runDiscoveryGit(t, w, "add", ".")
+	runDiscoveryGit(t, w, "commit", "-m", "Prepare release")
+	a.commit = strings.TrimSpace(runDiscoveryGit(t, w, "rev-parse", "HEAD"))
+	writeDiscoveryFile(t, w, "contrib/envconfig/CHANGELOG.md", "Broken local edits.\n")
+	before := runDiscoveryGit(t, w, "status", "--porcelain", "-z")
+	worktrees := runDiscoveryGit(t, w, "worktree", "list", "--porcelain")
+	out.Reset()
+
+	err = a.lint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "contrib/envconfig=0.1.1: ready for release") {
+		t.Fatalf("missing prepared release report:\n%s", out.String())
+	}
+	testEqual(t, runDiscoveryGit(t, w, "status", "--porcelain", "-z"), before)
+	testEqual(t, runDiscoveryGit(t, w, "worktree", "list", "--porcelain"), worktrees)
 }
 
 func newDiscoveryWorktree(t *testing.T, moduleDirs ...string) *worktree {

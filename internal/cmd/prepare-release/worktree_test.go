@@ -299,6 +299,116 @@ func TestValidateReleaseRejectsInvalidChangelog(t *testing.T) {
 	}
 }
 
+func TestLintRelease(t *testing.T) {
+	tests := []struct {
+		name        string
+		changelog   string
+		goMod       string
+		oldVersion  *semver
+		wantVersion semver
+		wantCommand string
+		wantErr     string
+	}{
+		{
+			name:        "minor suggestion",
+			changelog:   "## [Unreleased]\n\n- A fix.\n",
+			oldVersion:  &semver{1, 0, 2},
+			wantVersion: semver{1, 1, 0},
+			wantCommand: "pr",
+		},
+		{
+			name:        "first release suggestion",
+			changelog:   "## [Unreleased]\n\n- A feature.\n",
+			wantVersion: semver{0, 1, 0},
+			wantCommand: "pr",
+		},
+		{
+			name:        "prepared minor release",
+			changelog:   "## [Unreleased]\n\n## [1.1.0]\n\n- A feature.\n",
+			oldVersion:  &semver{1, 0, 2},
+			wantVersion: semver{1, 1, 0},
+			wantCommand: "release",
+		},
+		{
+			name:        "prepared first release",
+			changelog:   "## [Unreleased]\n\n## [0.1.0]\n\n- A feature.\n",
+			wantVersion: semver{0, 1, 0},
+			wantCommand: "release",
+		},
+		{
+			name:        "missing changelog",
+			oldVersion:  &semver{1, 0, 2},
+			wantVersion: semver{1, 1, 0},
+			wantCommand: "pr",
+			wantErr:     "CHANGELOG.md",
+		},
+		{
+			name:        "empty Unreleased",
+			changelog:   "## [Unreleased]\n\n### Fixed\n",
+			oldVersion:  &semver{1, 0, 2},
+			wantVersion: semver{1, 1, 0},
+			wantCommand: "pr",
+			wantErr:     "appears to be empty",
+		},
+		{
+			name:        "empty prepared release",
+			changelog:   "## [Unreleased]\n\n## [1.0.3]\n",
+			oldVersion:  &semver{1, 0, 2},
+			wantVersion: semver{1, 0, 3},
+			wantCommand: "release",
+			wantErr:     "appears to be empty",
+		},
+		{
+			name:        "invalid prepared increment",
+			changelog:   "## [Unreleased]\n\n## [1.0.5]\n\n- A fix.\n",
+			oldVersion:  &semver{1, 0, 2},
+			wantVersion: semver{1, 0, 5},
+			wantCommand: "release",
+			wantErr:     "does not follow",
+		},
+		{
+			name:        "unpublished dependency",
+			changelog:   "## [Unreleased]\n\n## [1.0.3]\n\n- A fix.\n",
+			goMod:       "module go.temporal.io/sdk/contrib/envconfig\nrequire go.temporal.io/sdk v1.48.0\n",
+			oldVersion:  &semver{1, 0, 2},
+			wantVersion: semver{1, 0, 3},
+			wantCommand: "release",
+			wantErr:     "not published",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			target := contribEnvconfig(t)
+			a, eff := newMockApp(app{}, func(cmd string) (string, error) {
+				if cmd == "git tag --list contrib/envconfig/v*" && test.oldVersion != nil {
+					return target.tag(*test.oldVersion) + "\n", nil
+				}
+				return "", nil
+			})
+			eff.moduleLookupHandler = func(string, string) (bool, error) { return false, nil }
+			goMod := test.goMod
+			if goMod == "" {
+				goMod = "module go.temporal.io/sdk/contrib/envconfig\n"
+			}
+			eff.files[filepath.Join(eff.tempDir, "contrib", "envconfig", "go.mod")] = goMod
+			if test.changelog != "" {
+				eff.files[filepath.Join(eff.tempDir, "contrib", "envconfig", "CHANGELOG.md")] = test.changelog
+			}
+
+			release, command, err := a.worktreeAt(eff.tempDir, "").lintRelease(releaseCandidate{target: target, oldVersion: test.oldVersion})
+			if test.wantErr == "" && err != nil {
+				t.Fatal(err)
+			}
+			if test.wantErr != "" && (err == nil || !strings.Contains(err.Error(), test.wantErr)) {
+				t.Fatalf("expected error containing %q, got %v", test.wantErr, err)
+			}
+			if release.target != target || release.version != test.wantVersion || command != test.wantCommand {
+				t.Fatalf("unexpected lint result: got %v %s, want %v %s", release, command, test.wantVersion, test.wantCommand)
+			}
+		})
+	}
+}
+
 func TestListTags(t *testing.T) {
 	a, eff := newMockApp(app{}, func(cmd string) (string, error) {
 		if cmd == "git tag --list contrib/envconfig/v*" {
