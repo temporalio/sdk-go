@@ -2140,18 +2140,22 @@ func (w *workflowClientInterceptor) createStartWorkflowRequest(
 	if dataConverter == nil {
 		dataConverter = converter.GetDefaultDataConverter()
 	}
-	serializationContext := converter.SerializationContext(converter.WorkflowSerializationContext{
+	rootDataConverter := dataConverter
+	dataConverter = converter.WithDataConverterSerializationContext(dataConverter, converter.WorkflowSerializationContext{
 		Namespace:  w.client.namespace,
 		WorkflowID: workflowID,
 	})
+	// Only the input uses the Nexus context. Memo and user metadata stay on the workflow context
+	// because List/visibility responses do not carry the propagated context needed to decode them.
+	inputDataConverter := dataConverter
 	propagatedNexusSerializationContext := propagatedNexusSerializationContextFromGoContext(ctx)
 	if propagatedNexusSerializationContext != nil {
-		serializationContext = nexusSerializationContextFromProto(propagatedNexusSerializationContext)
+		inputDataConverter = converter.WithDataConverterSerializationContext(rootDataConverter,
+			nexusSerializationContextFromProto(propagatedNexusSerializationContext))
 	}
-	dataConverter = converter.WithDataConverterSerializationContext(dataConverter, serializationContext)
 
 	// Encode input
-	input, err := encodeArgs(dataConverter, in.Args)
+	input, err := encodeArgs(inputDataConverter, in.Args)
 	if err != nil {
 		return nil, err
 	}
