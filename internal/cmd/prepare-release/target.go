@@ -60,6 +60,27 @@ func contribTarget(dir string) (releaseTarget, error) {
 	}, nil
 }
 
+// parseReleaseSpec parses a MODULE=VERSION assignment, with '.' naming the Go SDK.
+func parseReleaseSpec(arg string) (releaseSpec, error) {
+	dir, version, ok := strings.Cut(arg, "=")
+	if !ok {
+		return releaseSpec{}, fmt.Errorf("invalid release %q; expected MODULE=VERSION, such as '.=1.48.0'", arg)
+	}
+	target := sdkTarget()
+	var err error
+	if dir != "." {
+		target, err = contribTarget(dir)
+		if err != nil {
+			return releaseSpec{}, err
+		}
+	}
+	parsed, err := parseVersion(version)
+	if err != nil {
+		return releaseSpec{}, err
+	}
+	return releaseSpec{target: target, version: parsed}, nil
+}
+
 // modulePath the target's module path, e.g. "go.temporal.io/sdk/contrib/envconfig".
 func (t releaseTarget) modulePath() string {
 	return path.Join(sdkModulePath, t.dir)

@@ -14,17 +14,18 @@ import (
 	"time"
 )
 
-const usage = "usage: prepare-release [--release-date YYYY-MM-DD] [--stop-before-push] [MODULE] VERSION\n" +
-	"optional argument MODULE is a slash-separated path to a contrib module directory like 'contrib/envconfig'; " +
-	"omit MODULE to release the Go SDK"
+const usage = "usage: prepare-release pr [--release-date YYYY-MM-DD] MODULE=VERSION\n" +
+	"       prepare-release release COMMIT MODULE=VERSION\n" +
+	"MODULE is '.' for the Go SDK or a slash-separated contrib module directory like 'contrib/envconfig'"
 
 type app struct {
-	out            io.Writer
-	eff            effects
-	repoRoot       string
-	release        releaseSpec
-	releaseDate    time.Time
-	stopBeforePush bool
+	out         io.Writer
+	eff         effects
+	repoRoot    string
+	command     string
+	release     releaseSpec
+	commit      string
+	releaseDate time.Time
 }
 
 // COMMAND-LINE WRAPPER
@@ -47,60 +48,69 @@ func run(out, errOut io.Writer, args []string) error {
 	if err != nil {
 		return err
 	}
+	if a.command == "pr" {
+		return a.preparePR()
+	}
 	return a.prepareRelease()
 }
 
 func newApp(out, errOut io.Writer, args []string) (*app, error) {
+	if len(args) == 0 {
+		return nil, errors.New(usage)
+	}
+	command := args[0]
+	if command == "-h" || command == "--help" {
+		printLine(errOut, "%s", usage)
+		return nil, flag.ErrHelp
+	}
+	if command != "pr" && command != "release" {
+		return nil, fmt.Errorf("unknown command %q\n%s", command, usage)
+	}
+
 	// Declare flags
-	flags := flag.NewFlagSet("prepare-release", flag.ContinueOnError)
+	flags := flag.NewFlagSet("prepare-release "+command, flag.ContinueOnError)
 	flags.SetOutput(errOut)
 	flags.Usage = func() {
 		printLine(flags.Output(), "%s", usage)
 		flags.PrintDefaults()
 	}
-	releaseDate := flags.String(
-		"release-date",
-		time.Now().Format(time.DateOnly),
-		"release date in YYYY-MM-DD format",
-	)
-	stopBeforePush := flags.Bool(
-		"stop-before-push",
-		false,
-		"abort the script before pushing anything to GitHub",
-	)
-	err := flags.Parse(args)
+	var releaseDate string
+	if command == "pr" {
+		flags.StringVar(
+			&releaseDate,
+			"release-date",
+			time.Now().Format(time.DateOnly),
+			"release date in YYYY-MM-DD format",
+		)
+	}
+	err := flags.Parse(args[1:])
 	if err != nil {
 		return nil, err
 	}
 
 	// Store flags and positional args
-	a := &app{out: out, eff: realWorld{out: out}}
-
-	a.releaseDate, err = time.Parse(time.DateOnly, *releaseDate)
-	if err != nil {
-		return nil, fmt.Errorf("invalid release date %q; expected YYYY-MM-DD: %w", *releaseDate, err)
+	a := &app{out: out, eff: realWorld{out: out}, command: command}
+	if command == "pr" {
+		a.releaseDate, err = time.Parse(time.DateOnly, releaseDate)
+		if err != nil {
+			return nil, fmt.Errorf("invalid release date %q; expected YYYY-MM-DD: %w", releaseDate, err)
+		}
 	}
-	a.stopBeforePush = *stopBeforePush
 
 	positional := flags.Args()
-	switch len(positional) {
-	case 1:
-		a.release.target = sdkTarget()
-		a.release.version, err = parseVersion(positional[0])
-		if err != nil {
-			return nil, err
+	if command == "release" {
+		if len(positional) != 2 {
+			return nil, errors.New(usage)
 		}
-	case 2:
-		a.release.target, err = contribTarget(positional[0])
-		if err != nil {
-			return nil, err
-		}
-		a.release.version, err = parseVersion(positional[1])
-		if err != nil {
-			return nil, err
-		}
-	default:
+		a.commit = positional[0]
+		positional = positional[1:]
+	}
+	if len(positional) != 1 {
 		return nil, errors.New(usage)
+	}
+	a.release, err = parseReleaseSpec(positional[0])
+	if err != nil {
+		return nil, err
 	}
 
 	a.repoRoot, err = repoRoot()
@@ -112,7 +122,7 @@ func newApp(out, errOut io.Writer, args []string) (*app, error) {
 
 // CORE LOGIC
 
-func (app *app) prepareRelease() (retErr error) {
+func (app *app) preparePR() (retErr error) {
 	printLine(app.out, "Preparing %s %s\n", app.release.target.modulePath(), app.release.version)
 
 	printLine(app.out, "[1/5] Fetch main")
@@ -123,7 +133,7 @@ func (app *app) prepareRelease() (retErr error) {
 
 	printLine(app.out, "[2/5] Create release worktree")
 	branchName := app.release.target.releaseBranchName(app.release.version)
-	worktree, err := app.createWorktree(branchName)
+	worktree, err := app.createWorktree(branchName, "origin/main")
 	if err != nil {
 		return err
 	}
@@ -140,13 +150,13 @@ func (app *app) prepareRelease() (retErr error) {
 			)
 		}
 	}()
-	err = worktree.validateEverything(app.release)
+	err = worktree.validateEverything(app.release, "pr")
 	if err != nil {
 		return err
 	}
 
 	printLine(app.out, "[3/5] Commit release files")
-	releaseNotes, err := worktree.updateReleaseFiles(app.release)
+	err = worktree.updateReleaseFiles(app.release)
 	if err != nil {
 		return err
 	}
@@ -154,20 +164,13 @@ func (app *app) prepareRelease() (retErr error) {
 	if err != nil {
 		return err
 	}
-	if app.stopBeforePush {
-		return errors.New("stopped before pushing release branch (--stop-before-push)")
-	}
 
-	printLine(app.out, "[4/5] Publish draft PR and draft release")
+	printLine(app.out, "[4/5] Publish draft PR")
 	err = worktree.pushBranch()
 	if err != nil {
 		return err
 	}
 	prURL, err := worktree.openDraftPR(app.release)
-	if err != nil {
-		return err
-	}
-	_, err = worktree.createDraftRelease(app.release, releaseNotes)
 	if err != nil {
 		return err
 	}
@@ -179,10 +182,47 @@ func (app *app) prepareRelease() (retErr error) {
 	}
 	printDetail(app.out, "Done.")
 
-	printLine(app.out, "\nTo roll back this release, close the PR and delete the draft release:")
+	printLine(app.out, "\nTo close the PR and delete the branch:")
 	printLine(app.out, "  %s", formatCommand("gh", "pr", "close", prURL, "--delete-branch"))
-	printLine(app.out, "  %s", formatCommand("gh", "release", "delete", app.release.target.tag(app.release.version), "--yes"))
 
+	return nil
+}
+
+func (app *app) prepareRelease() (retErr error) {
+	printLine(app.out, "Creating draft release for %s %s\n", app.release.target.modulePath(), app.release.version)
+
+	printLine(app.out, "[1/4] Fetch main")
+	err := app.fetchMain()
+	if err != nil {
+		return err
+	}
+
+	printLine(app.out, "[2/4] Check out release commit")
+	commit, err := app.resolveReleaseCommit()
+	if err != nil {
+		return err
+	}
+	worktree, err := app.createWorktree("", commit)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		retErr = errors.Join(retErr, worktree.cleanup())
+	}()
+
+	printLine(app.out, "[3/4] Validate release files")
+	err = worktree.validateEverything(app.release, "release")
+	if err != nil {
+		return err
+	}
+
+	printLine(app.out, "[4/4] Create draft release")
+	_, err = worktree.createDraftRelease(app.release, commit)
+	if err != nil {
+		return err
+	}
+	printLine(app.out, "\nTo roll back this release, delete the draft release:")
+	printLine(app.out, "  %s", formatCommand("gh", "release", "delete", app.release.target.tag(app.release.version), "--yes"))
 	return nil
 }
 
@@ -194,17 +234,40 @@ func (app *app) fetchMain() error {
 	return nil
 }
 
-func (app *app) createWorktree(branch string) (*worktree, error) {
+func (app *app) resolveReleaseCommit() (string, error) {
+	commit, err := app.eff.runCommand(app.repoRoot, "git", "rev-parse", "--verify", "--end-of-options", app.commit+"^{commit}")
+	if err != nil {
+		return "", fmt.Errorf("resolve release commit %q: %w", app.commit, err)
+	}
+	commit = strings.TrimSpace(commit)
+	_, err = app.eff.runCommand(app.repoRoot, "git", "merge-base", "--is-ancestor", commit, "origin/main")
+	if err != nil {
+		return "", fmt.Errorf("release commit %s must be reachable from origin/main: %w", commit, err)
+	}
+	return commit, nil
+}
+
+func (app *app) createWorktree(branch, commit string) (*worktree, error) {
 	root, err := app.eff.mkdirTemp("", "prepare-go-release-")
 	if err != nil {
 		return nil, fmt.Errorf("create temporary worktree: %w", err)
 	}
-	_, err = app.eff.runCommand(app.repoRoot, "git", "worktree", "add", "-b", branch, root, "origin/main")
+	gitArgs := []string{"worktree", "add"}
+	if branch == "" {
+		gitArgs = append(gitArgs, "--detach")
+	} else {
+		gitArgs = append(gitArgs, "-b", branch)
+	}
+	gitArgs = append(gitArgs, root, commit)
+	_, err = app.eff.runCommand(app.repoRoot, "git", gitArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("create worktree: %w", err)
 	}
 	head, err := app.eff.runCommand(root, "git", "log", "-1", "--format=%s (%h)")
 	if err != nil {
+		if branch == "" {
+			err = errors.Join(err, app.worktreeAt(root, branch).cleanup())
+		}
 		return nil, fmt.Errorf("describe worktree: %w", err)
 	}
 	printDetail(app.out, "Worktree: %s", root)
