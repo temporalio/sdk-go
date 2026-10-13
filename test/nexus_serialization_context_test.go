@@ -3,6 +3,7 @@ package test_test
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/google/uuid"
@@ -63,6 +64,9 @@ func (c *nexusContextSigningCodec) Decode(payloads []*commonpb.Payload) ([]*comm
 }
 
 func (ts *IntegrationTestSuite) TestNexusSerializationContextPropagation() {
+	if os.Getenv("DISABLE_NEXUS_SERIALIZATION_CONTEXT_TESTS") != "" {
+		ts.T().Skip("server does not support propagated Nexus serialization context")
+	}
 	skipOnCloud(ts.T(), cloudRequiresProvisioning, "Nexus serialization context test creates an endpoint through Operator Service")
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()

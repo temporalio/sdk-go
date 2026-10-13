@@ -394,11 +394,10 @@ type (
 
 	// clientActivityHandleImpl is the default implementation of ClientActivityHandle.
 	clientActivityHandleImpl struct {
-		client                    *WorkflowClient
-		id                        string
-		runID                     string
-		result                    *ClientPollActivityResultOutput
-		nexusSerializationContext *converter.NexusSerializationContext
+		client *WorkflowClient
+		id     string
+		runID  string
+		result *ClientPollActivityResultOutput
 	}
 )
 
@@ -589,9 +588,8 @@ func (h *clientActivityHandleImpl) Get(ctx context.Context, valuePtr any) error 
 	// repeatedly poll, the loop repeats until there's an outcome
 	for {
 		resp, err := h.client.interceptor.PollActivityResult(ctx, &ClientPollActivityResultInput{
-			ActivityID:                h.id,
-			RunID:                     h.runID,
-			nexusSerializationContext: h.nexusSerializationContext,
+			ActivityID: h.id,
+			RunID:      h.runID,
 		})
 		if err != nil {
 			return err
@@ -615,10 +613,9 @@ func (h *clientActivityHandleImpl) Describe(ctx context.Context, options ClientD
 		return nil, err
 	}
 	out, err := h.client.interceptor.DescribeActivity(ctx, &ClientDescribeActivityInput{
-		ActivityID:                h.id,
-		RunID:                     h.runID,
-		Options:                   &options,
-		nexusSerializationContext: h.nexusSerializationContext,
+		ActivityID: h.id,
+		RunID:      h.runID,
+		Options:    &options,
 	})
 	if err != nil {
 		return nil, err
@@ -902,16 +899,11 @@ func (w *workflowClientInterceptor) ExecuteActivity(
 		nctx.AddResponseLink(resp.GetLink())
 	}
 
-	handle := &clientActivityHandleImpl{
+	return &clientActivityHandleImpl{
 		client: w.client,
 		id:     in.Options.ID,
 		runID:  runID,
-	}
-	if propagatedNexusSerializationContext != nil {
-		context := nexusSerializationContextFromProto(propagatedNexusSerializationContext)
-		handle.nexusSerializationContext = &context
-	}
-	return handle, nil
+	}, nil
 }
 
 func (options *ClientStartActivityOptions) validateAndSetInRequest(request *workflowservice.StartActivityExecutionRequest, dataConverter converter.DataConverter) error {
@@ -998,9 +990,6 @@ func (w *workflowClientInterceptor) PollActivityResult(
 	}
 
 	serializationContext := converter.SerializationContext(converter.ActivitySerializationContext{Namespace: w.client.namespace})
-	if in.nexusSerializationContext != nil {
-		serializationContext = *in.nexusSerializationContext
-	}
 	if propagated := resp.GetPropagatedNexusSerializationContext(); propagated != nil {
 		serializationContext = nexusSerializationContextFromProto(propagated)
 	}
@@ -1055,8 +1044,8 @@ func (w *workflowClientInterceptor) DescribeActivity(
 		ActivityType: info.ActivityType.GetName(),
 		TaskQueue:    info.TaskQueue,
 	})
-	if in.nexusSerializationContext != nil {
-		serializationContext = *in.nexusSerializationContext
+	if propagated := info.GetPropagatedNexusSerializationContext(); propagated != nil {
+		serializationContext = nexusSerializationContextFromProto(propagated)
 	}
 
 	return &ClientDescribeActivityOutput{
