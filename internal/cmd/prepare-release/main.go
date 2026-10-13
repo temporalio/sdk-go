@@ -22,8 +22,7 @@ type app struct {
 	out            io.Writer
 	eff            effects
 	repoRoot       string
-	target         releaseTarget
-	version        semver
+	release        releaseSpec
 	releaseDate    time.Time
 	stopBeforePush bool
 }
@@ -86,17 +85,17 @@ func newApp(out, errOut io.Writer, args []string) (*app, error) {
 	positional := flags.Args()
 	switch len(positional) {
 	case 1:
-		a.target = sdkTarget()
-		a.version, err = parseVersion(positional[0])
+		a.release.target = sdkTarget()
+		a.release.version, err = parseVersion(positional[0])
 		if err != nil {
 			return nil, err
 		}
 	case 2:
-		a.target, err = contribTarget(positional[0])
+		a.release.target, err = contribTarget(positional[0])
 		if err != nil {
 			return nil, err
 		}
-		a.version, err = parseVersion(positional[1])
+		a.release.version, err = parseVersion(positional[1])
 		if err != nil {
 			return nil, err
 		}
@@ -114,7 +113,7 @@ func newApp(out, errOut io.Writer, args []string) (*app, error) {
 // CORE LOGIC
 
 func (app *app) prepareRelease() (retErr error) {
-	printLine(app.out, "Preparing %s %s\n", app.target.modulePath(), app.version)
+	printLine(app.out, "Preparing %s %s\n", app.release.target.modulePath(), app.release.version)
 
 	printLine(app.out, "[1/5] Fetch main")
 	err := app.fetchMain()
@@ -123,7 +122,7 @@ func (app *app) prepareRelease() (retErr error) {
 	}
 
 	printLine(app.out, "[2/5] Create release worktree")
-	branchName := app.target.releaseBranchName(app.version)
+	branchName := app.release.target.releaseBranchName(app.release.version)
 	worktree, err := app.createWorktree(branchName)
 	if err != nil {
 		return err
@@ -141,17 +140,17 @@ func (app *app) prepareRelease() (retErr error) {
 			)
 		}
 	}()
-	err = worktree.validateEverything()
+	err = worktree.validateEverything(app.release)
 	if err != nil {
 		return err
 	}
 
 	printLine(app.out, "[3/5] Commit release files")
-	releaseNotes, err := worktree.updateReleaseFiles()
+	releaseNotes, err := worktree.updateReleaseFiles(app.release)
 	if err != nil {
 		return err
 	}
-	err = worktree.commitRelease()
+	err = worktree.commitRelease(app.release)
 	if err != nil {
 		return err
 	}
@@ -164,11 +163,11 @@ func (app *app) prepareRelease() (retErr error) {
 	if err != nil {
 		return err
 	}
-	prURL, err := worktree.openDraftPR()
+	prURL, err := worktree.openDraftPR(app.release)
 	if err != nil {
 		return err
 	}
-	_, err = worktree.createDraftRelease(releaseNotes)
+	_, err = worktree.createDraftRelease(app.release, releaseNotes)
 	if err != nil {
 		return err
 	}
@@ -182,7 +181,7 @@ func (app *app) prepareRelease() (retErr error) {
 
 	printLine(app.out, "\nTo roll back this release, close the PR and delete the draft release:")
 	printLine(app.out, "  %s", formatCommand("gh", "pr", "close", prURL, "--delete-branch"))
-	printLine(app.out, "  %s", formatCommand("gh", "release", "delete", app.target.tag(app.version), "--yes"))
+	printLine(app.out, "  %s", formatCommand("gh", "release", "delete", app.release.target.tag(app.release.version), "--yes"))
 
 	return nil
 }
@@ -217,8 +216,6 @@ func (app *app) worktreeAt(root, branch string) *worktree {
 	return &worktree{
 		out:          app.out,
 		eff:          app.eff,
-		target:       app.target,
-		version:      app.version,
 		releaseDate:  app.releaseDate,
 		repoRoot:     app.repoRoot,
 		worktreeRoot: root,
