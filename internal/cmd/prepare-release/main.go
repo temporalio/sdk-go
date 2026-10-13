@@ -14,8 +14,8 @@ import (
 	"time"
 )
 
-const usage = "usage: prepare-release pr [--release-date YYYY-MM-DD] MODULE=VERSION\n" +
-	"       prepare-release release COMMIT MODULE=VERSION\n" +
+const usage = "usage: prepare-release pr [--release-date YYYY-MM-DD] MODULE=VERSION [MODULE=VERSION ...]\n" +
+	"       prepare-release release COMMIT MODULE=VERSION [MODULE=VERSION ...]\n" +
 	"MODULE is '.' for the Go SDK or a slash-separated contrib module directory like 'contrib/envconfig'"
 
 type app struct {
@@ -23,7 +23,7 @@ type app struct {
 	eff         effects
 	repoRoot    string
 	command     string
-	release     releaseSpec
+	releases    []releaseSpec
 	commit      string
 	releaseDate time.Time
 }
@@ -99,16 +99,16 @@ func newApp(out, errOut io.Writer, args []string) (*app, error) {
 
 	positional := flags.Args()
 	if command == "release" {
-		if len(positional) != 2 {
+		if len(positional) < 2 {
 			return nil, errors.New(usage)
 		}
 		a.commit = positional[0]
 		positional = positional[1:]
 	}
-	if len(positional) != 1 {
+	if len(positional) == 0 {
 		return nil, errors.New(usage)
 	}
-	a.release, err = parseReleaseSpec(positional[0])
+	a.releases, err = parseReleaseSpecs(positional)
 	if err != nil {
 		return nil, err
 	}
@@ -123,7 +123,7 @@ func newApp(out, errOut io.Writer, args []string) (*app, error) {
 // CORE LOGIC
 
 func (app *app) preparePR() (retErr error) {
-	printLine(app.out, "Preparing %s %s\n", app.release.target.modulePath(), app.release.version)
+	printLine(app.out, "Preparing %s\n", formatReleaseSpecs(app.releases))
 
 	printLine(app.out, "[1/5] Fetch main")
 	err := app.fetchMain()
@@ -132,7 +132,7 @@ func (app *app) preparePR() (retErr error) {
 	}
 
 	printLine(app.out, "[2/5] Create release worktree")
-	branchName := app.release.target.releaseBranchName(app.release.version)
+	branchName := releaseBranchName(app.releaseDate)
 	worktree, err := app.createWorktree(branchName, "origin/main")
 	if err != nil {
 		return err
@@ -150,17 +150,25 @@ func (app *app) preparePR() (retErr error) {
 			)
 		}
 	}()
-	err = worktree.validateEverything(app.release, "pr")
-	if err != nil {
-		return err
+	var files []releaseFile
+	for _, release := range app.releases {
+		err = worktree.validateEverything(release, "pr")
+		if err != nil {
+			return err
+		}
+		updated, err := worktree.computeReleaseFiles(release)
+		if err != nil {
+			return err
+		}
+		files = append(files, updated...)
 	}
 
 	printLine(app.out, "[3/5] Commit release files")
-	err = worktree.updateReleaseFiles(app.release)
+	err = worktree.writeReleaseFiles(files)
 	if err != nil {
 		return err
 	}
-	err = worktree.commitRelease(app.release)
+	err = worktree.commitRelease(app.releases)
 	if err != nil {
 		return err
 	}
@@ -170,7 +178,7 @@ func (app *app) preparePR() (retErr error) {
 	if err != nil {
 		return err
 	}
-	prURL, err := worktree.openDraftPR(app.release)
+	prURL, err := worktree.openDraftPR(app.releases)
 	if err != nil {
 		return err
 	}
@@ -182,6 +190,8 @@ func (app *app) preparePR() (retErr error) {
 	}
 	printDetail(app.out, "Done.")
 
+	printLine(app.out, "\nAfter merging the PR, create draft releases with:")
+	printLine(app.out, "  prepare-release release <MERGE_COMMIT> %s", formatReleaseSpecs(app.releases))
 	printLine(app.out, "\nTo close the PR and delete the branch:")
 	printLine(app.out, "  %s", formatCommand("gh", "pr", "close", prURL, "--delete-branch"))
 
@@ -189,7 +199,18 @@ func (app *app) preparePR() (retErr error) {
 }
 
 func (app *app) prepareRelease() (retErr error) {
-	printLine(app.out, "Creating draft release for %s %s\n", app.release.target.modulePath(), app.release.version)
+	releaseCount := 0
+	defer func() {
+		if releaseCount == 0 {
+			return
+		}
+		printLine(app.out, "\nTo roll back these releases, run:")
+		for _, release := range app.releases[:releaseCount] {
+			printLine(app.out, "  %s", formatCommand("gh", "release", "delete", release.target.tag(release.version), "--yes"))
+		}
+	}()
+
+	printLine(app.out, "Creating draft releases for %s\n", formatReleaseSpecs(app.releases))
 
 	printLine(app.out, "[1/4] Fetch main")
 	err := app.fetchMain()
@@ -211,18 +232,26 @@ func (app *app) prepareRelease() (retErr error) {
 	}()
 
 	printLine(app.out, "[3/4] Validate release files")
-	err = worktree.validateEverything(app.release, "release")
-	if err != nil {
-		return err
+	releaseNotes := make([]string, len(app.releases))
+	for i, release := range app.releases {
+		err = worktree.validateEverything(release, "release")
+		if err != nil {
+			return err
+		}
+		releaseNotes[i], err = worktree.readReleaseNotes(release)
+		if err != nil {
+			return err
+		}
 	}
 
-	printLine(app.out, "[4/4] Create draft release")
-	_, err = worktree.createDraftRelease(app.release, commit)
-	if err != nil {
-		return err
+	printLine(app.out, "[4/4] Create draft releases")
+	for i, release := range app.releases {
+		_, err = worktree.createDraftRelease(release, commit, releaseNotes[i])
+		if err != nil {
+			return err
+		}
+		releaseCount++
 	}
-	printLine(app.out, "\nTo roll back this release, delete the draft release:")
-	printLine(app.out, "  %s", formatCommand("gh", "release", "delete", app.release.target.tag(app.release.version), "--yes"))
 	return nil
 }
 

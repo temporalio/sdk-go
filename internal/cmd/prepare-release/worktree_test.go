@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // A misspelled module directory has no go.mod, which is what stops the tool from
@@ -318,28 +319,28 @@ func TestListTags(t *testing.T) {
 
 func TestCommitRelease(t *testing.T) {
 	release := releaseSpec{target: sdkTarget(), version: semver{1, 2, 3}}
-	a, eff := newMockApp(app{}, nil)
+	a, eff := newMockApp(app{releaseDate: time.Date(2026, time.August, 4, 0, 0, 0, 0, time.UTC)}, nil)
 
-	err := a.worktreeAt("/worktree", "").commitRelease(release)
+	err := a.worktreeAt("/worktree", "").commitRelease([]releaseSpec{release})
 	if err != nil {
 		t.Fatal(err)
 	}
 	testEqual(t, eff.commands.String(), `
-		/worktree: git commit -m "Prepare release 1.2.3" -- CHANGELOG.md internal/version.go
+		/worktree: git commit -m "Prepare release 2026-08-04\n\n.=1.2.3" -- CHANGELOG.md internal/version.go
 	`)
 }
 
 // Contrib releases only update their CHANGELOG.md, not internal/version.go
 func TestCommitReleaseForContribModule(t *testing.T) {
 	release := releaseSpec{target: contribEnvconfig(t), version: semver{1, 2, 3}}
-	a, eff := newMockApp(app{}, nil)
+	a, eff := newMockApp(app{releaseDate: time.Date(2026, time.August, 4, 0, 0, 0, 0, time.UTC)}, nil)
 
-	err := a.worktreeAt("/worktree", "").commitRelease(release)
+	err := a.worktreeAt("/worktree", "").commitRelease([]releaseSpec{release})
 	if err != nil {
 		t.Fatal(err)
 	}
 	testEqual(t, eff.commands.String(), `
-		/worktree: git commit -m "Prepare contrib/envconfig release 1.2.3" -- contrib/envconfig/CHANGELOG.md
+		/worktree: git commit -m "Prepare release 2026-08-04\n\ncontrib/envconfig=1.2.3" -- contrib/envconfig/CHANGELOG.md
 	`)
 }
 
@@ -357,38 +358,38 @@ func TestPushBranch(t *testing.T) {
 
 func TestOpenDraftPR(t *testing.T) {
 	release := releaseSpec{target: sdkTarget(), version: semver{1, 2, 3}}
-	a, eff := newMockApp(app{}, func(cmd string) (string, error) {
-		if cmd == `gh pr create --draft --base main --head release --label skip-changelog --title "Prepare release 1.2.3" --body "Prepare release 1.2.3"` {
+	a, eff := newMockApp(app{releaseDate: time.Date(2026, time.August, 4, 0, 0, 0, 0, time.UTC)}, func(cmd string) (string, error) {
+		if cmd == `gh pr create --draft --base main --head release --label skip-changelog --title "Prepare release 2026-08-04" --body .=1.2.3` {
 			return "https://example.com/pr\n", nil
 		}
 		return "", nil
 	})
 
-	_, err := a.worktreeAt("/worktree", "release").openDraftPR(release)
+	_, err := a.worktreeAt("/worktree", "release").openDraftPR([]releaseSpec{release})
 	if err != nil {
 		t.Fatal(err)
 	}
 	testEqual(t, eff.output.String(), `
-		      $ gh pr create --draft --base main --head release --label skip-changelog --title "Prepare release 1.2.3" --body "Prepare release 1.2.3"
+		      $ gh pr create --draft --base main --head release --label skip-changelog --title "Prepare release 2026-08-04" --body .=1.2.3
 		      Draft PR: https://example.com/pr
 	`)
 }
 
 func TestOpenDraftPRForContribModule(t *testing.T) {
 	release := releaseSpec{target: contribEnvconfig(t), version: semver{1, 2, 3}}
-	a, eff := newMockApp(app{}, func(cmd string) (string, error) {
-		if cmd == `gh pr create --draft --base main --head release --label skip-changelog --title "Prepare contrib/envconfig release 1.2.3" --body "Prepare contrib/envconfig release 1.2.3"` {
+	a, eff := newMockApp(app{releaseDate: time.Date(2026, time.August, 4, 0, 0, 0, 0, time.UTC)}, func(cmd string) (string, error) {
+		if cmd == `gh pr create --draft --base main --head release --label skip-changelog --title "Prepare release 2026-08-04" --body contrib/envconfig=1.2.3` {
 			return "https://example.com/pr\n", nil
 		}
 		return "", nil
 	})
 
-	_, err := a.worktreeAt("/worktree", "release").openDraftPR(release)
+	_, err := a.worktreeAt("/worktree", "release").openDraftPR([]releaseSpec{release})
 	if err != nil {
 		t.Fatal(err)
 	}
 	testEqual(t, eff.output.String(), `
-		      $ gh pr create --draft --base main --head release --label skip-changelog --title "Prepare contrib/envconfig release 1.2.3" --body "Prepare contrib/envconfig release 1.2.3"
+		      $ gh pr create --draft --base main --head release --label skip-changelog --title "Prepare release 2026-08-04" --body contrib/envconfig=1.2.3
 		      Draft PR: https://example.com/pr
 	`)
 }
@@ -402,9 +403,7 @@ func TestCreateDraftRelease(t *testing.T) {
 		return "", nil
 	})
 
-	eff.files[filepath.Join("/worktree", filepath.FromSlash(release.target.changelog()))] = "## [1.2.3]\n\nNotes\n"
-
-	_, err := a.worktreeAt("/worktree", "").createDraftRelease(release, "abc123")
+	_, err := a.worktreeAt("/worktree", "").createDraftRelease(release, "abc123", "## Highlights\n\nNotes\n")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -430,9 +429,7 @@ func TestCreateDraftReleaseForContribModule(t *testing.T) {
 		return "", nil
 	})
 
-	eff.files[filepath.Join("/worktree", filepath.FromSlash(release.target.changelog()))] = "## [1.2.3]\n\nNotes\n"
-
-	_, err := a.worktreeAt("/worktree", "").createDraftRelease(release, "abc123")
+	_, err := a.worktreeAt("/worktree", "").createDraftRelease(release, "abc123", "## Highlights\n\nNotes\n")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -444,17 +441,13 @@ func TestCreateDraftReleaseForContribModule(t *testing.T) {
 	testEqual(t, eff.files[filepath.Join("/worktree", "prepare-release-notes.md")], "## Highlights\n\nNotes\n")
 }
 
-func TestUpdateFile(t *testing.T) {
+func TestWriteReleaseFiles(t *testing.T) {
 	a, eff := newMockApp(app{}, nil)
 	eff.files["version.txt"] = "old"
 
-	updated, err := a.worktreeAt("/worktree", "").updateFile("version.txt", func(contents string) (string, error) {
-		return contents + "-new", nil
-	})
+	err := a.worktreeAt("/worktree", "").writeReleaseFiles([]releaseFile{{path: "version.txt", contents: "new"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if updated != "old-new" || eff.files["version.txt"] != "old-new" {
-		t.Fatalf("unexpected updated file: returned %q, stored %q", updated, eff.files["version.txt"])
-	}
+	testEqual(t, eff.files["version.txt"], "new")
 }

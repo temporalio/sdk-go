@@ -5,6 +5,7 @@ import (
 	"path"
 	"regexp"
 	"strings"
+	"time"
 )
 
 const sdkModulePath = "go.temporal.io/sdk"
@@ -81,6 +82,37 @@ func parseReleaseSpec(arg string) (releaseSpec, error) {
 	return releaseSpec{target: target, version: parsed}, nil
 }
 
+// parseReleaseSpecs parses MODULE=VERSION assignments, rejecting duplicate modules.
+func parseReleaseSpecs(args []string) ([]releaseSpec, error) {
+	var releases []releaseSpec
+	modules := make(map[string]bool)
+	for _, arg := range args {
+		release, err := parseReleaseSpec(arg)
+		if err != nil {
+			return nil, err
+		}
+		if modules[release.target.dir] {
+			return nil, fmt.Errorf("module %q is specified more than once", release.target.modulePath())
+		}
+		modules[release.target.dir] = true
+		releases = append(releases, release)
+	}
+	return releases, nil
+}
+
+// formatReleaseSpecs formats releases as space-separated MODULE=VERSION assignments.
+func formatReleaseSpecs(releases []releaseSpec) string {
+	var args []string
+	for _, release := range releases {
+		module := release.target.dir
+		if module == "" {
+			module = "."
+		}
+		args = append(args, module+"="+release.version.String())
+	}
+	return strings.Join(args, " ")
+}
+
 // modulePath the target's module path, e.g. "go.temporal.io/sdk/contrib/envconfig".
 func (t releaseTarget) modulePath() string {
 	return path.Join(sdkModulePath, t.dir)
@@ -128,17 +160,11 @@ func (t releaseTarget) releaseFiles() []string {
 }
 
 // releaseBranchName names the git branch we use for issuing a new release.
-func (t releaseTarget) releaseBranchName(version semver) string {
-	if t.dir == "" {
-		return "chore/release-" + version.String()
-	}
-	return "chore/release-" + strings.ReplaceAll(t.dir, "/", "-") + "-" + version.String()
+func releaseBranchName(releaseDate time.Time) string {
+	return "chore/release-" + releaseDate.Format(time.DateOnly)
 }
 
-// releaseCommitMessage describes the release in commit messages and pull request titles.
-func (t releaseTarget) releaseCommitMessage(version semver) string {
-	if t.dir == "" {
-		return "Prepare release " + version.String()
-	}
-	return "Prepare " + t.dir + " release " + version.String()
+// releaseCommitMessage describes the release date and modules in a commit or PR.
+func releaseCommitMessage(releases []releaseSpec, releaseDate time.Time) string {
+	return "Prepare release " + releaseDate.Format(time.DateOnly) + "\n\n" + formatReleaseSpecs(releases)
 }

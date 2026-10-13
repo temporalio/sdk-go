@@ -11,24 +11,28 @@ import (
 
 func TestNewApp(t *testing.T) {
 	tests := []struct {
-		name    string
-		args    []string
-		wantDir string
-		wantErr string
+		name     string
+		args     []string
+		wantDirs []string
+		wantErr  string
 	}{
 		{name: "SDK PR", args: []string{"pr", ".=1.48.0"}},
-		{name: "contrib PR", args: []string{"pr", "contrib/envconfig=1.0.3"}, wantDir: "contrib/envconfig"},
-		{name: "nested contrib module", args: []string{"pr", "contrib/aws/s3driver/awssdkv2=0.2.2"}, wantDir: "contrib/aws/s3driver/awssdkv2"},
-		{name: "trailing slash", args: []string{"pr", "contrib/envconfig/=1.0.3"}, wantDir: "contrib/envconfig"},
+		{name: "contrib PR", args: []string{"pr", "contrib/envconfig=1.0.3"}, wantDirs: []string{"contrib/envconfig"}},
+		{name: "nested contrib module", args: []string{"pr", "contrib/aws/s3driver/awssdkv2=0.2.2"}, wantDirs: []string{"contrib/aws/s3driver/awssdkv2"}},
+		{name: "trailing slash", args: []string{"pr", "contrib/envconfig/=1.0.3"}, wantDirs: []string{"contrib/envconfig"}},
 		{name: "SDK release", args: []string{"release", "abc123", ".=1.48.0"}},
-		{name: "contrib release", args: []string{"release", "abc123", "contrib/envconfig=1.0.3"}, wantDir: "contrib/envconfig"},
+		{name: "contrib release", args: []string{"release", "abc123", "contrib/envconfig=1.0.3"}, wantDirs: []string{"contrib/envconfig"}},
 		{name: "no arguments", args: nil, wantErr: "usage:"},
 		{name: "unknown command", args: []string{"unknown"}, wantErr: "unknown command"},
 		{name: "old invocation", args: []string{"1.48.0"}, wantErr: "unknown command"},
 		{name: "missing assignment", args: []string{"pr"}, wantErr: "usage:"},
 		{name: "missing commit", args: []string{"release", ".=1.48.0"}, wantErr: "usage:"},
-		{name: "multiple PR assignments", args: []string{"pr", ".=1.48.0", "contrib/envconfig=1.0.3"}, wantErr: "usage:"},
-		{name: "multiple release assignments", args: []string{"release", "abc123", ".=1.48.0", "contrib/envconfig=1.0.3"}, wantErr: "usage:"},
+		{name: "multiple PR assignments", args: []string{"pr", ".=1.48.0", "contrib/envconfig=1.0.3"}, wantDirs: []string{"", "contrib/envconfig"}},
+		{name: "multiple release assignments", args: []string{"release", "abc123", ".=1.48.0", "contrib/envconfig=1.0.3"}, wantDirs: []string{"", "contrib/envconfig"}},
+		{name: "duplicate SDK", args: []string{"pr", ".=1.48.0", ".=1.48.1"}, wantErr: "specified more than once"},
+		{name: "duplicate contrib", args: []string{"pr", "contrib/envconfig=1.0.3", "./contrib/envconfig/=1.1.0"}, wantErr: "specified more than once"},
+		{name: "duplicate release module", args: []string{"release", "abc123", ".=1.48.0", ".=1.48.0"}, wantErr: "specified more than once"},
+		{name: "invalid second version", args: []string{"pr", ".=1.48.0", "contrib/envconfig=bad"}, wantErr: "invalid version"},
 		{name: "non-contrib module", args: []string{"pr", "internal=1.0.3"}, wantErr: "invalid module"},
 		{name: "escaping module", args: []string{"pr", "contrib/../internal=1.0.3"}, wantErr: "invalid module"},
 		{name: "missing equals", args: []string{"pr", "contrib/envconfig"}, wantErr: "expected MODULE=VERSION"},
@@ -57,8 +61,17 @@ func TestNewApp(t *testing.T) {
 			if got.command == "release" && got.commit != "abc123" {
 				t.Fatalf("unexpected release commit: %q", got.commit)
 			}
-			if gotDir := got.release.target.dir; gotDir != test.wantDir {
-				t.Fatalf("unexpected module directory: got %q, want %q", gotDir, test.wantDir)
+			wantDirs := test.wantDirs
+			if wantDirs == nil {
+				wantDirs = []string{""}
+			}
+			if len(got.releases) != len(wantDirs) {
+				t.Fatalf("unexpected release count: got %d, want %d", len(got.releases), len(wantDirs))
+			}
+			for i, release := range got.releases {
+				if gotDir := release.target.dir; gotDir != wantDirs[i] {
+					t.Fatalf("unexpected module directory: got %q, want %q", gotDir, wantDirs[i])
+				}
 			}
 
 		})
@@ -130,18 +143,18 @@ func TestPreparePR(t *testing.T) {
 		)
 	`)
 
-	a, eff := newMockApp(app{release: releaseSpec{target: sdkTarget(), version: version}, releaseDate: date}, nil)
+	a, eff := newMockApp(app{releases: []releaseSpec{{target: sdkTarget(), version: version}}, releaseDate: date}, nil)
 	eff.commandHandler = func(cmd string) (string, error) {
 		switch cmd {
 		case `git log -1 "--format=%s (%h)"`:
 			return "Initial commit (abc123)\n", nil
 		case "git tag --list v*":
 			return "v1.46.0\nv1.47.0\n", nil
-		case `git commit -m "Prepare release 1.48.0" -- CHANGELOG.md internal/version.go`:
+		case `git commit -m "Prepare release 2026-08-04\n\n.=1.48.0" -- CHANGELOG.md internal/version.go`:
 			testEqual(t, eff.files[filepath.Join(eff.tempDir, "CHANGELOG.md")], updatedChangelog)
 			testEqual(t, eff.files[filepath.Join(eff.tempDir, "go.mod")], goMod)
 			testEqual(t, eff.files[filepath.Join(eff.tempDir, "internal", "version.go")], updatedVersionGo)
-		case `gh pr create --draft --base main --head chore/release-1.48.0 --label skip-changelog --title "Prepare release 1.48.0" --body "Prepare release 1.48.0"`:
+		case `gh pr create --draft --base main --head chore/release-2026-08-04 --label skip-changelog --title "Prepare release 2026-08-04" --body .=1.48.0`:
 			return "https://github.com/temporalio/sdk-go/pull/123\n", nil
 		}
 		return "", nil
@@ -160,34 +173,37 @@ func TestPreparePR(t *testing.T) {
 
 	testEqual(t, eff.commands.String(), `
 		/repo: git fetch --tags origin main
-		/repo: git worktree add -b chore/release-1.48.0 `+eff.tempDir+` origin/main
+		/repo: git worktree add -b chore/release-2026-08-04 `+eff.tempDir+` origin/main
 		`+eff.tempDir+`: git log -1 "--format=%s (%h)"
 		`+eff.tempDir+`: git tag --list v*
-		`+eff.tempDir+`: git commit -m "Prepare release 1.48.0" -- CHANGELOG.md internal/version.go
-		`+eff.tempDir+`: git push --set-upstream origin chore/release-1.48.0
-		`+eff.tempDir+`: gh pr create --draft --base main --head chore/release-1.48.0 --label skip-changelog --title "Prepare release 1.48.0" --body "Prepare release 1.48.0"
+		`+eff.tempDir+`: git commit -m "Prepare release 2026-08-04\n\n.=1.48.0" -- CHANGELOG.md internal/version.go
+		`+eff.tempDir+`: git push --set-upstream origin chore/release-2026-08-04
+		`+eff.tempDir+`: gh pr create --draft --base main --head chore/release-2026-08-04 --label skip-changelog --title "Prepare release 2026-08-04" --body .=1.48.0
 		/repo: git worktree remove --force `+eff.tempDir,
 	)
 	testEqual(t, eff.output.String(), `
-		Preparing go.temporal.io/sdk 1.48.0
+		Preparing .=1.48.0
 
 		[1/5] Fetch main
 		      $ git fetch --tags origin main
 		[2/5] Create release worktree
-		      $ git worktree add -b chore/release-1.48.0 /tmp/prepare-go-release-123456 origin/main
+		      $ git worktree add -b chore/release-2026-08-04 /tmp/prepare-go-release-123456 origin/main
 		      $ git log -1 "--format=%s (%h)"
 		      Worktree: /tmp/prepare-go-release-123456
 		      HEAD: Initial commit (abc123)
 		      $ git tag --list v*
 		[3/5] Commit release files
-		      $ git commit -m "Prepare release 1.48.0" -- CHANGELOG.md internal/version.go
+		      $ git commit -m "Prepare release 2026-08-04\n\n.=1.48.0" -- CHANGELOG.md internal/version.go
 		[4/5] Publish draft PR
-		      $ git push --set-upstream origin chore/release-1.48.0
-		      $ gh pr create --draft --base main --head chore/release-1.48.0 --label skip-changelog --title "Prepare release 1.48.0" --body "Prepare release 1.48.0"
+		      $ git push --set-upstream origin chore/release-2026-08-04
+		      $ gh pr create --draft --base main --head chore/release-2026-08-04 --label skip-changelog --title "Prepare release 2026-08-04" --body .=1.48.0
 		      Draft PR: https://github.com/temporalio/sdk-go/pull/123
 		[5/5] Clean up release worktree
 		      $ git worktree remove --force /tmp/prepare-go-release-123456
 		      Done.
+
+		After merging the PR, create draft releases with:
+		  prepare-release release <MERGE_COMMIT> .=1.48.0
 
 		To close the PR and delete the branch:
 		  gh pr close https://github.com/temporalio/sdk-go/pull/123 --delete-branch
@@ -254,17 +270,17 @@ func TestPreparePRForContribModule(t *testing.T) {
 	changelogPath := filepath.Join(mockTempDir, "contrib", "envconfig", "CHANGELOG.md")
 	goModPath := filepath.Join(mockTempDir, "contrib", "envconfig", "go.mod")
 
-	a, eff := newMockApp(app{release: releaseSpec{target: target, version: semver{1, 0, 3}}, releaseDate: date}, nil)
+	a, eff := newMockApp(app{releases: []releaseSpec{{target: target, version: semver{1, 0, 3}}}, releaseDate: date}, nil)
 	eff.commandHandler = func(cmd string) (string, error) {
 		switch cmd {
 		case `git log -1 "--format=%s (%h)"`:
 			return "Initial commit (abc123)\n", nil
 		case "git tag --list contrib/envconfig/v*":
 			return "contrib/envconfig/v1.0.0\ncontrib/envconfig/v1.0.2\ncontrib/envconfig/v1.0.1\n", nil
-		case `git commit -m "Prepare contrib/envconfig release 1.0.3" -- contrib/envconfig/CHANGELOG.md`:
+		case `git commit -m "Prepare release 2026-08-04\n\ncontrib/envconfig=1.0.3" -- contrib/envconfig/CHANGELOG.md`:
 			testEqual(t, eff.files[changelogPath], updatedChangelog)
 			testEqual(t, eff.files[goModPath], goMod)
-		case `gh pr create --draft --base main --head chore/release-contrib-envconfig-1.0.3 --label skip-changelog --title "Prepare contrib/envconfig release 1.0.3" --body "Prepare contrib/envconfig release 1.0.3"`:
+		case `gh pr create --draft --base main --head chore/release-2026-08-04 --label skip-changelog --title "Prepare release 2026-08-04" --body contrib/envconfig=1.0.3`:
 			return "https://github.com/temporalio/sdk-go/pull/123\n", nil
 		}
 		return "", nil
@@ -280,44 +296,245 @@ func TestPreparePRForContribModule(t *testing.T) {
 
 	testEqual(t, eff.commands.String(), `
 		/repo: git fetch --tags origin main
-		/repo: git worktree add -b chore/release-contrib-envconfig-1.0.3 `+eff.tempDir+` origin/main
+		/repo: git worktree add -b chore/release-2026-08-04 `+eff.tempDir+` origin/main
 		`+eff.tempDir+`: git log -1 "--format=%s (%h)"
 		`+eff.tempDir+`: git tag --list contrib/envconfig/v*
-		`+eff.tempDir+`: git commit -m "Prepare contrib/envconfig release 1.0.3" -- contrib/envconfig/CHANGELOG.md
-		`+eff.tempDir+`: git push --set-upstream origin chore/release-contrib-envconfig-1.0.3
-		`+eff.tempDir+`: gh pr create --draft --base main --head chore/release-contrib-envconfig-1.0.3 --label skip-changelog --title "Prepare contrib/envconfig release 1.0.3" --body "Prepare contrib/envconfig release 1.0.3"
+		`+eff.tempDir+`: git commit -m "Prepare release 2026-08-04\n\ncontrib/envconfig=1.0.3" -- contrib/envconfig/CHANGELOG.md
+		`+eff.tempDir+`: git push --set-upstream origin chore/release-2026-08-04
+		`+eff.tempDir+`: gh pr create --draft --base main --head chore/release-2026-08-04 --label skip-changelog --title "Prepare release 2026-08-04" --body contrib/envconfig=1.0.3
 		/repo: git worktree remove --force `+eff.tempDir,
 	)
 	testEqual(t, eff.output.String(), `
-		Preparing go.temporal.io/sdk/contrib/envconfig 1.0.3
+		Preparing contrib/envconfig=1.0.3
 
 		[1/5] Fetch main
 		      $ git fetch --tags origin main
 		[2/5] Create release worktree
-		      $ git worktree add -b chore/release-contrib-envconfig-1.0.3 /tmp/prepare-go-release-123456 origin/main
+		      $ git worktree add -b chore/release-2026-08-04 /tmp/prepare-go-release-123456 origin/main
 		      $ git log -1 "--format=%s (%h)"
 		      Worktree: /tmp/prepare-go-release-123456
 		      HEAD: Initial commit (abc123)
 		      $ git tag --list contrib/envconfig/v*
 		[3/5] Commit release files
-		      $ git commit -m "Prepare contrib/envconfig release 1.0.3" -- contrib/envconfig/CHANGELOG.md
+		      $ git commit -m "Prepare release 2026-08-04\n\ncontrib/envconfig=1.0.3" -- contrib/envconfig/CHANGELOG.md
 		[4/5] Publish draft PR
-		      $ git push --set-upstream origin chore/release-contrib-envconfig-1.0.3
-		      $ gh pr create --draft --base main --head chore/release-contrib-envconfig-1.0.3 --label skip-changelog --title "Prepare contrib/envconfig release 1.0.3" --body "Prepare contrib/envconfig release 1.0.3"
+		      $ git push --set-upstream origin chore/release-2026-08-04
+		      $ gh pr create --draft --base main --head chore/release-2026-08-04 --label skip-changelog --title "Prepare release 2026-08-04" --body contrib/envconfig=1.0.3
 		      Draft PR: https://github.com/temporalio/sdk-go/pull/123
 		[5/5] Clean up release worktree
 		      $ git worktree remove --force /tmp/prepare-go-release-123456
 		      Done.
+
+		After merging the PR, create draft releases with:
+		  prepare-release release <MERGE_COMMIT> contrib/envconfig=1.0.3
 
 		To close the PR and delete the branch:
 		  gh pr close https://github.com/temporalio/sdk-go/pull/123 --delete-branch
 	`)
 }
 
-func TestPreparePRLeavesDirectoryIfWorktreeCreationFails(t *testing.T) {
-	a, eff := newMockApp(app{release: releaseSpec{target: sdkTarget(), version: semver{1, 48, 0}}, releaseDate: time.Date(2026, time.August, 4, 0, 0, 0, 0, time.UTC)}, nil)
+func TestPreparePRForMultipleModules(t *testing.T) {
+	date := time.Date(2026, time.August, 4, 0, 0, 0, 0, time.UTC)
+	releases := []releaseSpec{
+		{target: sdkTarget(), version: semver{1, 48, 0}},
+		{target: contribEnvconfig(t), version: semver{1, 0, 3}},
+	}
+
+	changelog := stripIndentation(`
+		# Changelog
+
+		## [Unreleased]
+
+		### Fixed
+
+		- A fix.
+	`)
+	updatedSDKChangelog := stripIndentation(`
+		# Changelog
+
+		## [Unreleased]
+
+		### Added
+
+		### Changed
+
+		### Deprecated
+
+		### :boom: Breaking Changes
+
+		### Fixed
+
+		### Security
+
+		## [1.48.0] - 2026-08-04
+
+		### Fixed
+
+		- A fix.
+	`)
+	updatedContribChangelog := stripIndentation(`
+		# Changelog
+
+		## [Unreleased]
+
+		### Added
+
+		### Changed
+
+		### Deprecated
+
+		### :boom: Breaking Changes
+
+		### Fixed
+
+		### Security
+
+		## [1.0.3] - 2026-08-04
+
+		### Fixed
+
+		- A fix.
+	`)
+
+	goMod := stripIndentation(`
+		module go.temporal.io/sdk
+		require go.temporal.io/api v1.63.4
+	`)
+	contribGoMod := stripIndentation(`
+		module go.temporal.io/sdk/contrib/envconfig
+		require go.temporal.io/sdk v1.47.0
+	`)
+	versionGo := stripIndentation(`
+		const (
+			SDKVersion = "1.47.0"
+		)
+	`)
+	updatedVersionGo := stripIndentation(`
+		const (
+			SDKVersion = "1.48.0"
+		)
+	`)
+
+	a, eff := newMockApp(app{releases: releases, releaseDate: date}, nil)
 	eff.commandHandler = func(cmd string) (string, error) {
-		if cmd == "git worktree add -b chore/release-1.48.0 "+eff.tempDir+" origin/main" {
+		switch cmd {
+		case `git log -1 "--format=%s (%h)"`:
+			return "Initial commit (abc123)\n", nil
+		case "git tag --list v*":
+			return "v1.47.0\n", nil
+		case "git tag --list contrib/envconfig/v*":
+			return "contrib/envconfig/v1.0.2\n", nil
+		case `git commit -m "Prepare release 2026-08-04\n\n.=1.48.0 contrib/envconfig=1.0.3" -- CHANGELOG.md internal/version.go contrib/envconfig/CHANGELOG.md`:
+			testEqual(t, eff.files[filepath.Join(eff.tempDir, "CHANGELOG.md")], updatedSDKChangelog)
+			testEqual(t, eff.files[filepath.Join(eff.tempDir, "contrib", "envconfig", "CHANGELOG.md")], updatedContribChangelog)
+			testEqual(t, eff.files[filepath.Join(eff.tempDir, "go.mod")], goMod)
+			testEqual(t, eff.files[filepath.Join(eff.tempDir, "contrib", "envconfig", "go.mod")], contribGoMod)
+			testEqual(t, eff.files[filepath.Join(eff.tempDir, "internal", "version.go")], updatedVersionGo)
+		case `gh pr create --draft --base main --head chore/release-2026-08-04 --label skip-changelog --title "Prepare release 2026-08-04" --body ".=1.48.0 contrib/envconfig=1.0.3"`:
+			return "https://github.com/temporalio/sdk-go/pull/123\n", nil
+		}
+		return "", nil
+	}
+
+	eff.files[filepath.Join(eff.tempDir, "CHANGELOG.md")] = changelog
+	eff.files[filepath.Join(eff.tempDir, "contrib", "envconfig", "CHANGELOG.md")] = changelog
+	eff.files[filepath.Join(eff.tempDir, "go.mod")] = goMod
+	eff.files[filepath.Join(eff.tempDir, "contrib", "envconfig", "go.mod")] = contribGoMod
+	eff.files[filepath.Join(eff.tempDir, "internal", "version.go")] = versionGo
+
+	err := a.preparePR()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	testEqual(t, eff.commands.String(), `
+		/repo: git fetch --tags origin main
+		/repo: git worktree add -b chore/release-2026-08-04 `+eff.tempDir+` origin/main
+		`+eff.tempDir+`: git log -1 "--format=%s (%h)"
+		`+eff.tempDir+`: git tag --list v*
+		`+eff.tempDir+`: git tag --list contrib/envconfig/v*
+		`+eff.tempDir+`: git commit -m "Prepare release 2026-08-04\n\n.=1.48.0 contrib/envconfig=1.0.3" -- CHANGELOG.md internal/version.go contrib/envconfig/CHANGELOG.md
+		`+eff.tempDir+`: git push --set-upstream origin chore/release-2026-08-04
+		`+eff.tempDir+`: gh pr create --draft --base main --head chore/release-2026-08-04 --label skip-changelog --title "Prepare release 2026-08-04" --body ".=1.48.0 contrib/envconfig=1.0.3"
+		/repo: git worktree remove --force `+eff.tempDir,
+	)
+	testEqual(t, eff.output.String(), `
+		Preparing .=1.48.0 contrib/envconfig=1.0.3
+
+		[1/5] Fetch main
+		      $ git fetch --tags origin main
+		[2/5] Create release worktree
+		      $ git worktree add -b chore/release-2026-08-04 /tmp/prepare-go-release-123456 origin/main
+		      $ git log -1 "--format=%s (%h)"
+		      Worktree: /tmp/prepare-go-release-123456
+		      HEAD: Initial commit (abc123)
+		      $ git tag --list v*
+		      $ git tag --list contrib/envconfig/v*
+		[3/5] Commit release files
+		      $ git commit -m "Prepare release 2026-08-04\n\n.=1.48.0 contrib/envconfig=1.0.3" -- CHANGELOG.md internal/version.go contrib/envconfig/CHANGELOG.md
+		[4/5] Publish draft PR
+		      $ git push --set-upstream origin chore/release-2026-08-04
+		      $ gh pr create --draft --base main --head chore/release-2026-08-04 --label skip-changelog --title "Prepare release 2026-08-04" --body ".=1.48.0 contrib/envconfig=1.0.3"
+		      Draft PR: https://github.com/temporalio/sdk-go/pull/123
+		[5/5] Clean up release worktree
+		      $ git worktree remove --force /tmp/prepare-go-release-123456
+		      Done.
+
+		After merging the PR, create draft releases with:
+		  prepare-release release <MERGE_COMMIT> .=1.48.0 contrib/envconfig=1.0.3
+
+		To close the PR and delete the branch:
+		  gh pr close https://github.com/temporalio/sdk-go/pull/123 --delete-branch
+	`)
+}
+
+func TestPreparePRValidatesAllModulesBeforeWriting(t *testing.T) {
+	releases := []releaseSpec{
+		{target: sdkTarget(), version: semver{1, 48, 0}},
+		{target: contribEnvconfig(t), version: semver{1, 0, 3}},
+	}
+	changelog := stripIndentation(`
+		## [Unreleased]
+
+		### Fixed
+
+		- A fix.
+	`)
+	a, eff := newMockApp(app{releases: releases, releaseDate: time.Date(2026, time.August, 4, 0, 0, 0, 0, time.UTC)}, func(cmd string) (string, error) {
+		switch cmd {
+		case "git tag --list v*":
+			return "v1.47.0\n", nil
+		case "git tag --list contrib/envconfig/v*":
+			return "contrib/envconfig/v1.0.2\n", nil
+		}
+		return "", nil
+	})
+	eff.files[filepath.Join(eff.tempDir, "go.mod")] = "module go.temporal.io/sdk\n"
+	eff.files[filepath.Join(eff.tempDir, "contrib", "envconfig", "go.mod")] = "module go.temporal.io/sdk/contrib/envconfig\n"
+	eff.files[filepath.Join(eff.tempDir, "CHANGELOG.md")] = changelog
+	eff.files[filepath.Join(eff.tempDir, "contrib", "envconfig", "CHANGELOG.md")] = "## [Unreleased]\n"
+	eff.files[filepath.Join(eff.tempDir, "internal", "version.go")] = `SDKVersion = "1.47.0"`
+
+	err := a.preparePR()
+	if err == nil || !strings.Contains(err.Error(), "appears to be empty") {
+		t.Fatalf("expected empty contrib changelog error, got %v", err)
+	}
+	testEqual(t, eff.files[filepath.Join(eff.tempDir, "CHANGELOG.md")], changelog)
+	testEqual(t, eff.files[filepath.Join(eff.tempDir, "contrib", "envconfig", "CHANGELOG.md")], "## [Unreleased]\n")
+	testEqual(t, eff.files[filepath.Join(eff.tempDir, "internal", "version.go")], `SDKVersion = "1.47.0"`)
+	testEqual(t, eff.commands.String(), `
+		/repo: git fetch --tags origin main
+		/repo: git worktree add -b chore/release-2026-08-04 `+eff.tempDir+` origin/main
+		`+eff.tempDir+`: git log -1 "--format=%s (%h)"
+		`+eff.tempDir+`: git tag --list v*
+		`+eff.tempDir+`: git tag --list contrib/envconfig/v*
+	`)
+}
+
+func TestPreparePRLeavesDirectoryIfWorktreeCreationFails(t *testing.T) {
+	a, eff := newMockApp(app{releases: []releaseSpec{{target: sdkTarget(), version: semver{1, 48, 0}}}, releaseDate: time.Date(2026, time.August, 4, 0, 0, 0, 0, time.UTC)}, nil)
+	eff.commandHandler = func(cmd string) (string, error) {
+		if cmd == "git worktree add -b chore/release-2026-08-04 "+eff.tempDir+" origin/main" {
 			return "", errors.New("command failed")
 		}
 		return "", nil
@@ -329,15 +546,15 @@ func TestPreparePRLeavesDirectoryIfWorktreeCreationFails(t *testing.T) {
 	}
 	testEqual(t, eff.commands.String(), `
 		/repo: git fetch --tags origin main
-		/repo: git worktree add -b chore/release-1.48.0 `+eff.tempDir+` origin/main
+		/repo: git worktree add -b chore/release-2026-08-04 `+eff.tempDir+` origin/main
 	`)
 	testEqual(t, eff.output.String(), `
-		Preparing go.temporal.io/sdk 1.48.0
+		Preparing .=1.48.0
 
 		[1/5] Fetch main
 		      $ git fetch --tags origin main
 		[2/5] Create release worktree
-		      $ git worktree add -b chore/release-1.48.0 /tmp/prepare-go-release-123456 origin/main
+		      $ git worktree add -b chore/release-2026-08-04 /tmp/prepare-go-release-123456 origin/main
 	`)
 }
 
@@ -347,7 +564,7 @@ func TestPreparePRValidatesBeforePushingBranch(t *testing.T) {
 		require go.temporal.io/api v1.63.1-0.20260730213819-7f6a96199578
 	`)
 
-	a, eff := newMockApp(app{release: releaseSpec{target: sdkTarget(), version: semver{1, 48, 0}}, releaseDate: time.Date(2026, time.August, 4, 0, 0, 0, 0, time.UTC)}, func(cmd string) (string, error) {
+	a, eff := newMockApp(app{releases: []releaseSpec{{target: sdkTarget(), version: semver{1, 48, 0}}}, releaseDate: time.Date(2026, time.August, 4, 0, 0, 0, 0, time.UTC)}, func(cmd string) (string, error) {
 		if cmd == `git log -1 "--format=%s (%h)"` {
 			return "Initial commit (abc123)\n", nil
 		}
@@ -361,21 +578,21 @@ func TestPreparePRValidatesBeforePushingBranch(t *testing.T) {
 		t.Fatalf("expected API version validation failure, got %v", err)
 	}
 	if !strings.Contains(err.Error(), "Worktree preserved at "+eff.tempDir) ||
-		!strings.Contains(err.Error(), "git branch --delete --force chore/release-1.48.0") {
+		!strings.Contains(err.Error(), "git branch --delete --force chore/release-2026-08-04") {
 		t.Fatalf("expected worktree cleanup instructions, got %v", err)
 	}
 	testEqual(t, eff.commands.String(), `
 		/repo: git fetch --tags origin main
-		/repo: git worktree add -b chore/release-1.48.0 `+eff.tempDir+` origin/main
+		/repo: git worktree add -b chore/release-2026-08-04 `+eff.tempDir+` origin/main
 		`+eff.tempDir+`: git log -1 "--format=%s (%h)"
 	`)
 	testEqual(t, eff.output.String(), `
-		Preparing go.temporal.io/sdk 1.48.0
+		Preparing .=1.48.0
 
 		[1/5] Fetch main
 		      $ git fetch --tags origin main
 		[2/5] Create release worktree
-		      $ git worktree add -b chore/release-1.48.0 /tmp/prepare-go-release-123456 origin/main
+		      $ git worktree add -b chore/release-2026-08-04 /tmp/prepare-go-release-123456 origin/main
 		      $ git log -1 "--format=%s (%h)"
 		      Worktree: /tmp/prepare-go-release-123456
 		      HEAD: Initial commit (abc123)
@@ -406,13 +623,13 @@ func TestPreparePRLeavesWorktreeAfterFailure(t *testing.T) {
 		)
 	`)
 
-	a, eff := newMockApp(app{release: releaseSpec{target: sdkTarget(), version: semver{1, 48, 0}}, releaseDate: time.Date(2026, time.August, 4, 0, 0, 0, 0, time.UTC)}, func(cmd string) (string, error) {
+	a, eff := newMockApp(app{releases: []releaseSpec{{target: sdkTarget(), version: semver{1, 48, 0}}}, releaseDate: time.Date(2026, time.August, 4, 0, 0, 0, 0, time.UTC)}, func(cmd string) (string, error) {
 		switch cmd {
 		case `git log -1 "--format=%s (%h)"`:
 			return "Initial commit (abc123)\n", nil
 		case "git tag --list v*":
 			return "v1.47.0\n", nil
-		case `git commit -m "Prepare release 1.48.0" -- CHANGELOG.md internal/version.go`:
+		case `git commit -m "Prepare release 2026-08-04\n\n.=1.48.0" -- CHANGELOG.md internal/version.go`:
 			return "", errors.New("command failed")
 		}
 		return "", nil
@@ -427,29 +644,29 @@ func TestPreparePRLeavesWorktreeAfterFailure(t *testing.T) {
 		t.Fatalf("expected command failure, got %v", err)
 	}
 	if !strings.Contains(err.Error(), "Worktree preserved at "+eff.tempDir) ||
-		!strings.Contains(err.Error(), "git branch --delete --force chore/release-1.48.0") {
+		!strings.Contains(err.Error(), "git branch --delete --force chore/release-2026-08-04") {
 		t.Fatalf("expected worktree cleanup instructions, got %v", err)
 	}
 	if !strings.HasSuffix(strings.TrimSpace(eff.commands.String()),
-		"git commit -m \"Prepare release 1.48.0\" -- CHANGELOG.md internal/version.go") {
+		"git commit -m \"Prepare release 2026-08-04\\n\\n.=1.48.0\" -- CHANGELOG.md internal/version.go") {
 		t.Fatalf("unexpected final command:\n%s", eff.commands.String())
 	}
 	if strings.Contains(eff.commands.String(), "git worktree remove") {
 		t.Fatal("worktree was removed after failure")
 	}
 	testEqual(t, eff.output.String(), `
-		Preparing go.temporal.io/sdk 1.48.0
+		Preparing .=1.48.0
 
 		[1/5] Fetch main
 		      $ git fetch --tags origin main
 		[2/5] Create release worktree
-		      $ git worktree add -b chore/release-1.48.0 /tmp/prepare-go-release-123456 origin/main
+		      $ git worktree add -b chore/release-2026-08-04 /tmp/prepare-go-release-123456 origin/main
 		      $ git log -1 "--format=%s (%h)"
 		      Worktree: /tmp/prepare-go-release-123456
 		      HEAD: Initial commit (abc123)
 		      $ git tag --list v*
 		[3/5] Commit release files
-		      $ git commit -m "Prepare release 1.48.0" -- CHANGELOG.md internal/version.go
+		      $ git commit -m "Prepare release 2026-08-04\n\n.=1.48.0" -- CHANGELOG.md internal/version.go
 	`)
 }
 
@@ -490,7 +707,7 @@ func TestPrepareRelease(t *testing.T) {
 		)
 	`)
 
-	a, eff := newMockApp(app{release: releaseSpec{target: sdkTarget(), version: version}, commit: "1234567"}, nil)
+	a, eff := newMockApp(app{releases: []releaseSpec{{target: sdkTarget(), version: version}}, commit: "1234567"}, nil)
 	eff.commandHandler = func(cmd string) (string, error) {
 		switch cmd {
 		case "git rev-parse --verify --end-of-options 1234567^{commit}":
@@ -530,7 +747,7 @@ func TestPrepareRelease(t *testing.T) {
 		/repo: git worktree remove --force `+eff.tempDir,
 	)
 	testEqual(t, eff.output.String(), `
-		Creating draft release for go.temporal.io/sdk 1.48.0
+		Creating draft releases for .=1.48.0
 
 		[1/4] Fetch main
 		      $ git fetch --tags origin main
@@ -543,14 +760,14 @@ func TestPrepareRelease(t *testing.T) {
 		      HEAD: Prepare release 1.48.0 (1234567)
 		[3/4] Validate release files
 		      $ git tag --list v*
-		[4/4] Create draft release
+		[4/4] Create draft releases
 		      Release notes: /tmp/prepare-go-release-123456/prepare-release-notes.md
 		      $ gh release create v1.48.0 --draft --target `+commit+` --title v1.48.0 --notes-file /tmp/prepare-go-release-123456/prepare-release-notes.md --generate-notes
 		      Draft release: https://github.com/temporalio/sdk-go/releases/tag/untagged-abc
-
-		To roll back this release, delete the draft release:
-		  gh release delete v1.48.0 --yes
 		      $ git worktree remove --force /tmp/prepare-go-release-123456
+
+		To roll back these releases, run:
+		  gh release delete v1.48.0 --yes
 	`)
 }
 
@@ -589,7 +806,7 @@ func TestPrepareReleaseForContribModule(t *testing.T) {
 	changelogPath := filepath.Join(mockTempDir, "contrib", "envconfig", "CHANGELOG.md")
 	goModPath := filepath.Join(mockTempDir, "contrib", "envconfig", "go.mod")
 
-	a, eff := newMockApp(app{release: releaseSpec{target: target, version: semver{1, 0, 3}}, commit: "1234567"}, nil)
+	a, eff := newMockApp(app{releases: []releaseSpec{{target: target, version: semver{1, 0, 3}}}, commit: "1234567"}, nil)
 	eff.commandHandler = func(cmd string) (string, error) {
 		switch cmd {
 		case "git rev-parse --verify --end-of-options 1234567^{commit}":
@@ -626,7 +843,7 @@ func TestPrepareReleaseForContribModule(t *testing.T) {
 		/repo: git worktree remove --force `+eff.tempDir,
 	)
 	testEqual(t, eff.output.String(), `
-		Creating draft release for go.temporal.io/sdk/contrib/envconfig 1.0.3
+		Creating draft releases for contrib/envconfig=1.0.3
 
 		[1/4] Fetch main
 		      $ git fetch --tags origin main
@@ -639,14 +856,233 @@ func TestPrepareReleaseForContribModule(t *testing.T) {
 		      HEAD: Prepare contrib/envconfig release 1.0.3 (1234567)
 		[3/4] Validate release files
 		      $ git tag --list contrib/envconfig/v*
-		[4/4] Create draft release
+		[4/4] Create draft releases
 		      Release notes: /tmp/prepare-go-release-123456/prepare-release-notes.md
 		      $ gh release create contrib/envconfig/v1.0.3 --draft --target `+commit+` --title contrib/envconfig/v1.0.3 --notes-file /tmp/prepare-go-release-123456/prepare-release-notes.md --latest=false
 		      Draft release: https://github.com/temporalio/sdk-go/releases/tag/untagged-abc
-
-		To roll back this release, delete the draft release:
-		  gh release delete contrib/envconfig/v1.0.3 --yes
 		      $ git worktree remove --force /tmp/prepare-go-release-123456
+
+		To roll back these releases, run:
+		  gh release delete contrib/envconfig/v1.0.3 --yes
+	`)
+}
+
+func TestPrepareReleaseForMultipleModules(t *testing.T) {
+	commit := "1234567890abcdef1234567890abcdef12345678"
+	releases := []releaseSpec{
+		{target: sdkTarget(), version: semver{1, 48, 0}},
+		{target: contribEnvconfig(t), version: semver{1, 0, 3}},
+	}
+
+	sdkChangelog := stripIndentation(`
+		# Changelog
+
+		## [Unreleased]
+
+		## [1.48.0] - 2026-08-04
+
+		### Fixed
+
+		- An SDK fix.
+	`)
+	contribChangelog := stripIndentation(`
+		# Changelog
+
+		## [Unreleased]
+
+		## [1.0.3] - 2026-08-04
+
+		### Added
+
+		- A contrib feature.
+	`)
+	goMod := stripIndentation(`
+		module go.temporal.io/sdk
+		require go.temporal.io/api v1.63.4
+	`)
+	contribGoMod := stripIndentation(`
+		module go.temporal.io/sdk/contrib/envconfig
+		require go.temporal.io/sdk v1.47.0
+	`)
+	versionGo := stripIndentation(`
+		const (
+			SDKVersion = "1.48.0"
+		)
+	`)
+
+	a, eff := newMockApp(app{releases: releases, commit: "1234567"}, nil)
+	eff.commandHandler = func(cmd string) (string, error) {
+		switch cmd {
+		case "git rev-parse --verify --end-of-options 1234567^{commit}":
+			return commit + "\n", nil
+		case `git log -1 "--format=%s (%h)"`:
+			return "Prepare releases (1234567)\n", nil
+		case "git tag --list v*":
+			return "v1.47.0\n", nil
+		case "git tag --list contrib/envconfig/v*":
+			return "contrib/envconfig/v1.0.2\n", nil
+		case "gh release create v1.48.0 --draft --target " + commit + " --title v1.48.0 --notes-file /tmp/prepare-go-release-123456/prepare-release-notes.md --generate-notes":
+			testEqual(t, eff.files[filepath.Join(eff.tempDir, "prepare-release-notes.md")], "## Highlights\n\n### Fixed\n\n- An SDK fix.\n")
+			return "https://github.com/temporalio/sdk-go/releases/tag/untagged-sdk\n", nil
+		case "gh release create contrib/envconfig/v1.0.3 --draft --target " + commit + " --title contrib/envconfig/v1.0.3 --notes-file /tmp/prepare-go-release-123456/prepare-release-notes.md --latest=false":
+			testEqual(t, eff.files[filepath.Join(eff.tempDir, "prepare-release-notes.md")], "## Highlights\n\n### Added\n\n- A contrib feature.\n")
+			return "https://github.com/temporalio/sdk-go/releases/tag/untagged-contrib\n", nil
+		}
+		return "", nil
+	}
+
+	eff.files[filepath.Join(eff.tempDir, "CHANGELOG.md")] = sdkChangelog
+	eff.files[filepath.Join(eff.tempDir, "contrib", "envconfig", "CHANGELOG.md")] = contribChangelog
+	eff.files[filepath.Join(eff.tempDir, "go.mod")] = goMod
+	eff.files[filepath.Join(eff.tempDir, "contrib", "envconfig", "go.mod")] = contribGoMod
+	eff.files[filepath.Join(eff.tempDir, "internal", "version.go")] = versionGo
+
+	err := a.prepareRelease()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	testEqual(t, eff.files[filepath.Join(eff.tempDir, "CHANGELOG.md")], sdkChangelog)
+	testEqual(t, eff.files[filepath.Join(eff.tempDir, "contrib", "envconfig", "CHANGELOG.md")], contribChangelog)
+	testEqual(t, eff.files[filepath.Join(eff.tempDir, "go.mod")], goMod)
+	testEqual(t, eff.files[filepath.Join(eff.tempDir, "contrib", "envconfig", "go.mod")], contribGoMod)
+	testEqual(t, eff.files[filepath.Join(eff.tempDir, "internal", "version.go")], versionGo)
+	testEqual(t, eff.commands.String(), `
+		/repo: git fetch --tags origin main
+		/repo: git rev-parse --verify --end-of-options 1234567^{commit}
+		/repo: git merge-base --is-ancestor `+commit+` origin/main
+		/repo: git worktree add --detach `+eff.tempDir+` `+commit+`
+		`+eff.tempDir+`: git log -1 "--format=%s (%h)"
+		`+eff.tempDir+`: git tag --list v*
+		`+eff.tempDir+`: git tag --list contrib/envconfig/v*
+		`+eff.tempDir+`: gh release create v1.48.0 --draft --target `+commit+` --title v1.48.0 --notes-file `+eff.tempDir+`/prepare-release-notes.md --generate-notes
+		`+eff.tempDir+`: gh release create contrib/envconfig/v1.0.3 --draft --target `+commit+` --title contrib/envconfig/v1.0.3 --notes-file `+eff.tempDir+`/prepare-release-notes.md --latest=false
+		/repo: git worktree remove --force `+eff.tempDir,
+	)
+	testEqual(t, eff.output.String(), `
+		Creating draft releases for .=1.48.0 contrib/envconfig=1.0.3
+
+		[1/4] Fetch main
+		      $ git fetch --tags origin main
+		[2/4] Check out release commit
+		      $ git rev-parse --verify --end-of-options 1234567^{commit}
+		      $ git merge-base --is-ancestor `+commit+` origin/main
+		      $ git worktree add --detach /tmp/prepare-go-release-123456 `+commit+`
+		      $ git log -1 "--format=%s (%h)"
+		      Worktree: /tmp/prepare-go-release-123456
+		      HEAD: Prepare releases (1234567)
+		[3/4] Validate release files
+		      $ git tag --list v*
+		      $ git tag --list contrib/envconfig/v*
+		[4/4] Create draft releases
+		      Release notes: /tmp/prepare-go-release-123456/prepare-release-notes.md
+		      $ gh release create v1.48.0 --draft --target `+commit+` --title v1.48.0 --notes-file /tmp/prepare-go-release-123456/prepare-release-notes.md --generate-notes
+		      Draft release: https://github.com/temporalio/sdk-go/releases/tag/untagged-sdk
+		      Release notes: /tmp/prepare-go-release-123456/prepare-release-notes.md
+		      $ gh release create contrib/envconfig/v1.0.3 --draft --target `+commit+` --title contrib/envconfig/v1.0.3 --notes-file /tmp/prepare-go-release-123456/prepare-release-notes.md --latest=false
+		      Draft release: https://github.com/temporalio/sdk-go/releases/tag/untagged-contrib
+		      $ git worktree remove --force /tmp/prepare-go-release-123456
+
+		To roll back these releases, run:
+		  gh release delete v1.48.0 --yes
+		  gh release delete contrib/envconfig/v1.0.3 --yes
+	`)
+}
+
+func TestPrepareReleaseValidatesAllModulesBeforePublishing(t *testing.T) {
+	releases := []releaseSpec{
+		{target: sdkTarget(), version: semver{1, 48, 0}},
+		{target: contribEnvconfig(t), version: semver{1, 0, 3}},
+	}
+	changelog := stripIndentation(`
+		## [Unreleased]
+
+		## [1.48.0] - 2026-08-04
+
+		### Fixed
+
+		- A fix.
+	`)
+	a, eff := newMockApp(app{releases: releases, commit: "abc123"}, func(cmd string) (string, error) {
+		switch cmd {
+		case "git rev-parse --verify --end-of-options abc123^{commit}":
+			return "abc123\n", nil
+		case "git tag --list v*":
+			return "v1.47.0\n", nil
+		case "git tag --list contrib/envconfig/v*":
+			return "contrib/envconfig/v1.0.2\n", nil
+		}
+		return "", nil
+	})
+	eff.files[filepath.Join(eff.tempDir, "go.mod")] = "module go.temporal.io/sdk\n"
+	eff.files[filepath.Join(eff.tempDir, "contrib", "envconfig", "go.mod")] = "module go.temporal.io/sdk/contrib/envconfig\n"
+	eff.files[filepath.Join(eff.tempDir, "CHANGELOG.md")] = changelog
+	eff.files[filepath.Join(eff.tempDir, "contrib", "envconfig", "CHANGELOG.md")] = "## [Unreleased]\n\n## [1.0.3] - 2026-08-04\n"
+	eff.files[filepath.Join(eff.tempDir, "internal", "version.go")] = `SDKVersion = "1.48.0"`
+
+	err := a.prepareRelease()
+	if err == nil || !strings.Contains(err.Error(), "appears to be empty") {
+		t.Fatalf("expected empty contrib release notes error, got %v", err)
+	}
+	testEqual(t, eff.commands.String(), `
+		/repo: git fetch --tags origin main
+		/repo: git rev-parse --verify --end-of-options abc123^{commit}
+		/repo: git merge-base --is-ancestor abc123 origin/main
+		/repo: git worktree add --detach `+eff.tempDir+` abc123
+		`+eff.tempDir+`: git log -1 "--format=%s (%h)"
+		`+eff.tempDir+`: git tag --list v*
+		`+eff.tempDir+`: git tag --list contrib/envconfig/v*
+		/repo: git worktree remove --force `+eff.tempDir,
+	)
+}
+
+func TestPrepareReleaseReportsCreatedDraftsOnFailure(t *testing.T) {
+	tally, err := contribTarget("contrib/tally")
+	if err != nil {
+		t.Fatal(err)
+	}
+	releases := []releaseSpec{
+		{target: contribEnvconfig(t), version: semver{0, 1, 0}},
+		{target: tally, version: semver{0, 1, 0}},
+	}
+	changelog := stripIndentation(`
+		## [Unreleased]
+
+		## [0.1.0] - 2026-08-04
+
+		### Added
+
+		- A feature.
+	`)
+	a, eff := newMockApp(app{releases: releases, commit: "abc123"}, func(cmd string) (string, error) {
+		switch cmd {
+		case "git rev-parse --verify --end-of-options abc123^{commit}":
+			return "abc123\n", nil
+		case "gh release create contrib/envconfig/v0.1.0 --draft --target abc123 --title contrib/envconfig/v0.1.0 --notes-file /tmp/prepare-go-release-123456/prepare-release-notes.md --latest=false":
+			return "https://github.com/temporalio/sdk-go/releases/tag/untagged-envconfig\n", nil
+		case "gh release create contrib/tally/v0.1.0 --draft --target abc123 --title contrib/tally/v0.1.0 --notes-file /tmp/prepare-go-release-123456/prepare-release-notes.md --latest=false":
+			return "", errors.New("command failed")
+		}
+		return "", nil
+	})
+	eff.files[filepath.Join(eff.tempDir, "contrib", "envconfig", "go.mod")] = "module go.temporal.io/sdk/contrib/envconfig\n"
+	eff.files[filepath.Join(eff.tempDir, "contrib", "tally", "go.mod")] = "module go.temporal.io/sdk/contrib/tally\n"
+	eff.files[filepath.Join(eff.tempDir, "contrib", "envconfig", "CHANGELOG.md")] = changelog
+	eff.files[filepath.Join(eff.tempDir, "contrib", "tally", "CHANGELOG.md")] = changelog
+
+	err = a.prepareRelease()
+	if err == nil || !strings.Contains(err.Error(), "create draft release contrib/tally/v0.1.0") {
+		t.Fatalf("expected tally draft release failure, got %v", err)
+	}
+	before, rollback, ok := strings.Cut(eff.output.String(), "To roll back these releases, run:\n")
+	if !ok {
+		t.Fatalf("missing rollback commands:\n%s", eff.output.String())
+	}
+	if !strings.HasSuffix(strings.TrimSpace(before), "git worktree remove --force "+eff.tempDir) {
+		t.Fatalf("rollback commands were not preceded by worktree cleanup:\n%s", eff.output.String())
+	}
+	testEqual(t, rollback, `
+		  gh release delete contrib/envconfig/v0.1.0 --yes
 	`)
 }
 
