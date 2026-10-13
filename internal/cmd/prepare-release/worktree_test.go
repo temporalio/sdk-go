@@ -18,7 +18,7 @@ func TestValidateReleaseRejectsUnknownContribModule(t *testing.T) {
 	release := releaseSpec{target: target, version: semver{1, 0, 3}}
 	a, eff := newMockApp(app{}, nil)
 
-	err = a.worktreeAt(eff.tempDir, "").validateEverything(release)
+	err = a.worktreeAt(eff.tempDir, "").validateEverything(release, "pr")
 	missing := filepath.Join(eff.tempDir, "contrib", "envconfg", "go.mod")
 	if err == nil || !strings.Contains(err.Error(), missing) {
 		t.Fatalf("expected an error naming %s, got %v", missing, err)
@@ -39,7 +39,7 @@ func TestValidateReleaseRejectsMismatchedModulePath(t *testing.T) {
 	eff.files[filepath.Join(eff.tempDir, "contrib", "envconfig", "go.mod")] =
 		"module go.temporal.io/sdk/contrib/tally\nrequire go.temporal.io/sdk v1.48.0\n"
 
-	err := a.worktreeAt(eff.tempDir, "").validateEverything(release)
+	err := a.worktreeAt(eff.tempDir, "").validateEverything(release, "pr")
 	if err == nil || !strings.Contains(err.Error(), `declares module "go.temporal.io/sdk/contrib/tally", expected "go.temporal.io/sdk/contrib/envconfig"`) {
 		t.Fatalf("expected module path mismatch error, got %v", err)
 	}
@@ -54,7 +54,7 @@ func TestValidateReleaseRejectsUnreleasedSDKDependency(t *testing.T) {
 		require go.temporal.io/sdk v1.48.1-0.20260804123456-abcdef123456
 	`)
 
-	err := a.worktreeAt(eff.tempDir, "").validateEverything(release)
+	err := a.worktreeAt(eff.tempDir, "").validateEverything(release, "pr")
 	if err == nil || !strings.Contains(err.Error(), "go.temporal.io/sdk must use an official release") {
 		t.Fatalf("expected dependency validation error, got %v", err)
 	}
@@ -81,7 +81,7 @@ func TestValidateReleaseRejectsUnpublishedSiblingRequirement(t *testing.T) {
 		replace go.temporal.io/sdk/contrib/aws/s3driver => ../
 	`)
 
-	err = a.worktreeAt(eff.tempDir, "").validateEverything(release)
+	err = a.worktreeAt(eff.tempDir, "").validateEverything(release, "pr")
 	if err == nil || !strings.Contains(err.Error(), "go.temporal.io/sdk/contrib/aws/s3driver v0.0.0 is not published") {
 		t.Fatalf("expected unpublished sibling error, got %v", err)
 	}
@@ -101,7 +101,7 @@ func TestValidateReleasePropagatesProxyFailure(t *testing.T) {
 		require go.temporal.io/sdk v1.48.0
 	`)
 
-	err := a.worktreeAt(eff.tempDir, "").validateEverything(release)
+	err := a.worktreeAt(eff.tempDir, "").validateEverything(release, "pr")
 	if err == nil || !strings.Contains(err.Error(), "proxy unreachable") {
 		t.Fatalf("expected the proxy error to be propagated, got %v", err)
 	}
@@ -129,7 +129,7 @@ func TestValidateReleaseRejectsNonIncreasingVersion(t *testing.T) {
 	eff.files[filepath.Join(eff.tempDir, "go.mod")] = goMod
 	eff.files[filepath.Join(eff.tempDir, "internal", "version.go")] = versionGo
 
-	err := a.worktreeAt(eff.tempDir, "").validateEverything(release)
+	err := a.worktreeAt(eff.tempDir, "").validateEverything(release, "pr")
 	if err == nil || !strings.Contains(err.Error(), "does not follow the current version 1.47.0") {
 		t.Fatalf("expected version increase error, got %v", err)
 	}
@@ -151,8 +151,8 @@ func TestValidateReleaseRejectsStaleVersionConstant(t *testing.T) {
 	eff.files[filepath.Join(eff.tempDir, "go.mod")] = "module go.temporal.io/sdk\n"
 	eff.files[filepath.Join(eff.tempDir, "internal", "version.go")] = `SDKVersion = "1.45.0"`
 
-	err := a.worktreeAt(eff.tempDir, "").validateEverything(release)
-	if err == nil || !strings.Contains(err.Error(), "internal/version.go declares version 1.45.0, but the latest release tag is v1.47.0") {
+	err := a.worktreeAt(eff.tempDir, "").validateEverything(release, "pr")
+	if err == nil || !strings.Contains(err.Error(), "internal/version.go declares version 1.45.0, expected 1.47.0") {
 		t.Fatalf("expected version constant mismatch error, got %v", err)
 	}
 }
@@ -165,7 +165,7 @@ func TestValidateReleaseRejectsMissingSDKTags(t *testing.T) {
 	eff.files[filepath.Join(eff.tempDir, "go.mod")] = "module go.temporal.io/sdk\n"
 	eff.files[filepath.Join(eff.tempDir, "internal", "version.go")] = `SDKVersion = "1.47.0"`
 
-	err := a.worktreeAt(eff.tempDir, "").validateEverything(release)
+	err := a.worktreeAt(eff.tempDir, "").validateEverything(release, "pr")
 	if err == nil || !strings.Contains(err.Error(), `internal/version.go declares version 1.47.0, but no release tags match "v*"`) {
 		t.Fatalf("expected missing tag error, got %v", err)
 	}
@@ -184,7 +184,7 @@ func TestValidateReleaseRejectsAlreadyReleasedVersion(t *testing.T) {
 		require go.temporal.io/sdk v1.48.0
 	`)
 
-	err := a.worktreeAt(eff.tempDir, "").validateEverything(release)
+	err := a.worktreeAt(eff.tempDir, "").validateEverything(release, "pr")
 	if err == nil || !strings.Contains(err.Error(), "does not follow the current version 1.0.3") {
 		t.Fatalf("expected already-released error, got %v", err)
 	}
@@ -208,7 +208,7 @@ func TestValidateReleaseUsesTagsForContribVersion(t *testing.T) {
 		"## [Unreleased]\n\n## [1.0.2] - 2026-07-28\n"
 
 	w := a.worktreeAt(eff.tempDir, "")
-	err := w.validateEverything(release)
+	err := w.validateEverything(release, "pr")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -217,7 +217,7 @@ func TestValidateReleaseUsesTagsForContribVersion(t *testing.T) {
 	`)
 
 	release.version = semver{1, 2, 0}
-	err = w.validateEverything(release)
+	err = w.validateEverything(release, "pr")
 	if err == nil || !strings.Contains(err.Error(), "does not follow the current version 1.0.2") {
 		t.Fatalf("expected version increase error, got %v", err)
 	}
@@ -234,7 +234,7 @@ func TestValidateReleaseAllowsFirstContribRelease(t *testing.T) {
 	eff.files[filepath.Join(eff.tempDir, "contrib", "envconfig", "CHANGELOG.md")] = "## [Unreleased]\n"
 
 	w := a.worktreeAt(eff.tempDir, "")
-	err := w.validateEverything(release)
+	err := w.validateEverything(release, "pr")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -243,7 +243,7 @@ func TestValidateReleaseAllowsFirstContribRelease(t *testing.T) {
 	`)
 
 	release.version = semver{0, 4, 0}
-	err = w.validateEverything(release)
+	err = w.validateEverything(release, "pr")
 	if err != nil {
 		t.Fatalf("expected a release without a prior version to be valid, got %v", err)
 	}
@@ -274,7 +274,7 @@ func TestValidateReleaseAllowsContribChangelogWithoutHistory(t *testing.T) {
 		- Raised the minimum supported Go version.
 	`)
 
-	err := a.worktreeAt(eff.tempDir, "").validateEverything(release)
+	err := a.worktreeAt(eff.tempDir, "").validateEverything(release, "pr")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -292,7 +292,7 @@ func TestValidateReleaseRejectsInvalidChangelog(t *testing.T) {
 	eff.files[filepath.Join(eff.tempDir, "internal", "version.go")] = `SDKVersion = "1.47.0"`
 	eff.files[filepath.Join(eff.tempDir, "CHANGELOG.md")] = "## [Unreleased]\n\n## [1.47.0]\n\n## [1.46.0]\n\n## [1.46.0]\n"
 
-	err := a.worktreeAt(eff.tempDir, "").validateEverything(release)
+	err := a.worktreeAt(eff.tempDir, "").validateEverything(release, "pr")
 	if err == nil || !strings.Contains(err.Error(), `found 2 sections for "1.46.0"`) {
 		t.Fatalf("expected duplicate changelog section error, got %v", err)
 	}
@@ -396,22 +396,24 @@ func TestOpenDraftPRForContribModule(t *testing.T) {
 func TestCreateDraftRelease(t *testing.T) {
 	release := releaseSpec{target: sdkTarget(), version: semver{1, 2, 3}}
 	a, eff := newMockApp(app{}, func(cmd string) (string, error) {
-		if cmd == "gh release create v1.2.3 --draft --title v1.2.3 --notes-file /worktree/prepare-release-notes.md --generate-notes" {
+		if cmd == "gh release create v1.2.3 --draft --target abc123 --title v1.2.3 --notes-file /worktree/prepare-release-notes.md --generate-notes" {
 			return "https://example.com/release\n", nil
 		}
 		return "", nil
 	})
 
-	_, err := a.worktreeAt("/worktree", "").createDraftRelease(release, "Notes")
+	eff.files[filepath.Join("/worktree", filepath.FromSlash(release.target.changelog()))] = "## [1.2.3]\n\nNotes\n"
+
+	_, err := a.worktreeAt("/worktree", "").createDraftRelease(release, "abc123")
 	if err != nil {
 		t.Fatal(err)
 	}
 	testEqual(t, eff.output.String(), `
 		      Release notes: /worktree/prepare-release-notes.md
-		      $ gh release create v1.2.3 --draft --title v1.2.3 --notes-file /worktree/prepare-release-notes.md --generate-notes
+		      $ gh release create v1.2.3 --draft --target abc123 --title v1.2.3 --notes-file /worktree/prepare-release-notes.md --generate-notes
 		      Draft release: https://example.com/release
 	`)
-	testEqual(t, eff.files[filepath.Join("/worktree", "prepare-release-notes.md")], "Notes")
+	testEqual(t, eff.files[filepath.Join("/worktree", "prepare-release-notes.md")], "## Highlights\n\nNotes\n")
 }
 
 // Contrib releases differ from main releases in three ways:
@@ -422,22 +424,24 @@ func TestCreateDraftRelease(t *testing.T) {
 func TestCreateDraftReleaseForContribModule(t *testing.T) {
 	release := releaseSpec{target: contribEnvconfig(t), version: semver{1, 2, 3}}
 	a, eff := newMockApp(app{}, func(cmd string) (string, error) {
-		if cmd == "gh release create contrib/envconfig/v1.2.3 --draft --title contrib/envconfig/v1.2.3 --notes-file /worktree/prepare-release-notes.md --latest=false" {
+		if cmd == "gh release create contrib/envconfig/v1.2.3 --draft --target abc123 --title contrib/envconfig/v1.2.3 --notes-file /worktree/prepare-release-notes.md --latest=false" {
 			return "https://example.com/release\n", nil
 		}
 		return "", nil
 	})
 
-	_, err := a.worktreeAt("/worktree", "").createDraftRelease(release, "Notes")
+	eff.files[filepath.Join("/worktree", filepath.FromSlash(release.target.changelog()))] = "## [1.2.3]\n\nNotes\n"
+
+	_, err := a.worktreeAt("/worktree", "").createDraftRelease(release, "abc123")
 	if err != nil {
 		t.Fatal(err)
 	}
 	testEqual(t, eff.output.String(), `
 		      Release notes: /worktree/prepare-release-notes.md
-		      $ gh release create contrib/envconfig/v1.2.3 --draft --title contrib/envconfig/v1.2.3 --notes-file /worktree/prepare-release-notes.md --latest=false
+		      $ gh release create contrib/envconfig/v1.2.3 --draft --target abc123 --title contrib/envconfig/v1.2.3 --notes-file /worktree/prepare-release-notes.md --latest=false
 		      Draft release: https://example.com/release
 	`)
-	testEqual(t, eff.files[filepath.Join("/worktree", "prepare-release-notes.md")], "Notes")
+	testEqual(t, eff.files[filepath.Join("/worktree", "prepare-release-notes.md")], "## Highlights\n\nNotes\n")
 }
 
 func TestUpdateFile(t *testing.T) {
