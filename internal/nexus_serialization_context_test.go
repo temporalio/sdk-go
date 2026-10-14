@@ -433,6 +433,40 @@ func TestNexusBackedActivityHandleWithoutPropagatedContextUsesActivityContext(t 
 	require.Equal(t, "result", decoded)
 }
 
+func TestNexusBackedWorkflowContinueAsNewInputSerializationContext(t *testing.T) {
+	nexusContext := converter.NexusSerializationContext{Endpoint: "endpoint", Service: "service", Operation: "operation"}
+	for _, tc := range []struct {
+		name              string
+		propagated        *converter.NexusSerializationContext
+		expectedSignature string
+	}{
+		// The server carries the propagated context into the continued run, which decodes its input with it.
+		{name: "nexus-backed", propagated: &nexusContext, expectedSignature: "endpoint:service:operation"},
+		{name: "not nexus-backed", expectedSignature: "workflow-id"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			wfInfo := &WorkflowInfo{
+				Namespace:                           "namespace",
+				WorkflowExecution:                   WorkflowExecution{ID: "workflow-id", RunID: "run-id"},
+				WorkflowType:                        WorkflowType{Name: "workflow"},
+				TaskQueueName:                       "task-queue",
+				propagatedNexusSerializationContext: tc.propagated,
+			}
+			dataConverter := converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), &serCtxSigningCodec{})
+			eventHandler := newWorkflowExecutionEventHandler(
+				wfInfo, nil, ilog.NewNopLogger(), false, metrics.NopHandler, newRegistry(),
+				dataConverter, GetDefaultFailureConverter(), nil, 0, nil, nil,
+			).(*workflowExecutionEventHandlerImpl)
+			_, ctx, err := newWorkflowContext(eventHandler.workflowEnvironmentImpl, nil)
+			require.NoError(t, err)
+
+			var continueAsNewErr *ContinueAsNewError
+			require.ErrorAs(t, NewContinueAsNewError(ctx, "workflow", "input"), &continueAsNewErr)
+			require.Equal(t, tc.expectedSignature, string(continueAsNewErr.Input.GetPayloads()[0].GetMetadata()["ctx-signature"]))
+		})
+	}
+}
+
 func TestNexusBackedWorkflowExecutorInputAndResultSerializationContext(t *testing.T) {
 	nexusContext := converter.NexusSerializationContext{Endpoint: "endpoint", Service: "service", Operation: "operation"}
 	wfInfo := &WorkflowInfo{
