@@ -353,7 +353,7 @@ type (
 		client                    *WorkflowClient
 		id                        string
 		runID                     string
-		nexusSerializationContext *converter.NexusSerializationContext
+		nexusSerializationContext converter.SerializationContext
 		result                    *ClientPollNexusOperationResultOutput
 	}
 )
@@ -739,7 +739,7 @@ func (w *workflowClientInterceptor) ExecuteNexusOperation(
 		client:                    w.client,
 		id:                        in.Options.ID,
 		runID:                     resp.RunId,
-		nexusSerializationContext: &nexusContext,
+		nexusSerializationContext: nexusContext,
 	}, nil
 }
 
@@ -780,14 +780,12 @@ func (w *workflowClientInterceptor) PollNexusOperationResult(
 			return nil, err
 		}
 	}
-	nexusSerializationContext := in.nexusSerializationContext
-	if propagated := resp.GetPropagatedNexusSerializationContext(); propagated != nil {
-		context := nexusSerializationContextFromProto(propagated)
-		nexusSerializationContext = &context
-	}
-	if nexusSerializationContext != nil {
-		dataConverter = converter.WithDataConverterSerializationContext(dataConverter, *nexusSerializationContext)
-		failureConverter = converter.WithFailureConverterSerializationContext(failureConverter, *nexusSerializationContext)
+	// Servers without propagation support do not return the context, so fall back to the start
+	// request's context, which detached handles do not have.
+	serializationContext := serializationContextFor(in.nexusSerializationContext, resp.GetPropagatedNexusSerializationContext())
+	if serializationContext != nil {
+		dataConverter = converter.WithDataConverterSerializationContext(dataConverter, serializationContext)
+		failureConverter = converter.WithFailureConverterSerializationContext(failureConverter, serializationContext)
 	}
 
 	if err := visitProtoPayloads(ctx, w.inboundPayloadVisitor, resp, 0); err != nil {
