@@ -551,8 +551,8 @@ func (t *tracingWorkflowInboundInterceptor) HandleQuery(
 	ctx workflow.Context,
 	in *HandleQueryInput,
 ) (any, error) {
-	// Only add tracing if enabled and not replaying
-	if t.root.options.DisableQueryTracing || workflow.IsReplaying(ctx) {
+	// Queries are live requests even when rebuilding history leaves the replay flag set.
+	if t.root.options.DisableQueryTracing {
 		return t.Next.HandleQuery(ctx, in)
 	}
 	// Start span reading from header
