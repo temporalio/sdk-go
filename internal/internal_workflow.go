@@ -1645,10 +1645,18 @@ func GetDataConverterFromWorkflowContext(ctx Context) converter.DataConverter {
 // longer serialization context aware, silently dropping it.
 func withRootDataConverterSerializationContext(ctx Context, sc converter.SerializationContext) converter.DataConverter {
 	options := getWorkflowEnvOptions(ctx)
-	if options == nil || options.RootDataConverter == nil {
-		return converter.WithDataConverterSerializationContext(GetDataConverterFromWorkflowContext(ctx), sc)
+	var dc converter.DataConverter
+	switch {
+	case options != nil && options.RootDataConverter != nil:
+		dc = options.RootDataConverter
+	case options != nil && options.DataConverter != nil:
+		dc = options.DataConverter
+	default:
+		dc = converter.GetDefaultDataConverter()
 	}
-	return WithWorkflowContext(ctx, converter.WithDataConverterSerializationContext(options.RootDataConverter, sc))
+
+	dc = converter.WithDataConverterSerializationContext(dc, sc)
+	return WithWorkflowContext(ctx, dc)
 }
 
 func rootDataConverterFromEnvironment(env WorkflowEnvironment) converter.DataConverter {
