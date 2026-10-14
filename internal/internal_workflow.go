@@ -1640,18 +1640,16 @@ func GetDataConverterFromWorkflowContext(ctx Context) converter.DataConverter {
 }
 
 // withRootDataConverterSerializationContext applies sc to the effective root
-// data converter, before any other serialization context, and only then binds it
-// to the workflow context. Binding first would hand sc to a converter that is no
-// longer serialization context aware, silently dropping it.
+// data converter and then binds it to the workflow context.
 func withRootDataConverterSerializationContext(ctx Context, sc converter.SerializationContext) converter.DataConverter {
 	options := getWorkflowEnvOptions(ctx)
 	var dc converter.DataConverter
-	switch {
-	case options != nil && options.RootDataConverter != nil:
+
+	if options != nil && options.RootDataConverter != nil {
 		dc = options.RootDataConverter
-	case options != nil && options.DataConverter != nil:
+	} else if options != nil && options.DataConverter != nil {
 		dc = options.DataConverter
-	default:
+	} else {
 		dc = converter.GetDefaultDataConverter()
 	}
 
@@ -1661,9 +1659,9 @@ func withRootDataConverterSerializationContext(ctx Context, sc converter.Seriali
 	return WithWorkflowContext(ctx, dc)
 }
 
-// withRootFailureConverterSerializationContext applies sc to the root failure converter.
 func withRootFailureConverterSerializationContext(ctx Context, sc converter.SerializationContext) converter.FailureConverter {
-	fc := getRootFailureConverterFromWorkflowContext(ctx)
+	env := GetWorkflowEnvironment(ctx)
+	fc := rootFailureConverterFromEnvironment(env)
 	if sc != nil {
 		fc = converter.WithFailureConverterSerializationContext(fc, sc)
 	}
@@ -1686,11 +1684,6 @@ func rootFailureConverterFromEnvironment(env WorkflowEnvironment) converter.Fail
 		return root.GetRootFailureConverter()
 	}
 	return env.GetFailureConverter()
-}
-
-func getRootFailureConverterFromWorkflowContext(ctx Context) converter.FailureConverter {
-	env := GetWorkflowEnvironment(ctx)
-	return rootFailureConverterFromEnvironment(env)
 }
 
 func getRegistryFromWorkflowContext(ctx Context) *registry {
