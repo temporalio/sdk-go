@@ -96,6 +96,7 @@ func (ts *IntegrationTestSuite) TestNexusSerializationContextPropagation() {
 		workflow  func(workflow.Context, string) (string, error)
 	}{
 		{operation: "async-typed-op", workflow: ts.workflows.TemporalOpAsyncTypedCaller},
+		{operation: "async-memo-op", workflow: ts.workflows.TemporalOpAsyncMemoCaller},
 		{operation: "async-activity-op", workflow: ts.workflows.TemporalOpAsyncActivityCaller},
 	} {
 		ts.Run(testCase.operation, func() {
@@ -108,7 +109,7 @@ func (ts *IntegrationTestSuite) TestNexusSerializationContextPropagation() {
 			ts.Require().NoError(run.Get(ctx, &result))
 			ts.Equal(input, result)
 			var backingResult string
-			if testCase.operation == "async-typed-op" {
+			if testCase.operation != "async-activity-op" {
 				ts.Require().NoError(ts.client.GetWorkflow(ctx, input, "").Get(ctx, &backingResult))
 				iter := ts.client.GetWorkflowHistory(ctx, input, "", false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
 				ts.Require().True(iter.HasNext())
@@ -117,7 +118,25 @@ func (ts *IntegrationTestSuite) TestNexusSerializationContextPropagation() {
 				ts.Equal(&nexuspb.PropagatedSerializationContext{
 					Endpoint: endpoint, Service: temporalOpServiceName, Operation: testCase.operation,
 				}, started.GetWorkflowExecutionStartedEventAttributes().GetPropagatedNexusSerializationContext())
-			} else {
+			}
+			if testCase.operation == "async-memo-op" {
+				// The signing codec rejects any value not decoded with the Nexus context it was encoded with,
+				// so this covers memo and user metadata from the start request and the workflow's upsert.
+				description, err := ts.client.DescribeWorkflow(ctx, input, "")
+				ts.Require().NoError(err)
+				var memoValue string
+				ts.Require().NoError(description.GetMemoValue("started", &memoValue))
+				ts.Equal(input, memoValue)
+				ts.Require().NoError(description.GetMemoValue("upserted", &memoValue))
+				ts.Equal(input, memoValue)
+				summary, err := description.GetStaticSummary()
+				ts.Require().NoError(err)
+				ts.Equal("summary-"+input, summary)
+				details, err := description.GetStaticDetails()
+				ts.Require().NoError(err)
+				ts.Equal("details-"+input, details)
+			}
+			if testCase.operation == "async-activity-op" {
 				handle := ts.client.GetActivityHandle(client.GetActivityHandleOptions{ActivityID: "act-" + input})
 				ts.Require().NoError(handle.Get(ctx, &backingResult))
 			}

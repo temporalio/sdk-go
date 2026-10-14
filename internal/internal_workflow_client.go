@@ -2140,20 +2140,18 @@ func (w *workflowClientInterceptor) createStartWorkflowRequest(
 	if dataConverter == nil {
 		dataConverter = converter.GetDefaultDataConverter()
 	}
-	rootDataConverter := dataConverter
-	dataConverter = converter.WithDataConverterSerializationContext(dataConverter, converter.WorkflowSerializationContext{
+	serializationContext := converter.SerializationContext(converter.WorkflowSerializationContext{
 		Namespace:  w.client.namespace,
 		WorkflowID: workflowID,
 	})
-	inputDataConverter := dataConverter
 	propagatedNexusSerializationContext := propagatedNexusSerializationContextFromGoContext(ctx)
 	if propagatedNexusSerializationContext != nil {
-		inputDataConverter = converter.WithDataConverterSerializationContext(rootDataConverter,
-			nexusSerializationContextFromProto(propagatedNexusSerializationContext))
+		serializationContext = nexusSerializationContextFromProto(propagatedNexusSerializationContext)
 	}
+	dataConverter = converter.WithDataConverterSerializationContext(dataConverter, serializationContext)
 
 	// Encode input
-	input, err := encodeArgs(inputDataConverter, in.Args)
+	input, err := encodeArgs(dataConverter, in.Args)
 	if err != nil {
 		return nil, err
 	}
@@ -2838,15 +2836,19 @@ func (w *workflowClientInterceptor) DescribeWorkflow(
 		WorkflowCloseTime:       closeTime,
 		HistoryLength:           int(info.GetHistoryLength()),
 	}
+	serializationContext := converter.SerializationContext(converter.WorkflowSerializationContext{
+		Namespace:  w.client.namespace,
+		WorkflowID: in.WorkflowID,
+	})
+	if propagated := resp.GetWorkflowExtendedInfo().GetPropagatedNexusSerializationContext(); propagated != nil {
+		serializationContext = nexusSerializationContextFromProto(propagated)
+	}
 	o := &WorkflowExecutionDescription{
 		WorkflowExecutionMetadata: m,
-		dc: converter.WithDataConverterSerializationContext(w.client.dataConverter, converter.WorkflowSerializationContext{
-			Namespace:  w.client.namespace,
-			WorkflowID: in.WorkflowID,
-		}),
-		inboundPayloadVisitor: w.inboundPayloadVisitor,
-		staticSummaryPayload:  resp.GetExecutionConfig().GetUserMetadata().GetSummary(),
-		staticDetailsPayload:  resp.GetExecutionConfig().GetUserMetadata().GetDetails(),
+		dc:                        converter.WithDataConverterSerializationContext(w.client.dataConverter, serializationContext),
+		inboundPayloadVisitor:     w.inboundPayloadVisitor,
+		staticSummaryPayload:      resp.GetExecutionConfig().GetUserMetadata().GetSummary(),
+		staticDetailsPayload:      resp.GetExecutionConfig().GetUserMetadata().GetDetails(),
 	}
 
 	return &ClientDescribeWorkflowOutput{
