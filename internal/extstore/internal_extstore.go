@@ -99,13 +99,15 @@ func messageSemaphoreFrom(ctx context.Context, p StorageParameters) *semaphore.W
 	return semaphore.NewWeighted(int64(p.MaxOperationsPerMessage()))
 }
 
-func newLimiter[T any](ctx context.Context, p StorageParameters) *semaphoreLimiter[T] {
+// newLimiter builds the limiter for one driver call. Every driver called while
+// visiting one message shares messageSemaphore.
+func newLimiter[T any](messageSemaphore *semaphore.Weighted, p StorageParameters) *semaphoreLimiter[T] {
 	driverOperationSemaphore := p.driverOperationSemaphore
 	if driverOperationSemaphore == nil {
 		driverOperationSemaphore = semaphore.NewWeighted(defaultMaxDriverOperations)
 	}
 	return &semaphoreLimiter[T]{
-		perMessageSemaphore:      messageSemaphoreFrom(ctx, p),
+		perMessageSemaphore:      messageSemaphore,
 		driverOperationSemaphore: driverOperationSemaphore,
 	}
 }
@@ -375,6 +377,7 @@ func (v *externalRetrievalVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloa
 	// Intentionally creating an empty context so the retrieval path cannot use ambient
 	// information for determing how to retrieve payloads. Drivers should only use information
 	// from the StorageDriverClaim to retrieve payloads.
+	messageSemaphore := messageSemaphoreFrom(ctx.Context, v.params)
 	eg, egCtx := errgroup.WithContext(context.Background())
 	limiters := make([]*semaphoreLimiter[StorageDriverClaim], len(driverOrder))
 	sizes := make([]int64, len(driverOrder))
@@ -383,7 +386,7 @@ func (v *externalRetrievalVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloa
 	for i, name := range driverOrder {
 		batch := driverBatches[name]
 		externalCount += len(batch.claims)
-		limiter := newLimiter[StorageDriverClaim](ctx.Context, v.params)
+		limiter := newLimiter[StorageDriverClaim](messageSemaphore, v.params)
 		limiters[i] = limiter
 		driverCtx := StorageDriverRetrieveContext{Context: egCtx, Limiter: limiter}
 		eg.Go(func() error {
@@ -486,6 +489,7 @@ func (v *externalStorageVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloads
 
 	// Fan out to each driver concurrently. The errgroup context is used as the
 	// StorageDriverStoreContext so a failing driver cancels in-flight siblings.
+	messageSemaphore := messageSemaphoreFrom(ctx.Context, v.params)
 	eg, egCtx := errgroup.WithContext(ctx.Context)
 	limiters := make([]*semaphoreLimiter[*commonpb.Payload], len(driverOrder))
 	sizes := make([]int64, len(driverOrder))
@@ -494,7 +498,7 @@ func (v *externalStorageVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloads
 	for i, name := range driverOrder {
 		batch := driverBatches[name]
 		externalCount += len(batch.payloads)
-		limiter := newLimiter[*commonpb.Payload](ctx.Context, v.params)
+		limiter := newLimiter[*commonpb.Payload](messageSemaphore, v.params)
 		limiters[i] = limiter
 		storeDrCtx := StorageDriverStoreContext{Context: egCtx, Target: target, Limiter: limiter}
 		eg.Go(func() error {

@@ -824,8 +824,8 @@ func (b *blockingClient) GetObject(ctx context.Context, bucket, key string) ([]b
 	}
 }
 
-// The driver no longer caps itself; the configured limiter decides. A driver
-// handed a no-op limiter runs every request at once.
+// The configured limiter decides concurrency. A no-op limiter runs every
+// request at once.
 func TestStore_ConcurrencyGovernedByLimiter(t *testing.T) {
 	bc := newBlockingClient(false)
 	d, err := NewDriver(Options{

@@ -15,6 +15,9 @@ or Security.
 
 ### Changed
 
+- **Experimental**: Concurrency is now set by `ExternalStorage.Concurrency` instead of a fixed
+  limit of 10.
+
 ### Deprecated
 
 ### :boom: Breaking Changes
@@ -24,10 +27,6 @@ or Security.
 ### Security
 
 ## [0.2.0] - 2026-10-08
-### Changed
-
-- **Experimental**: Concurrency is now set by `ExternalStorage.Concurrency` instead of a fixed
-  limit of 10.
 
 ### Breaking Changes
 

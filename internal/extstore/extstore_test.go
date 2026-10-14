@@ -1291,6 +1291,23 @@ type permittingDriver struct {
 	peak     int
 }
 
+// namedPermittingDriver is a permittingDriver with a distinct name, so two can
+// be registered on one ExternalStorage while sharing one in-flight counter.
+type namedPermittingDriver struct {
+	*permittingDriver
+	name string
+}
+
+func (d *namedPermittingDriver) Name() string { return d.name }
+
+// newPermittingDriverPair returns two drivers that share one in-flight counter.
+func newPermittingDriverPair() (*permittingDriver, StorageDriver, StorageDriver) {
+	shared := newPermittingDriver()
+	return shared,
+		&namedPermittingDriver{permittingDriver: shared, name: "driver-a"},
+		&namedPermittingDriver{permittingDriver: shared, name: "driver-b"}
+}
+
 func newPermittingDriver() *permittingDriver {
 	return &permittingDriver{gate: make(chan struct{})}
 }
@@ -1413,6 +1430,46 @@ func TestConcurrency_MaxOperationsPerMessage(t *testing.T) {
 	close(driver.gate)
 	require.NoError(t, <-done)
 	require.Equal(t, 3, driver.peakValue())
+}
+
+// MaxOperationsPerMessage is shared by every driver handling one message.
+func TestConcurrency_MaxOperationsPerMessageSharedAcrossDrivers(t *testing.T) {
+	shared, driverA, driverB := newPermittingDriverPair()
+	selectByIndex := 0
+	params, err := ExternalStorageToParams(ExternalStorage{
+		Drivers:              []StorageDriver{driverA, driverB},
+		PayloadSizeThreshold: 1,
+		DriverSelector: &funcDriverSelector{
+			fn: func(_ StorageDriverSelectContext, _ *commonpb.Payload) (StorageDriver, error) {
+				selectByIndex++
+				if selectByIndex%2 == 1 {
+					return driverA, nil
+				}
+				return driverB, nil
+			},
+		},
+		Concurrency: ExternalStorageConcurrency{
+			MaxDriverOperations: 100, MaxOperationsPerMessage: 1,
+		},
+	})
+	require.NoError(t, err)
+
+	visitor := NewExternalStorageVisitor(params)
+	payloads := []*commonpb.Payload{makeOversizedPayload(t, 64), makeOversizedPayload(t, 64)}
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := visitPayloads(t.Context(), visitor, payloads)
+		done <- err
+	}()
+
+	require.Eventually(t, func() bool { return shared.peakValue() == 1 }, 2*time.Second, time.Millisecond)
+	time.Sleep(50 * time.Millisecond)
+	require.Equal(t, 1, shared.peakValue(), "two drivers in one message must share one per-message limit")
+
+	close(shared.gate)
+	require.NoError(t, <-done)
+	require.Equal(t, 1, shared.peakValue())
 }
 
 // MaxOperationsPerMessage is shared by every payload site in one message.
