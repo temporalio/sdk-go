@@ -1043,7 +1043,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteActivity(ctx Context, typeName 
 		ActivityType:           *activityType,
 		Input:                  input,
 		DataConverter:          dataConverter,
-		FailureConverter:       converter.WithFailureConverterSerializationContext(getRootFailureConverterFromWorkflowContext(ctx), actCtx),
+		FailureConverter:       withRootFailureConverterSerializationContext(ctx, actCtx),
 		Header:                 header,
 	}
 	params.ActivityID = activityID
@@ -1218,7 +1218,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteLocalActivity(ctx Context, type
 		InputArgs:                   args,
 		WorkflowInfo:                wfInfo,
 		DataConverter:               withRootDataConverterSerializationContext(ctx, actCtx),
-		FailureConverter:            converter.WithFailureConverterSerializationContext(getRootFailureConverterFromWorkflowContext(ctx), actCtx),
+		FailureConverter:            withRootFailureConverterSerializationContext(ctx, actCtx),
 		ScheduledTime:               Now(ctx), // initial scheduled time
 		Header:                      header,
 		Attempt:                     1, // Attempts always start at one
@@ -1397,10 +1397,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 		return result
 	}
 
-	failureConverter := converter.WithFailureConverterSerializationContext(
-		getRootFailureConverterFromWorkflowContext(ctx),
-		childWfCtx,
-	)
+	failureConverter := withRootFailureConverterSerializationContext(ctx, childWfCtx)
 
 	params := ExecuteWorkflowParams{
 		WorkflowOptions:  *options,
