@@ -824,16 +824,12 @@ func (w *workflowClientInterceptor) ExecuteActivity(
 	if dataConverter == nil {
 		dataConverter = converter.GetDefaultDataConverter()
 	}
-	serializationContext := converter.SerializationContext(converter.ActivitySerializationContext{
+	propagatedNexusSerializationContext := propagatedNexusSerializationContextFromGoContext(ctx)
+	dataConverter = converter.WithDataConverterSerializationContext(dataConverter, serializationContextFor(converter.ActivitySerializationContext{
 		Namespace:    w.client.namespace,
 		ActivityType: in.ActivityType,
 		TaskQueue:    in.Options.TaskQueue,
-	})
-	propagatedNexusSerializationContext := propagatedNexusSerializationContextFromGoContext(ctx)
-	if propagatedNexusSerializationContext != nil {
-		serializationContext = nexusSerializationContextFromProto(propagatedNexusSerializationContext)
-	}
-	dataConverter = converter.WithDataConverterSerializationContext(dataConverter, serializationContext)
+	}, propagatedNexusSerializationContext))
 
 	request := &workflowservice.StartActivityExecutionRequest{
 		Namespace:                           w.client.namespace,
@@ -989,10 +985,8 @@ func (w *workflowClientInterceptor) PollActivityResult(
 		return nil, err
 	}
 
-	serializationContext := converter.SerializationContext(converter.ActivitySerializationContext{Namespace: w.client.namespace})
-	if propagated := resp.GetPropagatedNexusSerializationContext(); propagated != nil {
-		serializationContext = nexusSerializationContextFromProto(propagated)
-	}
+	serializationContext := serializationContextFor(converter.ActivitySerializationContext{Namespace: w.client.namespace},
+		resp.GetPropagatedNexusSerializationContext())
 	dataConverter := converter.WithDataConverterSerializationContext(
 		WithContext(ctx, w.client.dataConverter), serializationContext)
 	failureConverter := converter.WithFailureConverterSerializationContext(
@@ -1039,14 +1033,11 @@ func (w *workflowClientInterceptor) DescribeActivity(
 		lastDeploymentVersion = &v
 	}
 
-	serializationContext := converter.SerializationContext(converter.ActivitySerializationContext{
+	serializationContext := serializationContextFor(converter.ActivitySerializationContext{
 		Namespace:    w.client.namespace,
 		ActivityType: info.ActivityType.GetName(),
 		TaskQueue:    info.TaskQueue,
-	})
-	if propagated := info.GetPropagatedNexusSerializationContext(); propagated != nil {
-		serializationContext = nexusSerializationContextFromProto(propagated)
-	}
+	}, info.GetPropagatedNexusSerializationContext())
 
 	return &ClientDescribeActivityOutput{
 		Description: &ClientActivityExecutionDescription{

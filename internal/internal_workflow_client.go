@@ -2140,15 +2140,11 @@ func (w *workflowClientInterceptor) createStartWorkflowRequest(
 	if dataConverter == nil {
 		dataConverter = converter.GetDefaultDataConverter()
 	}
-	serializationContext := converter.SerializationContext(converter.WorkflowSerializationContext{
+	propagatedNexusSerializationContext := propagatedNexusSerializationContextFromGoContext(ctx)
+	dataConverter = converter.WithDataConverterSerializationContext(dataConverter, serializationContextFor(converter.WorkflowSerializationContext{
 		Namespace:  w.client.namespace,
 		WorkflowID: workflowID,
-	})
-	propagatedNexusSerializationContext := propagatedNexusSerializationContextFromGoContext(ctx)
-	if propagatedNexusSerializationContext != nil {
-		serializationContext = nexusSerializationContextFromProto(propagatedNexusSerializationContext)
-	}
-	dataConverter = converter.WithDataConverterSerializationContext(dataConverter, serializationContext)
+	}, propagatedNexusSerializationContext))
 
 	// Encode input
 	input, err := encodeArgs(dataConverter, in.Args)
@@ -2277,13 +2273,10 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 			enumspb.HISTORY_EVENT_FILTER_TYPE_CLOSE_EVENT, metricsHandler, onSerializationContext)
 	}
 
-	serializationContext := converter.SerializationContext(converter.WorkflowSerializationContext{
+	serializationContext := serializationContextFor(converter.WorkflowSerializationContext{
 		Namespace:  w.client.namespace,
 		WorkflowID: workflowID,
-	})
-	if propagated := startRequest.GetPropagatedNexusSerializationContext(); propagated != nil {
-		serializationContext = nexusSerializationContextFromProto(propagated)
-	}
+	}, startRequest.GetPropagatedNexusSerializationContext())
 	return &workflowRunImpl{
 		workflowType:          in.WorkflowType,
 		workflowID:            workflowID,
@@ -2338,13 +2331,10 @@ func (w *workflowClientInterceptor) UpdateWithStartWorkflow(
 		return w.client.getWorkflowHistory(fnCtx, startOp.input.Options.ID, fnRunID, true,
 			enumspb.HISTORY_EVENT_FILTER_TYPE_CLOSE_EVENT, metricsHandler, onSerializationContext)
 	}
-	startWfCtx := converter.SerializationContext(converter.WorkflowSerializationContext{
+	startWfCtx := serializationContextFor(converter.WorkflowSerializationContext{
 		Namespace:  w.client.namespace,
 		WorkflowID: startOp.input.Options.ID,
-	})
-	if propagated := startReq.GetPropagatedNexusSerializationContext(); propagated != nil {
-		startWfCtx = nexusSerializationContextFromProto(propagated)
-	}
+	}, startReq.GetPropagatedNexusSerializationContext())
 	onStart := func(startResp *workflowservice.StartWorkflowExecutionResponse) {
 		runID := startResp.RunId
 		startOp.set(&workflowRunImpl{
@@ -2836,13 +2826,10 @@ func (w *workflowClientInterceptor) DescribeWorkflow(
 		WorkflowCloseTime:       closeTime,
 		HistoryLength:           int(info.GetHistoryLength()),
 	}
-	serializationContext := converter.SerializationContext(converter.WorkflowSerializationContext{
+	serializationContext := serializationContextFor(converter.WorkflowSerializationContext{
 		Namespace:  w.client.namespace,
 		WorkflowID: in.WorkflowID,
-	})
-	if propagated := resp.GetWorkflowExtendedInfo().GetPropagatedNexusSerializationContext(); propagated != nil {
-		serializationContext = nexusSerializationContextFromProto(propagated)
-	}
+	}, resp.GetWorkflowExtendedInfo().GetPropagatedNexusSerializationContext())
 	o := &WorkflowExecutionDescription{
 		WorkflowExecutionMetadata: m,
 		dc:                        converter.WithDataConverterSerializationContext(w.client.dataConverter, serializationContext),

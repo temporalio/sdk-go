@@ -329,17 +329,14 @@ func WithActivityTask(
 	heartbeatTimeout := task.GetHeartbeatTimeout().AsDuration()
 	deadline := calculateActivityDeadline(scheduled, scheduleToCloseTimeout, startToCloseTimeout)
 
-	serializationContext := converter.SerializationContext(converter.ActivitySerializationContext{
+	serializationContext := serializationContextFor(converter.ActivitySerializationContext{
 		Namespace:    task.WorkflowNamespace,
 		WorkflowID:   task.WorkflowExecution.GetWorkflowId(),
 		WorkflowType: task.WorkflowType.GetName(),
 		ActivityType: task.ActivityType.GetName(),
 		TaskQueue:    taskQueue,
 		IsLocal:      false,
-	})
-	if propagated := task.GetPropagatedNexusSerializationContext(); propagated != nil {
-		serializationContext = nexusSerializationContextFromProto(propagated)
-	}
+	}, task.GetPropagatedNexusSerializationContext())
 	dataConverter = converter.WithDataConverterSerializationContext(dataConverter, serializationContext)
 
 	env := &activityEnvironment{

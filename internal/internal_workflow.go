@@ -1651,6 +1651,16 @@ func withRootDataConverterSerializationContext(ctx Context, sc converter.Seriali
 	return WithWorkflowContext(ctx, converter.WithDataConverterSerializationContext(options.RootDataConverter, sc))
 }
 
+// executionDataConverter returns the data converter for payloads owned by the current workflow
+// execution, such as its input, result, and continue-as-new input. See serializationContextFor.
+func executionDataConverter(ctx Context) converter.DataConverter {
+	propagated := GetWorkflowEnvironment(ctx).WorkflowInfo().propagatedNexusSerializationContext
+	if propagated == nil {
+		return GetDataConverterFromWorkflowContext(ctx)
+	}
+	return withRootDataConverterSerializationContext(ctx, nexusSerializationContextFromProto(propagated))
+}
+
 func rootDataConverterFromEnvironment(env WorkflowEnvironment) converter.DataConverter {
 	if root, ok := env.(interface {
 		GetRootDataConverter() converter.DataConverter

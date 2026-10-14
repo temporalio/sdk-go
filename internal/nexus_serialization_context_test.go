@@ -182,10 +182,10 @@ func TestNexusBackedWorkflowUpsertMemoSerializationContext(t *testing.T) {
 	nexusContext := converter.NexusSerializationContext{Endpoint: "endpoint", Service: "service", Operation: "operation"}
 	for _, tc := range []struct {
 		name              string
-		propagated        *converter.NexusSerializationContext
+		propagated        *nexuspb.PropagatedSerializationContext
 		expectedSignature string
 	}{
-		{name: "nexus-backed", propagated: &nexusContext, expectedSignature: "endpoint:service:operation"},
+		{name: "nexus-backed", propagated: nexusSerializationContextToProto(nexusContext), expectedSignature: "endpoint:service:operation"},
 		{name: "not nexus-backed", expectedSignature: "workflow-id"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -437,11 +437,11 @@ func TestNexusBackedWorkflowContinueAsNewInputSerializationContext(t *testing.T)
 	nexusContext := converter.NexusSerializationContext{Endpoint: "endpoint", Service: "service", Operation: "operation"}
 	for _, tc := range []struct {
 		name              string
-		propagated        *converter.NexusSerializationContext
+		propagated        *nexuspb.PropagatedSerializationContext
 		expectedSignature string
 	}{
 		// The server carries the propagated context into the continued run, which decodes its input with it.
-		{name: "nexus-backed", propagated: &nexusContext, expectedSignature: "endpoint:service:operation"},
+		{name: "nexus-backed", propagated: nexusSerializationContextToProto(nexusContext), expectedSignature: "endpoint:service:operation"},
 		{name: "not nexus-backed", expectedSignature: "workflow-id"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -474,7 +474,7 @@ func TestNexusBackedWorkflowExecutorInputAndResultSerializationContext(t *testin
 		WorkflowExecution:                   WorkflowExecution{ID: "workflow-id", RunID: "run-id"},
 		WorkflowType:                        WorkflowType{Name: "workflow"},
 		TaskQueueName:                       "task-queue",
-		propagatedNexusSerializationContext: &nexusContext,
+		propagatedNexusSerializationContext: nexusSerializationContextToProto(nexusContext),
 	}
 	dataConverter := converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), &serCtxSigningCodec{})
 	eventHandler := newWorkflowExecutionEventHandler(
@@ -506,7 +506,7 @@ func TestNexusBackedWorkflowCompletionFailureSerializationContext(t *testing.T) 
 		Namespace:                           "namespace",
 		WorkflowExecution:                   WorkflowExecution{ID: "workflow-id", RunID: "run-id"},
 		WorkflowType:                        WorkflowType{Name: "workflow"},
-		propagatedNexusSerializationContext: &nexusContext,
+		propagatedNexusSerializationContext: nexusSerializationContextToProto(nexusContext),
 	}
 	failureConverter := newNexusCapturingFailureConverter()
 	eventHandler := newWorkflowExecutionEventHandler(
