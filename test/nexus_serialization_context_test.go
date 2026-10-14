@@ -97,6 +97,7 @@ func (ts *IntegrationTestSuite) TestNexusSerializationContextPropagation() {
 	}{
 		{operation: "async-typed-op", workflow: ts.workflows.TemporalOpAsyncTypedCaller},
 		{operation: "async-memo-op", workflow: ts.workflows.TemporalOpAsyncMemoCaller},
+		{operation: "async-continue-as-new-op", workflow: ts.workflows.TemporalOpAsyncContinueAsNewCaller},
 		{operation: "async-activity-op", workflow: ts.workflows.TemporalOpAsyncActivityCaller},
 	} {
 		ts.Run(testCase.operation, func() {
@@ -135,6 +136,19 @@ func (ts *IntegrationTestSuite) TestNexusSerializationContextPropagation() {
 				details, err := description.GetStaticDetails()
 				ts.Require().NoError(err)
 				ts.Equal("details-"+input, details)
+			}
+			if testCase.operation == "async-continue-as-new-op" {
+				// The continued run's input and the carried-over memo must decode with the Nexus context.
+				iter := ts.client.GetWorkflowHistory(ctx, input, "", false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+				ts.Require().True(iter.HasNext())
+				started, err := iter.Next()
+				ts.Require().NoError(err)
+				ts.NotEmpty(started.GetWorkflowExecutionStartedEventAttributes().GetContinuedExecutionRunId())
+				description, err := ts.client.DescribeWorkflow(ctx, input, "")
+				ts.Require().NoError(err)
+				var memoValue string
+				ts.Require().NoError(description.GetMemoValue("started", &memoValue))
+				ts.Equal(input, memoValue)
 			}
 			if testCase.operation == "async-activity-op" {
 				handle := ts.client.GetActivityHandle(client.GetActivityHandleOptions{ActivityID: "act-" + input})

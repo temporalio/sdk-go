@@ -3858,6 +3858,13 @@ func (w *Workflows) TemporalOpEchoWithMemo(ctx workflow.Context, input string) (
 	return input, workflow.UpsertMemo(ctx, map[string]any{"upserted": input})
 }
 
+func (w *Workflows) TemporalOpContinueAsNewOnce(ctx workflow.Context, input string) (string, error) {
+	if workflow.GetInfo(ctx).ContinuedExecutionRunID == "" {
+		return "", workflow.NewContinueAsNewError(ctx, w.TemporalOpContinueAsNewOnce, input)
+	}
+	return input, nil
+}
+
 func (w *Workflows) TemporalOpWaitForCancel(ctx workflow.Context, _ string) (string, error) {
 	return "", workflow.Await(ctx, func() bool { return false })
 }
@@ -3888,6 +3895,15 @@ var temporalOpAsyncMemoOp = temporalnexus.MustNewTemporalOperation(temporalnexus
 		return temporalnexus.StartWorkflow(ctx, nc, client.StartWorkflowOptions{
 			ID: input, Memo: map[string]any{"started": input}, StaticSummary: "summary-" + input, StaticDetails: "details-" + input,
 		}, (*Workflows)(nil).TemporalOpEchoWithMemo, input)
+	},
+})
+
+var temporalOpAsyncContinueAsNewOp = temporalnexus.MustNewTemporalOperation(temporalnexus.TemporalOperationOptions[string, string]{
+	Name: "async-continue-as-new-op",
+	Start: func(ctx context.Context, nc temporalnexus.NexusClient, input string, _ temporalnexus.StartTemporalOperationOptions) (temporalnexus.TemporalOperationResult[string], error) {
+		return temporalnexus.StartWorkflow(ctx, nc, client.StartWorkflowOptions{
+			ID: input, Memo: map[string]any{"started": input},
+		}, (*Workflows)(nil).TemporalOpContinueAsNewOnce, input)
 	},
 })
 
@@ -4327,6 +4343,7 @@ var temporalOpService = func() *nexus.Service {
 		temporalOpSyncOp,
 		temporalOpAsyncTypedOp,
 		temporalOpAsyncMemoOp,
+		temporalOpAsyncContinueAsNewOp,
 		temporalOpAsyncUntypedOp,
 		temporalOpCancelOp,
 		temporalOpCustomCancelOp,
@@ -4363,6 +4380,12 @@ func (w *Workflows) TemporalOpAsyncTypedCaller(ctx workflow.Context, input strin
 	c := workflow.NewNexusClient(temporalOpEndpoint, temporalOpServiceName)
 	var result string
 	return result, c.ExecuteOperation(ctx, temporalOpAsyncTypedOp, input, workflow.NexusOperationOptions{}).Get(ctx, &result)
+}
+
+func (w *Workflows) TemporalOpAsyncContinueAsNewCaller(ctx workflow.Context, input string) (string, error) {
+	c := workflow.NewNexusClient(temporalOpEndpoint, temporalOpServiceName)
+	var result string
+	return result, c.ExecuteOperation(ctx, temporalOpAsyncContinueAsNewOp, input, workflow.NexusOperationOptions{}).Get(ctx, &result)
 }
 
 func (w *Workflows) TemporalOpAsyncMemoCaller(ctx workflow.Context, input string) (string, error) {
@@ -4622,11 +4645,13 @@ func (w *Workflows) WorkflowTaskCompletionPagination(ctx workflow.Context) error
 func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.TemporalOpEcho)
 	worker.RegisterWorkflow(w.TemporalOpEchoWithMemo)
+	worker.RegisterWorkflow(w.TemporalOpContinueAsNewOnce)
 	worker.RegisterWorkflow(w.TemporalOpWaitForCancel)
 	worker.RegisterWorkflow(w.TemporalOpWaitForSignal)
 	worker.RegisterWorkflow(w.TemporalOpSyncCaller)
 	worker.RegisterWorkflow(w.TemporalOpAsyncTypedCaller)
 	worker.RegisterWorkflow(w.TemporalOpAsyncMemoCaller)
+	worker.RegisterWorkflow(w.TemporalOpAsyncContinueAsNewCaller)
 	worker.RegisterWorkflow(w.TemporalOpAsyncUntypedCaller)
 	worker.RegisterWorkflow(w.TemporalOpCancelCaller)
 	worker.RegisterWorkflow(w.TemporalOpCustomCancelCaller)

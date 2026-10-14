@@ -681,6 +681,9 @@ func (wc *workflowEnvironmentInterceptor) NewContinueAsNewError(
 	}
 	env := GetWorkflowEnvironment(ctx)
 	dc := GetDataConverterFromWorkflowContext(ctx)
+	if nexusContext := env.WorkflowInfo().propagatedNexusSerializationContext; nexusContext != nil {
+		dc = withRootDataConverterSerializationContext(ctx, *nexusContext)
+	}
 	workflowType, input, err := getValidatedWorkflowFunction(wfn, args, dc, env.GetRegistry())
 	if err != nil {
 		panic(err)
