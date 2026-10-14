@@ -1668,9 +1668,9 @@ func withRootFailureConverterSerializationContext(ctx Context, sc converter.Seri
 	return fc
 }
 
-// executionDataConverter returns the data converter for payloads owned by the current workflow
-// execution, such as its input, result, and continue-as-new input. See serializationContextFor.
-func executionDataConverter(ctx Context) converter.DataConverter {
+// resultDataConverter returns the data converter for the workflow's result, which is forwarded to
+// the Nexus caller when the workflow was started by a Nexus handler. See serializationContextFor.
+func resultDataConverter(ctx Context) converter.DataConverter {
 	propagated := GetWorkflowEnvironment(ctx).WorkflowInfo().propagatedNexusSerializationContext
 	if propagated == nil {
 		return GetDataConverterFromWorkflowContext(ctx)
