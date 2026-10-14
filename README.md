@@ -36,9 +36,6 @@ See [samples](https://github.com/temporalio/samples-go) to get started.
 
 Documentation is available [here](https://docs.temporal.io).
 You can also find the API documentation [here](https://pkg.go.dev/go.temporal.io/sdk).
-For [Standalone Nexus Operations](https://docs.temporal.io/develop/go/nexus/standalone-operations), currently in
-[Public Preview](https://docs.temporal.io/evaluate/development-production-features/release-stages#public-preview),
-we aim to preserve backward compatibility and avoid breaking changes.
 
 ## Using slog
 
