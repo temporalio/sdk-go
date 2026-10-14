@@ -3781,6 +3781,61 @@ func (ts *IntegrationTestSuite) TestOpenTelemetryTracingQueryReplay() {
 	ts.Equal(querySpan.SpanContext().TraceID(), handlerSpan.SpanContext().TraceID())
 }
 
+func (ts *IntegrationTestSuite) TestOpenTelemetryTracingRunningQuery() {
+	const workflowName = "query-running-workflow"
+	const queryName = "is-replaying"
+	const finishSignal = "finish"
+	const timerDelay = time.Hour
+	ts.worker.RegisterWorkflowWithOptions(func(ctx workflow.Context) error {
+		if err := workflow.SetQueryHandler(ctx, queryName, func() (bool, error) {
+			return workflow.IsReplaying(ctx), nil
+		}); err != nil {
+			return err
+		}
+
+		// Keep a command event in history without letting the timer fire during the query.
+		workflow.NewTimer(ctx, timerDelay)
+		workflow.GetSignalChannel(ctx, finishSignal).Receive(ctx, nil)
+		return nil
+	}, workflow.RegisterOptions{Name: workflowName})
+
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+	run, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions(workflowName), workflowName)
+	ts.NoError(err)
+	defer func() {
+		ts.NoError(ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), finishSignal, nil))
+		ts.NoError(run.Get(ctx, nil))
+	}()
+
+	// Query an idle, running workflow after its timer command has committed.
+	ts.waitForHistoryEvent(run.GetID(), run.GetRunID(), enumspb.EVENT_TYPE_TIMER_STARTED, ctxTimeout)
+	description, err := ts.client.DescribeWorkflowExecution(ctx, run.GetID(), run.GetRunID())
+	ts.NoError(err)
+	ts.Equal(enumspb.WORKFLOW_EXECUTION_STATUS_RUNNING, description.WorkflowExecutionInfo.Status)
+
+	value, err := ts.client.QueryWorkflow(ctx, run.GetID(), run.GetRunID(), queryName)
+	ts.NoError(err)
+	var replaying bool
+	ts.NoError(value.Get(&replaying))
+	ts.T().Logf("Running-workflow query: replaying=%t, cache size=%d", replaying, ts.config.maxWorkflowCacheSize)
+
+	var querySpan, handlerSpan sdktrace.ReadOnlySpan
+	for _, span := range ts.openTelemetrySpanRecorder.Ended() {
+		switch span.Name() {
+		case "QueryWorkflow:" + queryName:
+			querySpan = span
+		case "HandleQuery:" + queryName:
+			handlerSpan = span
+		}
+	}
+
+	ts.Require().NotNil(querySpan)
+	ts.Require().NotNil(handlerSpan, "queries on running workflows must emit an inbound span")
+	ts.Equal(querySpan.SpanContext().SpanID(), handlerSpan.Parent().SpanID())
+	ts.Equal(querySpan.SpanContext().TraceID(), handlerSpan.SpanContext().TraceID())
+}
+
 func (ts *IntegrationTestSuite) testOpenTelemetryTracing(withMessages bool, updateWithStart bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
