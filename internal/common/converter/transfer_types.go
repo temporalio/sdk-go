@@ -221,12 +221,8 @@ func MakeTransferAware(dc DataConverter) DataConverter {
 	}
 }
 
-func (dc *transferAwareDataConverter) markSystemNexusPayload(value any, payload *commonpb.Payload) {
+func (dc *transferAwareDataConverter) markSystemNexusPayload(payload *commonpb.Payload) {
 	if dc.systemNexus == nil || payload == nil {
-		return
-	}
-	// RawValue bypasses conversion and returns a caller-owned payload unchanged.
-	if raw, ok := value.(interface{ Payload() *commonpb.Payload }); ok && raw.Payload() == payload {
 		return
 	}
 	payload.Metadata[proxy.SystemPayloadMetadataKey] = []byte("true")
@@ -264,7 +260,7 @@ func (dc *transferAwareDataConverter) ToPayload(value any) (*commonpb.Payload, e
 	if err != nil {
 		return payload, err
 	}
-	dc.markSystemNexusPayload(transferType, payload)
+	dc.markSystemNexusPayload(payload)
 	return payload, nil
 }
 
@@ -290,8 +286,8 @@ func (dc *transferAwareDataConverter) ToPayloads(values ...any) (*commonpb.Paylo
 		return payloads, err
 	}
 	if dc.systemNexus != nil {
-		for i, payload := range payloads.GetPayloads() {
-			dc.markSystemNexusPayload(transferTypes[i], payload)
+		for _, payload := range payloads.GetPayloads() {
+			dc.markSystemNexusPayload(payload)
 		}
 	}
 	return payloads, nil

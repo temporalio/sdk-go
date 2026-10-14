@@ -3062,6 +3062,9 @@ func (c nexusClient) ExecuteOperation(ctx Context, operation any, input any, opt
 }
 
 func (wc *workflowEnvironmentInterceptor) prepareNexusOperationParams(ctx Context, input ExecuteNexusOperationInput) (ExecuteNexusOperationParams, error) {
+	endpoint := input.Client.Endpoint()
+	service := input.Client.Service()
+
 	var ok bool
 	var operationName string
 	if operationName, ok = input.Operation.(string); ok {
@@ -3078,31 +3081,29 @@ func (wc *workflowEnvironmentInterceptor) prepareNexusOperationParams(ctx Contex
 		return ExecuteNexusOperationParams{}, fmt.Errorf("invalid 'operation' parameter, must be an OperationReference or a string")
 	}
 
-	// Nexus context and data converters.
-	nsc := converter.NexusSerializationContext{
-		Endpoint:  input.Client.Endpoint(),
-		Service:   input.Client.Service(),
-		Operation: operationName,
-	}
-	var dc converter.DataConverter
-	var fc converter.FailureConverter
-	if nsc.Endpoint == systemNexusEndpoint {
-		var sc converter.SerializationContext
-		if info, ok := nexusOperationRegistry[NexusOperationKey{Service: nsc.Service, Operation: nsc.Operation}]; ok {
+	// Compute the serialization context, if any
+	var sc converter.SerializationContext
+	if endpoint == systemNexusEndpoint {
+		if info, ok := nexusOperationRegistry[NexusOperationKey{
+			Service:   service,
+			Operation: operationName,
+		}]; ok {
 			sc = info.SerializationContext(input.Input)
 		}
-		var targetDC converter.DataConverter
-		fc = getRootFailureConverterFromWorkflowContext(ctx)
-		if sc != nil {
-			targetDC = withRootDataConverterSerializationContext(ctx, sc)
-			fc = converter.WithFailureConverterSerializationContext(fc, sc)
-		} else {
-			targetDC = WithWorkflowContext(ctx, rootDataConverterFromEnvironment(GetWorkflowEnvironment(ctx)))
-		}
-		dc = newSystemNexusDataConverter(targetDC)
 	} else {
-		dc = withRootDataConverterSerializationContext(ctx, nsc)
-		fc = converter.WithFailureConverterSerializationContext(getRootFailureConverterFromWorkflowContext(ctx), nsc)
+		sc = converter.NexusSerializationContext{
+			Endpoint:  endpoint,
+			Service:   service,
+			Operation: operationName,
+		}
+	}
+
+	dc := withRootDataConverterSerializationContext(ctx, sc)
+	fc := withRootFailureConverterSerializationContext(ctx, sc)
+	if endpoint == systemNexusEndpoint {
+		// System nexus operations use a special converter because they're
+		// meant for the server.
+		dc = newSystemNexusDataConverter(dc)
 	}
 
 	payload, err := dc.ToPayload(input.Input)
