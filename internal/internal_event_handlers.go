@@ -515,11 +515,7 @@ func validateAndSerializeSearchAttributes(attributes map[string]any) (*commonpb.
 
 func (wc *workflowEnvironmentImpl) UpsertMemo(memoMap map[string]any) error {
 	// This has to be used in WorkflowEnvironment implementations instead of in Workflow for testsuite mock purpose.
-	dataConverter := converter.WithDataConverterSerializationContext(wc.rootDataConverter, serializationContextFor(
-		converter.WorkflowSerializationContext{Namespace: wc.workflowInfo.Namespace, WorkflowID: wc.workflowInfo.WorkflowExecution.ID},
-		wc.workflowInfo.propagatedNexusSerializationContext,
-	))
-	memo, err := validateAndSerializeMemo(memoMap, dataConverter, wc.TryUse(SDKFlagMemoUserDCEncode))
+	memo, err := validateAndSerializeMemo(memoMap, wc.dataConverter, wc.TryUse(SDKFlagMemoUserDCEncode))
 	if err != nil {
 		return err
 	}

@@ -96,7 +96,6 @@ func (ts *IntegrationTestSuite) TestNexusSerializationContextPropagation() {
 		workflow  func(workflow.Context, string) (string, error)
 	}{
 		{operation: "async-typed-op", workflow: ts.workflows.TemporalOpAsyncTypedCaller},
-		{operation: "async-memo-op", workflow: ts.workflows.TemporalOpAsyncMemoCaller},
 		{operation: "async-continue-as-new-op", workflow: ts.workflows.TemporalOpAsyncContinueAsNewCaller},
 		{operation: "async-activity-op", workflow: ts.workflows.TemporalOpAsyncActivityCaller},
 	} {
@@ -119,36 +118,10 @@ func (ts *IntegrationTestSuite) TestNexusSerializationContextPropagation() {
 				ts.Equal(&nexuspb.PropagatedSerializationContext{
 					Endpoint: endpoint, Service: temporalOpServiceName, Operation: testCase.operation,
 				}, started.GetWorkflowExecutionStartedEventAttributes().GetPropagatedNexusSerializationContext())
-			}
-			if testCase.operation == "async-memo-op" {
-				// The signing codec rejects any value not decoded with the Nexus context it was encoded with,
-				// so this covers memo and user metadata from the start request and the workflow's upsert.
-				description, err := ts.client.DescribeWorkflow(ctx, input, "")
-				ts.Require().NoError(err)
-				var memoValue string
-				ts.Require().NoError(description.GetMemoValue("started", &memoValue))
-				ts.Equal(input, memoValue)
-				ts.Require().NoError(description.GetMemoValue("upserted", &memoValue))
-				ts.Equal(input, memoValue)
-				summary, err := description.GetStaticSummary()
-				ts.Require().NoError(err)
-				ts.Equal("summary-"+input, summary)
-				details, err := description.GetStaticDetails()
-				ts.Require().NoError(err)
-				ts.Equal("details-"+input, details)
-			}
-			if testCase.operation == "async-continue-as-new-op" {
-				// The continued run's input and the carried-over memo must decode with the Nexus context.
-				iter := ts.client.GetWorkflowHistory(ctx, input, "", false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
-				ts.Require().True(iter.HasNext())
-				started, err := iter.Next()
-				ts.Require().NoError(err)
-				ts.NotEmpty(started.GetWorkflowExecutionStartedEventAttributes().GetContinuedExecutionRunId())
-				description, err := ts.client.DescribeWorkflow(ctx, input, "")
-				ts.Require().NoError(err)
-				var memoValue string
-				ts.Require().NoError(description.GetMemoValue("started", &memoValue))
-				ts.Equal(input, memoValue)
+				if testCase.operation == "async-continue-as-new-op" {
+					// The server carries the context into the continued run, whose result reaches the caller.
+					ts.NotEmpty(started.GetWorkflowExecutionStartedEventAttributes().GetContinuedExecutionRunId())
+				}
 			}
 			if testCase.operation == "async-activity-op" {
 				handle := ts.client.GetActivityHandle(client.GetActivityHandleOptions{ActivityID: "act-" + input})

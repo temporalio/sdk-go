@@ -45,7 +45,8 @@ func (ActivitySerializationContext) isSerializationContext() {}
 // encoding failures produced while handling a Nexus task.
 //
 // Operation is the resolved operation name. For Nexus-backed workflows and standalone
-// activities, this context is propagated to the backing execution. Standalone
+// activities, this context is propagated to the backing execution. Workflows use it only
+// for their result and failure, which are returned to the caller. Standalone
 // operation handles use the context returned by the server when polling a result;
 // older servers fall back to the handle's start request context.
 //

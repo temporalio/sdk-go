@@ -173,10 +173,13 @@ type (
 
 	// workflowRunImpl is an implementation of WorkflowRun
 	workflowRunImpl struct {
-		workflowType          string
-		workflowID            string
-		firstExecutionRunID   string
-		currentRunID          func() string
+		workflowType        string
+		workflowID          string
+		firstExecutionRunID string
+		currentRunID        func() string
+		// iterFn returns an iterator over the close event of runID. onSerializationContext is called
+		// while fetching history whenever the server returns the run's propagated Nexus serialization
+		// context, which only Nexus-started workflows have. GetWithOptions uses it to decode the close event.
 		iterFn                func(ctx context.Context, runID string, onSerializationContext func(converter.NexusSerializationContext)) HistoryEventIterator
 		dataConverter         converter.DataConverter
 		failureConverter      converter.FailureConverter
@@ -2140,11 +2143,10 @@ func (w *workflowClientInterceptor) createStartWorkflowRequest(
 	if dataConverter == nil {
 		dataConverter = converter.GetDefaultDataConverter()
 	}
-	propagatedNexusSerializationContext := propagatedNexusSerializationContextFromGoContext(ctx)
-	dataConverter = converter.WithDataConverterSerializationContext(dataConverter, serializationContextFor(converter.WorkflowSerializationContext{
+	dataConverter = converter.WithDataConverterSerializationContext(dataConverter, converter.WorkflowSerializationContext{
 		Namespace:  w.client.namespace,
 		WorkflowID: workflowID,
-	}, propagatedNexusSerializationContext))
+	})
 
 	// Encode input
 	input, err := encodeArgs(dataConverter, in.Args)
@@ -2191,7 +2193,7 @@ func (w *workflowClientInterceptor) createStartWorkflowRequest(
 		VersioningOverride:                  VersioningOverrideToProto(in.Options.VersioningOverride),
 		OnConflictOptions:                   in.Options.onConflictOptions.ToProto(),
 		Priority:                            ConvertToPBPriority(in.Options.Priority),
-		PropagatedNexusSerializationContext: propagatedNexusSerializationContext,
+		PropagatedNexusSerializationContext: propagatedNexusSerializationContextFromGoContext(ctx),
 	}
 
 	startRequest.UserMetadata, err = BuildUserMetadata(in.Options.StaticSummary, in.Options.StaticDetails, dataConverter)
@@ -2826,16 +2828,15 @@ func (w *workflowClientInterceptor) DescribeWorkflow(
 		WorkflowCloseTime:       closeTime,
 		HistoryLength:           int(info.GetHistoryLength()),
 	}
-	serializationContext := serializationContextFor(converter.WorkflowSerializationContext{
-		Namespace:  w.client.namespace,
-		WorkflowID: in.WorkflowID,
-	}, resp.GetWorkflowExtendedInfo().GetPropagatedNexusSerializationContext())
 	o := &WorkflowExecutionDescription{
 		WorkflowExecutionMetadata: m,
-		dc:                        converter.WithDataConverterSerializationContext(w.client.dataConverter, serializationContext),
-		inboundPayloadVisitor:     w.inboundPayloadVisitor,
-		staticSummaryPayload:      resp.GetExecutionConfig().GetUserMetadata().GetSummary(),
-		staticDetailsPayload:      resp.GetExecutionConfig().GetUserMetadata().GetDetails(),
+		dc: converter.WithDataConverterSerializationContext(w.client.dataConverter, converter.WorkflowSerializationContext{
+			Namespace:  w.client.namespace,
+			WorkflowID: in.WorkflowID,
+		}),
+		inboundPayloadVisitor: w.inboundPayloadVisitor,
+		staticSummaryPayload:  resp.GetExecutionConfig().GetUserMetadata().GetSummary(),
+		staticDetailsPayload:  resp.GetExecutionConfig().GetUserMetadata().GetDetails(),
 	}
 
 	return &ClientDescribeWorkflowOutput{

@@ -42,8 +42,8 @@ to docs, or any other relevant information.
 - Added experimental `converter.NewTransferTypeConverter` API that implements transfer type conversion.
   `converter.GetDefaultDataConverter()` now supports transfer type conversion.
 - Nexus handlers now propagate `NexusSerializationContext` to the workflows and standalone
-  activities they start. These executions use it for input, results, failures, memo, and static
-  summary and details; signals, queries, and updates keep workflow context.
+  activities they start. Workflows use it only for their results and failures, which are returned
+  to the caller.
 - Added autoscaling support for server poller groups, with per-group coverage and
   sticky-backlog prioritization. `SimpleMaximum` is unchanged, and autoscaling
   behaves as before when no poller groups are configured.

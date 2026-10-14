@@ -18,7 +18,6 @@ import (
 	failurepb "go.temporal.io/api/failure/v1"
 	historypb "go.temporal.io/api/history/v1"
 	nexuspb "go.temporal.io/api/nexus/v1"
-	workflowpb "go.temporal.io/api/workflow/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
 	"go.temporal.io/sdk/converter"
@@ -126,96 +125,14 @@ func TestNexusBackedWorkflowStartSerializationContext(t *testing.T) {
 	service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).
 		DoAndReturn(func(_ context.Context, request *workflowservice.StartWorkflowExecutionRequest, _ ...grpc.CallOption) (*workflowservice.StartWorkflowExecutionResponse, error) {
 			require.Equal(t, nexusSerializationContextToProto(expectedContext), request.GetPropagatedNexusSerializationContext())
-			require.Equal(t, "endpoint:service:operation", string(request.GetInput().GetPayloads()[0].GetMetadata()["ctx-signature"]))
-			require.Equal(t, "endpoint:service:operation", string(request.GetMemo().GetFields()["key"].GetMetadata()["ctx-signature"]))
-			require.Equal(t, "endpoint:service:operation", string(request.GetUserMetadata().GetSummary().GetMetadata()["ctx-signature"]))
-			require.Equal(t, "endpoint:service:operation", string(request.GetUserMetadata().GetDetails().GetMetadata()["ctx-signature"]))
+			// Only the result goes back to the Nexus caller, so the input uses the workflow context.
+			require.Equal(t, "workflow-id", string(request.GetInput().GetPayloads()[0].GetMetadata()["ctx-signature"]))
 			return &workflowservice.StartWorkflowExecutionResponse{RunId: "run-id"}, nil
 		})
 
 	ctx := ContextWithNexusOperationContext(t.Context(), &NexusOperationContext{nexusSerializationContext: expectedContext})
-	_, err := client.ExecuteWorkflow(ctx, StartWorkflowOptions{
-		ID: "workflow-id", TaskQueue: "task-queue",
-		Memo: map[string]any{"key": "value"}, StaticSummary: "summary", StaticDetails: "details",
-	}, "workflow", "input")
+	_, err := client.ExecuteWorkflow(ctx, StartWorkflowOptions{ID: "workflow-id", TaskQueue: "task-queue"}, "workflow", "input")
 	require.NoError(t, err)
-}
-
-func TestNexusBackedWorkflowDescribeSerializationContext(t *testing.T) {
-	service := workflowservicemock.NewMockWorkflowServiceClient(gomock.NewController(t))
-	dataConverter := converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), &serCtxSigningCodec{})
-	client := NewServiceClient(service, nil, ClientOptions{DataConverter: dataConverter})
-	client.capabilities = &workflowservice.GetSystemInfoResponse_Capabilities{}
-	nexusContext := converter.NexusSerializationContext{Endpoint: "endpoint", Service: "service", Operation: "operation"}
-	nexusDataConverter := converter.WithDataConverterSerializationContext(dataConverter, nexusContext)
-	memo, err := GetWorkflowMemo(map[string]any{"key": "value"}, nexusDataConverter, true)
-	require.NoError(t, err)
-	userMetadata, err := BuildUserMetadata("summary", "details", nexusDataConverter)
-	require.NoError(t, err)
-	service.EXPECT().DescribeWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).
-		Return(&workflowservice.DescribeWorkflowExecutionResponse{
-			WorkflowExecutionInfo: &workflowpb.WorkflowExecutionInfo{
-				Execution:        &commonpb.WorkflowExecution{WorkflowId: "workflow-id", RunId: "run-id"},
-				Memo:             memo,
-				SearchAttributes: &commonpb.SearchAttributes{},
-			},
-			ExecutionConfig: &workflowpb.WorkflowExecutionConfig{UserMetadata: userMetadata},
-			WorkflowExtendedInfo: &workflowpb.WorkflowExecutionExtendedInfo{
-				PropagatedNexusSerializationContext: nexusSerializationContextToProto(nexusContext),
-			},
-		}, nil)
-
-	description, err := client.DescribeWorkflow(t.Context(), "workflow-id", "run-id")
-	require.NoError(t, err)
-	var value string
-	require.NoError(t, description.GetMemoValue("key", &value))
-	require.Equal(t, "value", value)
-	summary, err := description.GetStaticSummary()
-	require.NoError(t, err)
-	require.Equal(t, "summary", summary)
-	details, err := description.GetStaticDetails()
-	require.NoError(t, err)
-	require.Equal(t, "details", details)
-}
-
-func TestNexusBackedWorkflowUpsertMemoSerializationContext(t *testing.T) {
-	nexusContext := converter.NexusSerializationContext{Endpoint: "endpoint", Service: "service", Operation: "operation"}
-	for _, tc := range []struct {
-		name              string
-		propagated        *nexuspb.PropagatedSerializationContext
-		expectedSignature string
-	}{
-		{name: "nexus-backed", propagated: nexusSerializationContextToProto(nexusContext), expectedSignature: "endpoint:service:operation"},
-		{name: "not nexus-backed", expectedSignature: "workflow-id"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			wfInfo := &WorkflowInfo{
-				Namespace:                           "namespace",
-				WorkflowExecution:                   WorkflowExecution{ID: "workflow-id", RunID: "run-id"},
-				WorkflowType:                        WorkflowType{Name: "workflow"},
-				propagatedNexusSerializationContext: tc.propagated,
-			}
-			dataConverter := converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), &serCtxSigningCodec{})
-			eventHandler := newWorkflowExecutionEventHandler(
-				wfInfo, nil, ilog.NewNopLogger(), false, metrics.NopHandler, newRegistry(),
-				dataConverter, GetDefaultFailureConverter(), nil, 0,
-				&workflowservice.GetSystemInfoResponse_Capabilities{SdkMetadata: true}, nil,
-			).(*workflowExecutionEventHandlerImpl)
-			eventHandler.commandsHelper.setCurrentWorkflowTaskStartedEventID(3)
-
-			require.NoError(t, eventHandler.UpsertMemo(map[string]any{"key": "value"}))
-			payload := wfInfo.Memo.GetFields()["key"]
-			require.Equal(t, tc.expectedSignature, string(payload.GetMetadata()["ctx-signature"]))
-			// Signals, queries, and updates keep using the workflow context.
-			require.Equal(t, "workflow-id", string(mustToPayload(t, eventHandler.GetDataConverter()).GetMetadata()["ctx-signature"]))
-		})
-	}
-}
-
-func mustToPayload(t *testing.T, dc converter.DataConverter) *commonpb.Payload {
-	payload, err := dc.ToPayload("value")
-	require.NoError(t, err)
-	return payload
 }
 
 func TestNexusBackedActivityStartSerializationContext(t *testing.T) {
@@ -433,40 +350,6 @@ func TestNexusBackedActivityHandleWithoutPropagatedContextUsesActivityContext(t 
 	require.Equal(t, "result", decoded)
 }
 
-func TestNexusBackedWorkflowContinueAsNewInputSerializationContext(t *testing.T) {
-	nexusContext := converter.NexusSerializationContext{Endpoint: "endpoint", Service: "service", Operation: "operation"}
-	for _, tc := range []struct {
-		name              string
-		propagated        *nexuspb.PropagatedSerializationContext
-		expectedSignature string
-	}{
-		// The server carries the propagated context into the continued run, which decodes its input with it.
-		{name: "nexus-backed", propagated: nexusSerializationContextToProto(nexusContext), expectedSignature: "endpoint:service:operation"},
-		{name: "not nexus-backed", expectedSignature: "workflow-id"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			wfInfo := &WorkflowInfo{
-				Namespace:                           "namespace",
-				WorkflowExecution:                   WorkflowExecution{ID: "workflow-id", RunID: "run-id"},
-				WorkflowType:                        WorkflowType{Name: "workflow"},
-				TaskQueueName:                       "task-queue",
-				propagatedNexusSerializationContext: tc.propagated,
-			}
-			dataConverter := converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), &serCtxSigningCodec{})
-			eventHandler := newWorkflowExecutionEventHandler(
-				wfInfo, nil, ilog.NewNopLogger(), false, metrics.NopHandler, newRegistry(),
-				dataConverter, GetDefaultFailureConverter(), nil, 0, nil, nil,
-			).(*workflowExecutionEventHandlerImpl)
-			_, ctx, err := newWorkflowContext(eventHandler.workflowEnvironmentImpl, nil)
-			require.NoError(t, err)
-
-			var continueAsNewErr *ContinueAsNewError
-			require.ErrorAs(t, NewContinueAsNewError(ctx, "workflow", "input"), &continueAsNewErr)
-			require.Equal(t, tc.expectedSignature, string(continueAsNewErr.Input.GetPayloads()[0].GetMetadata()["ctx-signature"]))
-		})
-	}
-}
-
 func TestNexusBackedWorkflowExecutorInputAndResultSerializationContext(t *testing.T) {
 	nexusContext := converter.NexusSerializationContext{Endpoint: "endpoint", Service: "service", Operation: "operation"}
 	wfInfo := &WorkflowInfo{
@@ -483,7 +366,8 @@ func TestNexusBackedWorkflowExecutorInputAndResultSerializationContext(t *testin
 	).(*workflowExecutionEventHandlerImpl)
 	_, ctx, err := newWorkflowContext(eventHandler.workflowEnvironmentImpl, nil)
 	require.NoError(t, err)
-	input, err := converter.WithDataConverterSerializationContext(dataConverter, nexusContext).ToPayloads("input")
+	input, err := converter.WithDataConverterSerializationContext(dataConverter,
+		converter.WorkflowSerializationContext{Namespace: "namespace", WorkflowID: "workflow-id"}).ToPayloads("input")
 	require.NoError(t, err)
 	executor := &workflowExecutor{
 		workflowType: "workflow",
