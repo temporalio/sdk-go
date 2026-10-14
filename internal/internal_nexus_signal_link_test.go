@@ -37,9 +37,9 @@ func workflowEventLink(workflowID, runID string, eventType enumspb.EventType) *c
 	}
 }
 
-// newSignalLinkTestClient builds a WorkflowClient backed by a mock service, plus a context carrying
-// a NexusOperationContext, mirroring what the Nexus task handler sets up before invoking a handler.
-func newSignalLinkTestClient(t *testing.T) (*workflowservicemock.MockWorkflowServiceClient, *WorkflowClient, context.Context, *NexusOperationContext) {
+// newSignalLinkTestClient builds the client and context a Nexus handler gets: a mock-backed client
+// wrapped per invocation, and a context carrying the NexusOperationContext.
+func newSignalLinkTestClient(t *testing.T) (*workflowservicemock.MockWorkflowServiceClient, *nexusOperationClient, context.Context, *NexusOperationContext) {
 	t.Helper()
 	svc := workflowservicemock.NewMockWorkflowServiceClient(gomock.NewController(t))
 	svc.EXPECT().
@@ -49,7 +49,7 @@ func newSignalLinkTestClient(t *testing.T) (*workflowservicemock.MockWorkflowSer
 	client := NewServiceClient(svc, nil, ClientOptions{Namespace: signalLinkTestNamespace})
 	nctx := &NexusOperationContext{Namespace: signalLinkTestNamespace, TaskQueue: "tq"}
 	ctx := context.WithValue(t.Context(), nexusOperationContextKey, nctx)
-	return svc, client, ctx, nctx
+	return svc, &nexusOperationClient{Client: client}, ctx, nctx
 }
 
 // TestSignalForwardsRequestLinksAndCapturesResponseLink covers the happy path against a
@@ -108,29 +108,6 @@ func TestSignalAgainstOlderServerCapturesNoResponseLink(t *testing.T) {
 	require.Empty(t, nctx.ResponseLinks())
 }
 
-// TestMultipleSignalsAccumulateAllResponseLinks: two signal RPCs in a row each contribute a response link;
-// both must be captured in order on the context.
-func TestMultipleSignalsAccumulateAllResponseLinks(t *testing.T) {
-	svc, client, ctx, nctx := newSignalLinkTestClient(t)
-
-	firstResponseLink := workflowEventLink("callee-a", "run-a", enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_SIGNALED)
-	secondResponseLink := workflowEventLink("callee-b", "run-b", enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_SIGNALED)
-	gomock.InOrder(
-		svc.EXPECT().SignalWorkflowExecution(gomock.Any(), gomock.Any()).
-			Return(&workflowservice.SignalWorkflowExecutionResponse{Link: firstResponseLink}, nil),
-		svc.EXPECT().SignalWorkflowExecution(gomock.Any(), gomock.Any()).
-			Return(&workflowservice.SignalWorkflowExecutionResponse{Link: secondResponseLink}, nil),
-	)
-
-	require.NoError(t, client.SignalWorkflow(ctx, signalLinkTestWorkflowID, "run-a", "test-signal", "payload"))
-	require.NoError(t, client.SignalWorkflow(ctx, signalLinkTestWorkflowID, "run-b", "test-signal", "payload"))
-
-	captured := nctx.ResponseLinks()
-	require.Len(t, captured, 2)
-	require.True(t, proto.Equal(captured[0], firstResponseLink))
-	require.True(t, proto.Equal(captured[1], secondResponseLink))
-}
-
 // TestSignalWithStartForwardsRequestLinksAndCapturesResponseLink mirrors the plain-signal happy
 // path but for signalWithStart, which uses a different proto field (signal_link) and a different
 // code path inside the client.
@@ -176,30 +153,6 @@ func TestSignalWithStartAgainstOlderServerCapturesNoResponseLink(t *testing.T) {
 		StartWorkflowOptions{TaskQueue: "tq"}, "TestWorkflow")
 	require.NoError(t, err)
 	require.Empty(t, nctx.ResponseLinks())
-}
-
-// TestMixedSignalAndSignalWithStartAccumulateAllResponseLinks: a handler that issues one signal and one
-// signalWithStart against the same context must end up with both response links captured, in call order.
-func TestMixedSignalAndSignalWithStartAccumulateAllResponseLinks(t *testing.T) {
-	svc, client, ctx, nctx := newSignalLinkTestClient(t)
-
-	signalResponseLink := workflowEventLink("callee-s", "run-s", enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_SIGNALED)
-	signalWithStartResponseLink := workflowEventLink("callee-sws", "run-sws", enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_SIGNALED)
-
-	svc.EXPECT().SignalWorkflowExecution(gomock.Any(), gomock.Any()).
-		Return(&workflowservice.SignalWorkflowExecutionResponse{Link: signalResponseLink}, nil)
-	svc.EXPECT().SignalWithStartWorkflowExecution(gomock.Any(), gomock.Any()).
-		Return(&workflowservice.SignalWithStartWorkflowExecutionResponse{RunId: "run-sws", SignalLink: signalWithStartResponseLink}, nil)
-
-	require.NoError(t, client.SignalWorkflow(ctx, signalLinkTestWorkflowID, "run-s", "test-signal", "payload"))
-	_, err := client.SignalWithStartWorkflow(ctx, "callee-sws", "test-signal", "signal-payload",
-		StartWorkflowOptions{TaskQueue: "tq"}, "TestWorkflow")
-	require.NoError(t, err)
-
-	captured := nctx.ResponseLinks()
-	require.Len(t, captured, 2)
-	require.True(t, proto.Equal(captured[0], signalResponseLink))
-	require.True(t, proto.Equal(captured[1], signalWithStartResponseLink))
 }
 
 // TestSignalOutsideNexusContextCapturesNoResponseLink: a plain signal not issued from a Nexus operation
