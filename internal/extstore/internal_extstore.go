@@ -30,10 +30,22 @@ type StorageParameters struct {
 	driverSelector       StorageDriverSelector
 	payloadSizeThreshold int
 
-	maxOperationsPerMessage int
-	perInstanceSemaphore    *semaphore.Weighted
+	maxOperationsPerMessage  int
+	maxDriverOperations      int
+	driverOperationSemaphore *semaphore.Weighted
 
 	logger log.Logger
+}
+
+// WithOwnDriverOperationLimit returns a copy of p with its own MaxDriverOperations limit,
+// independent of the limit p uses.
+func (p StorageParameters) WithOwnDriverOperationLimit() StorageParameters {
+	maxDriverOperations := p.maxDriverOperations
+	if maxDriverOperations <= 0 {
+		maxDriverOperations = defaultMaxDriverOperations
+	}
+	p.driverOperationSemaphore = semaphore.NewWeighted(int64(maxDriverOperations))
+	return p
 }
 
 // WithLogger returns a copy of p that logs through logger.
@@ -44,9 +56,9 @@ func (p StorageParameters) WithLogger(logger log.Logger) StorageParameters {
 
 // semaphoreLimiter applies the storage limits to a single driver call.
 type semaphoreLimiter[T any] struct {
-	perMessageSemaphore  *semaphore.Weighted
-	perInstanceSemaphore *semaphore.Weighted
-	permitTaken          atomic.Bool
+	perMessageSemaphore      *semaphore.Weighted
+	driverOperationSemaphore *semaphore.Weighted
+	permitTaken              atomic.Bool
 }
 
 func (l *semaphoreLimiter[T]) Permit(ctx context.Context, item T, fn func() error) error {
@@ -55,10 +67,10 @@ func (l *semaphoreLimiter[T]) Permit(ctx context.Context, item T, fn func() erro
 		return err
 	}
 	defer l.perMessageSemaphore.Release(1)
-	if err := l.perInstanceSemaphore.Acquire(ctx, 1); err != nil {
+	if err := l.driverOperationSemaphore.Acquire(ctx, 1); err != nil {
 		return err
 	}
-	defer l.perInstanceSemaphore.Release(1)
+	defer l.driverOperationSemaphore.Release(1)
 	return fn()
 }
 
@@ -70,31 +82,31 @@ func (p StorageParameters) MaxOperationsPerMessage() int {
 	return p.maxOperationsPerMessage
 }
 
-// perMessageBudgetKey is the context key for a message's operation budget.
-type perMessageBudgetKey struct{}
+// messageSemaphoreKey is the context key for a message's operation limit.
+type messageSemaphoreKey struct{}
 
-// WithMessageBudget returns ctx carrying one budget of MaxOperationsPerMessage operations.
-func (p StorageParameters) WithMessageBudget(ctx context.Context) context.Context {
-	budget := semaphore.NewWeighted(int64(p.MaxOperationsPerMessage()))
-	return context.WithValue(ctx, perMessageBudgetKey{}, budget)
+// WithMessageLimit returns ctx carrying one MaxOperationsPerMessage limit.
+func (p StorageParameters) WithMessageLimit(ctx context.Context) context.Context {
+	limit := semaphore.NewWeighted(int64(p.MaxOperationsPerMessage()))
+	return context.WithValue(ctx, messageSemaphoreKey{}, limit)
 }
 
-// perMessageBudget returns the budget on ctx, or a new one if ctx carries none.
-func perMessageBudget(ctx context.Context, p StorageParameters) *semaphore.Weighted {
-	if budget, ok := ctx.Value(perMessageBudgetKey{}).(*semaphore.Weighted); ok && budget != nil {
-		return budget
+// messageSemaphoreFrom returns the semaphore on ctx, or a new one if ctx carries none.
+func messageSemaphoreFrom(ctx context.Context, p StorageParameters) *semaphore.Weighted {
+	if limit, ok := ctx.Value(messageSemaphoreKey{}).(*semaphore.Weighted); ok && limit != nil {
+		return limit
 	}
 	return semaphore.NewWeighted(int64(p.MaxOperationsPerMessage()))
 }
 
 func newLimiter[T any](ctx context.Context, p StorageParameters) *semaphoreLimiter[T] {
-	perInstanceSemaphore := p.perInstanceSemaphore
-	if perInstanceSemaphore == nil {
-		perInstanceSemaphore = semaphore.NewWeighted(defaultMaxDriverOperations)
+	driverOperationSemaphore := p.driverOperationSemaphore
+	if driverOperationSemaphore == nil {
+		driverOperationSemaphore = semaphore.NewWeighted(defaultMaxDriverOperations)
 	}
 	return &semaphoreLimiter[T]{
-		perMessageSemaphore:  perMessageBudget(ctx, p),
-		perInstanceSemaphore: perInstanceSemaphore,
+		perMessageSemaphore:      messageSemaphoreFrom(ctx, p),
+		driverOperationSemaphore: driverOperationSemaphore,
 	}
 }
 
@@ -169,11 +181,12 @@ func ExternalStorageToParams(options ExternalStorage) (StorageParameters, error)
 	}
 
 	return StorageParameters{
-		driverMap:               driverMap,
-		driverSelector:          selector,
-		payloadSizeThreshold:    sizeThreshold,
-		maxOperationsPerMessage: maxOperationsPerMessage,
-		perInstanceSemaphore:    semaphore.NewWeighted(int64(maxDriverOperations)),
+		driverMap:                driverMap,
+		driverSelector:           selector,
+		payloadSizeThreshold:     sizeThreshold,
+		maxOperationsPerMessage:  maxOperationsPerMessage,
+		maxDriverOperations:      maxDriverOperations,
+		driverOperationSemaphore: semaphore.NewWeighted(int64(maxDriverOperations)),
 	}, nil
 }
 

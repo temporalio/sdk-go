@@ -2489,6 +2489,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	}
 
 	payloadLimitVisitor, setErrorLimits := newPayloadLimitsVisitor(client.payloadWarningLimits, logger)
+	workerStorageParams := client.storageParams.WithOwnDriverOperationLimit().WithLogger(logger)
 
 	cache, cacheLease := NewWorkerCache()
 	constructionComplete := false
@@ -2542,12 +2543,12 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		workerPollCompleteOnShutdown:     workerPollCompleteOnShutdown,
 		serverSupportsAutoscaling:        &atomic.Bool{},
 		workflowTaskCompletionPagination: &workflowTaskCompletionPaginationConfig{},
-		inboundPayloadVisitor:            extstore.NewExternalRetrievalVisitor(client.storageParams.WithLogger(logger)),
+		inboundPayloadVisitor:            extstore.NewExternalRetrievalVisitor(workerStorageParams),
 		outboundPayloadVisitor: newCompositePayloadVisitor(
-			extstore.NewExternalStorageVisitor(client.storageParams.WithLogger(logger)),
+			extstore.NewExternalStorageVisitor(workerStorageParams),
 			payloadLimitVisitor,
 		),
-		storageParams: client.storageParams,
+		storageParams: workerStorageParams,
 		setErrorLimits: func(limits *payloadLimits) {
 			if !options.DisablePayloadErrorLimit {
 				setErrorLimits(limits)

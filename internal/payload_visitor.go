@@ -83,7 +83,7 @@ func visitMessagePayloads(
 	params extstore.StorageParameters,
 ) error {
 	return visitProtoPayloads(
-		params.WithMessageBudget(ctx), visitor, msg, params.MaxOperationsPerMessage())
+		params.WithMessageLimit(ctx), visitor, msg, params.MaxOperationsPerMessage())
 }
 
 // visitPayload runs visitor over a single payload. If visitor is nil

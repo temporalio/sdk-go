@@ -210,8 +210,8 @@ type StorageDriverSelector interface {
 // NOTE: Experimental
 type ExternalStorageConcurrency struct {
 	// MaxDriverOperations is the maximum number of concurrent external storage
-	// operations that drivers can execute for a single [ExternalStorage]. All
-	// drivers on that instance share this limit.
+	// operations that drivers can execute for a single client or worker. Each
+	// client and each worker gets its own limit of this size.
 	//
 	// 0 uses the default of 64.
 	MaxDriverOperations int

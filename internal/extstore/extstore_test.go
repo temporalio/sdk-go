@@ -1366,7 +1366,7 @@ func TestConcurrency_Defaults(t *testing.T) {
 	params, err := ExternalStorageToParams(ExternalStorage{Drivers: []StorageDriver{newTestDriver("only")}})
 	require.NoError(t, err)
 	require.Equal(t, defaultMaxOperationsPerMessage, params.maxOperationsPerMessage)
-	require.NotNil(t, params.perInstanceSemaphore)
+	require.NotNil(t, params.driverOperationSemaphore)
 }
 
 func TestConcurrency_RejectsNegative(t *testing.T) {
@@ -1408,7 +1408,7 @@ func TestConcurrency_MaxOperationsPerMessage(t *testing.T) {
 
 	require.Eventually(t, func() bool { return driver.peakValue() == 3 }, 2*time.Second, time.Millisecond)
 	time.Sleep(50 * time.Millisecond)
-	require.Equal(t, 3, driver.peakValue(), "must not exceed the per-message budget")
+	require.Equal(t, 3, driver.peakValue(), "must not exceed the per-message limit")
 
 	close(driver.gate)
 	require.NoError(t, <-done)
@@ -1428,7 +1428,7 @@ func TestConcurrency_MaxOperationsPerMessageSharedAcrossSites(t *testing.T) {
 	require.NoError(t, err)
 
 	visitor := NewExternalStorageVisitor(params)
-	ctx := params.WithMessageBudget(t.Context())
+	ctx := params.WithMessageLimit(t.Context())
 
 	const sites = 3
 	sitePayloads := make([][]*commonpb.Payload, sites)
@@ -1449,13 +1449,53 @@ func TestConcurrency_MaxOperationsPerMessageSharedAcrossSites(t *testing.T) {
 
 	require.Eventually(t, func() bool { return driver.peakValue() == 3 }, 2*time.Second, time.Millisecond)
 	time.Sleep(50 * time.Millisecond)
-	require.Equal(t, 3, driver.peakValue(), "sites in one message must share one per-message budget")
+	require.Equal(t, 3, driver.peakValue(), "sites in one message must share one per-message limit")
 
 	close(driver.gate)
 	for i := 0; i < sites; i++ {
 		require.NoError(t, <-done)
 	}
 	require.Equal(t, 3, driver.peakValue())
+}
+
+// WithOwnDriverOperationLimit gives a client or worker a limit independent of the one it copied.
+func TestConcurrency_WithOwnDriverOperationLimitIsIndependent(t *testing.T) {
+	driver := newPermittingDriver()
+	clientParams, err := ExternalStorageToParams(ExternalStorage{
+		Drivers:              []StorageDriver{driver},
+		PayloadSizeThreshold: 1,
+		Concurrency: ExternalStorageConcurrency{
+			MaxDriverOperations: 2, MaxOperationsPerMessage: 10,
+		},
+	})
+	require.NoError(t, err)
+	workerParams := clientParams.WithOwnDriverOperationLimit()
+
+	message := func() []*commonpb.Payload {
+		p := make([]*commonpb.Payload, 3)
+		for i := range p {
+			p[i] = makeOversizedPayload(t, 64)
+		}
+		return p
+	}
+
+	done := make(chan error, 2)
+	for _, params := range []StorageParameters{clientParams, workerParams} {
+		visitor := NewExternalStorageVisitor(params)
+		payloads := message()
+		go func() {
+			_, err := visitPayloads(t.Context(), visitor, payloads)
+			done <- err
+		}()
+	}
+
+	require.Eventually(t, func() bool { return driver.peakValue() == 4 }, 2*time.Second, time.Millisecond)
+	time.Sleep(50 * time.Millisecond)
+	require.Equal(t, 4, driver.peakValue(), "each limit allows 2, so the two together allow 4")
+
+	close(driver.gate)
+	require.NoError(t, <-done)
+	require.NoError(t, <-done)
 }
 
 // MaxDriverOperations is shared by every message using the same configuration.
@@ -1489,7 +1529,7 @@ func TestConcurrency_MaxDriverOperationsSharedAcrossMessages(t *testing.T) {
 
 	require.Eventually(t, func() bool { return driver.peakValue() == 3 }, 2*time.Second, time.Millisecond)
 	time.Sleep(50 * time.Millisecond)
-	require.Equal(t, 3, driver.peakValue(), "two messages must share one instance-wide budget")
+	require.Equal(t, 3, driver.peakValue(), "two messages must share one driver operation limit")
 
 	close(driver.gate)
 	require.NoError(t, <-done)

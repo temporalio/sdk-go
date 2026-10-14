@@ -42,7 +42,7 @@ to docs, or any other relevant information.
   accessed from workflow code and workflow interceptors. Copies of a `workflow.LocalVar[T]` share
   identity.
 - **Experimental**: New external storage concurrency controls. `ExternalStorage.Concurrency` sets
-  `MaxDriverOperations` (across all drivers on that instance) and `MaxOperationsPerMessage` (for one
+  `MaxDriverOperations` (for one client or worker) and `MaxOperationsPerMessage` (for one
   message). Drivers must use `ctx.GetLimiter()` for store and retrieve operations.
 
 ### Changed
