@@ -144,7 +144,7 @@ func TestLintRealCheckoutAndSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "yeet pr contrib/envconfig=0.2.0") {
+	if !strings.Contains(out.String(), "publisher pr contrib/envconfig=0.2.0") {
 		t.Fatalf("missing minor suggestion:\n%s", out.String())
 	}
 
