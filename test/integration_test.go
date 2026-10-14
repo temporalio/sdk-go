@@ -10690,6 +10690,8 @@ func (ts *IntegrationTestSuite) TestTemporalOperationSuite() {
 	typedInput := "typed-wf-" + uuid.NewString()
 	untypedInput := "untyped-wf-" + uuid.NewString()
 	signalInput := "signal-wf-" + uuid.NewString()
+	doubleSignalInput := "double-signal-wf-" + uuid.NewString()
+	signalRetryInput := "signal-retry-wf-" + uuid.NewString()
 	callerNexusStartedLinks := func(run client.WorkflowRun) []*commonpb.Link {
 		iter := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
 		for iter.HasNext() {
@@ -10736,6 +10738,27 @@ func (ts *IntegrationTestSuite) TestTemporalOperationSuite() {
 		}
 	}
 
+	// verifySignalDedupe asserts that a handler redelivered after signaling did not deliver the
+	// signal a second time: both attempts reuse the operation's request ID, so the server dedupes.
+	verifySignalDedupe := func(input string) func(client.WorkflowRun) {
+		return func(client.WorkflowRun) {
+			value, ok := temporalOpSignalHandlerRetryStates.Load(input)
+			ts.Require().True(ok, "expected signal handler retry state for %s", input)
+			state := value.(*temporalOpAsyncHandlerRetryState)
+			state.Lock()
+			requestIDs := append([]string(nil), state.requestIDs...)
+			state.Unlock()
+			ts.Require().Len(requestIDs, 2, "handler should fail once and then be redelivered once")
+			ts.NotEmpty(requestIDs[0])
+			ts.Equal(requestIDs[0], requestIDs[1], "Nexus request ID must remain stable across handler redelivery")
+
+			ts.NoError(ts.client.SignalWorkflow(ctx, input, "", "done", nil))
+			var count int
+			ts.NoError(ts.client.GetWorkflow(ctx, input, "").Get(ctx, &count))
+			ts.Equal(1, count, "signal must be deduped on the operation's request ID across handler redelivery")
+		}
+	}
+
 	for _, tc := range []struct {
 		name     string
 		wf       func(workflow.Context, string) (string, error)
@@ -10749,6 +10772,8 @@ func (ts *IntegrationTestSuite) TestTemporalOperationSuite() {
 		{"Cancel", ts.workflows.TemporalOpCancelCaller, "cancel-wf-" + uuid.NewString(), "", nil},
 		{"Custom cancel with GetWorkflowClient", ts.workflows.TemporalOpCustomCancelCaller, "custom-cancel-wf-" + uuid.NewString(), "", nil},
 		{"GetWorkflowClient in Start", ts.workflows.TemporalOpClientInStartCaller, signalInput, "signaled-" + signalInput, nil},
+		{"Second signal rejected", ts.workflows.TemporalOpDoubleSignalCaller, doubleSignalInput, "signaled-" + doubleSignalInput, nil},
+		{"Signal deduped across handler retry", ts.workflows.TemporalOpSignalHandlerRetryCaller, signalRetryInput, "signaled-" + signalRetryInput, verifySignalDedupe(signalRetryInput)},
 	} {
 		ts.Run(tc.name, func() {
 			run, err := ts.client.ExecuteWorkflow(ctx, startOpts, tc.wf, tc.input)
