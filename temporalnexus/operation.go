@@ -55,8 +55,9 @@ func GetLogger(ctx context.Context) log.Logger {
 	return internal.GetNexusOperationLogger(ctx)
 }
 
-// GetClient returns a client to be used in a Nexus operation's context, this is the same client that the worker was
-// created with. Client methods will panic when called from the test environment.
+// GetClient returns a client to be used in a Nexus operation's context. It delegates to the client
+// the worker was created with, scoped to the current operation invocation. Client methods will
+// panic when called from the test environment.
 func GetClient(ctx context.Context) client.Client {
 	return internal.GetNexusOperationClient(ctx)
 }
