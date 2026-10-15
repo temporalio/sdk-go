@@ -16,6 +16,7 @@ type releaseCandidate struct {
 
 // changedModules finds changed SDK and contrib modules using locally available tags.
 // It inspects the working tree, including staged additions and tracked local edits.
+// Changes limited to a module's go.mod and go.sum do not require a release.
 // Missing changelogs do not exclude modules; readiness is checked separately.
 func (w *worktree) changedModules() ([]releaseCandidate, error) {
 	dirs, err := w.listModuleDirs()
@@ -95,5 +96,10 @@ func (w *worktree) moduleChanged(target releaseTarget, oldVersion *semver, modul
 	if err != nil {
 		return false, fmt.Errorf("check %s for changes since %s: %w", target.modulePath(), target.tag(*oldVersion), err)
 	}
-	return output != "", nil
+	for file := range strings.SplitSeq(output, "\x00") {
+		if file != "" && file != path.Join(target.dir, "go.mod") && file != path.Join(target.dir, "go.sum") {
+			return true, nil
+		}
+	}
+	return false, nil
 }

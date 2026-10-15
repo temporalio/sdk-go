@@ -12,7 +12,8 @@ The package is organized as follows:
 - `main.go` the entry point and the lint, PR preparation, and draft release workflows.
 - `worktree.go` implements operations performed on a checkout or temporary worktree, like
   validation, release-file preparation, and draft PR and release creation.
-- `discovery.go` finds modules changed since their latest stable releases.
+- `discovery.go` finds modules changed since their latest stable releases, ignoring
+  changes limited to a module's `go.mod` and `go.sum`.
 - `effects.go` dependency injection object for working with the filesystem and the network.
 - Pure helper functions and definitions:
   - `target.go` defines a release target, like the Go SDK or `contrib/envconfig`, and a release
