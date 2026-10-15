@@ -1639,16 +1639,33 @@ func GetDataConverterFromWorkflowContext(ctx Context) converter.DataConverter {
 	return WithWorkflowContext(ctx, dataConverter)
 }
 
-// withRootDataConverterSerializationContext applies sc to the worker-configured
-// data converter, before any other serialization context, and only then binds it
-// to the workflow context. Binding first would hand sc to a converter that is no
-// longer serialization context aware, silently dropping it.
+// withRootDataConverterSerializationContext applies sc to the effective root
+// data converter and then binds it to the workflow context.
 func withRootDataConverterSerializationContext(ctx Context, sc converter.SerializationContext) converter.DataConverter {
 	options := getWorkflowEnvOptions(ctx)
-	if options == nil || options.RootDataConverter == nil {
-		return converter.WithDataConverterSerializationContext(GetDataConverterFromWorkflowContext(ctx), sc)
+	var dc converter.DataConverter
+
+	if options != nil && options.RootDataConverter != nil {
+		dc = options.RootDataConverter
+	} else if options != nil && options.DataConverter != nil {
+		dc = options.DataConverter
+	} else {
+		dc = converter.GetDefaultDataConverter()
 	}
-	return WithWorkflowContext(ctx, converter.WithDataConverterSerializationContext(options.RootDataConverter, sc))
+
+	if sc != nil {
+		dc = converter.WithDataConverterSerializationContext(dc, sc)
+	}
+	return WithWorkflowContext(ctx, dc)
+}
+
+func withRootFailureConverterSerializationContext(ctx Context, sc converter.SerializationContext) converter.FailureConverter {
+	env := GetWorkflowEnvironment(ctx)
+	fc := rootFailureConverterFromEnvironment(env)
+	if sc != nil {
+		fc = converter.WithFailureConverterSerializationContext(fc, sc)
+	}
+	return fc
 }
 
 func rootDataConverterFromEnvironment(env WorkflowEnvironment) converter.DataConverter {
@@ -1660,8 +1677,7 @@ func rootDataConverterFromEnvironment(env WorkflowEnvironment) converter.DataCon
 	return env.GetDataConverter()
 }
 
-func getRootFailureConverterFromWorkflowContext(ctx Context) converter.FailureConverter {
-	env := GetWorkflowEnvironment(ctx)
+func rootFailureConverterFromEnvironment(env WorkflowEnvironment) converter.FailureConverter {
 	if root, ok := env.(interface {
 		GetRootFailureConverter() converter.FailureConverter
 	}); ok {

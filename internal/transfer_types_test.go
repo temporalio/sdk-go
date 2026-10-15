@@ -15,6 +15,7 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
+	"go.temporal.io/api/proxy"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
 	"go.temporal.io/sdk/converter"
@@ -160,10 +161,16 @@ func TestTransferAwareDataConverter_PointerValueRoundTrip(t *testing.T) {
 				if batch {
 					payloads, err := dc.ToPayloads(want)
 					require.NoError(t, err)
+					// While we're here, check that we don't add SystemPayloadMetadataKey
+					// for non-system-nexus payloads.
+					for _, payload := range payloads.Payloads {
+						require.NotContains(t, payload.Metadata, proxy.SystemPayloadMetadataKey)
+					}
 					require.NoError(t, dc.FromPayloads(payloads, &got))
 				} else {
 					payload, err := dc.ToPayload(want)
 					require.NoError(t, err)
+					require.NotContains(t, payload.Metadata, proxy.SystemPayloadMetadataKey)
 					require.NoError(t, dc.FromPayload(payload, &got))
 				}
 				require.Equal(t, *want, got)
@@ -613,12 +620,12 @@ func TestTransferTypes_CustomFailureConverterRoundTrip(t *testing.T) {
 
 // -- VALIDATION TESTS --
 
-func TestNewContextualTransferTypeConverter_RejectsPointerTypes(t *testing.T) {
+func TestNewTransferTypeConverter_RejectsPointerTypes(t *testing.T) {
 	t.Parallel()
-	tc, err := commonconverter.NewContextualTransferTypeConverter[*temperature, float64](nil, nil)
+	tc, err := converter.NewTransferTypeConverter[*temperature, float64](nil, nil)
 	require.Nil(t, tc)
 	require.EqualError(t, err, "transfer type converter: model type must not be a pointer, got *internal.temperature")
-	tc, err = commonconverter.NewContextualTransferTypeConverter[temperature, *float64](nil, nil)
+	tc, err = converter.NewTransferTypeConverter[temperature, *float64](nil, nil)
 	require.Nil(t, tc)
 	require.EqualError(t, err, "transfer type converter: transfer type must not be a pointer, got *float64")
 }
@@ -661,4 +668,83 @@ func TestTransferAwareDataConverter_DiscoveryError(t *testing.T) {
 	var value invalidTransferConverter
 	require.ErrorIs(t, dc.FromPayload(payload, &value), errNoEncoding)
 	require.ErrorIs(t, dc.FromPayloads(&commonpb.Payloads{Payloads: []*commonpb.Payload{payload}}, &value), errNoEncoding)
+}
+
+// -- SYSTEM NEXUS TESTS --
+
+type systemEnvelopeRejectingCodec struct {
+	converter.PayloadCodec
+}
+
+func newSystemEnvelopeRejectingCodec() *systemEnvelopeRejectingCodec {
+	return &systemEnvelopeRejectingCodec{
+		PayloadCodec: converter.NewZlibCodec(converter.ZlibCodecOptions{AlwaysEncode: true}),
+	}
+}
+
+func (c *systemEnvelopeRejectingCodec) Encode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	for _, payload := range payloads {
+		if string(payload.Metadata[proxy.SystemPayloadMetadataKey]) == "true" {
+			return nil, fmt.Errorf("user codec received a system envelope")
+		}
+	}
+	return c.PayloadCodec.Encode(payloads)
+}
+
+func (c *systemEnvelopeRejectingCodec) Decode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	for _, payload := range payloads {
+		if string(payload.Metadata[proxy.SystemPayloadMetadataKey]) == "true" {
+			return nil, fmt.Errorf("user codec received a system envelope")
+		}
+	}
+	return c.PayloadCodec.Decode(payloads)
+}
+
+type systemNexusModel struct{ Value string }
+
+func (systemNexusModel) TransferTypeConverter() (converter.TransferTypeConverter, error) {
+	return commonconverter.NewSystemNexusTransferTypeConverter(
+		func(cfg *commonconverter.SystemNexusConfig, value *systemNexusModel) (*commonpb.Payload, error) {
+			return cfg.DataConverter.ToPayload(value.Value)
+		},
+		func(cfg *commonconverter.SystemNexusConfig, payload *commonpb.Payload, value *systemNexusModel) error {
+			return cfg.DataConverter.FromPayload(payload, &value.Value)
+		},
+	)
+}
+
+func TestTransferAwareDataConverter_SystemNexusRoundTrip(t *testing.T) {
+	for _, batch := range []bool{false, true} {
+		t.Run(fmt.Sprintf("batch=%v", batch), func(t *testing.T) {
+			dc := newSystemNexusDataConverter(
+				MakeTransferAware(
+					converter.NewCodecDataConverter(
+						converter.NewCompositeDataConverter(converter.NewJSONPayloadConverter()),
+						newSystemEnvelopeRejectingCodec(),
+					)))
+			var payload *commonpb.Payload
+			if batch {
+				payloads, err := dc.ToPayloads(systemNexusModel{Value: "value"})
+				require.NoError(t, err)
+				require.Len(t, payloads.Payloads, 1)
+				payload = payloads.Payloads[0]
+			} else {
+				var err error
+				payload, err = dc.ToPayload(systemNexusModel{Value: "value"})
+				require.NoError(t, err)
+			}
+			require.Equal(t, []byte("true"), payload.Metadata[proxy.SystemPayloadMetadataKey])
+			var nested commonpb.Payload
+			require.NoError(t, proto.Unmarshal(payload.Data, &nested))
+			require.NotContains(t, nested.Metadata, proxy.SystemPayloadMetadataKey)
+			require.Equal(t, []byte("binary/zlib"), nested.Metadata[converter.MetadataEncoding])
+			var result systemNexusModel
+			if batch {
+				require.NoError(t, dc.FromPayloads(&commonpb.Payloads{Payloads: []*commonpb.Payload{payload}}, &result))
+			} else {
+				require.NoError(t, dc.FromPayload(payload, &result))
+			}
+			require.Equal(t, systemNexusModel{Value: "value"}, result)
+		})
+	}
 }

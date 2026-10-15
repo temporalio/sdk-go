@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	commonpb "go.temporal.io/api/common/v1"
+	"go.temporal.io/api/proxy"
 )
 
 // -- USER API -----------------------------------------------------------
@@ -20,7 +21,7 @@ import (
 // converter and decodes it with the transfer type converter.
 //
 // TransferTypeConverter returns a value's transfer type converter.
-// Create one with [NewTransferTypeConverter] or [NewContextualTransferTypeConverter].
+// Create one with [NewTransferTypeConverter] or [NewSystemNexusTransferTypeConverter].
 // The method must be pure and safe to call concurrently.
 // The converter will be cached and reused for other
 // values with the same concrete type, so the method should not depend on any
@@ -40,19 +41,24 @@ type ValueWithTransferTypeConverter interface {
 }
 
 // TransferTypeConverter is an opaque handle created by
-// [NewTransferTypeConverter] or [NewContextualTransferTypeConverter]. Do not embed this interface.
+// [NewTransferTypeConverter] or [NewSystemNexusTransferTypeConverter]. Do not embed this interface.
 //
 // NOTE: Experimental.
 type TransferTypeConverter interface {
 	// newTransferTypePtr returns a pointer to a zero transfer value.
 	newTransferTypePtr() any
+}
 
-	// toTransferType converts value into its transfer value.
-	toTransferType(dc DataConverter, value any) (any, error)
+type normalTransferTypeConverter interface {
+	TransferTypeConverter
+	toTransferType(value any) (any, error)
+	fromTransferType(transferTypePtr, valuePtr any) error
+}
 
-	// fromTransferType reads a transfer value from transferTypePtr
-	// and writes its corresponding model value into valuePtr.
-	fromTransferType(dc DataConverter, transferTypePtr any, valuePtr any) error
+type systemNexusTransferTypeConverter interface {
+	TransferTypeConverter
+	toTransferType(cfg *SystemNexusConfig, value any) (any, error)
+	fromTransferType(cfg *SystemNexusConfig, transferTypePtr, valuePtr any) error
 }
 
 // NewTransferTypeConverter builds a transfer type converter that can map
@@ -68,38 +74,8 @@ func NewTransferTypeConverter[Model ValueWithTransferTypeConverter, Transfer any
 	toTransferType func(*Model) (*Transfer, error),
 	fromTransferType func(*Transfer, *Model) error,
 ) (TransferTypeConverter, error) {
-	return NewContextualTransferTypeConverter(
-		func(_ DataConverter, value *Model) (*Transfer, error) {
-			return toTransferType(value)
-		},
-		func(_ DataConverter, transfer *Transfer, value *Model) error {
-			return fromTransferType(transfer, value)
-		},
-	)
-}
-
-// NewContextualTransferTypeConverter builds a transfer type converter that can map
-// Model values into Transfer values and back using the data converter supplied
-// for each conversion. Callbacks can use it to convert nested payload values.
-// The callbacks should be pure, threadsafe, contain no workflow commands, and
-// produce replay-stable output.
-// The callbacks receive non-nil pointers to values. Encoding callbacks must
-// return a non-nil transfer pointer on success.
-//
-// Returns an error if Model or Transfer is a pointer type.
-//
-// NOTE: Experimental.
-func NewContextualTransferTypeConverter[Model ValueWithTransferTypeConverter, Transfer any](
-	toTransferType func(DataConverter, *Model) (*Transfer, error),
-	fromTransferType func(DataConverter, *Transfer, *Model) error,
-) (TransferTypeConverter, error) {
-	modelType := reflect.TypeFor[Model]()
-	if modelType.Kind() == reflect.Pointer {
-		return nil, fmt.Errorf("transfer type converter: model type must not be a pointer, got %v", modelType)
-	}
-	transferType := reflect.TypeFor[Transfer]()
-	if transferType.Kind() == reflect.Pointer {
-		return nil, fmt.Errorf("transfer type converter: transfer type must not be a pointer, got %v", transferType)
+	if err := validateTransferTypeTypes[Model, Transfer](); err != nil {
+		return nil, err
 	}
 	return &transferTypeConverterImpl[Model, Transfer]{
 		toTransferTypeFn:   toTransferType,
@@ -107,9 +83,21 @@ func NewContextualTransferTypeConverter[Model ValueWithTransferTypeConverter, Tr
 	}, nil
 }
 
+func validateTransferTypeTypes[Model, Transfer any]() error {
+	modelType := reflect.TypeFor[Model]()
+	if modelType.Kind() == reflect.Pointer {
+		return fmt.Errorf("transfer type converter: model type must not be a pointer, got %v", modelType)
+	}
+	transferType := reflect.TypeFor[Transfer]()
+	if transferType.Kind() == reflect.Pointer {
+		return fmt.Errorf("transfer type converter: transfer type must not be a pointer, got %v", transferType)
+	}
+	return nil
+}
+
 type transferTypeConverterImpl[ModelType, TransferType any] struct {
-	toTransferTypeFn   func(DataConverter, *ModelType) (*TransferType, error)
-	fromTransferTypeFn func(DataConverter, *TransferType, *ModelType) error
+	toTransferTypeFn   func(*ModelType) (*TransferType, error)
+	fromTransferTypeFn func(*TransferType, *ModelType) error
 }
 
 func (tc *transferTypeConverterImpl[ModelType, TransferType]) newTransferTypePtr() any {
@@ -127,15 +115,15 @@ func modelTypePtr[ModelType any](value any) (*ModelType, error) {
 	return nil, fmt.Errorf("transfer type converter: want value of type %T or %T, got %T", zero, (*ModelType)(nil), value)
 }
 
-func (tc *transferTypeConverterImpl[ModelType, TransferType]) toTransferType(dc DataConverter, value any) (any, error) {
+func (tc *transferTypeConverterImpl[ModelType, TransferType]) toTransferType(value any) (any, error) {
 	valuePtr, err := modelTypePtr[ModelType](value)
 	if err != nil {
 		return nil, err
 	}
-	return tc.toTransferTypeFn(dc, valuePtr)
+	return tc.toTransferTypeFn(valuePtr)
 }
 
-func (tc *transferTypeConverterImpl[ModelType, TransferType]) fromTransferType(dc DataConverter, transferTypePtr any, valuePtr any) error {
+func (tc *transferTypeConverterImpl[ModelType, TransferType]) fromTransferType(transferTypePtr any, valuePtr any) error {
 	v, ok := valuePtr.(*ModelType)
 	if !ok {
 		return fmt.Errorf("transfer type converter: want value of type %T, got %T", (*ModelType)(nil), valuePtr)
@@ -144,7 +132,85 @@ func (tc *transferTypeConverterImpl[ModelType, TransferType]) fromTransferType(d
 	if !ok {
 		return fmt.Errorf("transfer type converter: want transfer value of type %T, got %T", (*TransferType)(nil), transferTypePtr)
 	}
-	return tc.fromTransferTypeFn(dc, tvp, v)
+	return tc.fromTransferTypeFn(tvp, v)
+}
+
+type SystemNexusConfig struct {
+	DataConverter DataConverter
+}
+
+// NewSystemNexusTransferTypeConverter is a version of [NewTransferTypeConverter]
+// whose callbacks accept a non-nil [SystemNexusConfig].
+//
+// NOTE: Experimental.
+func NewSystemNexusTransferTypeConverter[Model ValueWithTransferTypeConverter, Transfer any](
+	toTransferType func(*SystemNexusConfig, *Model) (*Transfer, error),
+	fromTransferType func(*SystemNexusConfig, *Transfer, *Model) error,
+) (TransferTypeConverter, error) {
+	if err := validateTransferTypeTypes[Model, Transfer](); err != nil {
+		return nil, err
+	}
+	return &systemNexusTransferTypeConverterImpl[Model, Transfer]{
+		toTransferTypeFn:   toTransferType,
+		fromTransferTypeFn: fromTransferType,
+	}, nil
+}
+
+type systemNexusTransferTypeConverterImpl[ModelType, TransferType any] struct {
+	toTransferTypeFn   func(*SystemNexusConfig, *ModelType) (*TransferType, error)
+	fromTransferTypeFn func(*SystemNexusConfig, *TransferType, *ModelType) error
+}
+
+func (tc *systemNexusTransferTypeConverterImpl[ModelType, TransferType]) newTransferTypePtr() any {
+	return new(TransferType)
+}
+
+func (tc *systemNexusTransferTypeConverterImpl[ModelType, TransferType]) toTransferType(cfg *SystemNexusConfig, value any) (any, error) {
+	if cfg == nil {
+		return nil, fmt.Errorf("system Nexus transfer type converter: cannot encode %T without a system Nexus config", value)
+	}
+	valuePtr, err := modelTypePtr[ModelType](value)
+	if err != nil {
+		return nil, err
+	}
+	return tc.toTransferTypeFn(cfg, valuePtr)
+}
+
+func (tc *systemNexusTransferTypeConverterImpl[ModelType, TransferType]) fromTransferType(cfg *SystemNexusConfig, transferTypePtr any, valuePtr any) error {
+	if cfg == nil {
+		return fmt.Errorf("system Nexus transfer type converter: cannot decode into %T without a system Nexus config", valuePtr)
+	}
+	v, ok := valuePtr.(*ModelType)
+	if !ok {
+		return fmt.Errorf("transfer type converter: want value of type %T, got %T", (*ModelType)(nil), valuePtr)
+	}
+	tvp, ok := transferTypePtr.(*TransferType)
+	if !ok {
+		return fmt.Errorf("transfer type converter: want transfer value of type %T, got %T", (*TransferType)(nil), transferTypePtr)
+	}
+	return tc.fromTransferTypeFn(cfg, tvp, v)
+}
+
+func encodeTransferType(tc TransferTypeConverter, cfg *SystemNexusConfig, value any) (any, error) {
+	switch tc := tc.(type) {
+	case normalTransferTypeConverter:
+		return tc.toTransferType(value)
+	case systemNexusTransferTypeConverter:
+		return tc.toTransferType(cfg, value)
+	default:
+		return nil, fmt.Errorf("transfer type converter: unsupported implementation %T", tc)
+	}
+}
+
+func decodeTransferType(tc TransferTypeConverter, cfg *SystemNexusConfig, transferTypePtr, valuePtr any) error {
+	switch tc := tc.(type) {
+	case normalTransferTypeConverter:
+		return tc.fromTransferType(transferTypePtr, valuePtr)
+	case systemNexusTransferTypeConverter:
+		return tc.fromTransferType(cfg, transferTypePtr, valuePtr)
+	default:
+		return fmt.Errorf("transfer type converter: unsupported implementation %T", tc)
+	}
 }
 
 // -- DATA CONVERTERS ----------------------------------------------------------
@@ -154,6 +220,8 @@ func (tc *transferTypeConverterImpl[ModelType, TransferType]) fromTransferType(d
 // [ValueWithTransferTypeConverter].
 type transferAwareDataConverter struct {
 	parent DataConverter
+	// systemNexus configures callbacks created by [NewSystemNexusTransferTypeConverter].
+	systemNexus *SystemNexusConfig
 	// transferTypeConverters is a cache that maps transfer-convertible types
 	// to their transfer type converters.
 	transferTypeConverters *sync.Map
@@ -175,6 +243,13 @@ func MakeTransferAware(dc DataConverter) DataConverter {
 		parent:                 dc,
 		transferTypeConverters: new(sync.Map),
 	}
+}
+
+func (dc *transferAwareDataConverter) markSystemNexusPayload(payload *commonpb.Payload) {
+	if dc.systemNexus == nil || payload == nil {
+		return
+	}
+	payload.Metadata[proxy.SystemPayloadMetadataKey] = []byte("true")
 }
 
 // transferTypeConverter fetches a converter from cache using the value's
@@ -205,7 +280,12 @@ func (dc *transferAwareDataConverter) ToPayload(value any) (*commonpb.Payload, e
 	if err != nil {
 		return nil, err
 	}
-	return dc.parent.ToPayload(transferType)
+	payload, err := dc.parent.ToPayload(transferType)
+	if err != nil {
+		return payload, err
+	}
+	dc.markSystemNexusPayload(payload)
+	return payload, nil
 }
 
 func (dc *transferAwareDataConverter) ToPayloads(values ...any) (*commonpb.Payloads, error) {
@@ -225,7 +305,16 @@ func (dc *transferAwareDataConverter) ToPayloads(values ...any) (*commonpb.Paylo
 		}
 		transferTypes[i] = transferType
 	}
-	return dc.parent.ToPayloads(transferTypes...)
+	payloads, err := dc.parent.ToPayloads(transferTypes...)
+	if err != nil {
+		return payloads, err
+	}
+	if dc.systemNexus != nil {
+		for _, payload := range payloads.GetPayloads() {
+			dc.markSystemNexusPayload(payload)
+		}
+	}
+	return payloads, nil
 }
 
 func (dc *transferAwareDataConverter) encodeAsTransferTypeOrReturn(value any) (any, bool, error) {
@@ -241,7 +330,7 @@ func (dc *transferAwareDataConverter) encodeAsTransferTypeOrReturn(value any) (a
 	if err != nil {
 		return nil, false, err
 	}
-	transferType, err := tc.toTransferType(dc, value)
+	transferType, err := encodeTransferType(tc, dc.systemNexus, value)
 	return transferType, true, err
 }
 
@@ -262,7 +351,7 @@ func (dc *transferAwareDataConverter) FromPayload(payload *commonpb.Payload, val
 	if err != nil {
 		return err
 	}
-	return tc.fromTransferType(dc, transferTypePtr, valuePtr)
+	return decodeTransferType(tc, dc.systemNexus, transferTypePtr, valuePtr)
 }
 
 func (dc *transferAwareDataConverter) FromPayloads(payloads *commonpb.Payloads, valuePtrs ...any) error {
@@ -318,7 +407,7 @@ func (dc *transferAwareDataConverter) FromPayloads(payloads *commonpb.Payloads, 
 		if err != nil {
 			return err
 		}
-		if err := tc.fromTransferType(dc, transferTypePtrs[i], valuePtr); err != nil {
+		if err := decodeTransferType(tc, dc.systemNexus, transferTypePtrs[i], valuePtr); err != nil {
 			return err
 		}
 	}
@@ -359,5 +448,11 @@ func (dc *transferAwareDataConverter) WithContext(ctx context.Context) DataConve
 	}
 	result := *dc
 	result.parent = parent.WithContext(ctx)
+	return &result
+}
+
+func WithSystemNexusDataConverter(dc, targetDC DataConverter) DataConverter {
+	result := *dc.(*transferAwareDataConverter)
+	result.systemNexus = &SystemNexusConfig{DataConverter: targetDC}
 	return &result
 }

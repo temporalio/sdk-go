@@ -1043,7 +1043,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteActivity(ctx Context, typeName 
 		ActivityType:           *activityType,
 		Input:                  input,
 		DataConverter:          dataConverter,
-		FailureConverter:       converter.WithFailureConverterSerializationContext(getRootFailureConverterFromWorkflowContext(ctx), actCtx),
+		FailureConverter:       withRootFailureConverterSerializationContext(ctx, actCtx),
 		Header:                 header,
 	}
 	params.ActivityID = activityID
@@ -1218,7 +1218,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteLocalActivity(ctx Context, type
 		InputArgs:                   args,
 		WorkflowInfo:                wfInfo,
 		DataConverter:               withRootDataConverterSerializationContext(ctx, actCtx),
-		FailureConverter:            converter.WithFailureConverterSerializationContext(getRootFailureConverterFromWorkflowContext(ctx), actCtx),
+		FailureConverter:            withRootFailureConverterSerializationContext(ctx, actCtx),
 		ScheduledTime:               Now(ctx), // initial scheduled time
 		Header:                      header,
 		Attempt:                     1, // Attempts always start at one
@@ -1397,10 +1397,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 		return result
 	}
 
-	failureConverter := converter.WithFailureConverterSerializationContext(
-		getRootFailureConverterFromWorkflowContext(ctx),
-		childWfCtx,
-	)
+	failureConverter := withRootFailureConverterSerializationContext(ctx, childWfCtx)
 
 	params := ExecuteWorkflowParams{
 		WorkflowOptions:  *options,
@@ -3062,6 +3059,9 @@ func (c nexusClient) ExecuteOperation(ctx Context, operation any, input any, opt
 }
 
 func (wc *workflowEnvironmentInterceptor) prepareNexusOperationParams(ctx Context, input ExecuteNexusOperationInput) (ExecuteNexusOperationParams, error) {
+	endpoint := input.Client.Endpoint()
+	service := input.Client.Service()
+
 	var ok bool
 	var operationName string
 	if operationName, ok = input.Operation.(string); ok {
@@ -3078,14 +3078,30 @@ func (wc *workflowEnvironmentInterceptor) prepareNexusOperationParams(ctx Contex
 		return ExecuteNexusOperationParams{}, fmt.Errorf("invalid 'operation' parameter, must be an OperationReference or a string")
 	}
 
-	// Nexus context and data converters.
-	nsc := converter.NexusSerializationContext{
-		Endpoint:  input.Client.Endpoint(),
-		Service:   input.Client.Service(),
-		Operation: operationName,
+	// Compute the serialization context, if any
+	var sc converter.SerializationContext
+	if endpoint == systemNexusEndpoint {
+		if info, ok := nexusOperationRegistry[NexusOperationKey{
+			Service:   service,
+			Operation: operationName,
+		}]; ok {
+			sc = info.SerializationContext(input.Input)
+		}
+	} else {
+		sc = converter.NexusSerializationContext{
+			Endpoint:  endpoint,
+			Service:   service,
+			Operation: operationName,
+		}
 	}
-	dc := withRootDataConverterSerializationContext(ctx, nsc)
-	fc := converter.WithFailureConverterSerializationContext(getRootFailureConverterFromWorkflowContext(ctx), nsc)
+
+	dc := withRootDataConverterSerializationContext(ctx, sc)
+	fc := withRootFailureConverterSerializationContext(ctx, sc)
+	if endpoint == systemNexusEndpoint {
+		// System nexus operations use a special converter because they're
+		// meant for the server.
+		dc = newSystemNexusDataConverter(dc)
+	}
 
 	payload, err := dc.ToPayload(input.Input)
 	if err != nil {
