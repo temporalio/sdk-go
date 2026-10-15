@@ -58,6 +58,10 @@ to docs, or any other relevant information.
 
 ### :boom: Breaking Changes
 
+- Moved the Google ADK integration from `contrib/googleadk` to
+  [temporalio/ai-integrations](https://github.com/temporalio/ai-integrations/tree/main/go/googleadk).
+  Its module path is now `go.temporal.io/googleadk` instead of
+  `go.temporal.io/sdk/contrib/googleadk`; see the integration README for installation and usage.
 - Plugin cleanup must not synchronously call the same worker's `Stop`: it now waits
   for that cleanup to finish and deadlocks. This includes `SimplePlugin.RunContextAfter`,
   whose callback receives no `next` function.
