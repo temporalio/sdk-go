@@ -22,6 +22,20 @@ to docs, or any other relevant information.
 
 ### Added
 
+### Changed
+
+### Deprecated
+
+### :boom: Breaking Changes
+
+### Fixed
+
+### Security
+
+## [1.50.0] - 2026-10-15
+
+### Added
+
 - Added `workflow.ChildWorkflowOptions.VersioningOverride` for explicitly pinning,
   auto-upgrading, or one-time routing a child workflow independently of its parent.
   This requires Temporal Server 1.32.0 or later.
@@ -56,8 +70,6 @@ to docs, or any other relevant information.
   with the `TEMPORAL_WORKFLOW_TASK_DURATION_WARN_SECONDS` environment variable and defaulting to 5
   seconds. It previously warned above a fixed 10 seconds, logged at info above a fixed 5 seconds,
   and logged at debug below that when trace logging was enabled.
-
-### Deprecated
 
 ### :boom: Breaking Changes
 
@@ -101,8 +113,6 @@ to docs, or any other relevant information.
   `OnRegisterActivity` but not `OnRegisterDynamicActivity`.
 - Stopped workers now release sticky workflow cache ownership immediately. When the final worker
   stops, cached workflow state is cleared without waiting for garbage collection.
-
-### Security
 
 ## [1.49.0] - 2026-09-14
 
