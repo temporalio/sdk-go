@@ -41,6 +41,9 @@ to docs, or any other relevant information.
 - Added `workflow.NewLocalVar[T](ctx)` for type-safe values bound to a workflow run that can be
   accessed from workflow code and workflow interceptors. Copies of a `workflow.LocalVar[T]` share
   identity.
+- **Experimental**: New external storage concurrency controls. `ExternalStorage.Concurrency` sets
+  `MaxDriverOperations` (for one client or worker) and `MaxOperationsPerMessage` (for one
+  message). Drivers must use `ctx.GetLimiter()` for store and retrieve operations.
 
 ### Changed
 
@@ -69,6 +72,8 @@ to docs, or any other relevant information.
   shutdown, no longer increments `temporal_sticky_cache_total_forced_eviction`. This aligns bulk
   cleanup with Java and Core-based SDKs. Qualifying capacity and other per-workflow removals remain
   counted, but dashboards may report fewer forced evictions.
+- **Experimental**: Removed `WorkerOptions.MaxConcurrentWorkflowTaskExternalStorageVisits`. Use
+  `ExternalStorage.Concurrency`.
 
 ### Fixed
 

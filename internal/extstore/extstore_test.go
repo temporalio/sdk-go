@@ -15,6 +15,7 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/api/proxy"
 	sdkpb "go.temporal.io/api/sdk/v1"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
@@ -1275,4 +1276,348 @@ func (c *testCallback) PayloadBatchCompleted(count int, size int64, start, end t
 	c.count = count
 	c.size = size
 	c.duration = end.Sub(start)
+}
+
+// ---------------------------------------------------------------------------
+// Concurrency limits
+// ---------------------------------------------------------------------------
+
+// permittingDriver takes a permit around every request and blocks on gate, so
+// peak concurrency is observable.
+type permittingDriver struct {
+	gate     chan struct{}
+	mu       sync.Mutex
+	inFlight int
+	peak     int
+}
+
+// namedPermittingDriver is a permittingDriver with a distinct name, so two can
+// be registered on one ExternalStorage while sharing one in-flight counter.
+type namedPermittingDriver struct {
+	*permittingDriver
+	name string
+}
+
+func (d *namedPermittingDriver) Name() string { return d.name }
+
+// newPermittingDriverPair returns two drivers that share one in-flight counter.
+func newPermittingDriverPair() (*permittingDriver, StorageDriver, StorageDriver) {
+	shared := newPermittingDriver()
+	return shared,
+		&namedPermittingDriver{permittingDriver: shared, name: "driver-a"},
+		&namedPermittingDriver{permittingDriver: shared, name: "driver-b"}
+}
+
+func newPermittingDriver() *permittingDriver {
+	return &permittingDriver{gate: make(chan struct{})}
+}
+
+func (d *permittingDriver) Name() string { return "permitting" }
+func (d *permittingDriver) Type() string { return "permitting" }
+
+func (d *permittingDriver) hold(ctx context.Context) error {
+	d.mu.Lock()
+	d.inFlight++
+	if d.inFlight > d.peak {
+		d.peak = d.inFlight
+	}
+	d.mu.Unlock()
+	defer func() {
+		d.mu.Lock()
+		d.inFlight--
+		d.mu.Unlock()
+	}()
+	select {
+	case <-d.gate:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (d *permittingDriver) peakValue() int {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.peak
+}
+
+func (d *permittingDriver) Store(
+	ctx StorageDriverStoreContext, payloads []*commonpb.Payload,
+) ([]StorageDriverClaim, error) {
+	claims := make([]StorageDriverClaim, len(payloads))
+	g, gctx := errgroup.WithContext(ctx.Context)
+	for i := range payloads {
+		g.Go(func() error {
+			return ctx.GetLimiter().Permit(gctx, payloads[i], func() error {
+				if err := d.hold(gctx); err != nil {
+					return err
+				}
+				claims[i] = StorageDriverClaim{ClaimData: map[string]string{"id": "x"}}
+				return nil
+			})
+		})
+	}
+	return claims, g.Wait()
+}
+
+func (d *permittingDriver) Retrieve(
+	ctx StorageDriverRetrieveContext, claims []StorageDriverClaim,
+) ([]*commonpb.Payload, error) {
+	out := make([]*commonpb.Payload, len(claims))
+	g, gctx := errgroup.WithContext(ctx.Context)
+	for i := range claims {
+		g.Go(func() error {
+			return ctx.GetLimiter().Permit(gctx, claims[i], func() error {
+				if err := d.hold(gctx); err != nil {
+					return err
+				}
+				out[i] = &commonpb.Payload{Data: []byte("x")}
+				return nil
+			})
+		})
+	}
+	return out, g.Wait()
+}
+
+func TestConcurrency_Defaults(t *testing.T) {
+	params, err := ExternalStorageToParams(ExternalStorage{Drivers: []StorageDriver{newTestDriver("only")}})
+	require.NoError(t, err)
+	require.Equal(t, defaultMaxOperationsPerMessage, params.maxOperationsPerMessage)
+	require.NotNil(t, params.driverOperationSemaphore)
+}
+
+func TestConcurrency_RejectsNegative(t *testing.T) {
+	for _, c := range []ExternalStorageConcurrency{
+		{MaxDriverOperations: -1},
+		{MaxOperationsPerMessage: -1},
+	} {
+		_, err := ExternalStorageToParams(ExternalStorage{
+			Drivers:     []StorageDriver{newTestDriver("only")},
+			Concurrency: c,
+		})
+		require.Error(t, err, "%+v", c)
+	}
+}
+
+// MaxOperationsPerMessage bounds the requests one message may have in flight.
+func TestConcurrency_MaxOperationsPerMessage(t *testing.T) {
+	driver := newPermittingDriver()
+	params, err := ExternalStorageToParams(ExternalStorage{
+		Drivers:              []StorageDriver{driver},
+		PayloadSizeThreshold: 1,
+		Concurrency: ExternalStorageConcurrency{
+			MaxDriverOperations: 100, MaxOperationsPerMessage: 3,
+		},
+	})
+	require.NoError(t, err)
+
+	visitor := NewExternalStorageVisitor(params)
+	payloads := make([]*commonpb.Payload, 6)
+	for i := range payloads {
+		payloads[i] = makeOversizedPayload(t, 64)
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := visitPayloads(t.Context(), visitor, payloads)
+		done <- err
+	}()
+
+	require.Eventually(t, func() bool { return driver.peakValue() == 3 }, 2*time.Second, time.Millisecond)
+	time.Sleep(50 * time.Millisecond)
+	require.Equal(t, 3, driver.peakValue(), "must not exceed the per-message limit")
+
+	close(driver.gate)
+	require.NoError(t, <-done)
+	require.Equal(t, 3, driver.peakValue())
+}
+
+// MaxOperationsPerMessage is shared by every driver handling one message.
+func TestConcurrency_MaxOperationsPerMessageSharedAcrossDrivers(t *testing.T) {
+	shared, driverA, driverB := newPermittingDriverPair()
+	selectByIndex := 0
+	params, err := ExternalStorageToParams(ExternalStorage{
+		Drivers:              []StorageDriver{driverA, driverB},
+		PayloadSizeThreshold: 1,
+		DriverSelector: &funcDriverSelector{
+			fn: func(_ StorageDriverSelectContext, _ *commonpb.Payload) (StorageDriver, error) {
+				selectByIndex++
+				if selectByIndex%2 == 1 {
+					return driverA, nil
+				}
+				return driverB, nil
+			},
+		},
+		Concurrency: ExternalStorageConcurrency{
+			MaxDriverOperations: 100, MaxOperationsPerMessage: 1,
+		},
+	})
+	require.NoError(t, err)
+
+	visitor := NewExternalStorageVisitor(params)
+	payloads := []*commonpb.Payload{makeOversizedPayload(t, 64), makeOversizedPayload(t, 64)}
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := visitPayloads(t.Context(), visitor, payloads)
+		done <- err
+	}()
+
+	require.Eventually(t, func() bool { return shared.peakValue() == 1 }, 2*time.Second, time.Millisecond)
+	time.Sleep(50 * time.Millisecond)
+	require.Equal(t, 1, shared.peakValue(), "two drivers in one message must share one per-message limit")
+
+	close(shared.gate)
+	require.NoError(t, <-done)
+	require.Equal(t, 1, shared.peakValue())
+}
+
+// MaxOperationsPerMessage is shared by every payload site in one message.
+func TestConcurrency_MaxOperationsPerMessageSharedAcrossSites(t *testing.T) {
+	driver := newPermittingDriver()
+	params, err := ExternalStorageToParams(ExternalStorage{
+		Drivers:              []StorageDriver{driver},
+		PayloadSizeThreshold: 1,
+		Concurrency: ExternalStorageConcurrency{
+			MaxDriverOperations: 100, MaxOperationsPerMessage: 3,
+		},
+	})
+	require.NoError(t, err)
+
+	visitor := NewExternalStorageVisitor(params)
+	ctx := params.WithMessageLimit(t.Context())
+
+	const sites = 3
+	sitePayloads := make([][]*commonpb.Payload, sites)
+	for i := range sitePayloads {
+		sitePayloads[i] = []*commonpb.Payload{
+			makeOversizedPayload(t, 64),
+			makeOversizedPayload(t, 64),
+		}
+	}
+
+	done := make(chan error, sites)
+	for i := 0; i < sites; i++ {
+		go func() {
+			_, err := visitPayloads(ctx, visitor, sitePayloads[i])
+			done <- err
+		}()
+	}
+
+	require.Eventually(t, func() bool { return driver.peakValue() == 3 }, 2*time.Second, time.Millisecond)
+	time.Sleep(50 * time.Millisecond)
+	require.Equal(t, 3, driver.peakValue(), "sites in one message must share one per-message limit")
+
+	close(driver.gate)
+	for i := 0; i < sites; i++ {
+		require.NoError(t, <-done)
+	}
+	require.Equal(t, 3, driver.peakValue())
+}
+
+// WithOwnDriverOperationLimit gives a client or worker a limit independent of the one it copied.
+func TestConcurrency_WithOwnDriverOperationLimitIsIndependent(t *testing.T) {
+	driver := newPermittingDriver()
+	clientParams, err := ExternalStorageToParams(ExternalStorage{
+		Drivers:              []StorageDriver{driver},
+		PayloadSizeThreshold: 1,
+		Concurrency: ExternalStorageConcurrency{
+			MaxDriverOperations: 2, MaxOperationsPerMessage: 10,
+		},
+	})
+	require.NoError(t, err)
+	workerParams := clientParams.WithOwnDriverOperationLimit()
+
+	message := func() []*commonpb.Payload {
+		p := make([]*commonpb.Payload, 3)
+		for i := range p {
+			p[i] = makeOversizedPayload(t, 64)
+		}
+		return p
+	}
+
+	done := make(chan error, 2)
+	for _, params := range []StorageParameters{clientParams, workerParams} {
+		visitor := NewExternalStorageVisitor(params)
+		payloads := message()
+		go func() {
+			_, err := visitPayloads(t.Context(), visitor, payloads)
+			done <- err
+		}()
+	}
+
+	require.Eventually(t, func() bool { return driver.peakValue() == 4 }, 2*time.Second, time.Millisecond)
+	time.Sleep(50 * time.Millisecond)
+	require.Equal(t, 4, driver.peakValue(), "each limit allows 2, so the two together allow 4")
+
+	close(driver.gate)
+	require.NoError(t, <-done)
+	require.NoError(t, <-done)
+}
+
+// MaxDriverOperations is shared by every message using the same configuration.
+func TestConcurrency_MaxDriverOperationsSharedAcrossMessages(t *testing.T) {
+	driver := newPermittingDriver()
+	params, err := ExternalStorageToParams(ExternalStorage{
+		Drivers:              []StorageDriver{driver},
+		PayloadSizeThreshold: 1,
+		Concurrency: ExternalStorageConcurrency{
+			MaxDriverOperations: 3, MaxOperationsPerMessage: 10,
+		},
+	})
+	require.NoError(t, err)
+
+	visitor := NewExternalStorageVisitor(params)
+	message := func() []*commonpb.Payload {
+		p := make([]*commonpb.Payload, 4)
+		for i := range p {
+			p[i] = makeOversizedPayload(t, 64)
+		}
+		return p
+	}
+
+	done := make(chan error, 2)
+	for i := 0; i < 2; i++ {
+		go func() {
+			_, err := visitPayloads(t.Context(), visitor, message())
+			done <- err
+		}()
+	}
+
+	require.Eventually(t, func() bool { return driver.peakValue() == 3 }, 2*time.Second, time.Millisecond)
+	time.Sleep(50 * time.Millisecond)
+	require.Equal(t, 3, driver.peakValue(), "two messages must share one driver operation limit")
+
+	close(driver.gate)
+	require.NoError(t, <-done)
+	require.NoError(t, <-done)
+	require.Equal(t, 3, driver.peakValue())
+}
+
+func TestGetLimiter_UnsetYieldsNonBlockingLimiter(t *testing.T) {
+	storeCtx := StorageDriverStoreContext{Context: t.Context()}
+	require.Nil(t, storeCtx.Limiter)
+
+	stored := false
+	require.NoError(t, storeCtx.GetLimiter().Permit(t.Context(), nil, func() error {
+		stored = true
+		return nil
+	}))
+	require.True(t, stored)
+
+	retrieveCtx := StorageDriverRetrieveContext{Context: t.Context()}
+	require.Nil(t, retrieveCtx.Limiter)
+
+	retrieved := false
+	require.NoError(t, retrieveCtx.GetLimiter().Permit(t.Context(), StorageDriverClaim{}, func() error {
+		retrieved = true
+		return nil
+	}))
+	require.True(t, retrieved)
+}
+
+func TestGetLimiter_SetIsReturnedUnchanged(t *testing.T) {
+	limiter := NoopStorageDriverLimiter[*commonpb.Payload]()
+	ctx := StorageDriverStoreContext{Context: t.Context(), Limiter: limiter}
+	require.Equal(t, limiter, ctx.GetLimiter())
 }
