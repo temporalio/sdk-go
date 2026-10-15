@@ -59,17 +59,12 @@ func (s *TimeSkippingV2TestSuite) SetupTest() {
 func (s *TimeSkippingV2TestSuite) SetupSuite() {
 	s.Assertions = require.New(s.T())
 
-	existing := os.Getenv("TEMPORAL_DEV_SERVER_EXISTING_PATH")
-	extraArgs := []string{
-		"--dynamic-config-value", "frontend.WorkflowTimeSkippingEnabled=true",
-	}
-
+	// StartDevServerV2 adds the time-skipping dynamic config itself.
 	srv, err := testsuite.StartDevServerV2(context.Background(), testsuite.DevServerV2Options{
 		DevServerOptions: testsuite.DevServerOptions{
-			ExistingPath: existing,
+			ExistingPath:  os.Getenv("TEMPORAL_DEV_SERVER_EXISTING_PATH"),
 			ClientOptions: &client.Options{Namespace: "default"},
-			LogLevel:     "warn",
-			ExtraArgs:    extraArgs,
+			LogLevel:      "warn",
 		},
 		TSConfig: testsuite.TimeSkippingConfig{Enabled: true},
 	})
@@ -543,6 +538,8 @@ func (s *TimeSkippingV2TestSuite) TestTimeSkipperWrappingLocalEnvClient() {
 		ExistingPath:  os.Getenv("TEMPORAL_DEV_SERVER_EXISTING_PATH"),
 		ClientOptions: &client.Options{Namespace: "default"},
 		LogLevel:      "warn",
+		// Set manually: this path deliberately skips StartDevServerV2, which is
+		// what normally supplies this.
 		ExtraArgs: []string{
 			"--dynamic-config-value", "frontend.WorkflowTimeSkippingEnabled=true",
 		},
@@ -1027,9 +1024,6 @@ func (s *TimeSkippingV2TestSuite) TestMaxSessionSkipCountStampedByEnv() {
 			ExistingPath:  os.Getenv("TEMPORAL_DEV_SERVER_EXISTING_PATH"),
 			ClientOptions: &client.Options{Namespace: "default"},
 			LogLevel:      "warn",
-			ExtraArgs: []string{
-				"--dynamic-config-value", "frontend.WorkflowTimeSkippingEnabled=true",
-			},
 		},
 		TSConfig: testsuite.TimeSkippingConfig{Enabled: true, MaxSessionSkipCount: 5},
 	})

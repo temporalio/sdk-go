@@ -1310,7 +1310,7 @@ type (
 		// skip bounds). Only meaningful against a dev server with the
 		// WorkflowTimeSkipping feature enabled.
 		//
-		// WARNING: Per-workflow time skipping (v2) is currently experimental.
+		// NOTE: Experimental
 		TimeSkippingConfig *commonpb.TimeSkippingConfig
 
 		// responseInfo - Optional pointer to store information of StartWorkflowExecution response.
