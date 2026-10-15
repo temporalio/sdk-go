@@ -326,6 +326,12 @@ type externalRetrievalVisitor struct {
 	params StorageParameters
 }
 
+// WithMessageLimit gives every driver called while visiting one message a
+// single MaxOperationsPerMessage limit.
+func (v *externalRetrievalVisitor) WithMessageLimit(ctx context.Context) context.Context {
+	return v.params.WithMessageLimit(ctx)
+}
+
 func (v *externalRetrievalVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
 	startTime := time.Now()
 
@@ -430,6 +436,12 @@ func NewExternalRetrievalVisitor(params StorageParameters) PayloadVisitor {
 
 type externalStorageVisitor struct {
 	params StorageParameters
+}
+
+// WithMessageLimit gives every driver called while visiting one message a
+// single MaxOperationsPerMessage limit.
+func (v *externalStorageVisitor) WithMessageLimit(ctx context.Context) context.Context {
+	return v.params.WithMessageLimit(ctx)
 }
 
 func (v *externalStorageVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {

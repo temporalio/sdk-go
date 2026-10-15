@@ -569,7 +569,7 @@ func (wtp *workflowTaskProcessor) processWorkflowTask(task *workflowTask) (retEr
 	ctx := extstore.WithStorageOperationCallback(context.Background(), downloadPayloadMetrics)
 
 	var taskErr error
-	if taskErr = visitMessagePayloads(ctx, wtp.inboundPayloadVisitor, task.task, wtp.storageParams); taskErr != nil {
+	if taskErr = visitProtoPayloads(ctx, wtp.inboundPayloadVisitor, task.task, wtp.storageParams.MaxOperationsPerMessage()); taskErr != nil {
 		wtp.handleInboundVisitorError(task.task, taskErr)
 		return nil
 	}
@@ -621,7 +621,7 @@ func (wtp *workflowTaskProcessor) processWorkflowTask(task *workflowTask) (retEr
 					return nil, nil
 				}
 				task := wtp.toWorkflowTask(heartbeatResponse.WorkflowTask)
-				if err := visitMessagePayloads(ctx, wtp.inboundPayloadVisitor, task.task, wtp.storageParams); err != nil {
+				if err := visitProtoPayloads(ctx, wtp.inboundPayloadVisitor, task.task, wtp.storageParams.MaxOperationsPerMessage()); err != nil {
 					wtp.handleInboundVisitorError(task.task, err)
 					return nil, nil
 				}
@@ -660,7 +660,7 @@ func (wtp *workflowTaskProcessor) processWorkflowTask(task *workflowTask) (retEr
 
 		// we are getting new workflow task, so reset the workflowTask and continue process the new one
 		task = wtp.toWorkflowTask(response.WorkflowTask)
-		if err := visitMessagePayloads(ctx, wtp.inboundPayloadVisitor, task.task, wtp.storageParams); err != nil {
+		if err := visitProtoPayloads(ctx, wtp.inboundPayloadVisitor, task.task, wtp.storageParams.MaxOperationsPerMessage()); err != nil {
 			wtp.handleInboundVisitorError(task.task, err)
 			return nil
 		}
@@ -706,7 +706,7 @@ func (wtp *workflowTaskProcessor) RespondTaskCompletedWithMetrics(
 		innerVisitor: wtp.outboundPayloadVisitor,
 		workflowInfo: workflowInfo,
 	}
-	if taskErr = visitMessagePayloads(ctx, outboundPayloadVisitor, taskCompletion.rawRequest, wtp.storageParams); taskErr != nil {
+	if taskErr = visitProtoPayloads(ctx, outboundPayloadVisitor, taskCompletion.rawRequest, wtp.storageParams.MaxOperationsPerMessage()); taskErr != nil {
 		// The outbound visitor failed (e.g. storage driver error or panic). We
 		// cannot send the original response, so fall back to an explicit
 		// failure so the server records the error immediately.
@@ -997,7 +997,7 @@ func (wtp *workflowTaskProcessor) reportGrpcMessageTooLarge(
 		emitFailMetric = true
 		request := wtp.errorToFailWorkflowTask(task.TaskToken, task.WorkflowExecution.GetWorkflowId(), sendErr)
 		request.Cause = enumspb.WORKFLOW_TASK_FAILED_CAUSE_GRPC_MESSAGE_TOO_LARGE
-		if err = visitMessagePayloads(ctx, wtp.outboundPayloadVisitor, request, wtp.storageParams); err != nil {
+		if err = visitProtoPayloads(ctx, wtp.outboundPayloadVisitor, request, wtp.storageParams.MaxOperationsPerMessage()); err != nil {
 			wtp.logger.Error("Failed to visit payloads for GRPC message too large failure response.", tagError, err)
 			return
 		}
@@ -1012,7 +1012,7 @@ func (wtp *workflowTaskProcessor) reportGrpcMessageTooLarge(
 			Cause:         enumspb.WORKFLOW_TASK_FAILED_CAUSE_GRPC_MESSAGE_TOO_LARGE,
 			PollerGroupId: task.GetPollerGroupId(),
 		}
-		if err = visitMessagePayloads(ctx, wtp.outboundPayloadVisitor, request, wtp.storageParams); err != nil {
+		if err = visitProtoPayloads(ctx, wtp.outboundPayloadVisitor, request, wtp.storageParams.MaxOperationsPerMessage()); err != nil {
 			wtp.logger.Error("Failed to visit payloads for GRPC message too large query failure response.", tagError, err)
 			return
 		}
@@ -1705,7 +1705,7 @@ func (r *retrievingHistoryIterator) GetNextPage() (*historypb.History, error) {
 	if err != nil || history == nil {
 		return history, err
 	}
-	if err := visitMessagePayloads(context.Background(), r.inboundVisitor, history, r.storageParams); err != nil {
+	if err := visitProtoPayloads(context.Background(), r.inboundVisitor, history, r.storageParams.MaxOperationsPerMessage()); err != nil {
 		return nil, err
 	}
 	return history, nil

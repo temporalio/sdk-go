@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -14,6 +16,7 @@ import (
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/proxy"
 	"go.temporal.io/api/workflowservice/v1"
+	"go.temporal.io/sdk/internal/extstore"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -268,4 +271,97 @@ func TestCompositePayloadVisitor(t *testing.T) {
 		require.ErrorIs(t, err, expectedErr)
 		require.False(t, v2Called)
 	})
+}
+
+// gatedStorageDriver blocks every store until released, so peak concurrency is
+// observable.
+type gatedStorageDriver struct {
+	gate     chan struct{}
+	mu       sync.Mutex
+	inFlight int
+	peak     int
+}
+
+func (d *gatedStorageDriver) Name() string { return "gated" }
+func (d *gatedStorageDriver) Type() string { return "gated" }
+
+func (d *gatedStorageDriver) Store(
+	ctx extstore.StorageDriverStoreContext, payloads []*commonpb.Payload,
+) ([]extstore.StorageDriverClaim, error) {
+	claims := make([]extstore.StorageDriverClaim, len(payloads))
+	var wg sync.WaitGroup
+	errs := make([]error, len(payloads))
+	for i := range payloads {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errs[i] = ctx.GetLimiter().Permit(ctx.Context, payloads[i], func() error {
+				d.mu.Lock()
+				d.inFlight++
+				if d.inFlight > d.peak {
+					d.peak = d.inFlight
+				}
+				d.mu.Unlock()
+				<-d.gate
+				d.mu.Lock()
+				d.inFlight--
+				d.mu.Unlock()
+				claims[i] = extstore.StorageDriverClaim{ClaimData: map[string]string{"k": "v"}}
+				return nil
+			})
+		}()
+	}
+	wg.Wait()
+	for _, err := range errs {
+		if err != nil {
+			return nil, err
+		}
+	}
+	return claims, nil
+}
+
+func (d *gatedStorageDriver) Retrieve(
+	extstore.StorageDriverRetrieveContext, []extstore.StorageDriverClaim,
+) ([]*commonpb.Payload, error) {
+	return nil, nil
+}
+
+func (d *gatedStorageDriver) peakValue() int {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.peak
+}
+
+// A walk installs one MaxOperationsPerMessage limit for the whole message, on
+// every path, including those that visit payload sites sequentially.
+func TestVisitProtoPayloads_MessageLimitAppliesOnEveryPath(t *testing.T) {
+	driver := &gatedStorageDriver{gate: make(chan struct{})}
+	params, err := extstore.ExternalStorageToParams(extstore.ExternalStorage{
+		Drivers:              []extstore.StorageDriver{driver},
+		PayloadSizeThreshold: 1,
+		Concurrency: extstore.ExternalStorageConcurrency{
+			MaxDriverOperations: 100, MaxOperationsPerMessage: 2,
+		},
+	})
+	require.NoError(t, err)
+
+	visitor := extstore.NewExternalStorageVisitor(params)
+	big := func() *commonpb.Payload {
+		return &commonpb.Payload{Data: []byte(strings.Repeat("x", 64))}
+	}
+	// Several payload sites in one message.
+	msg := &commonpb.Payloads{Payloads: []*commonpb.Payload{big(), big(), big(), big()}}
+
+	done := make(chan error, 1)
+	go func() {
+		// Concurrency 4 would allow 4 at once if the limit were not shared.
+		done <- visitProtoPayloads(t.Context(), visitor, msg, 4)
+	}()
+
+	require.Eventually(t, func() bool { return driver.peakValue() == 2 }, 2*time.Second, time.Millisecond)
+	time.Sleep(50 * time.Millisecond)
+	require.Equal(t, 2, driver.peakValue(), "one message must share one MaxOperationsPerMessage limit")
+
+	close(driver.gate)
+	require.NoError(t, <-done)
 }
