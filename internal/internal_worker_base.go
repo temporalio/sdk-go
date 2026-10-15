@@ -14,6 +14,7 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/serviceerror"
+	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -421,6 +422,7 @@ func newBaseWorker(
 		bw.pollLimiter = rate.NewLimiter(rate.Limit(options.pollerRate), 1)
 	}
 	bw.validatePollers(options.taskPollers)
+	bw.installPollerScalingReporters(options.taskPollers)
 
 	return bw
 }
@@ -432,6 +434,30 @@ func (bw *baseWorker) initializeTaskPollers(taskPollers []scalableTaskPoller) {
 	}
 	bw.options.taskPollers = taskPollers
 	bw.validatePollers(taskPollers)
+	bw.installPollerScalingReporters(taskPollers)
+}
+
+// installPollerScalingReporters lets each autoscaling poller report its pool state to the
+// server on every poll, so scaling suggestions can be spread across a fleet by share
+// rather than landing on whoever happens to receive the most tasks. baseWorker is the only
+// place holding the autoscaler, which is why the wiring lives here rather than at each
+// poller construction site.
+func (bw *baseWorker) installPollerScalingReporters(taskPollers []scalableTaskPoller) {
+	for _, tw := range taskPollers {
+		if tw.pollerAutoscaler == nil {
+			continue // fixed-size pool: no target to report
+		}
+		reporter, ok := tw.taskPoller.(pollerScalingInfoReporter)
+		if !ok {
+			continue
+		}
+		autoscaler := tw.pollerAutoscaler
+		reporter.setPollerScalingInfo(func() *taskqueuepb.PollerScalingInfo {
+			return &taskqueuepb.PollerScalingInfo{
+				PollerTarget: int32(autoscaler.target.Load()),
+			}
+		})
+	}
 }
 
 func (bw *baseWorker) validatePollers(taskPollers []scalableTaskPoller) {
