@@ -3,6 +3,7 @@ package lambdaworker
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -636,4 +637,25 @@ func TestRunWorkerInternal_PerInvocationLifecycle(t *testing.T) {
 	assert.Equal(t, 3, dialCount, "client.Dial should be called once per invocation")
 	w.AssertExpectations(t)
 	c.AssertExpectations(t)
+}
+
+func TestDefaultLoadConfig_SecretsManagerExtension(t *testing.T) {
+	t.Setenv("TEMPORAL_CONFIG_FILE", filepath.Join(t.TempDir(), "temporal.toml"))
+	t.Setenv("TEMPORAL_API_KEY", "")
+	t.Setenv("TEMPORAL_EXT_AWS_SECRETS_MANAGER_API_KEY_ID", "")
+
+	opts, err := defaultDeps().loadConfig()
+	require.NoError(t, err)
+	assert.Empty(t, opts.Plugins)
+
+	// Secrets aren't fetched until a client is created, so loading needs no AWS access
+	t.Setenv("TEMPORAL_EXT_AWS_SECRETS_MANAGER_API_KEY_ID", "my-api-key-secret")
+	opts, err = defaultDeps().loadConfig()
+	require.NoError(t, err)
+	require.Len(t, opts.Plugins, 1)
+	assert.Equal(t, "go.temporal.io/sdk/contrib/aws/secretsmanager", opts.Plugins[0].Name())
+
+	t.Setenv("TEMPORAL_API_KEY", "my-api-key")
+	_, err = defaultDeps().loadConfig()
+	require.ErrorContains(t, err, "API key secret ID cannot be set with an API key")
 }
