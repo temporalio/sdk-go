@@ -22,6 +22,7 @@ to docs, or any other relevant information.
 
 ### Added
 
+- Added `activity.Info.CurrentAttemptScheduledTime`, the time the current attempt of an activity was scheduled.
 - Added `workflow.ChildWorkflowOptions.VersioningOverride` for explicitly pinning,
   auto-upgrading, or one-time routing a child workflow independently of its parent.
   This requires Temporal Server 1.32.0 or later.

@@ -2630,7 +2630,9 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowWithLocalActivityNextDelay() {
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_LocalActivity() {
+	var info ActivityInfo
 	localActivityFn := func(ctx context.Context, name string) (string, error) {
+		info = GetActivityInfo(ctx)
 		return "hello " + name, nil
 	}
 
@@ -2641,6 +2643,8 @@ func (s *WorkflowTestSuiteUnitTest) Test_LocalActivity() {
 	err = result.Get(&laResult)
 	s.NoError(err)
 	s.Equal("hello local_activity", laResult)
+	s.False(info.ScheduledTime.IsZero())
+	s.Equal(info.ScheduledTime, info.CurrentAttemptScheduledTime)
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListeners() {
@@ -3170,10 +3174,14 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityRetry() {
 	}
 
 	attempt2Count := 1
+	var infos []ActivityInfo
+	var failedAt []time.Time
 	activityFn := func(ctx context.Context) (string, error) {
 		attempt2Count++
 		info := GetActivityInfo(ctx)
+		infos = append(infos, info)
 		if info.Attempt < 3 {
+			failedAt = append(failedAt, time.Now())
 			return "", NewApplicationError("bad-luck", "", false, nil)
 		}
 		return "retry-done", nil
@@ -3227,6 +3235,12 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityRetry() {
 	s.Equal("retry-done", result)
 	s.Equal(2, attempt1Count)
 	s.Equal(4, attempt2Count)
+	s.Len(infos, 3)
+	s.Equal(infos[0].ScheduledTime, infos[0].CurrentAttemptScheduledTime)
+	for i := 1; i < len(infos); i++ {
+		s.Equal(infos[0].ScheduledTime, infos[i].ScheduledTime)
+		s.False(infos[i].CurrentAttemptScheduledTime.Before(failedAt[i-1]))
+	}
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_ActivityRetry_DefaultRetry() {

@@ -1835,6 +1835,7 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_Workflow() {
 		backoffInterval := 10 * time.Millisecond
 		workflowComplete := false
 		var laFailures atomic.Uint64
+		var laInfos []ActivityInfo
 
 		retryLocalActivityWorkflowFunc := func(ctx Context, input []byte) error {
 			ao := LocalActivityOptions{
@@ -1848,7 +1849,8 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_Workflow() {
 			}
 			ctx = WithLocalActivityOptions(ctx, ao)
 
-			err := ExecuteLocalActivity(ctx, func() error {
+			err := ExecuteLocalActivity(ctx, func(ctx context.Context) error {
+				laInfos = append(laInfos, GetActivityInfo(ctx))
 				if laFailures.Load() > 2 {
 					return nil
 				}
@@ -1914,6 +1916,12 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_Workflow() {
 		t.Equal(uint32(0), asWFTComplete.MeteringMetadata.NonfirstLocalActivityExecutionAttempts)
 		synctest.Wait()
 		t.True(workflowComplete)
+		t.Len(laInfos, 4)
+		t.Equal(laInfos[0].ScheduledTime, laInfos[0].CurrentAttemptScheduledTime)
+		for i := 1; i < len(laInfos); i++ {
+			t.Equal(laInfos[0].ScheduledTime, laInfos[i].ScheduledTime)
+			t.GreaterOrEqual(laInfos[i].CurrentAttemptScheduledTime.Sub(laInfos[i-1].CurrentAttemptScheduledTime), backoffInterval)
+		}
 	})
 }
 
@@ -2227,6 +2235,45 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionWorkerStop() {
 	r := res.response
 	t.NoError(err)
 	t.NotNil(r)
+}
+
+func (t *TaskHandlersTestSuite) TestActivityInfoCurrentAttemptScheduledTime() {
+	var info ActivityInfo
+	t.registry.RegisterActivityWithOptions(
+		func(ctx context.Context) error {
+			info = GetActivityInfo(ctx)
+			return nil
+		},
+		RegisterActivityOptions{Name: "inspectInfo"},
+	)
+
+	mockCtrl := gomock.NewController(t.T())
+	mockService := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
+	client := WorkflowClient{workflowService: mockService}
+	activityHandler := newActivityTaskHandler(&client, t.getTestWorkerExecutionParams(), t.registry)
+	scheduled := time.Now().Add(-time.Minute)
+	currentAttemptScheduled := scheduled.Add(30 * time.Second)
+	pats := &workflowservice.PollActivityTaskQueueResponse{
+		Attempt:   3,
+		TaskToken: []byte("token"),
+		WorkflowExecution: &commonpb.WorkflowExecution{
+			WorkflowId: "wID",
+			RunId:      "rID",
+		},
+		ActivityType:                &commonpb.ActivityType{Name: "inspectInfo"},
+		ActivityId:                  uuid.NewString(),
+		ScheduledTime:               timestamppb.New(scheduled),
+		CurrentAttemptScheduledTime: timestamppb.New(currentAttemptScheduled),
+		ScheduleToCloseTimeout:      durationpb.New(2 * time.Minute),
+		StartedTime:                 timestamppb.Now(),
+		StartToCloseTimeout:         durationpb.New(time.Minute),
+		WorkflowType:                &commonpb.WorkflowType{Name: "wType"},
+		WorkflowNamespace:           "namespace",
+	}
+	_, err := activityHandler.Execute(taskqueue, pats)
+	t.NoError(err)
+	t.True(scheduled.Equal(info.ScheduledTime))
+	t.True(currentAttemptScheduled.Equal(info.CurrentAttemptScheduledTime))
 }
 
 func (t *TaskHandlersTestSuite) TestActivityCancellationUsesIsCanceledError() {
