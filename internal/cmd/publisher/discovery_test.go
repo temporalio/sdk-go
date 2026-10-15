@@ -97,6 +97,42 @@ func TestChangedModulesRespectsModuleBoundaries(t *testing.T) {
 	`)
 }
 
+func TestChangedModulesIgnoresDependencyOnlyChanges(t *testing.T) {
+	for _, files := range [][]string{{"go.mod"}, {"go.sum"}, {"go.mod", "go.sum"}} {
+		for _, state := range []string{"unstaged", "staged", "committed"} {
+			t.Run(strings.Join(files, "+")+"/"+state, func(t *testing.T) {
+				w := newDiscoveryWorktree(t, "contrib/envconfig")
+				for _, dir := range []string{"", "contrib/envconfig"} {
+					writeDiscoveryFile(t, w, path.Join(dir, "go.sum"), "initial checksums\n")
+				}
+				runDiscoveryGit(t, w, "add", ".")
+				runDiscoveryGit(t, w, "commit", "-m", "Add go.sum files")
+				runDiscoveryGit(t, w, "tag", "v1.0.0")
+				runDiscoveryGit(t, w, "tag", "contrib/envconfig/v0.1.0")
+				for _, dir := range []string{"", "contrib/envconfig"} {
+					for _, file := range files {
+						writeDiscoveryFile(t, w, path.Join(dir, file), "updated dependency metadata\n")
+					}
+				}
+				if state != "unstaged" {
+					runDiscoveryGit(t, w, "add", ".")
+				}
+				if state == "committed" {
+					runDiscoveryGit(t, w, "commit", "-m", "Update dependency files")
+				}
+				checkChangedModules(t, w, "")
+
+				writeDiscoveryFile(t, w, "file.txt", "SDK changes\n")
+				writeDiscoveryFile(t, w, "contrib/envconfig/file.txt", "contrib changes\n")
+				checkChangedModules(t, w, `
+					.: 1.0.0
+					contrib/envconfig: 0.1.0
+				`)
+			})
+		}
+	}
+}
+
 func TestChangedModulesTracksMovesAcrossModules(t *testing.T) {
 	w := newDiscoveryWorktree(t, "contrib/envconfig", "contrib/tally")
 	runDiscoveryGit(t, w, "tag", "v1.0.0")

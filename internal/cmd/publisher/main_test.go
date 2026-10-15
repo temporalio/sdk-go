@@ -537,7 +537,7 @@ func TestPreparePRAllowsDependencyFixes(t *testing.T) {
 		case "git tag --list *", "git tag --list contrib/envconfig/v*":
 			return "contrib/envconfig/v0.1.0\n", nil
 		case "git diff --name-only --no-renames -z contrib/envconfig/v0.1.0 -- contrib/envconfig":
-			return "contrib/envconfig/go.mod\x00", nil
+			return "contrib/envconfig/go.mod\x00contrib/envconfig/CHANGELOG.md\x00", nil
 		case "git rev-parse --verify --end-of-options abc123^{commit}":
 			return "abc123\n", nil
 		case `gh pr create --draft --base main --head chore/release-2026-08-04 --label skip-changelog --title "Prepare release 2026-08-04" --body contrib/envconfig=0.2.0`:
