@@ -92,6 +92,7 @@ to docs, or any other relevant information.
   `OnRegisterActivity` but not `OnRegisterDynamicActivity`.
 - Stopped workers now release sticky workflow cache ownership immediately. When the final worker
   stops, cached workflow state is cleared without waiting for garbage collection.
+- Client and worker RPCs now use caller's full context deadline instead of halving it. Previously context deadline was halved so slow but healthy requests would get DeadlineExceededs before their actual deadline.
 
 ### Security
 
@@ -195,7 +196,7 @@ to docs, or any other relevant information.
   `GetActivityHandleOptions.RunID` may be empty to target the latest run, and describe
   `TerminateActivityOptions.Reason` as a termination reason.
 - Added disabled-by-default SDK flag 9 for deterministic workflow child-context cancellation.
-  Currently no behavior is changed by default, a future PR will flip this flag on by 
+  Currently no behavior is changed by default, a future PR will flip this flag on by
   default.
 - `DefaultFailureConverter.FailureToError` now correctly decodes `LastHeartbeatDetails` for a
   reset-workflow failure. Previously the raw payload proto was treated as a single detail value,
@@ -264,7 +265,7 @@ to docs, or any other relevant information.
 - Added `worker.Options.PreferredVersionProvider`, which can select the version recorded by a
   newly encountered `workflow.GetVersion` call. This supports gradual rollout of a new
   `GetVersion` call before activating its new behavior.
-- Add support for Workflow Updates as Nexus Operations 
+- Add support for Workflow Updates as Nexus Operations
 - Add support for external storage to Nexus task handling.
 
 ### Changed
