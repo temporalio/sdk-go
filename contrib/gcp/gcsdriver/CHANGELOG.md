@@ -15,8 +15,7 @@ or Security.
 
 ### Changed
 
-- **Experimental**: Concurrency is now set by `ExternalStorage.Concurrency` instead of a fixed
-  limit of 10.
+- **Experimental**: Store and retrieve operations now respect `ExternalStorage.Concurrency`.
 
 ### Deprecated
 
