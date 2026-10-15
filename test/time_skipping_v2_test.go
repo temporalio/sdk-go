@@ -1068,6 +1068,225 @@ func (s *TimeSkippingV2TestSuite) TestMaxSessionSkipCountStampedByEnv() {
 	s.EqualValues(5, startedTSC.GetMaxSessionSkipCount())
 }
 
+// ============================================================================
+// Ports of tests/testing/test_workflow_ts_v2.py
+// ============================================================================
+
+// assertTimestampFromNow requires |ts - now| to be within tolerance of
+// expectedFromNow. Mirrors Python's assert_timestamp_from_now.
+func (s *TimeSkippingV2TestSuite) assertTimestampFromNow(
+	ts time.Time, expectedFromNow time.Duration, tolerance time.Duration,
+) {
+	fromNow := ts.Sub(time.Now())
+	if fromNow < 0 {
+		fromNow = -fromNow
+	}
+	s.assertDurationSame(expectedFromNow, fromNow, tolerance)
+}
+
+// TestWorkflowEnvTimeSkippingBasicV2 ports
+// test_workflow_env_time_skipping_basic_v2: time-skip a very long sleep.
+func (s *TimeSkippingV2TestSuite) TestWorkflowEnvTimeSkippingBasicV2() {
+	ctx := context.Background()
+	tq := "tq-" + uuid.NewString()
+	w := worker.New(s.server.Client(), tq, worker.Options{})
+	registerTSTestWorkflows(w)
+	s.NoError(w.Start())
+	defer w.Stop()
+
+	run, err := s.server.Client().ExecuteWorkflow(ctx,
+		client.StartWorkflowOptions{ID: "wf-" + uuid.NewString(), TaskQueue: tq},
+		SleepWorkflow, 100000.0)
+	s.NoError(err)
+	var result SleepResult
+	s.NoError(run.Get(ctx, &result))
+	s.Equal("all done", result.Message)
+
+	now, err := s.server.GetCurrentTime(ctx, run)
+	s.NoError(err)
+	s.assertTimestampFromNow(now, 100000*time.Second, 30*time.Second)
+	s.assertTimeWasSkipped(ctx, run)
+}
+
+// TestWorkflowEnvTimeSkippingManualV2 ports
+// test_workflow_env_time_skipping_manual_v2: start a very long sleep with
+// stamping suspended, then fast-forward only the first 1000s.
+func (s *TimeSkippingV2TestSuite) TestWorkflowEnvTimeSkippingManualV2() {
+	ctx := context.Background()
+	tq := "tq-" + uuid.NewString()
+	w := worker.New(s.server.Client(), tq, worker.Options{})
+	registerTSTestWorkflows(w)
+	s.NoError(w.Start())
+	defer w.Stop()
+
+	var run client.WorkflowRun
+	var err error
+	s.server.WithTimeSkippingDisabled(func() {
+		run, err = s.server.Client().ExecuteWorkflow(ctx,
+			client.StartWorkflowOptions{ID: "wf-" + uuid.NewString(), TaskQueue: tq},
+			SleepWorkflow, 100000.0)
+	})
+	s.NoError(err)
+
+	now, err := s.server.GetCurrentTime(ctx, run)
+	s.NoError(err)
+	s.assertTimestampFromNow(now, 0, 5*time.Second)
+
+	ok, err := s.server.FastForward(ctx, run, testsuite.WithDuration(1000*time.Second))
+	s.NoError(err)
+	s.True(ok)
+
+	now, err = s.server.GetCurrentTime(ctx, run)
+	s.NoError(err)
+	s.assertTimestampFromNow(now, 1000*time.Second, 30*time.Second)
+	s.assertTimeWasSkipped(ctx, run)
+
+	s.NoError(s.server.Client().CancelWorkflow(ctx, run.GetID(), run.GetRunID()))
+}
+
+// TestWorkflowEnvTimeSkippingDisabledV2 ports
+// test_workflow_env_time_skipping_disabled_v2: the same short sleep with and
+// without stamping, checked against wall-clock time.
+func (s *TimeSkippingV2TestSuite) TestWorkflowEnvTimeSkippingDisabledV2() {
+	ctx := context.Background()
+	tq := "tq-" + uuid.NewString()
+	w := worker.New(s.server.Client(), tq, worker.Options{})
+	registerTSTestWorkflows(w)
+	s.NoError(w.Start())
+	defer w.Stop()
+
+	// With time skipping: a 3s sleep finishes in well under 3s wall.
+	start := time.Now()
+	tsOnRun, err := s.server.Client().ExecuteWorkflow(ctx,
+		client.StartWorkflowOptions{ID: "wf-" + uuid.NewString(), TaskQueue: tq},
+		SleepWorkflow, 3.0)
+	s.NoError(err)
+	var tsOnResult SleepResult
+	s.NoError(tsOnRun.Get(ctx, &tsOnResult))
+	s.Equal("all done", tsOnResult.Message)
+	s.Lessf(time.Since(start), 2500*time.Millisecond,
+		"expected the 3s sleep to be skipped, took %v", time.Since(start))
+	s.assertTimeWasSkipped(ctx, tsOnRun)
+
+	// Without time skipping: the same sleep takes real time.
+	start = time.Now()
+	var tsOffRun client.WorkflowRun
+	s.server.WithTimeSkippingDisabled(func() {
+		tsOffRun, err = s.server.Client().ExecuteWorkflow(ctx,
+			client.StartWorkflowOptions{ID: "wf-" + uuid.NewString(), TaskQueue: tq},
+			SleepWorkflow, 3.0)
+	})
+	s.NoError(err)
+	var tsOffResult SleepResult
+	s.NoError(tsOffRun.Get(ctx, &tsOffResult))
+	s.Equal("all done", tsOffResult.Message)
+	s.Greaterf(time.Since(start), 2500*time.Millisecond,
+		"expected the 3s sleep to run in real time, took %v", time.Since(start))
+	s.assertTimeWasNotSkipped(ctx, tsOffRun)
+}
+
+// TestWorkflowEnvTimeSkippingBasicViaUpdateV2 ports
+// test_workflow_env_time_skipping_basic_via_update_v2: start with stamping
+// suspended, then enable unbounded skipping and run to completion.
+func (s *TimeSkippingV2TestSuite) TestWorkflowEnvTimeSkippingBasicViaUpdateV2() {
+	ctx := context.Background()
+	tq := "tq-" + uuid.NewString()
+	w := worker.New(s.server.Client(), tq, worker.Options{})
+	registerTSTestWorkflows(w)
+	s.NoError(w.Start())
+	defer w.Stop()
+
+	var run client.WorkflowRun
+	var err error
+	s.server.WithTimeSkippingDisabled(func() {
+		run, err = s.server.Client().ExecuteWorkflow(ctx,
+			client.StartWorkflowOptions{ID: "wf-" + uuid.NewString(), TaskQueue: tq},
+			SleepWorkflow, 100000.0)
+	})
+	s.NoError(err)
+
+	// Unbounded: enables skipping and waits for the terminal event, always
+	// reporting false since there is no fast-forward completion to observe.
+	ok, err := s.server.FastForward(ctx, run)
+	s.NoError(err)
+	s.False(ok)
+
+	var result SleepResult
+	s.NoError(run.Get(ctx, &result))
+	s.Equal("all done", result.Message)
+
+	now, err := s.server.GetCurrentTime(ctx, run)
+	s.NoError(err)
+	s.assertTimestampFromNow(now, 100000*time.Second, 30*time.Second)
+	s.assertTimeWasSkipped(ctx, run)
+}
+
+// ============================================================================
+// Port of test_workflow_cancel_signal_and_timer_fired_in_same_task_ts_v2
+// ============================================================================
+
+// CancelSignalAndTimerFiredInSameTaskWorkflow waits on a 1h timer that a
+// "cancel_timer" signal cancels. Returns an error if the timer completes
+// without having been cancelled.
+func CancelSignalAndTimerFiredInSameTaskWorkflow(ctx workflow.Context) error {
+	timerCtx, cancelTimer := workflow.WithCancel(ctx)
+	timer := workflow.NewTimer(timerCtx, time.Hour)
+
+	workflow.Go(ctx, func(gctx workflow.Context) {
+		var dummy struct{}
+		workflow.GetSignalChannel(gctx, "cancel_timer").Receive(gctx, &dummy)
+		cancelTimer()
+	})
+
+	err := timer.Get(ctx, nil)
+	if temporal.IsCanceledError(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	return errors.New("timer fired without having been cancelled")
+}
+
+// TestCancelSignalAndTimerFiredInSameTask ports the _ts_v2 variant from
+// sdk-python's tests/worker/test_workflow.py. The cancel signal is buffered
+// server-side first, then a fast-forward past the timer deadline delivers the
+// signal and the timer-fired event in the same workflow task. The signal
+// cancels the timer, so the timer-fired event is a no-op.
+func (s *TimeSkippingV2TestSuite) TestCancelSignalAndTimerFiredInSameTask() {
+	ctx := context.Background()
+	tq := "tq-" + uuid.NewString()
+	w := worker.New(s.server.Client(), tq, worker.Options{})
+	w.RegisterWorkflow(CancelSignalAndTimerFiredInSameTaskWorkflow)
+	s.NoError(w.Start())
+	defer w.Stop()
+
+	var run client.WorkflowRun
+	var err error
+	s.server.WithTimeSkippingDisabled(func() {
+		run, err = s.server.Client().ExecuteWorkflow(ctx,
+			client.StartWorkflowOptions{ID: "wf-" + uuid.NewString(), TaskQueue: tq},
+			CancelSignalAndTimerFiredInSameTaskWorkflow)
+	})
+	s.NoError(err)
+
+	// Wait until the timer is actually running, rather than sleeping blind.
+	s.Eventually(func() bool {
+		found, hErr := historyHasEventType(ctx, s.server.Client(), run,
+			enumspb.EVENT_TYPE_TIMER_STARTED)
+		return hErr == nil && found
+	}, 10*time.Second, 50*time.Millisecond, "timer never started")
+
+	// Buffer the signal server-side; it is delivered on the next workflow
+	// task, which the fast-forward below triggers.
+	s.NoError(s.server.Client().SignalWorkflow(ctx, run.GetID(), run.GetRunID(),
+		"cancel_timer", nil))
+
+	_, err = s.server.FastForward(ctx, run, testsuite.WithDuration(2*time.Hour))
+	s.NoError(err)
+	s.NoError(run.Get(ctx, nil))
+}
+
 // Sanity: the compile-time check that a subset of imports is actually used.
 var (
 	_ = math.Pi
