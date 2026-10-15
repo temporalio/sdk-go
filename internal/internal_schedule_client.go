@@ -92,12 +92,15 @@ func (w *workflowClientInterceptor) CreateSchedule(ctx context.Context, in *Sche
 
 	backfillRequests := convertToPBBackfillList(in.Options.ScheduleBackfill)
 
-	// Only send an initial patch if we need to.
+	// Only send an initial patch if we need to. Time skipping is configured
+	// through the patch too — there is no field for it on the Schedule message.
 	var initialPatch *schedulepb.SchedulePatch
-	if in.Options.TriggerImmediately || len(in.Options.ScheduleBackfill) > 0 {
+	if in.Options.TriggerImmediately || len(in.Options.ScheduleBackfill) > 0 ||
+		in.Options.TimeSkippingConfig != nil {
 		initialPatch = &schedulepb.SchedulePatch{
 			TriggerImmediately: triggerImmediately,
 			BackfillRequest:    backfillRequests,
+			TimeSkippingConfig: in.Options.TimeSkippingConfig,
 		}
 	}
 
@@ -533,6 +536,7 @@ func scheduleDescriptionFromPB(
 			NextActionTimes:               nextActionTimes,
 			CreatedAt:                     describeResponse.Info.GetCreateTime().AsTime(),
 			LastUpdateAt:                  describeResponse.Info.GetUpdateTime().AsTime(),
+			TimeSkippingInfo:              describeResponse.Info.GetTimeSkippingInfo(),
 		},
 		Memo:                  describeResponse.Memo,
 		SearchAttributes:      searchAttributes,

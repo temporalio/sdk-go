@@ -395,6 +395,16 @@ type (
 		//
 		// [Visibility]: https://docs.temporal.io/visibility
 		TypedSearchAttributes SearchAttributes
+
+		// TimeSkippingConfig - Optional time-skipping v2 configuration for the
+		// schedule. If set, it is applied via the schedule's initial patch, so the
+		// schedule's virtual clock advances to its next fire time while it is idle.
+		// A bounded FastForwardConfig is required; a schedule has no end to skip to,
+		// so unbounded skipping is rejected by the server. Only meaningful against a
+		// server with schedule time skipping enabled.
+		//
+		// NOTE: Experimental
+		TimeSkippingConfig *commonpb.TimeSkippingConfig
 	}
 
 	// ScheduleWorkflowExecution contains details on a workflows execution stared by a schedule.
@@ -439,6 +449,13 @@ type (
 
 		// LastUpdateAt - When a schedule was last updated
 		LastUpdateAt time.Time
+
+		// TimeSkippingInfo - Time-skipping state for this schedule, including the
+		// effective config, the schedule's current virtual time, and any in-flight
+		// fast-forward. Unset if the schedule has never had time skipping enabled.
+		//
+		// NOTE: Experimental
+		TimeSkippingInfo *commonpb.TimeSkippingInfo
 	}
 
 	// ScheduleDescription describes the current Schedule details from ScheduleHandle.Describe.

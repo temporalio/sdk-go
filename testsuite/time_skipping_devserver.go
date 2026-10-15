@@ -12,13 +12,22 @@ import (
 )
 
 // timeSkippingDynamicConfig are the dynamic-config values a dev server needs
-// for per-workflow time skipping. The server defaults this off, and without it
-// time skipping is silently unavailable rather than loudly broken.
+// for time skipping. The server defaults both off, and without them time
+// skipping is silently unavailable rather than loudly broken.
 //
 // Values are parsed as JSON by the CLI, so non-scalar settings need JSON
 // encoding (e.g. a string list as `["x"]`).
 var timeSkippingDynamicConfig = []string{
 	"frontend.WorkflowTimeSkippingEnabled=true",
+
+	// Schedule time skipping is CHASM (v2) scheduler only, and new schedules
+	// are NOT created on CHASM by default — creation is off, behind a
+	// percentage rollout that also defaults to zero. Without all three of
+	// these a schedule lands on the v1 workflow-backed scheduler and its
+	// time-skipping config is quietly ignored.
+	"history.enableCHASMSchedulerTimeSkipping=true",
+	"history.enableCHASMSchedulerCreation=true",
+	"history.chasmSchedulerCreationRolloutPercent=100",
 }
 
 // DevServerV2Options configures a v2 time-skipping dev server. Same shape as
@@ -142,7 +151,32 @@ func (d *DevServerV2) GetCurrentTime(
 	return d.skipper.GetCurrentTime(ctx, run)
 }
 
+// FastForwardSchedule is a convenience wrapper for
+// d.TimeSkipper().FastForwardSchedule. See TimeSkipper.FastForwardSchedule for
+// semantics; note WithDuration is required for schedules.
+//
+// NOTE: Experimental
+func (d *DevServerV2) FastForwardSchedule(
+	ctx context.Context, handle client.ScheduleHandle, opts ...FastForwardOption,
+) (bool, error) {
+	return d.skipper.FastForwardSchedule(ctx, handle, opts...)
+}
+
+// GetScheduleTimeSkippingInfo returns the schedule's server-side
+// TimeSkippingInfo, or nil if it has never had time skipping enabled.
+//
+// NOTE: Experimental
+func (d *DevServerV2) GetScheduleTimeSkippingInfo(
+	ctx context.Context, handle client.ScheduleHandle,
+) (*commonpb.TimeSkippingInfo, error) {
+	return d.skipper.GetScheduleTimeSkippingInfo(ctx, handle)
+}
+
 // WithTimeSkippingDisabled runs f with TimeSkippingConfig stamping suspended.
+//
+// Stamping applies to workflow starts. Schedules take their time-skipping
+// configuration from an explicit FastForwardSchedule or
+// ScheduleOptions.TimeSkippingConfig, so they are unaffected by this.
 //
 // NOTE: Experimental
 func (d *DevServerV2) WithTimeSkippingDisabled(f func()) {

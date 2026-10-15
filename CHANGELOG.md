@@ -22,6 +22,12 @@ to docs, or any other relevant information.
 
 ### Added
 
+- Added experimental time skipping for schedules. `client.ScheduleOptions.TimeSkippingConfig`
+  configures a schedule at creation, `ScheduleInfo.TimeSkippingInfo` surfaces its state
+  from `ScheduleHandle.Describe`, and `testsuite.TimeSkipper.FastForwardSchedule` advances
+  a schedule's virtual clock so the actions in that window run back-to-back. A bounded
+  duration is required: a schedule has no terminal state to skip to. Requires a Temporal
+  Server with schedule time skipping enabled, on the CHASM (v2) scheduler.
 - Added experimental per-workflow time skipping (v2): `testsuite.TimeSkipper` wraps a
   client so every workflow it starts carries a `testsuite.TimeSkippingConfig`, and
   exposes `FastForward`, `GetCurrentTime`, `GetTimeSkippingInfo`, and
