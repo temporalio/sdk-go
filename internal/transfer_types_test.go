@@ -161,10 +161,16 @@ func TestTransferAwareDataConverter_PointerValueRoundTrip(t *testing.T) {
 				if batch {
 					payloads, err := dc.ToPayloads(want)
 					require.NoError(t, err)
+					// While we're here, check that we don't add SystemPayloadMetadataKey
+					// for non-system-nexus payloads.
+					for _, payload := range payloads.Payloads {
+						require.NotContains(t, payload.Metadata, proxy.SystemPayloadMetadataKey)
+					}
 					require.NoError(t, dc.FromPayloads(payloads, &got))
 				} else {
 					payload, err := dc.ToPayload(want)
 					require.NoError(t, err)
+					require.NotContains(t, payload.Metadata, proxy.SystemPayloadMetadataKey)
 					require.NoError(t, dc.FromPayload(payload, &got))
 				}
 				require.Equal(t, *want, got)
@@ -664,8 +670,16 @@ func TestTransferAwareDataConverter_DiscoveryError(t *testing.T) {
 	require.ErrorIs(t, dc.FromPayloads(&commonpb.Payloads{Payloads: []*commonpb.Payload{payload}}, &value), errNoEncoding)
 }
 
+// -- SYSTEM NEXUS TESTS --
+
 type systemEnvelopeRejectingCodec struct {
 	converter.PayloadCodec
+}
+
+func newSystemEnvelopeRejectingCodec() *systemEnvelopeRejectingCodec {
+	return &systemEnvelopeRejectingCodec{
+		PayloadCodec: converter.NewZlibCodec(converter.ZlibCodecOptions{AlwaysEncode: true}),
+	}
 }
 
 func (c *systemEnvelopeRejectingCodec) Encode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
@@ -689,7 +703,7 @@ func (c *systemEnvelopeRejectingCodec) Decode(payloads []*commonpb.Payload) ([]*
 type systemNexusModel struct{ Value string }
 
 func (systemNexusModel) TransferTypeConverter() (converter.TransferTypeConverter, error) {
-	return commonconverter.NewSystemNexusTransferTypeConverter[systemNexusModel, commonpb.Payload](
+	return commonconverter.NewSystemNexusTransferTypeConverter(
 		func(cfg *commonconverter.SystemNexusConfig, value *systemNexusModel) (*commonpb.Payload, error) {
 			return cfg.DataConverter.ToPayload(value.Value)
 		},
@@ -706,9 +720,7 @@ func TestTransferAwareDataConverter_SystemNexusRoundTrip(t *testing.T) {
 				MakeTransferAware(
 					converter.NewCodecDataConverter(
 						converter.NewCompositeDataConverter(converter.NewJSONPayloadConverter()),
-						&systemEnvelopeRejectingCodec{
-							PayloadCodec: converter.NewZlibCodec(converter.ZlibCodecOptions{AlwaysEncode: true}),
-						},
+						newSystemEnvelopeRejectingCodec(),
 					)))
 			var payload *commonpb.Payload
 			if batch {
@@ -724,6 +736,7 @@ func TestTransferAwareDataConverter_SystemNexusRoundTrip(t *testing.T) {
 			require.Equal(t, []byte("true"), payload.Metadata[proxy.SystemPayloadMetadataKey])
 			var nested commonpb.Payload
 			require.NoError(t, proto.Unmarshal(payload.Data, &nested))
+			require.NotContains(t, nested.Metadata, proxy.SystemPayloadMetadataKey)
 			require.Equal(t, []byte("binary/zlib"), nested.Metadata[converter.MetadataEncoding])
 			var result systemNexusModel
 			if batch {
