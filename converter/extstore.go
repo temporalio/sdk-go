@@ -53,14 +53,6 @@ type StorageDriverClaim = extstore.StorageDriverClaim
 // NOTE: Experimental
 type StorageDriverLimiter[T any] = extstore.StorageDriverLimiter[T]
 
-// NoopStorageDriverLimiter returns a StorageDriverLimiter that grants every
-// permit immediately, for calling a driver directly such as from its own tests.
-//
-// NOTE: Experimental
-func NoopStorageDriverLimiter[T any]() StorageDriverLimiter[T] {
-	return extstore.NoopStorageDriverLimiter[T]()
-}
-
 // ExternalStorageConcurrency holds limits on the external storage operations
 // drivers perform.
 //

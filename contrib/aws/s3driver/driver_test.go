@@ -84,15 +84,15 @@ func newDriver(t *testing.T, client Client) converter.StorageDriver {
 }
 
 func storeCtx() converter.StorageDriverStoreContext {
-	return converter.StorageDriverStoreContext{Context: context.Background(), Limiter: converter.NoopStorageDriverLimiter[*commonpb.Payload]()}
+	return converter.StorageDriverStoreContext{Context: context.Background()}
 }
 
 func storeCtxWithTarget(target converter.StorageDriverTargetInfo) converter.StorageDriverStoreContext {
-	return converter.StorageDriverStoreContext{Context: context.Background(), Target: target, Limiter: converter.NoopStorageDriverLimiter[*commonpb.Payload]()}
+	return converter.StorageDriverStoreContext{Context: context.Background(), Target: target}
 }
 
 func retrieveCtx() converter.StorageDriverRetrieveContext {
-	return converter.StorageDriverRetrieveContext{Context: context.Background(), Limiter: converter.NoopStorageDriverLimiter[converter.StorageDriverClaim]()}
+	return converter.StorageDriverRetrieveContext{Context: context.Background()}
 }
 
 // --- Constructor tests ---
@@ -149,8 +149,8 @@ func TestNewS3StorageDriver_NegativeMaxPayloadSize(t *testing.T) {
 
 func TestStaticBucket(t *testing.T) {
 	fn := StaticBucket("my-bucket")
-	assert.Equal(t, "my-bucket", fn(converter.StorageDriverStoreContext{Context: context.Background(), Limiter: converter.NoopStorageDriverLimiter[*commonpb.Payload]()}, nil))
-	assert.Equal(t, "my-bucket", fn(converter.StorageDriverStoreContext{Context: context.Background(), Limiter: converter.NoopStorageDriverLimiter[*commonpb.Payload]()}, testPayload("x")))
+	assert.Equal(t, "my-bucket", fn(converter.StorageDriverStoreContext{Context: context.Background()}, nil))
+	assert.Equal(t, "my-bucket", fn(converter.StorageDriverStoreContext{Context: context.Background()}, testPayload("x")))
 }
 
 // --- Store tests ---

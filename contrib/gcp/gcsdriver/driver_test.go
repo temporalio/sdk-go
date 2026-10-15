@@ -86,15 +86,15 @@ func newDriver(t *testing.T, client Client) converter.StorageDriver {
 }
 
 func storeCtx() converter.StorageDriverStoreContext {
-	return converter.StorageDriverStoreContext{Context: context.Background(), Limiter: converter.NoopStorageDriverLimiter[*commonpb.Payload]()}
+	return converter.StorageDriverStoreContext{Context: context.Background()}
 }
 
 func storeCtxWithTarget(target converter.StorageDriverTargetInfo) converter.StorageDriverStoreContext {
-	return converter.StorageDriverStoreContext{Context: context.Background(), Target: target, Limiter: converter.NoopStorageDriverLimiter[*commonpb.Payload]()}
+	return converter.StorageDriverStoreContext{Context: context.Background(), Target: target}
 }
 
 func retrieveCtx() converter.StorageDriverRetrieveContext {
-	return converter.StorageDriverRetrieveContext{Context: context.Background(), Limiter: converter.NoopStorageDriverLimiter[converter.StorageDriverClaim]()}
+	return converter.StorageDriverRetrieveContext{Context: context.Background()}
 }
 
 // --- Constructor tests ---
@@ -870,7 +870,7 @@ func TestStore_ContextCancellation(t *testing.T) {
 	payloads := []*commonpb.Payload{testPayload("cancel-me")}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	storeContext := converter.StorageDriverStoreContext{Context: ctx, Limiter: converter.NoopStorageDriverLimiter[*commonpb.Payload]()}
+	storeContext := converter.StorageDriverStoreContext{Context: ctx}
 
 	done := make(chan error, 1)
 	go func() {
@@ -920,7 +920,7 @@ func TestRetrieve_ContextCancellation(t *testing.T) {
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	retrieveContext := converter.StorageDriverRetrieveContext{Context: ctx, Limiter: converter.NoopStorageDriverLimiter[converter.StorageDriverClaim]()}
+	retrieveContext := converter.StorageDriverRetrieveContext{Context: ctx}
 
 	done := make(chan error, 1)
 	go func() {
