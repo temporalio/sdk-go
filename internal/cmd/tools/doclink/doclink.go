@@ -267,6 +267,10 @@ func extractTypeValue(expr ast.Expr) string {
 		if ident, ok := t.X.(*ast.Ident); ok && ident.Name == "internal" {
 			return t.Sel.Name
 		}
+	case *ast.IndexExpr:
+		return extractTypeValue(t.X)
+	case *ast.IndexListExpr:
+		return extractTypeValue(t.X)
 	case *ast.BasicLit:
 	// Do nothing
 	default:
@@ -333,13 +337,7 @@ func checkFunction(funcDecl *ast.FuncDecl) string {
 
 // Check if a call expression is calling an internal function
 func isInternalFunctionCall(callExpr *ast.CallExpr) string {
-	// Check if the function being called is a SelectorExpr (e.g., "internal.SomeFunction")
-	if selExpr, ok := callExpr.Fun.(*ast.SelectorExpr); ok {
-		if pkgIdent, ok := selExpr.X.(*ast.Ident); ok && pkgIdent.Name == "internal" {
-			return selExpr.Sel.Name
-		}
-	}
-	return ""
+	return extractTypeValue(callExpr.Fun)
 }
 
 // Check for type assertions like `var _ = internal.SomeType(nil)`

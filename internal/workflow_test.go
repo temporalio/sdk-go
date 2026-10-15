@@ -37,9 +37,15 @@ func TestGetChildWorkflowOptions(t *testing.T) {
 		},
 		ParentClosePolicy: enums.PARENT_CLOSE_POLICY_REQUEST_CANCEL,
 		VersioningIntent:  VersioningIntentDefault,
-		StaticSummary:     "child workflow summary",
-		StaticDetails:     "child workflow details",
-		Priority:          newPriority(),
+		VersioningOverride: &PinnedVersioningOverride{
+			Version: WorkerDeploymentVersion{
+				DeploymentName: "deployment",
+				BuildID:        "build",
+			},
+		},
+		StaticSummary: "child workflow summary",
+		StaticDetails: "child workflow details",
+		Priority:      newPriority(),
 	}
 
 	// Require test options to have non-zero value for each field. This ensures that we update tests (and the
@@ -250,4 +256,22 @@ func TestDeterministicKeysFunc(t *testing.T) {
 			}))
 		})
 	}
+}
+
+func TestWithLocalActivityOptionsDoesNotModifyRetryPolicy(t *testing.T) {
+	policy := &RetryPolicy{MaximumAttempts: 3}
+	opts := LocalActivityOptions{
+		StartToCloseTimeout: time.Minute,
+		RetryPolicy:         policy,
+	}
+
+	got := GetLocalActivityOptions(WithLocalActivityOptions(newTestWorkflowContext(), opts))
+
+	// The defaults apply to the options on the context.
+	assert.Equal(t, 2.0, got.RetryPolicy.BackoffCoefficient)
+	assert.Equal(t, time.Second, got.RetryPolicy.InitialInterval)
+	assert.Equal(t, 100*time.Second, got.RetryPolicy.MaximumInterval)
+	assert.Equal(t, int32(3), got.RetryPolicy.MaximumAttempts)
+	// The policy the caller passed in is unchanged.
+	assert.Equal(t, &RetryPolicy{MaximumAttempts: 3}, policy)
 }

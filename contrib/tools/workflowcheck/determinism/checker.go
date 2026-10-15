@@ -1,6 +1,7 @@
 package determinism
 
 import (
+	"cmp"
 	"go/ast"
 	"go/token"
 	"go/types"
@@ -219,7 +220,6 @@ type funcInfo struct {
 	reasons              NonDeterminisms
 	samePackageCalls     map[*funcInfo]token.Pos
 	samePackageCallsLock sync.Mutex
-	factsApplied         bool
 }
 
 // Concurrency safe
@@ -377,15 +377,41 @@ func (c *collector) checkRangeType(rangeType types.Type, n ast.Node, fn *types.F
 	return nil
 }
 
+// A function is non-deterministic if it has a direct reason or calls another
+// non-deterministic function in the same package. Start with functions that
+// have direct reasons, then mark their callers transitively to handle cycles.
+//
 // Expects to be called as second pass after all func infos collected.
 func (c *collector) applyFacts() PackageNonDeterminisms {
-	p := PackageNonDeterminisms{}
-	// Just run for each. Even though recursive, likely no benefit from
-	// parallelizing.
+	callers := map[*funcInfo][]*funcInfo{}
+	nonDet := map[*funcInfo]bool{}
+	var pending []*funcInfo
 	for _, info := range c.funcInfos {
-		c.applyFuncNonDeterminisms(info, p)
+		for callee := range info.samePackageCalls {
+			callers[callee] = append(callers[callee], info)
+		}
+		if len(info.reasons) > 0 {
+			nonDet[info] = true
+			pending = append(pending, info)
+		}
+	}
+	for len(pending) > 0 {
+		info := pending[len(pending)-1]
+		pending = pending[:len(pending)-1]
+		for _, caller := range callers[info] {
+			if !nonDet[caller] {
+				nonDet[caller] = true
+				pending = append(pending, caller)
+			}
+		}
+	}
+
+	p := PackageNonDeterminisms{}
+	for info := range nonDet {
+		c.applyFuncNonDeterminisms(info, nonDet)
+		p[info.fn.FullName()] = info.reasons
 		// Export fact if requested
-		if c.checker.EnableObjectFacts && len(info.reasons) > 0 {
+		if c.checker.EnableObjectFacts {
 			c.pass.ExportObjectFact(info.fn, &info.reasons)
 		}
 	}
@@ -406,27 +432,30 @@ func (c *collector) applyFacts() PackageNonDeterminisms {
 	return p
 }
 
-func (c *collector) applyFuncNonDeterminisms(f *funcInfo, p PackageNonDeterminisms) {
-	if f.factsApplied {
-		return
-	}
-	f.factsApplied = true
-	// Recursively call for same-package calls and then see if they have reasons
-	// for non-determinism
-	for child, pos := range f.samePackageCalls {
-		c.applyFuncNonDeterminisms(child, p)
-		if len(child.reasons) > 0 {
-			c.checker.debugf("Marking %v as non-deterministic because it calls %v", f.fn.FullName(), child.fn.FullName())
-			pos := c.pass.Fset.Position(pos)
-			f.reasons = append(f.reasons, &ReasonFuncCall{
-				SourcePos: &pos,
-				FuncName:  child.fn.FullName(),
-			})
+// Expects nonDet to already contain every non-deterministic function in the
+// package.
+func (c *collector) applyFuncNonDeterminisms(f *funcInfo, nonDet map[*funcInfo]bool) {
+	var children []*funcInfo
+	for child := range f.samePackageCalls {
+		if nonDet[child] {
+			children = append(children, child)
 		}
 	}
-	// If we have reasons, place on package non-det
-	if len(f.reasons) > 0 {
-		p[f.fn.FullName()] = f.reasons
+	// Sort so reasons are reported in source order instead of map order. Chained
+	// calls like x.F().G() share a position, so ties are broken by name.
+	slices.SortFunc(children, func(a, b *funcInfo) int {
+		return cmp.Or(
+			cmp.Compare(f.samePackageCalls[a], f.samePackageCalls[b]),
+			strings.Compare(a.fn.FullName(), b.fn.FullName()),
+		)
+	})
+	for _, child := range children {
+		c.checker.debugf("Marking %v as non-deterministic because it calls %v", f.fn.FullName(), child.fn.FullName())
+		pos := c.pass.Fset.Position(f.samePackageCalls[child])
+		f.reasons = append(f.reasons, &ReasonFuncCall{
+			SourcePos: &pos,
+			FuncName:  child.fn.FullName(),
+		})
 	}
 }
 

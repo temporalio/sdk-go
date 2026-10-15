@@ -120,6 +120,11 @@ type (
 	// NamespaceNotFoundError is set as the cause when failure is due namespace not found.
 	NamespaceNotFoundError = internal.NamespaceNotFoundError
 
+	// InvalidVersioningOverrideError is set as the cause of
+	// ChildWorkflowExecutionError when the child could not start because its
+	// versioning override was invalid.
+	InvalidVersioningOverrideError = internal.InvalidVersioningOverrideError
+
 	// WorkflowExecutionError returned from workflow.
 	WorkflowExecutionError = internal.WorkflowExecutionError
 

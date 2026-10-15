@@ -36,6 +36,12 @@ func serializableBackgroundContext() context.Context {
 
 func TestDefaultDataConverter(t *testing.T) {
 	t.Parallel()
+	t.Run("transfer-aware wrapping is idempotent", func(t *testing.T) {
+		t.Parallel()
+		dc := GetDefaultDataConverter()
+		require.Same(t, dc, MakeTransferAware(dc))
+		require.Same(t, dc, MakeTransferAware(nil))
+	})
 	t.Run("result", func(t *testing.T) {
 		t.Parallel()
 		f1 := func(ctx context.Context, r []byte) string {

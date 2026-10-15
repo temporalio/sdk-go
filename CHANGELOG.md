@@ -22,6 +22,11 @@ to docs, or any other relevant information.
 
 ### Added
 
+- Added `workflow.ChildWorkflowOptions.VersioningOverride` for explicitly pinning,
+  auto-upgrading, or one-time routing a child workflow independently of its parent.
+  This requires Temporal Server 1.32.0 or later.
+- Added experimental `converter.NewTransferTypeConverter` API that implements transfer type conversion.
+  `converter.GetDefaultDataConverter()` now supports transfer type conversion.
 - Added autoscaling support for server poller groups, with per-group coverage and
   sticky-backlog prioritization. `SimpleMaximum` is unchanged, and autoscaling
   behaves as before when no poller groups are configured.
@@ -29,8 +34,16 @@ to docs, or any other relevant information.
   `SetWorkerOptions(worker.Options{Plugins: ...})`, which were previously ignored. Once plugins are
   set, `SetWorkerOptions` may not be called again on that environment, and what a plugin registers
   in `StartWorker` is undone at `StopWorker`.
+- `TestActivityEnvironment` now has `RegisterDynamicActivity` and implements `worker.ActivityRegistry`
+  again.
 - `temporalnexus.ConvertNexusLinkToLinkWorkflow`, the decoding counterpart of
   `ConvertWorkflowLinkToNexusLink`.
+- Added `workflow.NewLocalVar[T](ctx)` for type-safe values bound to a workflow run that can be
+  accessed from workflow code and workflow interceptors. Copies of a `workflow.LocalVar[T]` share
+  identity.
+- **Experimental**: New external storage concurrency controls. `ExternalStorage.Concurrency` sets
+  `MaxDriverOperations` (for one client or worker) and `MaxOperationsPerMessage` (for one
+  message). Drivers must use `ctx.GetLimiter()` for store and retrieve operations.
 
 ### Changed
 
@@ -39,18 +52,40 @@ to docs, or any other relevant information.
 - Nexus link conversion now handles all four link types. Workflow links on an inbound Nexus
   request are converted rather than dropped, and `temporalnexus.ConvertCommonLinkToNexusLink`
   converts NexusOperation and Activity links rather than returning an empty `nexus.Link`.
+- The `[TMPRL1104]` workflow task duration log now uses a single warning threshold, configurable
+  with the `TEMPORAL_WORKFLOW_TASK_DURATION_WARN_SECONDS` environment variable and defaulting to 5
+  seconds. It previously warned above a fixed 10 seconds, logged at info above a fixed 5 seconds,
+  and logged at debug below that when trace logging was enabled.
 
 ### Deprecated
 
 ### :boom: Breaking Changes
 
+- Moved the Google ADK integration from `contrib/googleadk` to
+  [temporalio/ai-integrations](https://github.com/temporalio/ai-integrations/tree/main/go/googleadk).
+  Its module path is now `go.temporal.io/googleadk` instead of
+  `go.temporal.io/sdk/contrib/googleadk`; see the integration README for installation and usage.
+- Plugin cleanup must not synchronously call the same worker's `Stop`: it now waits
+  for that cleanup to finish and deadlocks. This includes `SimplePlugin.RunContextAfter`,
+  whose callback receives no `next` function.
 - Bulk sticky workflow cache cleanup, including `PurgeStickyWorkflowCache` and final-worker
   shutdown, no longer increments `temporal_sticky_cache_total_forced_eviction`. This aligns bulk
   cleanup with Java and Core-based SDKs. Qualifying capacity and other per-workflow removals remain
   counted, but dashboards may report fewer forced evictions.
+- **Experimental**: Removed `WorkerOptions.MaxConcurrentWorkflowTaskExternalStorageVisits`. Use
+  `ExternalStorage.Concurrency`.
 
 ### Fixed
 
+- Local activity mock lookup in `TestWorkflowEnvironment` no longer tries re-resolving the activity name.
+  This fixes a bug where two closures with different registered names would alias each other.
+- mTLS client setup and schedule creation no longer modify caller-owned TLS
+  configs or workflow actions, allowing safe reuse.
+- Fatal worker errors now signal polling to stop before notification and run
+  notification and automatic stopping outside polling goroutines to avoid waiting
+  for the reporting poller itself. Concurrent `Worker.Stop` calls and `Worker.Run`
+  wait for worker cleanup, and `Run` returns the first fatal error even when
+  interruption races with it.
 - Child context cancellation now follows creation order by default.
 - Legacy query failure responses (`RespondQueryTaskCompletedRequest`) now set
   `WorkflowTaskFailedCause` for workflow task failures: `PAYLOADS_TOO_LARGE` for oversized payloads,
@@ -58,6 +93,9 @@ to docs, or any other relevant information.
   `WORKFLOW_WORKER_UNHANDLED_FAILURE` when the workflow panicked.
 - Autoscaling pollers now honor configured bounds at startup, preventing excess polls and workflow
   polling delays.
+- `workflow.WithLocalActivityOptions` no longer modifies the `RetryPolicy` passed in
+  `LocalActivityOptions`. It applies the default retry values to a copy, so sharing one policy between
+  workflows no longer writes to it from several goroutines.
 - Worker plugin registry callbacks: `RegisterDynamicWorkflow` now passes the real options to
   `OnRegisterDynamicWorkflow`, and `RegisterDynamicActivity` no longer panics when a plugin set
   `OnRegisterActivity` but not `OnRegisterDynamicActivity`.

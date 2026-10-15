@@ -42,9 +42,8 @@ const (
 
 	noRetryBackoff = time.Duration(-1)
 
-	defaultDefaultHeartbeatThrottleInterval               = 30 * time.Second
-	defaultMaxHeartbeatThrottleInterval                   = 60 * time.Second
-	defaultMaxConcurrentWorkflowTaskExternalStorageVisits = 3
+	defaultDefaultHeartbeatThrottleInterval = 30 * time.Second
+	defaultMaxHeartbeatThrottleInterval     = 60 * time.Second
 )
 
 var (
@@ -178,7 +177,7 @@ type (
 		workerDeploymentOptions          *deploymentpb.WorkerDeploymentOptions
 		inboundPayloadVisitor            PayloadVisitor
 		outboundPayloadVisitor           PayloadVisitor
-		payloadVisitorConcurrency        int
+		storageParams                    extstore.StorageParameters
 		activityCancellationCallbacks    *activityCancellationCallbacks
 	}
 
@@ -2124,7 +2123,7 @@ func newActivityTaskHandlerWithCustomProvider(
 		),
 		inboundPayloadVisitor:         params.inboundPayloadVisitor,
 		outboundPayloadVisitor:        params.outboundPayloadVisitor,
-		payloadVisitorConcurrency:     params.payloadVisitorConcurrency,
+		storageParams:                 params.storageParams,
 		activityCancellationCallbacks: params.activityCancellationCallbacks,
 	}
 }
@@ -2406,7 +2405,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 		defer unregister()
 	}
 
-	if err := visitProtoPayloads(canCtx, ath.inboundPayloadVisitor, t, ath.payloadVisitorConcurrency); err != nil {
+	if err := visitProtoPayloads(canCtx, ath.inboundPayloadVisitor, t, ath.storageParams.MaxOperationsPerMessage()); err != nil {
 		return activityTaskResult{
 			response:   ath.visitorErrorToActivityFailure("Activity task preprocess error: ", t, err),
 			failureErr: err,
@@ -2544,7 +2543,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 			outboundBase = context.Background()
 		}
 		outboundCtx := extstore.WithStorageTarget(outboundBase, storageTarget)
-		if err := visitProtoPayloads(outboundCtx, ath.outboundPayloadVisitor, msg, ath.payloadVisitorConcurrency); err != nil {
+		if err := visitProtoPayloads(outboundCtx, ath.outboundPayloadVisitor, msg, ath.storageParams.MaxOperationsPerMessage()); err != nil {
 			return activityTaskResult{
 				response:   ath.visitorErrorToActivityFailure("Activity task postprocess error: ", t, err),
 				failureErr: err,

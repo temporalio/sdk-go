@@ -1120,7 +1120,7 @@ func createHistoryForCancelTimerAfterActivity(workflowType string) []*historypb.
 	}
 }
 
-func testReplayFailedToStartChildWorkflow(ctx Context) error {
+func executeChildWorkflowExpectedToFail(ctx Context) error {
 	opts := ChildWorkflowOptions{
 		WorkflowTaskTimeout:      5 * time.Second,
 		WorkflowExecutionTimeout: 10 * time.Second,
@@ -1128,19 +1128,38 @@ func testReplayFailedToStartChildWorkflow(ctx Context) error {
 		WorkflowID:               "workflowId",
 	}
 	ctx = WithChildWorkflowOptions(ctx, opts)
-	err := ExecuteChildWorkflow(ctx, "testWorkflow").GetChildWorkflowExecution().Get(ctx, nil)
-	if err != nil {
-		var childErr *ChildWorkflowExecutionAlreadyStartedError
-		if errors.As(err, &childErr) {
-			return nil
-		}
-		return err
+	return ExecuteChildWorkflow(ctx, "testWorkflow").GetChildWorkflowExecution().Get(ctx, nil)
+}
+
+func testReplayFailedToStartChildWorkflow(ctx Context) error {
+	err := executeChildWorkflowExpectedToFail(ctx)
+	if err == nil {
+		return errors.New("expected an error, but didn't get one")
 	}
-	return errors.New("expected an error, but didn't get one")
+	var childErr *ChildWorkflowExecutionAlreadyStartedError
+	if errors.As(err, &childErr) {
+		return nil
+	}
+	return err
+}
+
+func testReplayInvalidVersioningOverride(ctx Context) error {
+	err := executeChildWorkflowExpectedToFail(ctx)
+	if err == nil {
+		return errors.New("expected an error, but didn't get one")
+	}
+	var overrideErr *InvalidVersioningOverrideError
+	if errors.As(err, &overrideErr) {
+		return nil
+	}
+	return err
 }
 
 func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_FailedToStartChildWorkflow() {
-	testEvents := createHistoryForFailedToStartChildWorkflow("testReplayFailedToStartChildWorkflow")
+	testEvents := createHistoryForFailedToStartChildWorkflow(
+		"testReplayFailedToStartChildWorkflow",
+		enumspb.START_CHILD_WORKFLOW_EXECUTION_FAILED_CAUSE_WORKFLOW_ALREADY_EXISTS,
+	)
 	history := &historypb.History{Events: testEvents}
 	logger := getLogger()
 	replayer, err := NewWorkflowReplayer(WorkflowReplayerOptions{})
@@ -1150,7 +1169,23 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_FailedToStartChildWo
 	require.NoError(s.T(), err)
 }
 
-func createHistoryForFailedToStartChildWorkflow(workflowType string) []*historypb.HistoryEvent {
+func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_InvalidVersioningOverride() {
+	testEvents := createHistoryForFailedToStartChildWorkflow(
+		"testReplayInvalidVersioningOverride",
+		enumspb.START_CHILD_WORKFLOW_EXECUTION_FAILED_CAUSE_INVALID_VERSIONING_OVERRIDE,
+	)
+	history := &historypb.History{Events: testEvents}
+	replayer, err := NewWorkflowReplayer(WorkflowReplayerOptions{})
+	require.NoError(s.T(), err)
+	replayer.RegisterWorkflow(testReplayInvalidVersioningOverride)
+	err = replayer.ReplayWorkflowHistory(getLogger(), history)
+	require.NoError(s.T(), err)
+}
+
+func createHistoryForFailedToStartChildWorkflow(
+	workflowType string,
+	cause enumspb.StartChildWorkflowExecutionFailedCause,
+) []*historypb.HistoryEvent {
 	taskQueue := "taskQueue1"
 	return []*historypb.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
@@ -1171,7 +1206,7 @@ func createHistoryForFailedToStartChildWorkflow(workflowType string) []*historyp
 			InitiatedEventId:             5,
 			WorkflowTaskCompletedEventId: 4,
 			WorkflowType:                 &commonpb.WorkflowType{Name: "testWorkflow"},
-			Cause:                        enumspb.START_CHILD_WORKFLOW_EXECUTION_FAILED_CAUSE_WORKFLOW_ALREADY_EXISTS,
+			Cause:                        cause,
 		}),
 		createTestEventWorkflowTaskScheduled(7, &historypb.WorkflowTaskScheduledEventAttributes{}),
 		createTestEventWorkflowTaskStarted(8),
@@ -2269,6 +2304,7 @@ func (s *internalWorkerTestSuite) TestWorkerFatalErrorReleasesCacheOwnership() {
 	worker := createWorker(s.service)
 	s.NoError(worker.Start())
 	worker.executionParams.WorkerFatalErrorCallback(errors.New("fatal worker error"))
+	worker.Stop()
 
 	select {
 	case <-worker.stopC:
@@ -3488,9 +3524,6 @@ func TestWorkerOptionInvalid(t *testing.T) {
 	require.Panics(t, func() {
 		NewAggregatedWorker(&WorkflowClient{}, "worker-options-tq", WorkerOptions{MaxConcurrentWorkflowTaskPollers: 1})
 	})
-	require.Panics(t, func() {
-		NewAggregatedWorker(&WorkflowClient{}, "worker-options-tq", WorkerOptions{MaxConcurrentWorkflowTaskExternalStorageVisits: -1})
-	})
 	for _, value := range []int{0, -1} {
 		require.PanicsWithValue(
 			t,
@@ -3551,7 +3584,6 @@ func TestWorkerOptionDefaults(t *testing.T) {
 		MetricsHandler:                 workflowWorker.executionParameters.MetricsHandler,
 		Identity:                       workflowWorker.executionParameters.Identity,
 		BackgroundContext:              workflowWorker.executionParameters.BackgroundContext,
-		payloadVisitorConcurrency:      3,
 	}
 
 	assertWorkerExecutionParamsEqual(t, expected, workflowWorker.executionParameters)
@@ -3574,26 +3606,25 @@ func TestWorkerOptionNonDefaults(t *testing.T) {
 		namespace:          "worker-options-test",
 		registry:           nil,
 		identity:           "143@worker-options-test-1",
-		dataConverter:      &converter.CompositeDataConverter{},
+		dataConverter:      converter.MakeTransferAware(&converter.CompositeDataConverter{}),
 		failureConverter:   GetDefaultFailureConverter(),
 		contextPropagators: nil,
 		logger:             ilog.NewNopLogger(),
 	}
 
 	options := WorkerOptions{
-		TaskQueueActivitiesPerSecond:                   8888,
-		MaxConcurrentSessionExecutionSize:              3333,
-		MaxConcurrentWorkflowTaskExecutionSize:         2222,
-		MaxConcurrentActivityExecutionSize:             1111,
-		MaxConcurrentLocalActivityExecutionSize:        101,
-		MaxConcurrentWorkflowTaskPollers:               11,
-		MaxConcurrentActivityTaskPollers:               12,
-		WorkerLocalActivitiesPerSecond:                 222,
-		WorkerActivitiesPerSecond:                      99,
-		StickyScheduleToStartTimeout:                   555 * time.Minute,
-		BackgroundActivityContext:                      t.Context(),
-		MaxConcurrentWorkflowTaskExternalStorageVisits: 7,
-		MaxEagerActivityReservationsPerWorkflowTask:    &maxEagerActivityReservationsPerWorkflowTask,
+		TaskQueueActivitiesPerSecond:                8888,
+		MaxConcurrentSessionExecutionSize:           3333,
+		MaxConcurrentWorkflowTaskExecutionSize:      2222,
+		MaxConcurrentActivityExecutionSize:          1111,
+		MaxConcurrentLocalActivityExecutionSize:     101,
+		MaxConcurrentWorkflowTaskPollers:            11,
+		MaxConcurrentActivityTaskPollers:            12,
+		WorkerLocalActivitiesPerSecond:              222,
+		WorkerActivitiesPerSecond:                   99,
+		StickyScheduleToStartTimeout:                555 * time.Minute,
+		BackgroundActivityContext:                   t.Context(),
+		MaxEagerActivityReservationsPerWorkflowTask: &maxEagerActivityReservationsPerWorkflowTask,
 	}
 
 	aggWorker := NewAggregatedWorker(client, taskQueue, options)
@@ -3625,12 +3656,11 @@ func TestWorkerOptionNonDefaults(t *testing.T) {
 		TaskQueueActivitiesPerSecond:   options.TaskQueueActivitiesPerSecond,
 		WorkerLocalActivitiesPerSecond: options.WorkerLocalActivitiesPerSecond,
 		StickyScheduleToStartTimeout:   options.StickyScheduleToStartTimeout,
-		DataConverter:                  client.dataConverter,
+		DataConverter:                  converter.MakeTransferAware(client.dataConverter),
 		FailureConverter:               client.failureConverter,
 		Logger:                         client.logger,
 		MetricsHandler:                 client.metricsHandler,
 		Identity:                       client.identity,
-		payloadVisitorConcurrency:      options.MaxConcurrentWorkflowTaskExternalStorageVisits,
 	}
 
 	assertWorkerExecutionParamsEqual(t, expected, workflowWorker.executionParameters)
@@ -3681,7 +3711,6 @@ func TestLocalActivityWorkerOnly(t *testing.T) {
 		MetricsHandler:                 workflowWorker.executionParameters.MetricsHandler,
 		Identity:                       workflowWorker.executionParameters.Identity,
 		BackgroundContext:              workflowWorker.executionParameters.BackgroundContext,
-		payloadVisitorConcurrency:      3,
 	}
 
 	assertWorkerExecutionParamsEqual(t, expected, workflowWorker.executionParameters)
@@ -3704,7 +3733,6 @@ func assertWorkerExecutionParamsEqual(t *testing.T, paramsA workerExecutionParam
 	require.Equal(t, paramsA.ActivityTaskPollerBehavior, paramsB.ActivityTaskPollerBehavior)
 	require.Equal(t, paramsA.WorkflowPanicPolicy, paramsB.WorkflowPanicPolicy)
 	require.Equal(t, paramsA.EnableLoggingInReplay, paramsB.EnableLoggingInReplay)
-	require.Equal(t, paramsA.payloadVisitorConcurrency, paramsB.payloadVisitorConcurrency)
 }
 
 // Encode function args

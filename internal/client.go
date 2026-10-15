@@ -1649,6 +1649,7 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 	if options.DataConverter == nil {
 		options.DataConverter = converter.GetDefaultDataConverter()
 	}
+	options.DataConverter = converter.MakeTransferAware(options.DataConverter)
 
 	if options.FailureConverter == nil {
 		options.FailureConverter = GetDefaultFailureConverter()
@@ -1751,7 +1752,7 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 	// Create outbound interceptor by wrapping backwards through chain
 	client.interceptor = &workflowClientInterceptor{
 		client:                 client,
-		inboundPayloadVisitor:  extstore.NewExternalRetrievalVisitor(storageParams),
+		inboundPayloadVisitor:  extstore.NewExternalRetrievalVisitor(storageParams.WithLogger(client.logger)),
 		outboundPayloadVisitor: client.newOutboundPayloadVisitor(),
 	}
 	for i := len(options.Interceptors) - 1; i >= 0; i-- {
@@ -1901,8 +1902,12 @@ func (m mTLSCredentials) applyToOptions(opts *ConnectionOptions) error {
 		opts.TLS = &tls.Config{}
 	} else if len(opts.TLS.Certificates) != 0 {
 		return fmt.Errorf("cannot apply mTLS credentials, certificates already exist on TLS options")
+	} else {
+		opts.TLS = opts.TLS.Clone()
 	}
-	opts.TLS.Certificates = append(opts.TLS.Certificates, tls.Certificate(m))
+
+	// Use a new slice because Clone shares the certificate backing array.
+	opts.TLS.Certificates = []tls.Certificate{tls.Certificate(m)}
 	return nil
 }
 

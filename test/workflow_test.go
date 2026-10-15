@@ -29,7 +29,10 @@ import (
 )
 
 const (
-	consistentQuerySignalCh = "consistent-query-signal-chan"
+	consistentQuerySignalCh      = "consistent-query-signal-chan"
+	workflowLocalVarQueryName    = "workflow-local-var-query"
+	workflowLocalVarUpdateName   = "workflow-local-var-update"
+	workflowLocalVarFinishSignal = "workflow-local-var-finish"
 )
 
 type Workflows struct{}
@@ -518,6 +521,57 @@ func (w *Workflows) ContinueAsNew(ctx workflow.Context, count int, taskQueue str
 	}
 	ctx = workflow.WithTaskQueue(ctx, taskQueue)
 	return -1, workflow.NewContinueAsNewError(ctx, w.ContinueAsNew, count-1, taskQueue)
+}
+
+func (w *Workflows) WorkflowLocalVar(ctx workflow.Context, value string) (string, error) {
+	local := workflow.NewLocalVar[string](ctx)
+	if existing := local.Get(ctx); existing != "" {
+		return "", fmt.Errorf("workflow LocalVar was already set to %q at run start", existing)
+	}
+	local.Set(ctx, value)
+	if err := workflow.SetQueryHandler(ctx, workflowLocalVarQueryName, func() (string, error) {
+		return local.Get(ctx), nil
+	}); err != nil {
+		return "", err
+	}
+	if err := workflow.SetUpdateHandler(ctx, workflowLocalVarUpdateName, func(ctx workflow.Context, value string) (string, error) {
+		local.Set(ctx, value)
+		return local.Get(ctx), nil
+	}); err != nil {
+		return "", err
+	}
+	workflow.GetSignalChannel(ctx, workflowLocalVarFinishSignal).Receive(ctx, nil)
+	return local.Get(ctx), nil
+}
+
+func (w *Workflows) WorkflowLocalVarChild(ctx workflow.Context) (string, error) {
+	return workflow.NewLocalVar[string](ctx).Get(ctx), nil
+}
+
+func (w *Workflows) WorkflowLocalVarParent(ctx workflow.Context) (string, error) {
+	local := workflow.NewLocalVar[string](ctx)
+	local.Set(ctx, "parent")
+	var childValue string
+	if err := workflow.ExecuteChildWorkflow(ctx, w.WorkflowLocalVarChild).Get(ctx, &childValue); err != nil {
+		return "", err
+	}
+	if childValue != "" {
+		return "", fmt.Errorf("child workflow LocalVar = %q, want empty", childValue)
+	}
+	return local.Get(ctx), nil
+}
+
+func (w *Workflows) WorkflowLocalVarContinueAsNew(ctx workflow.Context, continued bool) (string, error) {
+	local := workflow.NewLocalVar[string](ctx)
+	value := local.Get(ctx)
+	if continued {
+		return value, nil
+	}
+	if value != "" {
+		return "", fmt.Errorf("initial workflow LocalVar = %q, want empty", value)
+	}
+	local.Set(ctx, "previous run")
+	return "", workflow.NewContinueAsNewError(ctx, w.WorkflowLocalVarContinueAsNew, true)
 }
 
 func (w *Workflows) ContinueAsNewWithOptions(ctx workflow.Context, count int, taskQueue string) (string, error) {
@@ -2480,6 +2534,63 @@ func (w *Workflows) WaitSignalToStartVersionedTwo(ctx workflow.Context) (string,
 	var value string
 	workflow.GetSignalChannel(ctx, "start-signal").Receive(ctx, &value)
 	return value + "_v2", nil
+}
+
+type childWorkflowVersioningOverride int
+
+const (
+	childWorkflowVersioningOverridePinned childWorkflowVersioningOverride = iota
+	childWorkflowVersioningOverrideAutoUpgrade
+	childWorkflowVersioningOverrideOneTime
+)
+
+func (w *Workflows) ChildWorkflowWithVersioningOverride(
+	ctx workflow.Context,
+	targetVersion worker.WorkerDeploymentVersion,
+	overrideType childWorkflowVersioningOverride,
+) (string, error) {
+	var versioningOverride client.VersioningOverride
+	switch overrideType {
+	case childWorkflowVersioningOverridePinned:
+		versioningOverride = &client.PinnedVersioningOverride{
+			Version: targetVersion,
+		}
+	case childWorkflowVersioningOverrideAutoUpgrade:
+		versioningOverride = &client.AutoUpgradeVersioningOverride{}
+	case childWorkflowVersioningOverrideOneTime:
+		versioningOverride = &client.OneTimeVersioningOverride{
+			TargetVersion: targetVersion,
+		}
+	default:
+		return "", fmt.Errorf("unknown child workflow versioning override type: %d", overrideType)
+	}
+
+	childWorkflowID := workflow.GetInfo(ctx).WorkflowExecution.ID + "-child"
+	childCtx := workflow.WithChildOptions(ctx, workflow.ChildWorkflowOptions{
+		WorkflowID:         childWorkflowID,
+		VersioningOverride: versioningOverride,
+	})
+	child := workflow.ExecuteChildWorkflow(childCtx, "WaitSignalToStartVersioned")
+
+	var childExecution workflow.Execution
+	if err := child.GetChildWorkflowExecution().Get(ctx, &childExecution); err != nil {
+		return "", err
+	}
+
+	workflow.GetSignalChannel(ctx, "start-child").Receive(ctx, nil)
+	if err := workflow.SignalExternalWorkflow(
+		ctx,
+		childExecution.ID,
+		childExecution.RunID,
+		"start-signal",
+		"prefix",
+	).Get(ctx, nil); err != nil {
+		return "", err
+	}
+
+	var result string
+	err := child.Get(ctx, &result)
+	return result, err
 }
 
 func (w *Workflows) BuildIDWorkflow(ctx workflow.Context) error {
@@ -4577,6 +4688,10 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ConsistentQueryWorkflow)
 	worker.RegisterWorkflow(w.ContextPropagator)
 	worker.RegisterWorkflow(w.ContinueAsNew)
+	worker.RegisterWorkflow(w.WorkflowLocalVar)
+	worker.RegisterWorkflow(w.WorkflowLocalVarChild)
+	worker.RegisterWorkflow(w.WorkflowLocalVarParent)
+	worker.RegisterWorkflow(w.WorkflowLocalVarContinueAsNew)
 	worker.RegisterWorkflow(w.UpsertSearchAttributesConditional)
 	worker.RegisterWorkflow(w.UpsertMemoConditional)
 	worker.RegisterWorkflow(w.ContinueAsNewAfterUnsetSearchAttribute)

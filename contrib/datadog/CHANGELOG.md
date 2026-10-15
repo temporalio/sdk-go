@@ -11,6 +11,10 @@ or Security.
 
 ## [Unreleased]
 
+### Fixed
+
+- `DisableUpdateTracing` now disables Datadog update spans.
+
 ### Breaking Changes
 
 - Raised the minimum supported Go version from 1.25.4 to 1.26.0.

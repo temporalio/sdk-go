@@ -31,6 +31,7 @@ func GetDefaultFailureConverter() converter.FailureConverter {
 // Exposed as: [go.temporal.io/sdk/temporal.DefaultFailureConverterOptions]
 type DefaultFailureConverterOptions struct {
 	// Optional: Sets DataConverter to customize serialization/deserialization of fields.
+	// This converter is wrapped to support transfer type conversion.
 	//
 	// default: Default data converter
 	DataConverter converter.DataConverter
@@ -53,9 +54,7 @@ type DefaultFailureConverter struct {
 //
 // Exposed as: [go.temporal.io/sdk/temporal.NewDefaultFailureConverter]
 func NewDefaultFailureConverter(opt DefaultFailureConverterOptions) *DefaultFailureConverter {
-	if opt.DataConverter == nil {
-		opt.DataConverter = converter.GetDefaultDataConverter()
-	}
+	opt.DataConverter = converter.MakeTransferAware(opt.DataConverter)
 	return &DefaultFailureConverter{
 		dataConverter:          opt.DataConverter,
 		encodeCommonAttributes: opt.EncodeCommonAttributes,

@@ -1,7 +1,7 @@
 package converter
 
 var (
-	defaultDataConverter = NewCompositeDataConverter(
+	defaultDataConverter = newTransferAwareDataConverter(NewCompositeDataConverter(
 		NewNilPayloadConverter(),
 		NewByteSlicePayloadConverter(),
 
@@ -13,10 +13,12 @@ var (
 		NewProtoPayloadConverter(),
 
 		NewJSONPayloadConverter(),
-	)
+	))
 )
 
 // GetDefaultDataConverter returns default data converter used by Temporal worker.
+// It supports transfer type conversion for top-level values implementing
+// [ValueWithTransferTypeConverter].
 func GetDefaultDataConverter() DataConverter {
 	return defaultDataConverter
 }

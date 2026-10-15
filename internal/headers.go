@@ -53,10 +53,7 @@ type (
 	// implementers should not expect or require contextual data be present.
 	//
 	// Exposed as: [go.temporal.io/sdk/workflow.ContextAware]
-	ContextAware interface {
-		WithWorkflowContext(ctx Context) converter.DataConverter
-		WithContext(ctx context.Context) converter.DataConverter
-	}
+	ContextAware = converter.ContextAware
 
 	headerReader struct {
 		header *commonpb.Header
