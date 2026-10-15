@@ -37,6 +37,11 @@ import (
 // Suite
 // ============================================================================
 
+// devServerVersion pins the dev server these tests run against. Time skipping
+// v2 is newer than the default CLI release, so the stock download does not
+// exercise it. Matches the pin the Python SDK's time-skipping tests use.
+const devServerVersion = "v1.8.3-server-1.32.0-162.0"
+
 type TimeSkippingV2TestSuite struct {
 	*require.Assertions
 	suite.Suite
@@ -62,9 +67,10 @@ func (s *TimeSkippingV2TestSuite) SetupSuite() {
 	// StartDevServerV2 adds the time-skipping dynamic config itself.
 	srv, err := testsuite.StartDevServerV2(context.Background(), testsuite.DevServerV2Options{
 		DevServerOptions: testsuite.DevServerOptions{
-			ExistingPath:  os.Getenv("TEMPORAL_DEV_SERVER_EXISTING_PATH"),
-			ClientOptions: &client.Options{Namespace: "default"},
-			LogLevel:      "warn",
+			ExistingPath:   os.Getenv("TEMPORAL_DEV_SERVER_EXISTING_PATH"),
+			CachedDownload: testsuite.CachedDownload{Version: devServerVersion},
+			ClientOptions:  &client.Options{Namespace: "default"},
+			LogLevel:       "warn",
 		},
 		TSConfig: testsuite.TimeSkippingConfig{Enabled: true},
 	})
@@ -225,9 +231,9 @@ func FailOnceThenSleepWorkflow(ctx workflow.Context, seconds float64) (string, e
 
 // ContinueAsNewSleepWorkflow: sleeps, then continue-as-news until runsRemaining==1.
 type CANArgs struct {
-	SleepSeconds   float64
-	RunsRemaining  int
-	CurrentRun     int
+	SleepSeconds  float64
+	RunsRemaining int
+	CurrentRun    int
 }
 
 func ContinueAsNewSleepWorkflow(ctx workflow.Context, args CANArgs) (string, error) {
@@ -271,10 +277,10 @@ type ParentTimeSkippingArgs struct {
 }
 
 type ParentTimeSkippingResult struct {
-	ParentStart              time.Time
-	ParentAfterWait1         time.Time
-	ParentAfterChildStart    time.Time
-	ParentEnd                time.Time
+	ParentStart           time.Time
+	ParentAfterWait1      time.Time
+	ParentAfterChildStart time.Time
+	ParentEnd             time.Time
 }
 
 func ParentTimeSkippingWorkflow(ctx workflow.Context, args ParentTimeSkippingArgs) (ParentTimeSkippingResult, error) {
@@ -535,9 +541,10 @@ func (s *TimeSkippingV2TestSuite) TestTimeSkipperWrappingLocalEnvClient() {
 	// Fresh dev server WITHOUT DevServerV2 (no stamping) — mimics Python's
 	// "start_local, then wrap the client with TimeSkipper directly".
 	raw, err := testsuite.StartDevServer(ctx, testsuite.DevServerOptions{
-		ExistingPath:  os.Getenv("TEMPORAL_DEV_SERVER_EXISTING_PATH"),
-		ClientOptions: &client.Options{Namespace: "default"},
-		LogLevel:      "warn",
+		ExistingPath:   os.Getenv("TEMPORAL_DEV_SERVER_EXISTING_PATH"),
+		CachedDownload: testsuite.CachedDownload{Version: devServerVersion},
+		ClientOptions:  &client.Options{Namespace: "default"},
+		LogLevel:       "warn",
 		// Set manually: this path deliberately skips StartDevServerV2, which is
 		// what normally supplies this.
 		ExtraArgs: []string{
@@ -1021,9 +1028,10 @@ func (s *TimeSkippingV2TestSuite) TestMaxSessionSkipCountStampedByEnv() {
 	ctx := context.Background()
 	srv, err := testsuite.StartDevServerV2(ctx, testsuite.DevServerV2Options{
 		DevServerOptions: testsuite.DevServerOptions{
-			ExistingPath:  os.Getenv("TEMPORAL_DEV_SERVER_EXISTING_PATH"),
-			ClientOptions: &client.Options{Namespace: "default"},
-			LogLevel:      "warn",
+			ExistingPath:   os.Getenv("TEMPORAL_DEV_SERVER_EXISTING_PATH"),
+			CachedDownload: testsuite.CachedDownload{Version: devServerVersion},
+			ClientOptions:  &client.Options{Namespace: "default"},
+			LogLevel:       "warn",
 		},
 		TSConfig: testsuite.TimeSkippingConfig{Enabled: true, MaxSessionSkipCount: 5},
 	})
