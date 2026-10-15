@@ -267,6 +267,9 @@ func (a *Activities) InspectActivityInfo(ctx context.Context, namespace, taskQue
 	if info.ScheduledTime.IsZero() {
 		return errors.New("expected non zero scheduled time")
 	}
+	if info.CurrentAttemptScheduledTime.Before(info.ScheduledTime) {
+		return fmt.Errorf("expected current attempt scheduled time %v to not be before scheduled time %v", info.CurrentAttemptScheduledTime, info.ScheduledTime)
+	}
 	if info.IsLocalActivity != isLocalActivity {
 		return fmt.Errorf("expected IsLocalActivity %v but got %v", isLocalActivity, info.IsLocalActivity)
 	}
@@ -323,6 +326,9 @@ func (a *Activities) InspectActivityInfoNoWorkflow(ctx context.Context, namespac
 	}
 	if info.ScheduledTime.IsZero() {
 		return errors.New("expected non zero scheduled time")
+	}
+	if info.CurrentAttemptScheduledTime.Before(info.ScheduledTime) {
+		return fmt.Errorf("expected current attempt scheduled time %v to not be before scheduled time %v", info.CurrentAttemptScheduledTime, info.ScheduledTime)
 	}
 	if info.ScheduleToCloseTimeout != scheduleToCloseTimeout {
 		return fmt.Errorf("expected ScheduleToCloseTimeout %v but got %v", scheduleToCloseTimeout, info.ScheduleToCloseTimeout)

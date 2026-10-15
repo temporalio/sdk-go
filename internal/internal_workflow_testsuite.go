@@ -1940,6 +1940,7 @@ func (env *testWorkflowEnvironmentImpl) executeActivityWithRetryForTest(
 				env.registerDelayedCallback(func() {
 					env.runningCount++
 					task.Attempt = task.GetAttempt() + 1
+					task.CurrentAttemptScheduledTime = timestamppb.Now()
 					if token, ok := activityTokenFromBytes(task.TaskToken); ok {
 						if ah, ok := env.getActivityHandle(token); ok {
 							task.HeartbeatDetails = ah.heartbeatDetails
@@ -2630,18 +2631,19 @@ func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskQueue str
 func newTestActivityTask(namespace string, attr *commandpb.ScheduleActivityTaskCommandAttributes) *workflowservice.PollActivityTaskQueueResponse {
 	now := time.Now()
 	return &workflowservice.PollActivityTaskQueueResponse{
-		Attempt:                1,
-		ActivityId:             attr.GetActivityId(),
-		ActivityType:           &commonpb.ActivityType{Name: attr.GetActivityType().GetName()},
-		Input:                  attr.GetInput(),
-		ScheduledTime:          timestamppb.New(now),
-		ScheduleToCloseTimeout: attr.GetScheduleToCloseTimeout(),
-		StartedTime:            timestamppb.New(now),
-		StartToCloseTimeout:    attr.GetStartToCloseTimeout(),
-		HeartbeatTimeout:       attr.GetHeartbeatTimeout(),
-		WorkflowNamespace:      namespace,
-		Header:                 attr.GetHeader(),
-		Priority:               attr.Priority,
+		Attempt:                     1,
+		ActivityId:                  attr.GetActivityId(),
+		ActivityType:                &commonpb.ActivityType{Name: attr.GetActivityType().GetName()},
+		Input:                       attr.GetInput(),
+		ScheduledTime:               timestamppb.New(now),
+		CurrentAttemptScheduledTime: timestamppb.New(now),
+		ScheduleToCloseTimeout:      attr.GetScheduleToCloseTimeout(),
+		StartedTime:                 timestamppb.New(now),
+		StartToCloseTimeout:         attr.GetStartToCloseTimeout(),
+		HeartbeatTimeout:            attr.GetHeartbeatTimeout(),
+		WorkflowNamespace:           namespace,
+		Header:                      attr.GetHeader(),
+		Priority:                    attr.Priority,
 	}
 }
 
