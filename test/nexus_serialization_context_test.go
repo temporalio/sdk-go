@@ -98,9 +98,15 @@ func (ts *IntegrationTestSuite) TestNexusSerializationContextPropagation() {
 		{operation: "async-typed-op", workflow: ts.workflows.TemporalOpAsyncTypedCaller},
 		{operation: "async-continue-as-new-op", workflow: ts.workflows.TemporalOpAsyncContinueAsNewCaller},
 		{operation: "async-activity-op", workflow: ts.workflows.TemporalOpAsyncActivityCaller},
+		{operation: "async-update-op", workflow: ts.workflows.TemporalOpAsyncUpdateCaller},
 	} {
 		ts.Run(testCase.operation, func() {
 			input := uuid.NewString()
+			if testCase.operation == "async-update-op" {
+				_, err := ts.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{ID: input, TaskQueue: ts.taskQueueName},
+					ts.workflows.TemporalOpUpdateTarget)
+				ts.Require().NoError(err)
+			}
 			run, err := ts.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
 				ID: "caller-" + input, TaskQueue: ts.taskQueueName, WorkflowTaskTimeout: 10 * time.Second,
 			}, testCase.workflow, input)
@@ -109,7 +115,8 @@ func (ts *IntegrationTestSuite) TestNexusSerializationContextPropagation() {
 			ts.Require().NoError(run.Get(ctx, &result))
 			ts.Equal(input, result)
 			var backingResult string
-			if testCase.operation != "async-activity-op" {
+			switch testCase.operation {
+			case "async-typed-op", "async-continue-as-new-op":
 				ts.Require().NoError(ts.client.GetWorkflow(ctx, input, "").Get(ctx, &backingResult))
 				iter := ts.client.GetWorkflowHistory(ctx, input, "", false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
 				ts.Require().True(iter.HasNext())
@@ -122,9 +129,11 @@ func (ts *IntegrationTestSuite) TestNexusSerializationContextPropagation() {
 					// The server carries the context into the continued run, whose result reaches the caller.
 					ts.NotEmpty(started.GetWorkflowExecutionStartedEventAttributes().GetContinuedExecutionRunId())
 				}
-			}
-			if testCase.operation == "async-activity-op" {
+			case "async-activity-op":
 				handle := ts.client.GetActivityHandle(client.GetActivityHandleOptions{ActivityID: "act-" + input})
+				ts.Require().NoError(handle.Get(ctx, &backingResult))
+			case "async-update-op":
+				handle := ts.client.GetWorkflowUpdateHandle(client.GetWorkflowUpdateHandleOptions{WorkflowID: input, UpdateID: input})
 				ts.Require().NoError(handle.Get(ctx, &backingResult))
 			}
 			ts.Equal(input, backingResult)

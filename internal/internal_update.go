@@ -9,6 +9,7 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
+	nexuspb "go.temporal.io/api/nexus/v1"
 	protocolpb "go.temporal.io/api/protocol/v1"
 	updatepb "go.temporal.io/api/update/v1"
 	"go.temporal.io/sdk/converter"
@@ -74,6 +75,8 @@ type (
 	updateEnv interface {
 		GetFailureConverter() converter.FailureConverter
 		GetDataConverter() converter.DataConverter
+		GetRootFailureConverter() converter.FailureConverter
+		GetRootDataConverter() converter.DataConverter
 		Send(*protocolpb.Message, ...msgSendOpt)
 	}
 
@@ -91,6 +94,9 @@ type (
 		state            updateState
 		dataConverter    converter.DataConverter
 		failureConverter converter.FailureConverter
+		// nexusSerializationContext is set when the update was sent by a Nexus handler, which
+		// returns the update's outcome to its caller.
+		nexusSerializationContext *nexuspb.PropagatedSerializationContext
 	}
 
 	// updateHandler is the underlying type that is registered into a workflow
@@ -138,6 +144,7 @@ func (up *updateProtocol) HandleMessage(msg *protocolpb.Message) error {
 		return err
 	}
 	up.initialRequest = &request
+	up.nexusSerializationContext = request.GetPropagatedNexusSerializationContext()
 	up.requireState("update request", updateStateNew)
 	up.requestMsgID = msg.GetId()
 	up.requestSeqID = msg.GetEventId()
@@ -168,6 +175,7 @@ func (up *updateProtocol) Accept() {
 // Reject is called for an update if validation fails.
 func (up *updateProtocol) Reject(err error) {
 	up.requireState("reject", updateStateNew, updateStateRequestInitiated)
+	_, failureConverter := up.outcomeConverters()
 	up.env.Send(&protocolpb.Message{
 		Id:                 up.protoInstanceID + "/reject",
 		ProtocolInstanceId: up.protoInstanceID,
@@ -175,7 +183,7 @@ func (up *updateProtocol) Reject(err error) {
 			RejectedRequestMessageId:         up.requestMsgID,
 			RejectedRequestSequencingEventId: up.requestSeqID,
 			RejectedRequest:                  up.initialRequest,
-			Failure:                          up.failureConverter.ErrorToFailure(err),
+			Failure:                          failureConverter.ErrorToFailure(err),
 		}),
 	})
 	up.state = updateStateCompleted
@@ -186,13 +194,13 @@ func (up *updateProtocol) Reject(err error) {
 func (up *updateProtocol) Complete(success any, outcomeErr error) {
 	up.requireState("complete", updateStateAccepted)
 	outcome := &updatepb.Outcome{}
+	dataConverter, failureConverter := up.outcomeConverters()
 	if outcomeErr != nil {
 		outcome.Value = &updatepb.Outcome_Failure{
-			Failure: up.failureConverter.ErrorToFailure(outcomeErr),
+			Failure: failureConverter.ErrorToFailure(outcomeErr),
 		}
 	} else {
-		dc := up.dataConverter
-		success, err := dc.ToPayloads(success)
+		success, err := dataConverter.ToPayloads(success)
 		if err != nil {
 			panic(err)
 		}
@@ -212,6 +220,16 @@ func (up *updateProtocol) Complete(success any, outcomeErr error) {
 		}),
 	}, withExpectedEventPredicate(up.checkCompletedEvent))
 	up.state = updateStateCompleted
+}
+
+// outcomeConverters returns the converters for the update's outcome. See serializationContextFor.
+func (up *updateProtocol) outcomeConverters() (converter.DataConverter, converter.FailureConverter) {
+	if up.nexusSerializationContext == nil {
+		return up.dataConverter, up.failureConverter
+	}
+	nexusContext := nexusSerializationContextFromProto(up.nexusSerializationContext)
+	return converter.WithDataConverterSerializationContext(up.env.GetRootDataConverter(), nexusContext),
+		converter.WithFailureConverterSerializationContext(up.env.GetRootFailureConverter(), nexusContext)
 }
 
 func (up *updateProtocol) checkCompletedEvent(e *historypb.HistoryEvent) bool {

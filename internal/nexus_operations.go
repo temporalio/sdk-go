@@ -75,9 +75,9 @@ func nexusSerializationContextFromProto(ctx *nexuspb.PropagatedSerializationCont
 	}
 }
 
-// serializationContextFor returns propagated if set, otherwise defaultContext. Executions started
-// by a Nexus handler carry the handler's context, and their own payloads (input, results, failures,
-// memo, static summary and details) must use it on both encode and decode.
+// serializationContextFor returns propagated if set, otherwise defaultContext. Executions and updates
+// started by a Nexus handler carry the handler's context, and the results and failures they return to
+// the caller must use it on both encode and decode.
 func serializationContextFor(
 	defaultContext converter.SerializationContext,
 	propagated *nexuspb.PropagatedSerializationContext,
