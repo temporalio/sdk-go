@@ -31,27 +31,28 @@ var (
 	ErrTypeIsNotByteSlice = errors.New("type is not *[]byte")
 )
 
-// WorkflowTaskFailureError, when returned from a PayloadCodec's Encode or Decode
-// on a workflow-side payload path the SDK routes through Workflow Task
-// completion, requests that the current Workflow Task fail rather than the
-// Workflow Execution, so the server retries the task while the execution stays
-// open and a transient codec failure can recover. The honored paths are decoding
-// workflow input, decoding an activity or child-workflow result delivered through
-// a Future, encoding activity or child-workflow arguments, and encoding a side
-// effect's summary. On the Future decode paths the failure is raised even if the
-// workflow handles the Future.Get error rather than propagating it, so it cannot
-// be suppressed by workflow error handling. It is honored identically under both
-// WorkflowPanicPolicy values and is not logged as a workflow panic.
+// WorkflowTaskFailureError can be returned from a PayloadCodec's Encode or
+// Decode to fail the current Workflow Task instead of the Workflow Execution, so
+// the Temporal Service can retry the task. It behaves the same under both
+// WorkflowPanicPolicy values.
 //
-// Other codec paths keep their existing behavior: signal decoding drops the
-// signal, update-argument decoding rejects the update, and query decoding fails
-// the query. On the client or in an activity worker the marker is an ordinary
-// error. The wrapped cause is preserved through errors.Is and errors.As.
+// During Workflow Task processing, it fails the task when returned for workflow
+// input, the workflow result, Continue-As-New input, failure details, update
+// results, marker data, summaries, and the input of activities, child workflows,
+// Nexus operations, and external signals. Results of activities, child
+// workflows, and Nexus operations fail the task from Future.Get, even if the
+// workflow handles the error.
+//
+// Other workflow APIs that decode payloads, such as EncodedValues,
+// GetLastCompletionResult, and ApplicationError.Details, return it to the
+// workflow as an ordinary error. Signal, update argument, query, and memo
+// handling are unchanged. Outside Workflow Task processing it is an ordinary
+// error.
 type WorkflowTaskFailureError struct {
 	cause error
 }
 
-// Error implements the error interface, delegating to the wrapped cause.
+// Error returns the cause's message.
 func (e *WorkflowTaskFailureError) Error() string {
 	if e.cause == nil {
 		return "workflow task failure requested by payload codec"
@@ -59,25 +60,21 @@ func (e *WorkflowTaskFailureError) Error() string {
 	return e.cause.Error()
 }
 
-// Unwrap returns the wrapped cause so errors.Is and errors.As traverse it. It
-// may be nil.
+// Unwrap returns the cause, which may be nil.
 func (e *WorkflowTaskFailureError) Unwrap() error {
 	return e.cause
 }
 
-// NewWorkflowTaskFailureError wraps cause in a WorkflowTaskFailureError. Return
-// the result from a PayloadCodec's Encode or Decode to request that the current
-// Workflow Task fail rather than the Workflow Execution. Codec calls consume the
-// Workflow Task timeout budget, so a codec should retry a transient failure
-// internally first and return this only once those bounded retries are
-// exhausted. See WorkflowTaskFailureError for the full contract.
+// NewWorkflowTaskFailureError wraps cause in a WorkflowTaskFailureError.
+//
+// Codec calls count against the Workflow Task timeout, so retry transient
+// failures locally before returning this error.
 func NewWorkflowTaskFailureError(cause error) error {
 	return &WorkflowTaskFailureError{cause: cause}
 }
 
-// tagCodecRequestedTaskFailure tags a *WorkflowTaskFailureError with the codec
-// origin marker (see internal/codecerror), applied only at the PayloadCodec
-// boundary so a marker returned directly from workflow code is never tagged.
+// tagCodecRequestedTaskFailure tags markers at the codec boundary so one returned
+// directly by workflow code is not honored.
 func tagCodecRequestedTaskFailure(err error) error {
 	if err == nil {
 		return nil

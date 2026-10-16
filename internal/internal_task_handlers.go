@@ -1310,14 +1310,7 @@ func (w *workflowExecutionContextImpl) applyWorkflowPanicPolicy(workflowTask *wo
 	task := workflowTask.task
 
 	if workflowError == nil && w.err != nil {
-		// A PayloadCodec running workflow-side code (encoding activity arguments,
-		// decoding workflow input or an activity result, etc.) may return a
-		// *converter.WorkflowTaskFailureError to request that the current Workflow
-		// Task fail while the Workflow Execution stays open. It is tagged at the
-		// codec boundary so only codec-originated markers are honored here, before
-		// the WorkflowPanicPolicy switch, making the behavior identical under both
-		// policies and keeping it out of the workflow-panic logging path. Returning
-		// the error becomes a WorkflowTaskFailed which the server retries.
+		// Checked before the panic policy so both policies fail the task.
 		if codecErr, ok := codecWorkflowTaskFailureFrom(w.err); ok {
 			return nil, codecErr
 		}
@@ -1326,8 +1319,7 @@ func (w *workflowExecutionContextImpl) applyWorkflowPanicPolicy(workflowTask *wo
 		}
 	}
 
-	// ProcessLocalActivityResult surfaces marker-data encoding errors as
-	// workflowError rather than w.err, so honor the marker here too.
+	// Local activity result processing errors arrive as workflowError.
 	if codecErr, ok := codecWorkflowTaskFailureFrom(workflowError); ok {
 		return nil, codecErr
 	}
@@ -1366,6 +1358,11 @@ func (w *workflowExecutionContextImpl) applyWorkflowPanicPolicy(workflowTask *wo
 		}
 	}
 
+	return w.completeWorkflowTaskOrCodecFailure(workflowTask)
+}
+
+func (w *workflowExecutionContextImpl) completeWorkflowTaskOrCodecFailure(workflowTask *workflowTask) (completion *workflowTaskCompletion, err error) {
+	defer recoverCodecWorkflowTaskFailure(&err)
 	return w.CompleteWorkflowTask(workflowTask, true), nil
 }
 

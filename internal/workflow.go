@@ -1373,12 +1373,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 
 	wfType, input, err := getValidatedWorkflowFunction(childWorkflowType, args, dc, env.GetRegistry())
 	if err != nil {
-		// A codec-requested Workflow Task failure must fail the task regardless of
-		// whether the parent ever calls Get on the child future, so panic it here
-		// rather than only storing it on the futures (matching the activity path).
-		if _, ok := codecWorkflowTaskFailureFrom(err); ok {
-			panic(err)
-		}
+		panicOnCodecWorkflowTaskFailure(err)
 		executionSettable.Set(nil, err)
 		mainSettable.Set(nil, err)
 		return result
@@ -1850,6 +1845,7 @@ func signalExternalWorkflow(ctx Context, workflowID, runID, signalName string, a
 	})
 	input, err := encodeArg(dataConverter, arg)
 	if err != nil {
+		panicOnCodecWorkflowTaskFailure(err)
 		settable.Set(nil, err)
 		return future
 	}
@@ -3158,6 +3154,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteNexusOperation(ctx Context, inp
 
 	params, err := wc.prepareNexusOperationParams(ctx, input)
 	if err != nil {
+		panicOnCodecWorkflowTaskFailure(err)
 		executionSettable.Set(nil, err)
 		mainSettable.Set(nil, err)
 		return result
