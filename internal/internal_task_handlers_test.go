@@ -1961,7 +1961,7 @@ func (t *TaskHandlersTestSuite) processLocalActivityEncodeFailure(workflowName s
 
 	laTaskPoller := newLocalActivityPoller(params, laTunnel, nil, nil, stopCh)
 	go func() {
-		task, err := laTaskPoller.PollTask()
+		task, err := laTaskPoller.PollTask(pollerGroupLease{})
 		if err != nil {
 			return
 		}

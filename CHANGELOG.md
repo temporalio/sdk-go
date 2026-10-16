@@ -65,7 +65,7 @@ to docs, or any other relevant information.
 
 ### Deprecated
 
-### Breaking Changes
+### :boom: Breaking Changes
 
 ### Fixed
 
