@@ -3719,6 +3719,123 @@ func (ts *IntegrationTestSuite) TestOpenTelemetryTracingWithoutMessages() {
 	ts.testOpenTelemetryTracing(false, false)
 }
 
+func (ts *IntegrationTestSuite) TestOpenTelemetryTracingSpanOrder() {
+	const rootName = "root"
+	const firstName = "first"
+	const secondName = "second"
+	const childName = "child"
+	ctx, rootSpan := ts.openTelemetryTracer.Start(context.Background(), rootName)
+	firstCtx, firstSpan := ts.openTelemetryTracer.Start(ctx, firstName)
+	_, childSpan := ts.openTelemetryTracer.Start(firstCtx, childName)
+	_, secondSpan := ts.openTelemetryTracer.Start(ctx, secondName)
+
+	// Sibling completion order does not change their parent-child relationships.
+	secondSpan.End()
+	childSpan.End()
+	firstSpan.End()
+	rootSpan.End()
+
+	actual := interceptortest.Span(rootName)
+	ts.addOpenTelemetryChildren(rootSpan.SpanContext().SpanID(), actual, ts.openTelemetrySpanRecorder.Ended())
+	ts.Equal(interceptortest.Span(rootName,
+		interceptortest.Span(firstName, interceptortest.Span(childName)),
+		interceptortest.Span(secondName),
+	), actual)
+}
+
+func (ts *IntegrationTestSuite) TestOpenTelemetryTracingQueryReplay() {
+	const workflowName = "query-after-replay"
+	const queryName = "is-replaying"
+	ts.worker.RegisterWorkflowWithOptions(func(ctx workflow.Context) error {
+		return workflow.SetQueryHandler(ctx, queryName, func() (bool, error) {
+			return workflow.IsReplaying(ctx), nil
+		})
+	}, workflow.RegisterOptions{Name: workflowName})
+
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+	run, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions(workflowName), workflowName)
+	ts.NoError(err)
+	ts.NoError(run.Get(ctx, nil))
+
+	// Completed workflows leave the cache, forcing this query to rebuild history.
+	value, err := ts.client.QueryWorkflow(ctx, run.GetID(), run.GetRunID(), queryName)
+	ts.NoError(err)
+	var replaying bool
+	ts.NoError(value.Get(&replaying))
+	ts.True(replaying)
+
+	var querySpan, handlerSpan sdktrace.ReadOnlySpan
+	for _, span := range ts.openTelemetrySpanRecorder.Ended() {
+		switch span.Name() {
+		case "QueryWorkflow:" + queryName:
+			querySpan = span
+		case "HandleQuery:" + queryName:
+			handlerSpan = span
+		}
+	}
+
+	ts.Require().NotNil(querySpan)
+	ts.Require().NotNil(handlerSpan, "queries served after replay must emit an inbound span")
+	ts.Equal(querySpan.SpanContext().SpanID(), handlerSpan.Parent().SpanID())
+	ts.Equal(querySpan.SpanContext().TraceID(), handlerSpan.SpanContext().TraceID())
+}
+
+func (ts *IntegrationTestSuite) TestOpenTelemetryTracingRunningQuery() {
+	const workflowName = "query-running-workflow"
+	const queryName = "is-replaying"
+	const finishSignal = "finish"
+	const timerDelay = time.Hour
+	ts.worker.RegisterWorkflowWithOptions(func(ctx workflow.Context) error {
+		if err := workflow.SetQueryHandler(ctx, queryName, func() (bool, error) {
+			return workflow.IsReplaying(ctx), nil
+		}); err != nil {
+			return err
+		}
+
+		// Keep a command event in history without letting the timer fire during the query.
+		workflow.NewTimer(ctx, timerDelay)
+		workflow.GetSignalChannel(ctx, finishSignal).Receive(ctx, nil)
+		return nil
+	}, workflow.RegisterOptions{Name: workflowName})
+
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+	run, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions(workflowName), workflowName)
+	ts.NoError(err)
+	defer func() {
+		ts.NoError(ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), finishSignal, nil))
+		ts.NoError(run.Get(ctx, nil))
+	}()
+
+	// Query an idle, running workflow after its timer command has committed.
+	ts.waitForHistoryEvent(run.GetID(), run.GetRunID(), enumspb.EVENT_TYPE_TIMER_STARTED, ctxTimeout)
+	description, err := ts.client.DescribeWorkflowExecution(ctx, run.GetID(), run.GetRunID())
+	ts.NoError(err)
+	ts.Equal(enumspb.WORKFLOW_EXECUTION_STATUS_RUNNING, description.WorkflowExecutionInfo.Status)
+
+	value, err := ts.client.QueryWorkflow(ctx, run.GetID(), run.GetRunID(), queryName)
+	ts.NoError(err)
+	var replaying bool
+	ts.NoError(value.Get(&replaying))
+	ts.T().Logf("Running-workflow query: replaying=%t, cache size=%d", replaying, ts.config.maxWorkflowCacheSize)
+
+	var querySpan, handlerSpan sdktrace.ReadOnlySpan
+	for _, span := range ts.openTelemetrySpanRecorder.Ended() {
+		switch span.Name() {
+		case "QueryWorkflow:" + queryName:
+			querySpan = span
+		case "HandleQuery:" + queryName:
+			handlerSpan = span
+		}
+	}
+
+	ts.Require().NotNil(querySpan)
+	ts.Require().NotNil(handlerSpan, "queries on running workflows must emit an inbound span")
+	ts.Equal(querySpan.SpanContext().SpanID(), handlerSpan.Parent().SpanID())
+	ts.Equal(querySpan.SpanContext().TraceID(), handlerSpan.SpanContext().TraceID())
+}
+
 func (ts *IntegrationTestSuite) testOpenTelemetryTracing(withMessages bool, updateWithStart bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -3796,6 +3913,9 @@ func (ts *IntegrationTestSuite) testOpenTelemetryTracing(withMessages bool, upda
 			}
 			children = children[:n]
 		}
+		slices.SortFunc(children, func(a, b *interceptortest.SpanInfo) int {
+			return strings.Compare(a.Name, b.Name)
+		})
 		return interceptortest.Span(name, children...)
 	}
 
@@ -3903,11 +4023,9 @@ func (ts *IntegrationTestSuite) testOpenTelemetryTracing(withMessages bool, upda
 			span("HandleSignal:finish-signal"),
 		),
 	)
-	ts.EventuallyWithT(func(c *assert.CollectT) {
-		actual := interceptortest.Span("root-span")
-		ts.addOpenTelemetryChildren(rootSpan.SpanContext().SpanID(), actual, ts.openTelemetrySpanRecorder.Ended())
-		assert.Equal(c, expected, actual)
-	}, time.Second, 10*time.Millisecond)
+	actual := interceptortest.Span("root-span")
+	ts.addOpenTelemetryChildren(rootSpan.SpanContext().SpanID(), actual, ts.openTelemetrySpanRecorder.Ended())
+	ts.Equal(expected, actual)
 }
 
 func (ts *IntegrationTestSuite) addOpenTelemetryChildren(
@@ -3940,6 +4058,11 @@ func (ts *IntegrationTestSuite) addOpenTelemetryChildren(
 		// Collect grandchildren
 		ts.addOpenTelemetryChildren(s.SpanContext().SpanID(), child, spans)
 	}
+
+	// Span completion order can vary without changing the trace tree.
+	slices.SortFunc(parentSpan.Children, func(a, b *interceptortest.SpanInfo) int {
+		return strings.Compare(a.Name, b.Name)
+	})
 }
 
 func (ts *IntegrationTestSuite) TestOpenTelemetryBaggageHandling() {
