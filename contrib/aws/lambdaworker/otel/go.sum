@@ -72,8 +72,8 @@ go.opentelemetry.io/otel/trace v1.45.0 h1:l/mP6Uv7oNO7/TblbhpbgMidxhq1uO/rPsikOy
 go.opentelemetry.io/otel/trace v1.45.0/go.mod h1:qoJJA2xNMnxRrdISU/kLtfUH2wNeQbiv+jhs/CxI8bc=
 go.opentelemetry.io/proto/otlp v1.11.0 h1:5rrYs0Ykyj50sdU/JU0x8etU+LubXWb+gED6TbEdMIk=
 go.opentelemetry.io/proto/otlp v1.11.0/go.mod h1:SmVizdCOAm3XBtG1g1NnOdhW6jtddT72hLMhv8VwA8E=
-go.temporal.io/api v1.63.5 h1:c11+kPYHkXXL3UiShPdbMD+xtvqGsbTibUA9ypmiCa4=
-go.temporal.io/api v1.63.5/go.mod h1:SrlW2JMwVlDP4nRWSNznUFqnSHd+YeMDS1BkYo63HCQ=
+go.temporal.io/api v1.63.8-0.20261014221631-25d6833c5701 h1:4FS8eouE2ml0soTg/pht5tk/tBT5OpI64DGHXpJ0uqo=
+go.temporal.io/api v1.63.8-0.20261014221631-25d6833c5701/go.mod h1:acM0I9WPuYg8W3Pd9jOZvEgi7mRUttUQ4+e7fowKVnM=
 go.uber.org/goleak v1.3.0 h1:2K3zAYmnTNqV73imy9J1T3WC+gmCePx2hEGkimedGto=
 go.uber.org/goleak v1.3.0/go.mod h1:CoHD4mav9JJNrW/WLlf7HGZPjdw8EucARQHekz1X6bE=
 golang.org/x/crypto v0.0.0-20190308221718-c2843e01d9a2/go.mod h1:djNgcEr1/C05ACkg1iLfiJU5Ep61QUkGW8qpdssI0+w=

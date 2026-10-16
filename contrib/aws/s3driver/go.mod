@@ -4,7 +4,7 @@ go 1.26.0
 
 require (
 	github.com/stretchr/testify v1.10.0
-	go.temporal.io/api v1.63.5
+	go.temporal.io/api v1.63.8-0.20261014221631-25d6833c5701
 	go.temporal.io/sdk v1.49.0
 	golang.org/x/sync v0.22.0
 	google.golang.org/protobuf v1.36.11
