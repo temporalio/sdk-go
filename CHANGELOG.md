@@ -22,6 +22,10 @@ to docs, or any other relevant information.
 
 ### Added
 
+- Nexus handlers now propagate `NexusSerializationContext` to the workflows and standalone
+  activities they start. Workflows use it only for their results and failures, which are returned
+  to the caller.
+
 ### Changed
 
 ### Deprecated

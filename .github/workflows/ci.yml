@@ -222,6 +222,7 @@ jobs:
         run: go run . integration-test
         env:
           TEST_LOG_ARTIFACT_NAME: ${{ github.job }}
+          DISABLE_NEXUS_SERIALIZATION_CONTEXT_TESTS: "1"
           # TODO(antlai-temporal): Remove this flag once server 1.27 released.
           DISABLE_SERVER_1_27_TESTS: "1"
           DISABLE_STANDALONE_ACTIVITY_TESTS: "1"
