@@ -3,11 +3,14 @@ package converter
 import (
 	"bytes"
 	"compress/zlib"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	commonpb "go.temporal.io/api/common/v1"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -353,12 +356,70 @@ func NewPayloadCodecHTTPHandler(e ...PayloadCodec) http.Handler {
 	return &codecHTTPHandler{codecs: e}
 }
 
+// RemotePayloadCodecRetryOptions contains retry configuration for RemotePayloadCodec.
+// Retries are disabled by default (MaximumAttempts <= 1).
+//
+// NOTE: When running within a Workflow Task, retries consume the Workflow Task timeout budget.
+type RemotePayloadCodecRetryOptions struct {
+	// InitialInterval is the initial backoff interval between retry attempts.
+	// Default is 100ms when MaximumAttempts > 1 and InitialInterval is 0.
+	InitialInterval time.Duration
+	// BackoffCoefficient is the multiplier for exponential backoff intervals.
+	// Default is 2.0 when BackoffCoefficient < 1.0.
+	BackoffCoefficient float64
+	// MaximumInterval is the maximum backoff interval between retry attempts.
+	// Default is 5s when MaximumInterval is 0.
+	MaximumInterval time.Duration
+	// ExpirationInterval is the maximum duration for all retry attempts combined.
+	// Optional (0 means no expiration interval).
+	ExpirationInterval time.Duration
+	// MaximumAttempts is the maximum number of attempts (including the initial attempt).
+	// If MaximumAttempts <= 1, no retries are performed.
+	MaximumAttempts int
+	// IsRetryable determines if a given error (or HTTP status failure) should be retried.
+	// If nil, transient network errors, HTTP 429, and HTTP 5xx responses are retried.
+	IsRetryable func(err error) bool
+}
+
+// HTTPStatusError represents an error returned when the remote payload codec responds with a non-200 HTTP status code.
+type HTTPStatusError struct {
+	StatusCode int
+	Status     string
+	Message    string
+}
+
+func (e *HTTPStatusError) Error() string {
+	if e.Status != "" {
+		return fmt.Sprintf("%s: %s", e.Status, e.Message)
+	}
+	return fmt.Sprintf("%s: %s", http.StatusText(e.StatusCode), e.Message)
+}
+
+func defaultIsRetryable(err error) bool {
+	if err == nil {
+		return false
+	}
+	var httpErr *HTTPStatusError
+	if errors.As(err, &httpErr) {
+		return httpErr.StatusCode == http.StatusTooManyRequests ||
+			httpErr.StatusCode == http.StatusInternalServerError ||
+			httpErr.StatusCode == http.StatusBadGateway ||
+			httpErr.StatusCode == http.StatusServiceUnavailable ||
+			httpErr.StatusCode == http.StatusGatewayTimeout
+	}
+	if errors.Is(err, context.Canceled) {
+		return false
+	}
+	return true
+}
+
 // RemotePayloadCodecOptions are options for RemotePayloadCodec.
 // Client is optional.
 type RemotePayloadCodecOptions struct {
 	Endpoint      string
 	ModifyRequest func(*http.Request) error
 	Client        http.Client
+	RetryOptions  RemotePayloadCodecRetryOptions
 }
 
 type remotePayloadCodec struct {
@@ -386,44 +447,101 @@ func (pc *remotePayloadCodec) encodeOrDecode(endpoint string, payloads []*common
 		return payloads, fmt.Errorf("unable to marshal payloads: %w", err)
 	}
 
-	req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(requestPayloads))
-	if err != nil {
-		return payloads, fmt.Errorf("unable to build request: %w", err)
+	retryOpts := pc.options.RetryOptions
+	maxAttempts := retryOpts.MaximumAttempts
+	if maxAttempts < 1 {
+		maxAttempts = 1
 	}
 
-	req.Header.Set("Content-Type", "application/json")
+	initialInterval := retryOpts.InitialInterval
+	if initialInterval <= 0 {
+		initialInterval = 100 * time.Millisecond
+	}
+	backoffCoefficient := retryOpts.BackoffCoefficient
+	if backoffCoefficient < 1.0 {
+		backoffCoefficient = 2.0
+	}
+	maxInterval := retryOpts.MaximumInterval
+	if maxInterval <= 0 {
+		maxInterval = 5 * time.Second
+	}
 
-	if pc.options.ModifyRequest != nil {
-		err = pc.options.ModifyRequest(req)
+	isRetryable := retryOpts.IsRetryable
+	if isRetryable == nil {
+		isRetryable = defaultIsRetryable
+	}
+
+	var startTime time.Time
+	if retryOpts.ExpirationInterval > 0 {
+		startTime = time.Now()
+	}
+
+	currentInterval := initialInterval
+	var lastErr error
+
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(requestPayloads))
 		if err != nil {
+			return payloads, fmt.Errorf("unable to build request: %w", err)
+		}
+
+		req.Header.Set("Content-Type", "application/json")
+
+		if pc.options.ModifyRequest != nil {
+			err = pc.options.ModifyRequest(req)
+			if err != nil {
+				return payloads, err
+			}
+		}
+
+		response, err := pc.options.Client.Do(req)
+		if err == nil {
+			if response.StatusCode == http.StatusOK {
+				defer func() { _ = response.Body.Close() }()
+				bs, err := io.ReadAll(response.Body)
+				if err != nil {
+					return payloads, fmt.Errorf("failed to read response body: %w", err)
+				}
+				var resultPayloads commonpb.Payloads
+				err = protojson.Unmarshal(bs, &resultPayloads)
+				if err != nil {
+					return payloads, fmt.Errorf("unable to unmarshal payloads: %w", err)
+				}
+				if len(payloads) != len(resultPayloads.Payloads) {
+					return payloads, fmt.Errorf("received %d payloads from remote codec, expected %d", len(resultPayloads.Payloads), len(payloads))
+				}
+				return resultPayloads.Payloads, nil
+			}
+
+			message, _ := io.ReadAll(response.Body)
+			_ = response.Body.Close()
+			err = &HTTPStatusError{
+				StatusCode: response.StatusCode,
+				Status:     http.StatusText(response.StatusCode),
+				Message:    string(message),
+			}
+		}
+
+		lastErr = err
+
+		if attempt >= maxAttempts || !isRetryable(err) {
 			return payloads, err
 		}
+
+		if retryOpts.ExpirationInterval > 0 && time.Since(startTime)+currentInterval > retryOpts.ExpirationInterval {
+			return payloads, err
+		}
+
+		time.Sleep(currentInterval)
+
+		nextInterval := time.Duration(float64(currentInterval) * backoffCoefficient)
+		if nextInterval > maxInterval {
+			nextInterval = maxInterval
+		}
+		currentInterval = nextInterval
 	}
 
-	response, err := pc.options.Client.Do(req)
-	if err != nil {
-		return payloads, err
-	}
-	defer func() { _ = response.Body.Close() }()
-
-	if response.StatusCode == 200 {
-		bs, err := io.ReadAll(response.Body)
-		if err != nil {
-			return payloads, fmt.Errorf("failed to read response body: %w", err)
-		}
-		var resultPayloads commonpb.Payloads
-		err = protojson.Unmarshal(bs, &resultPayloads)
-		if err != nil {
-			return payloads, fmt.Errorf("unable to unmarshal payloads: %w", err)
-		}
-		if len(payloads) != len(resultPayloads.Payloads) {
-			return payloads, fmt.Errorf("received %d payloads from remote codec, expected %d", len(resultPayloads.Payloads), len(payloads))
-		}
-		return resultPayloads.Payloads, nil
-	}
-
-	message, _ := io.ReadAll(response.Body)
-	return payloads, fmt.Errorf("%s: %s", http.StatusText(response.StatusCode), message)
+	return payloads, lastErr
 }
 
 // Fields Endpoint, ModifyRequest, Client of RemotePayloadCodecOptions are also
@@ -445,7 +563,11 @@ type remoteDataConverter struct {
 // encoding/decoding on the payload via the remote endpoint.
 func NewRemoteDataConverter(parent DataConverter, options RemoteDataConverterOptions) DataConverter {
 	options.Endpoint = strings.TrimSuffix(options.Endpoint, "/")
-	payloadCodec := NewRemotePayloadCodec(RemotePayloadCodecOptions(options))
+	payloadCodec := NewRemotePayloadCodec(RemotePayloadCodecOptions{
+		Endpoint:      options.Endpoint,
+		ModifyRequest: options.ModifyRequest,
+		Client:        options.Client,
+	})
 	return &remoteDataConverter{parent, payloadCodec}
 }
 
