@@ -29,10 +29,15 @@ to docs, or any other relevant information.
 
 - `WorkflowTaskPollerBehavior`, `ActivityTaskPollerBehavior`, and `NexusTaskPollerBehavior` worker
   options are no longer marked experimental.
+- **Experimental**: `SignalWorkflow` and `SignalWithStartWorkflow` called from a Nexus operation handler
+  now reuse the operation's request ID, so a retried Nexus task no longer delivers the same signal twice.
 
 ### Deprecated
 
 ### :boom: Breaking Changes
+
+- **Experimental**: A Nexus operation handler can now send only one signal per call. A second signal, to
+  any workflow, returns a `BAD_REQUEST` handler error instead of being silently deduplicated.
 
 ### Fixed
 
@@ -99,10 +104,6 @@ to docs, or any other relevant information.
   counted, but dashboards may report fewer forced evictions.
 - **Experimental**: Removed `WorkerOptions.MaxConcurrentWorkflowTaskExternalStorageVisits`. Use
   `ExternalStorage.Concurrency`.
-- `SignalWorkflow` and `SignalWithStartWorkflow` called from a Nexus operation handler now reuse the
-  operation's request ID, so a retried Nexus task no longer delivers the same signal twice. As a
-  result, a handler may send only one signal per call; a second one, to any workflow, returns a
-  `BAD_REQUEST` handler error instead of being silently deduplicated.
 
 ### Fixed
 
