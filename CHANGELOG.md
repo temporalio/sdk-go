@@ -24,6 +24,9 @@ to docs, or any other relevant information.
 
 - Added experimental `temporalnexus.ConvertLinkCallbackToNexusLink` and `temporalnexus.ConvertNexusLinkToLinkCallback`
   for converting `Link_Callback` to and from Nexus links.
+- Nexus handlers now propagate `NexusSerializationContext` to the workflows and standalone
+  activities they start. Workflows use it only for their results and failures, which are returned
+  to the caller.
 
 ### Changed
 
@@ -54,9 +57,6 @@ to docs, or any other relevant information.
   This requires Temporal Server 1.32.0 or later.
 - Added experimental `converter.NewTransferTypeConverter` API that implements transfer type conversion.
   `converter.GetDefaultDataConverter()` now supports transfer type conversion.
-- Nexus handlers now propagate `NexusSerializationContext` to the workflows and standalone
-  activities they start. Workflows use it only for their results and failures, which are returned
-  to the caller.
 - Added autoscaling support for server poller groups, with per-group coverage and
   sticky-backlog prioritization. `SimpleMaximum` is unchanged, and autoscaling
   behaves as before when no poller groups are configured.
