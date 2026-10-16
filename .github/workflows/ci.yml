@@ -120,7 +120,6 @@ jobs:
         env:
           TEST_LOG_ARTIFACT_NAME: ${{ github.job }}-${{ matrix.os }}-${{ matrix.go-version }}
           WORKFLOW_CACHE_SIZE: "0"
-          DISABLE_NEXUS_SERIALIZATION_CONTEXT_TESTS: "1"
 
       - name: Upload full test logs
         id: upload-test-logs
@@ -171,7 +170,6 @@ jobs:
         working-directory: ./internal/cmd/build
         env:
           TEST_LOG_ARTIFACT_NAME: ${{ github.job }}-${{ matrix.os }}-${{ matrix.go-version }}
-          DISABLE_NEXUS_SERIALIZATION_CONTEXT_TESTS: "1"
 
       - name: Upload full test logs
         id: upload-test-logs
