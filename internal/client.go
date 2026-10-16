@@ -1588,6 +1588,7 @@ func newClientPluginRoot(ctx context.Context, options ClientPluginNewClientOptio
 		}
 	} else if existing, _ = options.FromExisting.(*WorkflowClient); existing != nil {
 		connection = existing.conn
+		options.ClientOptions.ConnectionOptions.excludeInternalFromRetry = existing.excludeInternalFromRetry
 	} else if options.FromExisting != nil {
 		return nil, fmt.Errorf("existing client must have been created directly from a client package call")
 	}
