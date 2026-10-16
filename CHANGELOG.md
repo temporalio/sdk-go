@@ -22,15 +22,6 @@ to docs, or any other relevant information.
 
 ### Added
 
-### Changed
-
-### Deprecated
-
-### :boom: Breaking Changes
-- `TestWorkflowEnvironment` and `TestActivityEnvironment` now run worker plugins set through
-  `SetWorkerOptions(worker.Options{Plugins: ...})`, which were previously ignored. Once plugins are
-  set, `SetWorkerOptions` may not be called again on that environment, and what a plugin registers
-  in `StartWorker` is undone at `StopWorker`.
 - `converter.WorkflowTaskFailureError`: an opt-in error a `PayloadCodec` can return
   from `Encode` or `Decode` on a workflow-side payload path to fail the current
   Workflow Task rather than the Workflow Execution, so the server retries the task and
@@ -42,7 +33,7 @@ to docs, or any other relevant information.
 
 ### Deprecated
 
-### Breaking Changes
+### :boom: Breaking Changes
 
 ### Fixed
 
