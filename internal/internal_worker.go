@@ -1346,8 +1346,12 @@ type AggregatedWorker struct {
 	activityWorker *activityWorker
 	sessionWorker  *sessionWorker
 	nexusWorker    *nexusWorker
-	logger         log.Logger
-	registry       *registry
+	// The Nexus worker's slot supplier. Unlike the other workers, nexusWorker is created during
+	// start rather than at construction, so SlotUsage reads this atomic instead of nexusWorker to
+	// avoid a data race when called concurrently with start.
+	nexusSlotSupplier atomic.Pointer[trackingSlotSupplier]
+	logger            log.Logger
+	registry          *registry
 	// Stores a boolean indicating whether the worker has already been started.
 	started      atomic.Bool
 	shuttingDown atomic.Bool
@@ -1619,6 +1623,7 @@ func (aw *AggregatedWorker) start() error {
 		if err != nil {
 			return fmt.Errorf("failed to create a nexus worker: %w", err)
 		}
+		aw.nexusSlotSupplier.Store(aw.nexusWorker.worker.slotSupplier)
 		if err := aw.nexusWorker.Start(); err != nil {
 			return fmt.Errorf("failed to start a nexus worker: %w", err)
 		}
