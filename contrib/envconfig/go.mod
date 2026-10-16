@@ -3,7 +3,7 @@ module go.temporal.io/sdk/contrib/envconfig
 go 1.26.0
 
 require (
-	github.com/BurntSushi/toml v1.4.0
+	github.com/BurntSushi/toml v1.6.0
 	github.com/stretchr/testify v1.10.0
 	go.temporal.io/sdk v1.32.1
 )
