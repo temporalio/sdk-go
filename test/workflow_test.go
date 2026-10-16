@@ -3965,6 +3965,29 @@ type temporalOpAsyncHandlerRetryState struct {
 	requestIDs []string
 }
 
+var temporalOpDoubleSignalOp = temporalnexus.MustNewTemporalOperation(temporalnexus.TemporalOperationOptions[string, string]{
+	Name: "double-signal-op",
+	Start: func(ctx context.Context, nc temporalnexus.NexusClient, input string, _ temporalnexus.StartTemporalOperationOptions) (temporalnexus.TemporalOperationResult[string], error) {
+		result, err := temporalnexus.StartWorkflow(ctx, nc, client.StartWorkflowOptions{ID: input}, (*Workflows)(nil).TemporalOpWaitForSignal, input)
+		if err != nil {
+			return result, err
+		}
+		// The first signal uses up the invocation's only signal, so a second one is rejected even
+		// though it targets a different workflow.
+		if err := nc.GetWorkflowClient().SignalWorkflow(ctx, input, "", "my-signal", "signaled-"+input); err != nil {
+			return result, err
+		}
+		secondErr := nc.GetWorkflowClient().SignalWorkflow(ctx, input+"-other", "", "my-signal", "second-"+input)
+		var handlerErr *nexus.HandlerError
+		if !errors.As(secondErr, &handlerErr) ||
+			handlerErr.Type != nexus.HandlerErrorTypeBadRequest ||
+			!strings.Contains(handlerErr.Message, "only one signal can be sent per Nexus operation invocation") {
+			return result, fmt.Errorf("expected second signal to return the one-signal BAD_REQUEST, got %v", secondErr)
+		}
+		return result, nil
+	},
+})
+
 var temporalOpAsyncHandlerRetryStates sync.Map
 
 var temporalOpAsyncHandlerRetryActivityOp = temporalnexus.MustNewTemporalOperation(temporalnexus.TemporalOperationOptions[string, string]{
@@ -3994,6 +4017,51 @@ var temporalOpAsyncHandlerRetryActivityOp = temporalnexus.MustNewTemporalOperati
 			}
 		}
 		return handle, nil
+	},
+})
+
+// TemporalOpCountSignals returns how many "my-signal" deliveries reached the workflow before "done".
+func (w *Workflows) TemporalOpCountSignals(ctx workflow.Context, _ string) (int, error) {
+	workflow.GetSignalChannel(ctx, "done").Receive(ctx, nil)
+	count := 0
+	for workflow.GetSignalChannel(ctx, "my-signal").ReceiveAsync(nil) {
+		count++
+	}
+	return count, nil
+}
+
+var temporalOpSignalHandlerRetryStates sync.Map
+
+// temporalOpSignalHandlerRetryOp fails its first attempt after signaling, forcing the Nexus task to
+// be redelivered. Both attempts signal with the operation's request ID, so the server must dedupe
+// the second one and the target workflow must observe exactly one signal.
+var temporalOpSignalHandlerRetryOp = temporalnexus.MustNewTemporalOperation(temporalnexus.TemporalOperationOptions[string, string]{
+	Name: "signal-handler-retry-op",
+	Start: func(ctx context.Context, nc temporalnexus.NexusClient, input string, opts temporalnexus.StartTemporalOperationOptions) (temporalnexus.TemporalOperationResult[string], error) {
+		_, err := nc.GetWorkflowClient().SignalWithStartWorkflow(ctx, input, "my-signal", input,
+			client.StartWorkflowOptions{
+				ID:        input,
+				TaskQueue: temporalnexus.GetOperationInfo(ctx).TaskQueue,
+			},
+			(*Workflows)(nil).TemporalOpCountSignals, input)
+		if err != nil {
+			return temporalnexus.TemporalOperationResult[string]{}, err
+		}
+
+		value, _ := temporalOpSignalHandlerRetryStates.LoadOrStore(input, &temporalOpAsyncHandlerRetryState{})
+		state := value.(*temporalOpAsyncHandlerRetryState)
+		state.Lock()
+		state.requestIDs = append(state.requestIDs, opts.RequestID)
+		attempt := len(state.requestIDs)
+		state.Unlock()
+		if attempt == 1 {
+			return temporalnexus.TemporalOperationResult[string]{}, &nexus.HandlerError{
+				Type:          nexus.HandlerErrorTypeInternal,
+				Message:       "force handler redelivery after signalling",
+				RetryBehavior: nexus.HandlerErrorRetryBehaviorRetryable,
+			}
+		}
+		return temporalnexus.NewSyncResult("signaled-" + input), nil
 	},
 })
 
@@ -4320,6 +4388,8 @@ var temporalOpService = func() *nexus.Service {
 		temporalOpAsyncActivityOp,
 		temporalOpAsyncUntypedActivityOp,
 		temporalOpDoubleStartActivityOp,
+		temporalOpDoubleSignalOp,
+		temporalOpSignalHandlerRetryOp,
 		temporalOpAsyncHandlerRetryActivityOp,
 		temporalOpCancelActivityOp,
 		temporalOpCustomCancelActivityOp,
@@ -4402,6 +4472,18 @@ func (w *Workflows) TemporalOpDoubleStartActivityCaller(ctx workflow.Context, in
 	c := workflow.NewNexusClient(temporalOpEndpoint, temporalOpServiceName)
 	var result string
 	return result, c.ExecuteOperation(ctx, temporalOpDoubleStartActivityOp, input, workflow.NexusOperationOptions{}).Get(ctx, &result)
+}
+
+func (w *Workflows) TemporalOpDoubleSignalCaller(ctx workflow.Context, input string) (string, error) {
+	c := workflow.NewNexusClient(temporalOpEndpoint, temporalOpServiceName)
+	var result string
+	return result, c.ExecuteOperation(ctx, temporalOpDoubleSignalOp, input, workflow.NexusOperationOptions{}).Get(ctx, &result)
+}
+
+func (w *Workflows) TemporalOpSignalHandlerRetryCaller(ctx workflow.Context, input string) (string, error) {
+	c := workflow.NewNexusClient(temporalOpEndpoint, temporalOpServiceName)
+	var result string
+	return result, c.ExecuteOperation(ctx, temporalOpSignalHandlerRetryOp, input, workflow.NexusOperationOptions{}).Get(ctx, &result)
 }
 
 func (w *Workflows) TemporalOpAsyncHandlerRetryActivityCaller(ctx workflow.Context, input string) (string, error) {
@@ -4612,6 +4694,9 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.TemporalOpAsyncActivityCaller)
 	worker.RegisterWorkflow(w.TemporalOpAsyncUntypedActivityCaller)
 	worker.RegisterWorkflow(w.TemporalOpDoubleStartActivityCaller)
+	worker.RegisterWorkflow(w.TemporalOpDoubleSignalCaller)
+	worker.RegisterWorkflow(w.TemporalOpSignalHandlerRetryCaller)
+	worker.RegisterWorkflow(w.TemporalOpCountSignals)
 	worker.RegisterWorkflow(w.TemporalOpAsyncHandlerRetryActivityCaller)
 	worker.RegisterWorkflow(w.TemporalOpCancelActivityCaller)
 	worker.RegisterWorkflow(w.TemporalOpCustomCancelActivityCaller)

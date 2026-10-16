@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"sync"
+	"sync/atomic"
 
 	"github.com/google/uuid"
 	"github.com/nexus-rpc/sdk-go/nexus"
@@ -97,6 +98,48 @@ func (nc *NexusOperationContext) ResolveActivityName(activity any, args []any) (
 	return at.Name, nil
 }
 
+// nexusOperationClient wraps the worker's client for a single Nexus operation invocation. Signals
+// carry the operation's request ID (see workflowClientInterceptor.SignalWorkflow) so retried Nexus
+// tasks don't deliver duplicates. Every signal in the invocation would share that ID, so the server
+// could silently drop all but the first; only one signal is allowed per invocation instead.
+type nexusOperationClient struct {
+	Client
+
+	signaled atomic.Bool
+}
+
+func (c *nexusOperationClient) claimSignal() error {
+	if !c.signaled.CompareAndSwap(false, true) {
+		return nexus.NewHandlerErrorf(nexus.HandlerErrorTypeBadRequest,
+			"only one signal can be sent per Nexus operation invocation")
+	}
+	return nil
+}
+
+func (c *nexusOperationClient) SignalWorkflow(ctx context.Context, workflowID string, runID string, signalName string, arg any) error {
+	if err := c.claimSignal(); err != nil {
+		return err
+	}
+	err := c.Client.SignalWorkflow(ctx, workflowID, runID, signalName, arg)
+	if err != nil {
+		c.signaled.Store(false)
+	}
+	return err
+}
+
+func (c *nexusOperationClient) SignalWithStartWorkflow(ctx context.Context, workflowID string, signalName string, signalArg any,
+	options StartWorkflowOptions, workflow any, workflowArgs ...any) (WorkflowRun, error) {
+	if err := c.claimSignal(); err != nil {
+		return nil, err
+	}
+	run, err := c.Client.SignalWithStartWorkflow(ctx, workflowID, signalName, signalArg, options, workflow, workflowArgs...)
+	if err != nil {
+		c.signaled.Store(false)
+		return nil, err
+	}
+	return run, nil
+}
+
 type nexusOperationEnvironment struct {
 	NexusOperationOutboundInterceptorBase
 }
@@ -130,8 +173,9 @@ func (nc *nexusOperationEnvironment) GetLogger(ctx context.Context) log.Logger {
 	return nctx.log
 }
 
-// GetClient returns a client to be used in a Nexus operation's context, this is the same client that the worker was
-// created with. Client methods will panic when called from the test environment.
+// GetClient returns a client to be used in a Nexus operation's context. It delegates to the client
+// the worker was created with, scoped to the current operation invocation. Client methods will
+// panic when called from the test environment.
 func (nc *nexusOperationEnvironment) GetClient(ctx context.Context) Client {
 	nctx, ok := NexusOperationContextFromGoContext(ctx)
 	if !ok {
