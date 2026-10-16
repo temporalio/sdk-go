@@ -1371,6 +1371,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 
 	wfType, input, err := getValidatedWorkflowFunction(childWorkflowType, args, dc, env.GetRegistry())
 	if err != nil {
+		panicOnCodecWorkflowTaskFailure(err)
 		executionSettable.Set(nil, err)
 		mainSettable.Set(nil, err)
 		return result
@@ -1844,6 +1845,7 @@ func signalExternalWorkflow(ctx Context, workflowID, runID, signalName string, a
 	})
 	input, err := encodeArg(dataConverter, arg)
 	if err != nil {
+		panicOnCodecWorkflowTaskFailure(err)
 		settable.Set(nil, err)
 		return future
 	}
@@ -3127,6 +3129,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteNexusOperation(ctx Context, inp
 
 	params, err := wc.prepareNexusOperationParams(ctx, input)
 	if err != nil {
+		panicOnCodecWorkflowTaskFailure(err)
 		executionSettable.Set(nil, err)
 		mainSettable.Set(nil, err)
 		return result

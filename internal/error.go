@@ -13,6 +13,7 @@ import (
 	failurepb "go.temporal.io/api/failure/v1"
 
 	"go.temporal.io/sdk/converter"
+	"go.temporal.io/sdk/internal/codecerror"
 )
 
 /*
@@ -842,6 +843,43 @@ func newPanicError(value any, stackTrace string) error {
 
 func newWorkflowPanicError(value any, stackTrace string) error {
 	return &workflowPanicError{value: value, stackTrace: stackTrace}
+}
+
+// codecWorkflowTaskFailureFrom returns the codec-tagged error in err, unwrapping a
+// workflowPanicError so it is not treated as a workflow panic.
+func codecWorkflowTaskFailureFrom(err error) (error, bool) {
+	if panicErr, ok := err.(*workflowPanicError); ok {
+		if inner, ok := panicErr.value.(error); ok && codecerror.Has(inner) {
+			return inner, true
+		}
+		return nil, false
+	}
+	if codecerror.Has(err) {
+		return err, true
+	}
+	return nil, false
+}
+
+// recoverCodecWorkflowTaskFailure, when deferred, turns a codec-tagged panic into
+// *err. Failure conversion panics on codec errors outside workflow coroutines.
+func recoverCodecWorkflowTaskFailure(err *error) {
+	if p := recover(); p != nil {
+		if panicErr, ok := p.(error); ok {
+			if codecErr, ok := codecWorkflowTaskFailureFrom(panicErr); ok {
+				*err = codecErr
+				return
+			}
+		}
+		panic(p)
+	}
+}
+
+// panicOnCodecWorkflowTaskFailure panics codec-tagged errors so workflow code
+// cannot suppress them.
+func panicOnCodecWorkflowTaskFailure(err error) {
+	if _, ok := codecWorkflowTaskFailureFrom(err); ok {
+		panic(err)
+	}
 }
 
 // Error from error interface
