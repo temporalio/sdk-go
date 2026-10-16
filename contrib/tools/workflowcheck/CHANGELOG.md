@@ -15,6 +15,9 @@ or Security.
 
 ### Changed
 
+- Recommend running `workflowcheck` as a module tool so it uses the Go toolchain
+  selected by the module being analyzed.
+
 ### Deprecated
 
 ### :boom: Breaking Changes
