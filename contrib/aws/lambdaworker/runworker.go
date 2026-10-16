@@ -3,7 +3,9 @@ package lambdaworker
 import (
 	"context"
 	"fmt"
+	"math/rand/v2"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/aws/aws-lambda-go/lambda"
@@ -24,6 +26,8 @@ type workerDeps struct {
 	setCacheSize     func(int)
 	exit             func(int)
 	extractLambdaCtx func(context.Context) (requestID string, functionARN string, ok bool)
+	slotUsage        func(worker.Worker) (worker.SlotUsage, error)
+	jitter           func(n time.Duration) time.Duration
 }
 
 func defaultDeps() workerDeps {
@@ -48,6 +52,8 @@ func defaultDeps() workerDeps {
 			}
 			return lc.AwsRequestID, lc.InvokedFunctionArn, true
 		},
+		slotUsage: worker.GetSlotUsage,
+		jitter:    rand.N[time.Duration],
 	}
 }
 
@@ -108,6 +114,13 @@ func runWorkerInternal(
 	if tq := deps.getenv(envTaskQueue); tq != "" {
 		configCtx.TaskQueue = tq
 	}
+	if v := deps.getenv(envIdleTimeout); v != "" {
+		seconds, err := strconv.Atoi(v)
+		if err != nil {
+			return fmt.Errorf("parsing %s %q as a whole number of seconds: %w", envIdleTimeout, v, err)
+		}
+		configCtx.IdleTimeout = time.Duration(seconds) * time.Second
+	}
 
 	if err := configure(configCtx); err != nil {
 		return fmt.Errorf("configure callback failed: %w", err)
@@ -117,6 +130,13 @@ func runWorkerInternal(
 		return fmt.Errorf(
 			"task queue not configured: set Options.TaskQueue or the %s environment variable",
 			envTaskQueue,
+		)
+	}
+	if configCtx.IdleTimeout < 0 || (configCtx.IdleTimeout > 0 && configCtx.IdleTimeout < minIdleTimeout) {
+		return fmt.Errorf(
+			"idle timeout %v is invalid: set Options.IdleTimeout or the %s environment variable "+
+				"to 0 to disable idle shutdown, or to at least %v",
+			configCtx.IdleTimeout, envIdleTimeout, minIdleTimeout,
 		)
 	}
 
@@ -170,20 +190,40 @@ func runWorkerInternal(
 			return fmt.Errorf("starting worker: %w", err)
 		}
 
-		if !ok {
-			<-invocationCtx.Done()
-		} else {
+		// idleC stays nil, and so never fires, when idle shutdown is disabled.
+		var idleC <-chan struct{}
+		var threshold time.Duration
+		stopIdleMonitor := func() {}
+		if configCtx.IdleTimeout > 0 {
+			threshold = idleThreshold(configCtx.IdleTimeout, deps.jitter)
+			idleC, stopIdleMonitor = startIdleMonitor(func() (worker.SlotUsage, error) {
+				return deps.slotUsage(w)
+			}, threshold, logger)
+		}
+
+		// deadlineC stays nil, and so never fires, when the invocation has no deadline.
+		var deadlineC <-chan time.Time
+		if ok {
 			shutdownAt := deadline.Add(-configCtx.ShutdownDeadlineBuffer)
 			waitDuration := time.Until(shutdownAt)
-			if waitDuration > 0 {
-				timer := time.NewTimer(waitDuration)
-				defer timer.Stop()
-				select {
-				case <-timer.C:
-				case <-invocationCtx.Done():
+			// A non-positive waitDuration fires immediately.
+			timer := time.NewTimer(waitDuration)
+			defer timer.Stop()
+			deadlineC = timer.C
+		}
+		select {
+		case <-deadlineC:
+		case <-invocationCtx.Done():
+		case <-idleC:
+			if logger != nil {
+				keyvals := []any{"idleTimeout", configCtx.IdleTimeout, "idleThreshold", threshold}
+				if ok {
+					keyvals = append(keyvals, "timeUntilDeadline", time.Until(deadline))
 				}
+				logger.Info("Worker idle, shutting down", keyvals...)
 			}
 		}
+		stopIdleMonitor()
 
 		// Stop the worker before running shutdown hooks so that hooks (e.g. OTLP telemetry flushes)
 		// see all spans/metrics emitted during the drain phase.
