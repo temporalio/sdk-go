@@ -347,7 +347,7 @@ func (b *builder) integrationTest() error {
 		devServerLogger := sdklog.NewStructuredLogger(slog.New(slog.NewTextHandler(devServerStdout, nil)))
 		devServer, err := testsuite.StartDevServer(context.Background(), testsuite.DevServerOptions{
 			CachedDownload: testsuite.CachedDownload{
-				Version: "v1.8.3-server-1.32.0-162.0",
+				Version: "v1.9.3-nexus-serialization-context",
 			},
 			ClientOptions: &client.Options{
 				HostPort:  "127.0.0.1:7233",
