@@ -26,6 +26,7 @@ to docs, or any other relevant information.
   `converter.StorageDriverSelectContext` have a `Namespace` field holding the
   namespace of the client or worker performing the operation, so drivers and
   selectors can partition by namespace even when there is no `Target`.
+- Added experimental `worker.GetSlotUsage`, which returns a snapshot of a worker's task slot usage.
 
 ### Changed
 
