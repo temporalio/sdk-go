@@ -845,13 +845,8 @@ func newWorkflowPanicError(value any, stackTrace string) error {
 	return &workflowPanicError{value: value, stackTrace: stackTrace}
 }
 
-// codecWorkflowTaskFailureFrom reports whether err carries a codec-originated
-// WorkflowTaskFailureError (tagged at the codec boundary, see internal/codecerror).
-// On the decode paths the error arrives directly and is returned unchanged so the
-// context the SDK wrapped around the codec cause (the failed operation and workflow
-// type) survives. Encode-side markers are panicked, so they arrive wrapped in a
-// workflowPanicError; that wrapper is dropped so the failure is not logged or
-// classified as a workflow panic, while any context inside it is preserved.
+// codecWorkflowTaskFailureFrom returns the codec-tagged error in err, unwrapping a
+// workflowPanicError so it is not treated as a workflow panic.
 func codecWorkflowTaskFailureFrom(err error) (error, bool) {
 	if panicErr, ok := err.(*workflowPanicError); ok {
 		if inner, ok := panicErr.value.(error); ok && codecerror.Has(inner) {
@@ -863,6 +858,28 @@ func codecWorkflowTaskFailureFrom(err error) (error, bool) {
 		return err, true
 	}
 	return nil, false
+}
+
+// recoverCodecWorkflowTaskFailure, when deferred, turns a codec-tagged panic into
+// *err. Failure conversion panics on codec errors outside workflow coroutines.
+func recoverCodecWorkflowTaskFailure(err *error) {
+	if p := recover(); p != nil {
+		if panicErr, ok := p.(error); ok {
+			if codecErr, ok := codecWorkflowTaskFailureFrom(panicErr); ok {
+				*err = codecErr
+				return
+			}
+		}
+		panic(p)
+	}
+}
+
+// panicOnCodecWorkflowTaskFailure panics codec-tagged errors so workflow code
+// cannot suppress them.
+func panicOnCodecWorkflowTaskFailure(err error) {
+	if _, ok := codecWorkflowTaskFailureFrom(err); ok {
+		panic(err)
+	}
 }
 
 // Error from error interface

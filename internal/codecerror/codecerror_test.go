@@ -27,8 +27,7 @@ func TestHasThroughWrapper(t *testing.T) {
 	}
 }
 
-// A foreign error that merely looks like a task-failure request must not be
-// recognized: only errors produced by Tag carry the concrete origin marker.
+// Only errors produced by Tag are recognized.
 func TestHasRejectsForeignError(t *testing.T) {
 	if Has(lookalikeError{}) {
 		t.Fatal("Has must not recognize an error it did not tag")

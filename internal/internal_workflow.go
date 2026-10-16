@@ -1798,9 +1798,7 @@ func (d *decodeFutureImpl) Get(ctx Context, valuePtr any) error {
 	}
 	err := dataConverter.FromPayloads(d.futureImpl.value.(*commonpb.Payloads), valuePtr)
 	if err != nil {
-		if _, ok := codecWorkflowTaskFailureFrom(err); ok {
-			panic(err)
-		}
+		panicOnCodecWorkflowTaskFailure(err)
 		return err
 	}
 	return d.futureImpl.err
