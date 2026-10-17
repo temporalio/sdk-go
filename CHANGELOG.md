@@ -30,6 +30,9 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- Fixed a race between command creation and workflow deadlock handling under
+  `worker.FailWorkflow`.
+
 ### Security
 
 ## [1.50.0] - 2026-10-15
