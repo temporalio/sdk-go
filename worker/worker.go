@@ -331,7 +331,9 @@ func SetBinaryChecksum(checksum string) {
 	internal.SetBinaryChecksum(checksum)
 }
 
-// InterruptCh returns channel which will get data when system receives interrupt signal from OS. Pass it to worker.Run() func to stop worker with Ctrl+C.
+// InterruptCh returns a channel that receives the first SIGINT or SIGTERM signal
+// and then closes. Pass it to [Worker.Run] to initiate graceful worker shutdown,
+// subject to [Options.WorkerStopTimeout].
 func InterruptCh() <-chan any {
 	return internal.InterruptCh()
 }
