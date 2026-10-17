@@ -577,7 +577,7 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 	memo, err := GetWorkflowMemo(params.Memo, wc.dataConverter, wc.TryUse(SDKFlagMemoUserDCEncode))
 	if err != nil {
 		if wc.sdkFlags.tryUse(SDKFlagChildWorkflowErrorExecution, !wc.isReplay) {
-			startedHandler(WorkflowExecution{}, &ChildWorkflowExecutionAlreadyStartedError{})
+			startedHandler(WorkflowExecution{}, err)
 		}
 		callback(nil, err)
 		return
@@ -585,7 +585,7 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 	searchAttr, err := SerializeSearchAttributes(params.SearchAttributes, params.TypedSearchAttributes)
 	if err != nil {
 		if wc.sdkFlags.tryUse(SDKFlagChildWorkflowErrorExecution, !wc.isReplay) {
-			startedHandler(WorkflowExecution{}, &ChildWorkflowExecutionAlreadyStartedError{})
+			startedHandler(WorkflowExecution{}, err)
 		}
 		callback(nil, err)
 		return

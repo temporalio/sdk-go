@@ -113,6 +113,9 @@ to docs, or any other relevant information.
   `OnRegisterActivity` but not `OnRegisterDynamicActivity`.
 - Stopped workers now release sticky workflow cache ownership immediately. When the final worker
   stops, cached workflow state is cleared without waiting for garbage collection.
+- `ChildWorkflowFuture.GetChildWorkflowExecution` now returns the memo or search attribute encoding
+  error when a child workflow cannot be started for that reason, instead of a
+  `ChildWorkflowExecutionAlreadyStartedError`.
 
 ## [1.49.0] - 2026-09-14
 
