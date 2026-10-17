@@ -4,6 +4,7 @@ import (
 	"container/list"
 	"fmt"
 	"strconv"
+	"sync"
 
 	commandpb "go.temporal.io/api/command/v1"
 	commonpb "go.temporal.io/api/common/v1"
@@ -149,6 +150,10 @@ type (
 	}
 
 	commandsHelper struct {
+		// A deadlocked coroutine may finish its current SDK call while the worker
+		// collects commands for the panic response.
+		mutex sync.Mutex
+
 		nextCommandEventID int64
 		orderedCommands    *list.List
 		commands           map[commandID]*list.Element
@@ -1078,6 +1083,9 @@ func (h *commandsHelper) getCommand(id commandID) commandStateMachine {
 }
 
 func (h *commandsHelper) addCommand(command commandStateMachine) {
+	h.mutex.Lock()
+	defer h.mutex.Unlock()
+
 	if _, ok := h.commands[command.getID()]; ok {
 		panicMsg := fmt.Sprintf("[TMPRL1100] adding duplicate command %v", command)
 		panicIllegalState(panicMsg)
@@ -1659,6 +1667,9 @@ func (h *commandsHelper) handleChildWorkflowExecutionCanceled(workflowID string)
 }
 
 func (h *commandsHelper) getCommands(markAsSent bool) []*commandpb.Command {
+	h.mutex.Lock()
+	defer h.mutex.Unlock()
+
 	var result []*commandpb.Command
 	for curr := h.orderedCommands.Front(); curr != nil; {
 		next := curr.Next() // get next item here as we might need to remove curr in the loop
