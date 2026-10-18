@@ -30,6 +30,8 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- `converter.NewRemotePayloadCodec` now handles endpoint URLs with trailing slashes.
+
 ### Security
 
 ## [1.50.0] - 2026-10-15
