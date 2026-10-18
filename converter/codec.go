@@ -367,6 +367,7 @@ type remotePayloadCodec struct {
 
 // NewRemotePayloadCodec creates a PayloadCodec using the remote endpoint configured by RemotePayloadCodecOptions.
 func NewRemotePayloadCodec(options RemotePayloadCodecOptions) PayloadCodec {
+	options.Endpoint = strings.TrimSuffix(options.Endpoint, "/")
 	return &remotePayloadCodec{options}
 }
 
@@ -444,7 +445,6 @@ type remoteDataConverter struct {
 // NewRemoteDataConverter wraps the given parent DataConverter and performs
 // encoding/decoding on the payload via the remote endpoint.
 func NewRemoteDataConverter(parent DataConverter, options RemoteDataConverterOptions) DataConverter {
-	options.Endpoint = strings.TrimSuffix(options.Endpoint, "/")
 	payloadCodec := NewRemotePayloadCodec(RemotePayloadCodecOptions(options))
 	return &remoteDataConverter{parent, payloadCodec}
 }

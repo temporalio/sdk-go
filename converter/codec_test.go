@@ -225,6 +225,29 @@ func (e *testCodec) Decode(payloads []*commonpb.Payload) ([]*commonpb.Payload, e
 	return result, nil
 }
 
+func TestRemotePayloadCodecTrailingSlash(t *testing.T) {
+	handler := NewPayloadCodecHTTPHandler(NewZlibCodec(ZlibCodecOptions{AlwaysEncode: true}))
+	mux := http.NewServeMux()
+	mux.Handle("/encode", handler)
+	mux.Handle("/decode", handler)
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	original, err := GetDefaultDataConverter().ToPayload("test")
+	require.NoError(t, err)
+
+	codec := NewRemotePayloadCodec(RemotePayloadCodecOptions{Endpoint: server.URL + "/"})
+	encoded, err := codec.Encode([]*commonpb.Payload{original})
+	require.NoError(t, err)
+	require.Len(t, encoded, 1)
+	require.Equal(t, "binary/zlib", string(encoded[0].Metadata[MetadataEncoding]))
+
+	decoded, err := codec.Decode(encoded)
+	require.NoError(t, err)
+	require.Len(t, decoded, 1)
+	require.True(t, proto.Equal(original, decoded[0]))
+}
+
 func TestRemoteDataConverter(t *testing.T) {
 	defaultConv := GetDefaultDataConverter()
 	codecs := []PayloadCodec{
@@ -243,7 +266,7 @@ func TestRemoteDataConverter(t *testing.T) {
 
 	remoteConverter := NewRemoteDataConverter(
 		defaultConv,
-		RemoteDataConverterOptions{Endpoint: server.URL},
+		RemoteDataConverterOptions{Endpoint: server.URL + "/"},
 	)
 
 	unencodedPayloads, err := defaultConv.ToPayloads("test", "payloads")
