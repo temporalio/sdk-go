@@ -8,22 +8,6 @@ or in a function called by the Workflow. It is highly optimized to scan large co
 **NOTE: This will not catch all cases of non-determinism such as global var mutation. This is just a helper and
 developers should still scrutinize Workflow code for other non-determinisms.**
 
-## Installing
-
-To use the checker from a Go 1.26 or later module, add it as a tool dependency
-from the root of the module you want to check:
-
-    go get -tool go.temporal.io/sdk/contrib/tools/workflowcheck@latest
-
-Then run it with the toolchain selected by that module:
-
-    go tool workflowcheck ./...
-
-Using `go tool` keeps the analyzer's Go version aligned with the module being
-checked; that toolchain must be at least as new as the code it analyzes. To
-build a standalone executable from source, run `go build` in this directory
-with a toolchain at least as new as the code you plan to check.
-
 ## Module versioning
 
 `workflowcheck` is released separately from the core Temporal Go SDK. See
@@ -31,12 +15,15 @@ with a toolchain at least as new as the code you plan to check.
 
 ## CLI Usage
 
-The executable has arguments in the form:
+Install the checker by adding it as a tool dependency in the root of the module you want to check:
 
-    workflowcheck [-flag] [package]
+    go get -tool go.temporal.io/sdk/contrib/tools/workflowcheck@latest
 
-To check all source, run the following from the root of the module after adding
-the tool dependency above:
+The checker can be invoked as a go tool with the form:
+
+    go tool workflowcheck [-flag] [package]
+
+For example, to check packages in the current directory and its subdirectories:
 
     go tool workflowcheck ./...
 
@@ -103,11 +90,15 @@ as non-deterministic. See "Inline Ignoring" below.
 
 ## `go vet` and VisualStudio Code Usage
 
-This tool works well with `go vet`. If the same example for CLI above was instead run with:
+To use the checker with `go vet`, build an executable from the root of your module,
+then pass its path to `-vettool`. Replace `/path/to/workflowcheck` with your desired output path.
 
-    go vet -vettool /path/to/workflowcheck
+    go build -o /path/to/workflowcheck go.temporal.io/sdk/contrib/tools/workflowcheck
+    go vet -vettool=/path/to/workflowcheck ./...
 
-The same output would appear. The benefit of using `go vet` is that output is cached and many IDEs already support it.
+Rebuild the executable whenever you upgrade the Go toolchain used to check your code.
+
+Invoking the checker with `go vet` produces the same output as `go tool`. The benefit of using `go vet` is that output is cached and many IDEs already support it.
 
 To add to Visual Studio Code, add the following to your settings:
 
