@@ -15,6 +15,8 @@ or Security.
 
 ### Changed
 
+- **Experimental**: Store and retrieve operations now respect `ExternalStorage.Concurrency`.
+
 ### Deprecated
 
 ### :boom: Breaking Changes
