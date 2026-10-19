@@ -22,6 +22,9 @@ to docs, or any other relevant information.
 
 ### Added
 
+- Added experimental `temporalnexus.ConvertLinkCallbackToNexusLink` and `temporalnexus.ConvertNexusLinkToLinkCallback`
+  for converting `Link_Callback` to and from Nexus links.
+
 ### Changed
 
 ### Deprecated
