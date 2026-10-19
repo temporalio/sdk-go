@@ -34,8 +34,11 @@ to docs, or any other relevant information.
 
 ### :boom: Breaking Changes
 
-- **Experimental**: A Nexus operation handler can now send only one signal per call. A second signal, to
-  any workflow, returns a `BAD_REQUEST` handler error instead of being silently deduplicated.
+- **Experimental**: A Nexus operation handler can now send only one signal per call. `SignalWorkflow` and
+  `SignalWithStartWorkflow` count toward the same limit. While the first signal is in flight or after it
+  succeeds, a second signal to any workflow returns a `BAD_REQUEST` handler error instead of being
+  silently deduplicated. If the first signal returns an error, the limit resets and the handler can
+  signal again.
 
 ### Fixed
 
