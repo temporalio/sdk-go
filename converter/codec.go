@@ -367,7 +367,7 @@ type remotePayloadCodec struct {
 
 // NewRemotePayloadCodec creates a PayloadCodec using the remote endpoint configured by RemotePayloadCodecOptions.
 func NewRemotePayloadCodec(options RemotePayloadCodecOptions) PayloadCodec {
-	options.Endpoint = strings.TrimRight(options.Endpoint, "/")
+	options.Endpoint = strings.TrimSuffix(options.Endpoint, "/")
 	return &remotePayloadCodec{options}
 }
 
