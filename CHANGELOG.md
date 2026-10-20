@@ -92,7 +92,9 @@ to docs, or any other relevant information.
   `OnRegisterActivity` but not `OnRegisterDynamicActivity`.
 - Stopped workers now release sticky workflow cache ownership immediately. When the final worker
   stops, cached workflow state is cleared without waiting for garbage collection.
-- Client and worker RPCs now use caller's full context deadline instead of halving it. Previously context deadline was halved so slow but healthy requests would get DeadlineExceededs before their actual deadline.
+- The default timeout for client and worker RPCs has been extended. Previously, the default timeout
+  was only half the caller's context deadline - now it uses the entire deadline, up to a maximum
+  of ten seconds. RPCs with timeout overrides, like long-poll RPCs, are unchanged.
 
 ### Security
 
