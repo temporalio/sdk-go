@@ -669,6 +669,12 @@ type (
 	// NOTE: Experimental
 	VersioningOverrideChange = internal.VersioningOverrideChange
 
+	// TimeSkippingConfigChange sets or clears an execution's time-skipping
+	// configuration when used with [WorkflowExecutionOptionsChanges].
+	//
+	// NOTE: Experimental
+	TimeSkippingConfigChange = internal.TimeSkippingConfigChange
+
 	// VersioningOverride is a property in [WorkflowExecutionOptions] that changes the versioning
 	// configuration of a specific workflow execution.
 	//

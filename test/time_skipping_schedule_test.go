@@ -228,6 +228,69 @@ func (s *TimeSkippingScheduleTestSuite) TestFastForwardScheduleFiresActions() {
 		time.Since(wallStart))
 }
 
+// TestSequentialFastForwardsOnOneSchedule checks that a schedule can be
+// fast-forwarded repeatedly, each call completing and firing its own actions.
+//
+// It deliberately asserts nothing about fast-forward ids. Whether a call
+// observes its own fast-forward rather than a previous completed one is not
+// observable through the public API today — see go-tsk-phases.md, "restore when
+// schedules get a polling API".
+func (s *TimeSkippingScheduleTestSuite) TestSequentialFastForwardsOnOneSchedule() {
+	ctx := context.Background()
+	tq := "tq-" + uuid.NewString()
+	w := s.startScheduleWorker(tq)
+	defer w.Stop()
+
+	handle := s.createHourlySchedule(ctx, tq, ScheduleTargetWorkflow)
+	defer func() { _ = handle.Delete(ctx) }()
+
+	var prevActions int
+	for i := 1; i <= 3; i++ {
+		ok, err := s.server.FastForwardSchedule(ctx, handle, testsuite.WithDuration(2*time.Hour))
+		s.NoErrorf(err, "fast-forward #%d failed", i)
+		s.Truef(ok, "fast-forward #%d did not report completion", i)
+
+		desc, err := handle.Describe(ctx)
+		s.NoError(err)
+		s.Greaterf(desc.Info.NumActions, prevActions,
+			"fast-forward #%d fired no new actions (still %d)", i, desc.Info.NumActions)
+		prevActions = desc.Info.NumActions
+	}
+}
+
+// TestFastForwardPausedScheduleReportsWhyItGaveUp covers the realistic way a
+// schedule fast-forward fails to finish: a paused schedule's clock does not
+// advance, so the call waits out the caller's context. The SDK deliberately
+// does not try to detect that itself — whether a schedule can skip is decided
+// by server state it cannot see — so what is asserted here is that the timeout
+// says enough to diagnose it.
+func (s *TimeSkippingScheduleTestSuite) TestFastForwardPausedScheduleReportsWhyItGaveUp() {
+	ctx := context.Background()
+	tq := "tq-" + uuid.NewString()
+	w := s.startScheduleWorker(tq)
+	defer w.Stop()
+
+	handle := s.createHourlySchedule(ctx, tq, ScheduleTargetWorkflow)
+	defer func() { _ = handle.Delete(ctx) }()
+	s.NoError(handle.Pause(ctx, client.SchedulePauseOptions{Note: "clock must not advance"}))
+
+	ffCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	ok, err := s.server.FastForwardSchedule(ffCtx, handle, testsuite.WithDuration(3*time.Hour))
+	s.False(ok)
+	s.Error(err)
+	s.ErrorIs(err, context.DeadlineExceeded, "the caller's deadline is what ends the wait")
+	// The message has to be enough to work out why, without the SDK claiming
+	// to know which of the server's blocking conditions applied.
+	s.Contains(err.Error(), "paused=true")
+	s.Contains(err.Error(), "only advances while it is idle")
+
+	desc, err := handle.Describe(ctx)
+	s.NoError(err)
+	s.Zero(desc.Info.NumActions, "a paused schedule must not fire actions")
+}
+
 // TestScheduleDescribeSurfacesTimeSkippingInfo asserts the config round-trips
 // back through Describe, which is the only way to observe schedule TS state.
 func (s *TimeSkippingScheduleTestSuite) TestScheduleDescribeSurfacesTimeSkippingInfo() {

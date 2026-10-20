@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strings"
 	"sync"
 	"time"
 
@@ -12,25 +11,10 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
-	workflowpb "go.temporal.io/api/workflow/v1"
-	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/interceptor"
-	"go.temporal.io/sdk/internal/common/retry"
+	"go.temporal.io/sdk/internal"
 	"google.golang.org/protobuf/types/known/durationpb"
-	"google.golang.org/protobuf/types/known/fieldmaskpb"
-)
-
-const (
-	// retryInitialInterval is the first backoff delay for the service calls
-	// below. Subsequent delays follow the retry package's defaults.
-	retryInitialInterval = 100 * time.Millisecond
-
-	// pollRetryExpiration bounds retrying of PollWorkflowExecutionTimeSkipping.
-	// The retry interceptor imposes its own (1 minute) deadline when the caller's
-	// context has none, which would cut short a server-side long poll; this value
-	// keeps the server's POLL_TIMEOUT response the thing that ends a poll.
-	pollRetryExpiration = 10 * time.Minute
 )
 
 // TimeSkippingConfig is the per-workflow time-skipping (v2) configuration.
@@ -322,7 +306,7 @@ func (t *TimeSkipper) doBoundedFastForward(
 		DisablePropagation:  current.DisablePropagation,
 		MaxSessionSkipCount: current.MaxSessionSkipCount,
 	}
-	if _, err := t.updateTimeSkippingConfig(ctx, run, tsc); err != nil {
+	if err := t.updateTimeSkippingConfig(ctx, run, tsc); err != nil {
 		return false, err
 	}
 	return t.pollFastForwardCompletion(ctx, run, ffID)
@@ -337,7 +321,7 @@ func (t *TimeSkipper) enableUnboundedAndWait(
 		DisablePropagation:  current.DisablePropagation,
 		MaxSessionSkipCount: current.MaxSessionSkipCount,
 	}
-	if _, err := t.updateTimeSkippingConfig(ctx, run, tsc); err != nil {
+	if err := t.updateTimeSkippingConfig(ctx, run, tsc); err != nil {
 		return false, err
 	}
 	// Watch history until a terminal event fires on the current run.
@@ -357,69 +341,28 @@ func (t *TimeSkipper) enableUnboundedAndWait(
 func (t *TimeSkipper) pollFastForwardCompletion(
 	ctx context.Context, run client.WorkflowRun, ffID string,
 ) (bool, error) {
-	req := &workflowservice.PollWorkflowExecutionTimeSkippingRequest{
-		Namespace:         t.namespace,
-		WorkflowExecution: &commonpb.WorkflowExecution{WorkflowId: run.GetID()},
-		FastForwardId:     ffID,
+	outcome, err := internal.PollWorkflowTimeSkipping(
+		ctx, t.client.WorkflowService(), t.namespace, run.GetID(), ffID)
+	if err != nil {
+		return false, err
 	}
-	pollRetry := retry.NewGrpcRetryConfig(retryInitialInterval)
-	pollRetry.SetExpirationInterval(pollRetryExpiration)
-	pollCtx := context.WithValue(ctx, retry.ConfigKey, pollRetry)
-	for {
-		resp, err := t.client.WorkflowService().PollWorkflowExecutionTimeSkipping(pollCtx, req)
-		if err != nil {
-			return false, err
-		}
-		switch resp.GetFastForwardPollingResult() {
-		case enumspb.FAST_FORWARD_POLLING_RESULT_FAST_FORWARD_COMPLETED:
-			return true, nil
-		case enumspb.FAST_FORWARD_POLLING_RESULT_FAST_FORWARD_FAILED:
-			// The server explains the specific cause in failed_reason
-			// (id mismatch, execution ended, config reset, TS disabled).
-			// In this SDK, id-mismatch means another caller (or an SDK
-			// bug) overrode the fast_forward; surface loudly. Other
-			// causes are benign "couldn't complete" outcomes — return
-			// (false, nil).
-			if strings.Contains(resp.GetFailedReason(), "fast_forward_id does not match") {
-				return false, fmt.Errorf(
-					"fast_forward %q was overridden by another fast_forward call (server: %s)",
-					ffID, resp.GetFailedReason())
-			}
-			return false, nil
-		case enumspb.FAST_FORWARD_POLLING_RESULT_POLL_TIMEOUT:
-			// Server-side long-poll expiry; re-poll.
-			continue
-		default:
-			return false, fmt.Errorf(
-				"PollWorkflowExecutionTimeSkipping returned unknown result %v",
-				resp.GetFastForwardPollingResult())
-		}
-	}
+	return outcome == internal.TimeSkippingFastForwardCompleted, nil
 }
 
 func (t *TimeSkipper) updateTimeSkippingConfig(
 	ctx context.Context, run client.WorkflowRun, config TimeSkippingConfig,
-) (*workflowservice.UpdateWorkflowExecutionOptionsResponse, error) {
-	updateCtx := context.WithValue(ctx, retry.ConfigKey, retry.NewGrpcRetryConfig(retryInitialInterval))
-	return t.client.WorkflowService().UpdateWorkflowExecutionOptions(updateCtx,
-		&workflowservice.UpdateWorkflowExecutionOptionsRequest{
-			Namespace: t.namespace,
-			// RunId is deliberately left empty so the server resolves the
-			// current run in the chain. Pinning it to run.GetRunID() targets the
-			// first run and breaks fast-forward across retry/continue-as-new.
-			WorkflowExecution: &commonpb.WorkflowExecution{
-				WorkflowId: run.GetID(),
-			},
-			WorkflowExecutionOptions: &workflowpb.WorkflowExecutionOptions{
-				TimeSkippingConfig: config.ToProto(),
-			},
-			// UpdateWorkflowExecutionOptions is a partial update; without the
-			// mask the server reads this as clearing the other options.
-			UpdateMask: &fieldmaskpb.FieldMask{
-				Paths: []string{"time_skipping_config"},
-			},
-			Identity: t.identity,
-		})
+) error {
+	// The typed API derives the field mask from which change fields are set,
+	// so a partial update does not need one built by hand. RunId is left empty
+	// so the server resolves the current run, letting a fast-forward follow a
+	// chain across retry / continue-as-new / cron.
+	_, err := t.client.UpdateWorkflowExecutionOptions(ctx, client.UpdateWorkflowExecutionOptionsRequest{
+		WorkflowId: run.GetID(),
+		WorkflowExecutionOptionsChanges: client.WorkflowExecutionOptionsChanges{
+			TimeSkippingConfig: &client.TimeSkippingConfigChange{Value: config.ToProto()},
+		},
+	})
+	return err
 }
 
 // defaultIdentity mirrors the client's own default identity format. The
