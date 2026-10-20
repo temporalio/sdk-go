@@ -3719,6 +3719,44 @@ func (ts *IntegrationTestSuite) TestOpenTelemetryTracingWithoutMessages() {
 	ts.testOpenTelemetryTracing(false, false)
 }
 
+func (ts *IntegrationTestSuite) TestOpenTelemetryTracingQueryReplay() {
+	const workflowName = "query-after-replay"
+	const queryName = "is-replaying"
+	ts.worker.RegisterWorkflowWithOptions(func(ctx workflow.Context) error {
+		return workflow.SetQueryHandler(ctx, queryName, func() (bool, error) {
+			return workflow.IsReplaying(ctx), nil
+		})
+	}, workflow.RegisterOptions{Name: workflowName})
+
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+	run, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions(workflowName), workflowName)
+	ts.NoError(err)
+	ts.NoError(run.Get(ctx, nil))
+
+	// Completed workflows leave the cache, forcing this query to rebuild history.
+	value, err := ts.client.QueryWorkflow(ctx, run.GetID(), run.GetRunID(), queryName)
+	ts.NoError(err)
+	var replaying bool
+	ts.NoError(value.Get(&replaying))
+	ts.True(replaying)
+
+	var querySpan, handlerSpan sdktrace.ReadOnlySpan
+	for _, span := range ts.openTelemetrySpanRecorder.Ended() {
+		switch span.Name() {
+		case "QueryWorkflow:" + queryName:
+			querySpan = span
+		case "HandleQuery:" + queryName:
+			handlerSpan = span
+		}
+	}
+
+	ts.Require().NotNil(querySpan)
+	ts.Require().NotNil(handlerSpan, "queries served after replay must emit an inbound span")
+	ts.Equal(querySpan.SpanContext().SpanID(), handlerSpan.Parent().SpanID())
+	ts.Equal(querySpan.SpanContext().TraceID(), handlerSpan.SpanContext().TraceID())
+}
+
 func (ts *IntegrationTestSuite) testOpenTelemetryTracing(withMessages bool, updateWithStart bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

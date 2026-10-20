@@ -33,6 +33,9 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- Query tracing now records inbound spans when serving queries after workflow
+  history replay, including queries on completed workflows.
+
 ### Security
 
 ## [1.50.0] - 2026-10-15
