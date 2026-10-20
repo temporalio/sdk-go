@@ -125,6 +125,24 @@ func assertEncodingDataConverter(t *testing.T, data any) {
 	require.True(t, proto.Equal(uncompPayload, compUnderMinPayload))
 }
 
+func TestCodecDataConverter_ToStringNilPayload(t *testing.T) {
+	parent := GetDefaultDataConverter()
+	conv := NewCodecDataConverter(parent, NewZlibCodec(ZlibCodecOptions{AlwaysEncode: true}))
+
+	require.Equal(t, parent.ToString(nil), conv.ToString(nil))
+
+	encoded, err := conv.ToPayload("test")
+	require.NoError(t, err)
+	plain, err := parent.ToPayload("test")
+	require.NoError(t, err)
+	expected := parent.ToString(plain)
+
+	require.Equal(t, expected, conv.ToString(encoded))
+	require.Equal(t, []string{"", expected}, conv.ToStrings(&commonpb.Payloads{
+		Payloads: []*commonpb.Payload{nil, encoded},
+	}))
+}
+
 func TestPayloadCodecHTTPHandler(t *testing.T) {
 	defaultConv := GetDefaultDataConverter()
 	codec := NewZlibCodec(ZlibCodecOptions{AlwaysEncode: true})
