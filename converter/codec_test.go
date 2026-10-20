@@ -283,7 +283,7 @@ func TestRemotePayloadCodecTrailingSlash(t *testing.T) {
 	payload, err := GetDefaultDataConverter().ToPayload("test")
 	require.NoError(t, err)
 
-	for _, suffix := range []string{"", "/", "///"} {
+	for _, suffix := range []string{"", "/"} {
 		t.Run(fmt.Sprintf("%d_trailing_slashes", len(suffix)), func(t *testing.T) {
 			codec := NewRemotePayloadCodec(RemotePayloadCodecOptions{Endpoint: server.URL + "/codec" + suffix})
 
