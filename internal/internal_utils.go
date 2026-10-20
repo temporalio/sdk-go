@@ -113,10 +113,9 @@ func defaultGrpcRetryParameters(ctx context.Context) func(builder *grpcContextBu
 func newGRPCContext(ctx context.Context, options ...func(builder *grpcContextBuilder)) (context.Context, context.CancelFunc) {
 	rpcTimeout := defaultRPCTimeout
 
-	// Set rpc timeout less than context timeout to allow for retries when call gets lost
 	now := time.Now()
 	if deadline, ok := ctx.Deadline(); ok && deadline.After(now) {
-		rpcTimeout = deadline.Sub(now) / 2
+		rpcTimeout = deadline.Sub(now)
 		// Make sure to not set rpc timeout lower than minRPCTimeout
 		if rpcTimeout < minRPCTimeout {
 			rpcTimeout = minRPCTimeout
