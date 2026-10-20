@@ -33,6 +33,8 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- Fixed `log.With` reusing log field buffers across calls.
+
 ### Security
 
 ## [1.50.0] - 2026-10-15

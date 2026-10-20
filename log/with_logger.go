@@ -1,5 +1,7 @@
 package log
 
+import "slices"
+
 // With creates a child Logger that includes the supplied key-value pairs in each log entry. It does this by
 // using the supplied logger if it implements WithLogger; otherwise, it does so by intercepting every log call.
 func With(logger Logger, keyvals ...any) Logger {
@@ -32,7 +34,7 @@ func newWithLogger(logger Logger, keyvals ...any) *withLogger {
 }
 
 func (l *withLogger) prependKeyvals(keyvals []any) []any {
-	return append(l.keyvals, keyvals...)
+	return slices.Concat(l.keyvals, keyvals)
 }
 
 // Debug writes message to the log.
