@@ -228,6 +228,9 @@ func (e *CodecDataConverter) FromPayloads(payloads *commonpb.Payloads, valuePtrs
 // ToString implements DataConverter.ToString performing decoding on the given
 // payload before sending to the parent ToString.
 func (e *CodecDataConverter) ToString(payload *commonpb.Payload) string {
+	if payload == nil {
+		return e.parent.ToString(nil)
+	}
 	decodedPayloads, err := e.decode([]*commonpb.Payload{payload})
 	if err != nil {
 		return err.Error()
