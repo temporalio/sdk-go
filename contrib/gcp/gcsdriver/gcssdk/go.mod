@@ -6,7 +6,7 @@ require (
 	cloud.google.com/go/storage v1.57.2
 	github.com/fsouza/fake-gcs-server v1.50.2
 	github.com/stretchr/testify v1.11.1
-	go.temporal.io/api v1.63.5
+	go.temporal.io/api v1.64.0
 	go.temporal.io/sdk v1.50.0
 	go.temporal.io/sdk/contrib/gcp/gcsdriver v0.2.0
 )
