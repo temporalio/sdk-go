@@ -33,7 +33,7 @@ to docs, or any other relevant information.
 
 ### Fixed
 
-- Fixed `log.With` reusing log field buffers across calls.
+- Fixed race when using `log.With` without a `WithLogger` implementation, where logs could overwrite each others' buffers.
 
 ### Security
 
