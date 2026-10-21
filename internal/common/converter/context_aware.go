@@ -10,10 +10,6 @@ import (
 // DataConverter. This interface allows Temporal to pass Workflow/Activity
 // contexts to the DataConverter so that it may tailor its behavior.
 //
-// Note that data converters may be called in non-context-aware situations to
-// convert payloads that may not be customized per context. Data converter
-// implementers should not expect or require contextual data be present.
-//
 // Exposed as: [go.temporal.io/sdk/converter.ContextAware]
 type ContextAware interface {
 	WithWorkflowContext(ctx workflowcontext.Context) DataConverter
