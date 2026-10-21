@@ -5,6 +5,7 @@ import (
 
 	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/api/proxy"
+
 	"google.golang.org/protobuf/proto"
 )
 
@@ -15,6 +16,12 @@ type PayloadVisitor interface {
 type PayloadVisitorWithContextHook interface {
 	PayloadVisitor
 	ContextHook(ctx context.Context, msg proto.Message) (context.Context, error)
+}
+
+// PayloadVisitorWithMessageLimit scopes limits to the message being visited.
+type PayloadVisitorWithMessageLimit interface {
+	PayloadVisitor
+	WithMessageLimit(ctx context.Context) context.Context
 }
 
 type compositePayloadVisitor struct {
@@ -33,6 +40,15 @@ func (v *compositePayloadVisitor) Visit(ctx *proxy.VisitPayloadsContext, payload
 		}
 	}
 	return payloads, err
+}
+
+func (v *compositePayloadVisitor) WithMessageLimit(ctx context.Context) context.Context {
+	for _, visitor := range v.visitors {
+		if limited, ok := visitor.(PayloadVisitorWithMessageLimit); ok {
+			ctx = limited.WithMessageLimit(ctx)
+		}
+	}
+	return ctx
 }
 
 func (v *compositePayloadVisitor) ContextHook(ctx context.Context, msg proto.Message) (context.Context, error) {
@@ -55,10 +71,15 @@ func newCompositePayloadVisitor(visitors ...PayloadVisitor) PayloadVisitor {
 }
 
 // visitProtoPayloads runs visitor over all payloads in msg, skipping search
-// attributes. If visitor is nil, msg is unchanged.
+// attributes. If visitor is nil, msg is unchanged. concurrencyLimit bounds how
+// many payload sites are visited at once, and is separate from the external
+// storage limits, which visitor scopes to this message.
 func visitProtoPayloads(ctx context.Context, visitor PayloadVisitor, msg proto.Message, concurrencyLimit int) error {
 	if visitor == nil {
 		return nil
+	}
+	if limited, ok := visitor.(PayloadVisitorWithMessageLimit); ok {
+		ctx = limited.WithMessageLimit(ctx)
 	}
 	var hook func(context.Context, proto.Message) (context.Context, error)
 	if visitorWithHook, ok := visitor.(PayloadVisitorWithContextHook); ok {

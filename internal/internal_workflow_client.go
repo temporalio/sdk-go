@@ -294,7 +294,7 @@ func (wc *WorkflowClient) GetWorkflow(ctx context.Context, workflowID string, ru
 		dataConverter:         converter.WithDataConverterSerializationContext(wc.dataConverter, gwCtx),
 		failureConverter:      converter.WithFailureConverterSerializationContext(wc.failureConverter, gwCtx),
 		registry:              wc.registry,
-		inboundPayloadVisitor: extstore.NewExternalRetrievalVisitor(wc.storageParams),
+		inboundPayloadVisitor: extstore.NewExternalRetrievalVisitor(wc.storageParams.WithLogger(wc.logger)),
 	}
 }
 
@@ -1804,7 +1804,7 @@ func (wc *WorkflowClient) Close() {
 func (wc *WorkflowClient) newOutboundPayloadVisitor() PayloadVisitor {
 	payloadLimitVisitor, _ := newPayloadLimitsVisitor(wc.payloadWarningLimits, wc.logger)
 	return newCompositePayloadVisitor(
-		extstore.NewExternalStorageVisitor(wc.storageParams),
+		extstore.NewExternalStorageVisitor(wc.storageParams.WithLogger(wc.logger)),
 		payloadLimitVisitor,
 	)
 }
