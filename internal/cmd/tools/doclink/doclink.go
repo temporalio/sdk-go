@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"unicode"
 )
@@ -113,23 +114,37 @@ func run() error {
 	}
 
 	// Go through internal files and match the definitions of private/public pairings
-	err = filepath.Walk("internal", func(path string, info os.FileInfo, err error) error {
-		if strings.HasSuffix(info.Name(), ".tmp") {
-			return nil
+	internalDirs := map[string]bool{".": true}
+	for _, pair := range publicToInternal {
+		for _, private := range pair {
+			path, _, ok := strings.Cut(private, ".")
+			if !ok {
+				continue
+			}
+			for path = strings.TrimPrefix(path, "/"); path != "."; path = filepath.ToSlash(filepath.Dir(path)) {
+				internalDirs[path] = true
+			}
 		}
+	}
+	err = filepath.Walk(filepath.Join(cfg.rootDir, "internal"), func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return fmt.Errorf("walking %q: %v", path, err)
 		}
-		if info.IsDir() && info.Name() != "internal" {
+		rel, err := filepath.Rel(filepath.Join(cfg.rootDir, "internal"), path)
+		if err != nil {
+			return err
+		}
+		if info.IsDir() && !internalDirs[filepath.ToSlash(rel)] {
 			return filepath.SkipDir
 		}
-		if strings.HasSuffix(path, ".go") && !strings.HasSuffix(path, "_test.go") && !strings.Contains(path, "internal_") {
+		pairs := pairsForPackage(publicToInternal, filepath.ToSlash(filepath.Dir(rel)))
+		if strings.HasSuffix(path, ".go") && !strings.HasSuffix(path, "_test.go") && !strings.Contains(info.Name(), "internal_") {
 			file, err := os.Open(path)
 			if err != nil {
 				return fmt.Errorf("failed to read file %s: %v", path, err)
 			}
 
-			err = processInternal(cfg, file, publicToInternal)
+			err = processInternal(cfg, file, pairs)
 			if err != nil {
 				return fmt.Errorf("error while parsing internal files: %v", err)
 			}
@@ -138,7 +153,7 @@ func run() error {
 			if err != nil {
 				return fmt.Errorf("failed to read file %s: %v", path, err)
 			}
-			err = checkInternalDocs(path, file, publicToInternal)
+			err = checkInternalDocs(path, file, pairs)
 			if closeErr := file.Close(); closeErr != nil {
 				return fmt.Errorf("failed to close file %s: %v", path, closeErr)
 			}
@@ -191,25 +206,41 @@ func processPublic(file *os.File) (map[string]string, error) {
 		return nil, fmt.Errorf("failed to parse file : %v", err)
 	}
 	publicToInternal := make(map[string]string)
+	packages := internalPackages{}
+	for _, imp := range node.Imports {
+		path, err := strconv.Unquote(imp.Path.Value)
+		if err != nil {
+			return nil, err
+		}
+		const prefix = "go.temporal.io/sdk/internal"
+		if path != prefix && !strings.HasPrefix(path, prefix+"/") {
+			continue
+		}
+		name := filepath.Base(path)
+		if imp.Name != nil {
+			name = imp.Name.Name
+		}
+		packages[name] = strings.TrimPrefix(path, prefix)
+	}
 	ast.Inspect(node, func(n ast.Node) bool {
 		if genDecl, ok := n.(*ast.GenDecl); ok {
 			for _, spec := range genDecl.Specs {
 				if typeSpec, typeOk := spec.(*ast.TypeSpec); typeOk {
 					name := typeSpec.Name.Name
 					if ast.IsExported(name) {
-						res := extractTypeValue(typeSpec.Type)
+						res := packages.extractTypeValue(typeSpec.Type)
 						if len(res) > 0 {
 							publicToInternal[name] = res
 						}
 					}
 				}
 				if valueSpec, valueOk := spec.(*ast.ValueSpec); valueOk {
-					if isTypeAssertion(valueSpec) {
+					if packages.isTypeAssertion(valueSpec) {
 						return true
 					}
 					name := valueSpec.Names
 					if ast.IsExported(name[0].Name) {
-						res := checkValueSpec(valueSpec)
+						res := packages.checkValueSpec(valueSpec)
 						if len(res) > 0 {
 							publicToInternal[name[0].Name] = res
 						}
@@ -218,7 +249,7 @@ func processPublic(file *os.File) (map[string]string, error) {
 			}
 		}
 		if funcDecl, ok := n.(*ast.FuncDecl); ok && ast.IsExported(funcDecl.Name.Name) {
-			isWrapper := checkFunction(funcDecl)
+			isWrapper := packages.checkFunction(funcDecl)
 			if len(isWrapper) > 0 {
 				publicToInternal[funcDecl.Name.Name] = isWrapper
 			}
@@ -228,18 +259,41 @@ func processPublic(file *os.File) (map[string]string, error) {
 	return publicToInternal, nil
 }
 
-func extractTypeValue(expr ast.Expr) string {
+// Internal names include their package path relative to internal, so identically
+// named declarations in different internal packages cannot receive each other's links.
+type internalPackages map[string]string
+
+func pairsForPackage(pairs map[string]map[string]string, path string) map[string]map[string]string {
+	result := make(map[string]map[string]string)
+	prefix := ""
+	if path != "." {
+		prefix = "/" + path + "."
+	}
+	for publicPackage, pair := range pairs {
+		result[publicPackage] = make(map[string]string)
+		for public, private := range pair {
+			if prefix == "" && !strings.Contains(private, ".") {
+				result[publicPackage][public] = private
+			} else if prefix != "" && strings.HasPrefix(private, prefix) {
+				result[publicPackage][public] = strings.TrimPrefix(private, prefix)
+			}
+		}
+	}
+	return result
+}
+
+func (packages internalPackages) extractTypeValue(expr ast.Expr) string {
 	switch t := expr.(type) {
 	case *ast.StructType:
 		for _, field := range t.Fields.List {
-			res := extractTypeValue(field.Type)
+			res := packages.extractTypeValue(field.Type)
 			if len(res) > 0 {
 				return res
 			}
 		}
 	case *ast.InterfaceType:
 		for _, method := range t.Methods.List {
-			res := extractTypeValue(method.Type)
+			res := packages.extractTypeValue(method.Type)
 			if len(res) > 0 {
 				return res
 			}
@@ -250,27 +304,32 @@ func extractTypeValue(expr ast.Expr) string {
 		}
 	case *ast.FuncType:
 		for _, param := range t.Params.List {
-			res := extractTypeValue(param.Type)
+			res := packages.extractTypeValue(param.Type)
 			if len(res) > 0 {
 				return res
 			}
 		}
 		if t.Results != nil {
 			for _, result := range t.Results.List {
-				res := extractTypeValue(result.Type)
+				res := packages.extractTypeValue(result.Type)
 				if len(res) > 0 {
 					return res
 				}
 			}
 		}
 	case *ast.SelectorExpr:
-		if ident, ok := t.X.(*ast.Ident); ok && ident.Name == "internal" {
-			return t.Sel.Name
+		if ident, ok := t.X.(*ast.Ident); ok {
+			if path, ok := packages[ident.Name]; ok {
+				if path == "" {
+					return t.Sel.Name
+				}
+				return path + "." + t.Sel.Name
+			}
 		}
 	case *ast.IndexExpr:
-		return extractTypeValue(t.X)
+		return packages.extractTypeValue(t.X)
 	case *ast.IndexListExpr:
-		return extractTypeValue(t.X)
+		return packages.extractTypeValue(t.X)
 	case *ast.BasicLit:
 	// Do nothing
 	default:
@@ -279,10 +338,10 @@ func extractTypeValue(expr ast.Expr) string {
 	return ""
 }
 
-func checkValueSpec(spec *ast.ValueSpec) string {
+func (packages internalPackages) checkValueSpec(spec *ast.ValueSpec) string {
 	// Check if the type of the value spec contains "internal."
 	if spec.Type != nil {
-		res := extractTypeValue(spec.Type)
+		res := packages.extractTypeValue(spec.Type)
 		if len(res) > 0 {
 			return res
 		}
@@ -290,7 +349,7 @@ func checkValueSpec(spec *ast.ValueSpec) string {
 
 	// Check the expressions (values assigned) for "internal."
 	for _, value := range spec.Values {
-		res := extractTypeValue(value)
+		res := packages.extractTypeValue(value)
 		if len(res) > 0 {
 			return res
 		}
@@ -300,7 +359,7 @@ func checkValueSpec(spec *ast.ValueSpec) string {
 }
 
 // Check if a public function is a wrapper around an internal function
-func checkFunction(funcDecl *ast.FuncDecl) string {
+func (packages internalPackages) checkFunction(funcDecl *ast.FuncDecl) string {
 	// Ensure the function has a body
 	if funcDecl.Body == nil {
 		return ""
@@ -316,7 +375,7 @@ func checkFunction(funcDecl *ast.FuncDecl) string {
 		// Ensure the return statement directly calls an internal function
 		for _, result := range retStmt.Results {
 			if callExpr, ok := result.(*ast.CallExpr); ok {
-				if res := isInternalFunctionCall(callExpr); len(res) > 0 {
+				if res := packages.isInternalFunctionCall(callExpr); len(res) > 0 {
 					return res
 				}
 			}
@@ -326,7 +385,7 @@ func checkFunction(funcDecl *ast.FuncDecl) string {
 	// Functions that don't return anything
 	if exprStmt, ok := funcDecl.Body.List[0].(*ast.ExprStmt); ok {
 		if callExpr, ok := exprStmt.X.(*ast.CallExpr); ok {
-			if res := isInternalFunctionCall(callExpr); len(res) > 0 {
+			if res := packages.isInternalFunctionCall(callExpr); len(res) > 0 {
 				return res
 			}
 		}
@@ -336,17 +395,19 @@ func checkFunction(funcDecl *ast.FuncDecl) string {
 }
 
 // Check if a call expression is calling an internal function
-func isInternalFunctionCall(callExpr *ast.CallExpr) string {
-	return extractTypeValue(callExpr.Fun)
+func (packages internalPackages) isInternalFunctionCall(callExpr *ast.CallExpr) string {
+	return packages.extractTypeValue(callExpr.Fun)
 }
 
 // Check for type assertions like `var _ = internal.SomeType(nil)`
-func isTypeAssertion(valueSpec *ast.ValueSpec) bool {
+func (packages internalPackages) isTypeAssertion(valueSpec *ast.ValueSpec) bool {
 	for _, value := range valueSpec.Values {
 		if callExpr, ok := value.(*ast.CallExpr); ok {
 			if selExpr, ok := callExpr.Fun.(*ast.SelectorExpr); ok {
-				if pkgIdent, ok := selExpr.X.(*ast.Ident); ok && pkgIdent.Name == "internal" {
-					return true
+				if pkgIdent, ok := selExpr.X.(*ast.Ident); ok {
+					if _, ok := packages[pkgIdent.Name]; ok {
+						return true
+					}
 				}
 			}
 		}
