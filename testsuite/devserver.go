@@ -243,6 +243,7 @@ func downloadIfNeeded(ctx context.Context, options *DevServerOptions, logger log
 	if err != nil {
 		return "", fmt.Errorf("failed creating temp file: %w", err)
 	}
+	defer func() { _ = os.Remove(f.Name()) }()
 	if strings.HasSuffix(info.ArchiveURL, ".tar.gz") {
 		err = extractTarball(resp.Body, info.FileToExtract, f)
 	} else if strings.HasSuffix(info.ArchiveURL, ".zip") {
@@ -262,10 +263,21 @@ func downloadIfNeeded(ctx context.Context, options *DevServerOptions, logger log
 			return "", fmt.Errorf("failed chmod'ing file: %w", err)
 		}
 	}
-	if err = os.Rename(f.Name(), exePath); err != nil {
+	if err = publishDownloadedFile(f.Name(), exePath); err != nil {
 		return "", fmt.Errorf("failed moving file: %w", err)
 	}
 	return exePath, nil
+}
+
+func publishDownloadedFile(downloadPath, exePath string) error {
+	err := os.Rename(downloadPath, exePath)
+	if err == nil {
+		return nil
+	}
+	if info, statErr := os.Stat(exePath); statErr == nil && info.Mode().IsRegular() {
+		return nil
+	}
+	return err
 }
 
 func (opts *DevServerOptions) clientOptionsOrDefault() client.Options {
