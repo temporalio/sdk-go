@@ -100,7 +100,7 @@ func (w *workflowClientInterceptor) CreateSchedule(ctx context.Context, in *Sche
 		initialPatch = &schedulepb.SchedulePatch{
 			TriggerImmediately: triggerImmediately,
 			BackfillRequest:    backfillRequests,
-			TimeSkippingConfig: in.Options.TimeSkippingConfig,
+			TimeSkippingConfig: in.Options.TimeSkippingConfig.ToProto(),
 		}
 	}
 
@@ -364,7 +364,7 @@ func (scheduleHandle *scheduleHandleImpl) SetTimeSkippingConfig(ctx context.Cont
 		Namespace:  scheduleHandle.client.namespace,
 		ScheduleId: scheduleHandle.ID,
 		Patch: &schedulepb.SchedulePatch{
-			TimeSkippingConfig: options.Config,
+			TimeSkippingConfig: options.Config.ToProto(),
 		},
 		Identity:  scheduleHandle.client.identity,
 		RequestId: uuid.NewString(),

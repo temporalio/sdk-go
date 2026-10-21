@@ -37,7 +37,7 @@ type (
 		// against a server with workflow time skipping enabled.
 		//
 		// NOTE: Experimental
-		TimeSkippingConfig *commonpb.TimeSkippingConfig
+		TimeSkippingConfig *TimeSkippingConfig
 	}
 
 	// WorkflowExecutionOptionsChanges describes changes to the options of a workflow execution in
@@ -61,7 +61,7 @@ type (
 	TimeSkippingConfigChange struct {
 		// Set the configuration if non-nil. If nil, clear any configuration
 		// previously set.
-		Value *commonpb.TimeSkippingConfig
+		Value *TimeSkippingConfig
 	}
 
 	// PollWorkflowTimeSkippingRequest is a request for [Client.PollWorkflowTimeSkipping].
@@ -266,7 +266,7 @@ func versioningOverrideFromProto(versioningOverride *workflowpb.VersioningOverri
 func workflowExecutionOptionsToProto(options WorkflowExecutionOptions) *workflowpb.WorkflowExecutionOptions {
 	return &workflowpb.WorkflowExecutionOptions{
 		VersioningOverride: VersioningOverrideToProto(options.VersioningOverride),
-		TimeSkippingConfig: options.TimeSkippingConfig,
+		TimeSkippingConfig: options.TimeSkippingConfig.ToProto(),
 	}
 }
 
@@ -293,7 +293,7 @@ func workflowExecutionOptionsFromProtoUpdateResponse(response *workflowservice.U
 
 	return WorkflowExecutionOptions{
 		VersioningOverride: versioningOverrideFromProto(versioningOverride),
-		TimeSkippingConfig: response.GetWorkflowExecutionOptions().GetTimeSkippingConfig(),
+		TimeSkippingConfig: timeSkippingConfigFromProto(response.GetWorkflowExecutionOptions().GetTimeSkippingConfig()),
 	}
 }
 

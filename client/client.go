@@ -669,6 +669,18 @@ type (
 	// NOTE: Experimental
 	VersioningOverrideChange = internal.VersioningOverrideChange
 
+	// TimeSkippingConfig is the time-skipping (v2) configuration for an execution or a
+	// schedule. Time skipping is a testing facility and is not intended for production
+	// workloads.
+	//
+	// NOTE: Experimental
+	TimeSkippingConfig = internal.TimeSkippingConfig
+
+	// FastForwardConfig is a one-shot fast-forward inside a [TimeSkippingConfig].
+	//
+	// NOTE: Experimental
+	FastForwardConfig = internal.FastForwardConfig
+
 	// TimeSkippingConfigChange sets or clears an execution's time-skipping
 	// configuration when used with [WorkflowExecutionOptionsChanges].
 	//

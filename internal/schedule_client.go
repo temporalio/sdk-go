@@ -404,7 +404,7 @@ type (
 		// server with schedule time skipping enabled.
 		//
 		// NOTE: Experimental
-		TimeSkippingConfig *commonpb.TimeSkippingConfig
+		TimeSkippingConfig *TimeSkippingConfig
 	}
 
 	// ScheduleWorkflowExecution contains details on a workflows execution stared by a schedule.
@@ -667,7 +667,7 @@ type (
 	// Exposed as: [go.temporal.io/sdk/client.ScheduleTimeSkippingOptions]
 	ScheduleTimeSkippingOptions struct {
 		// Config to apply. A nil Config clears the Schedule's time-skipping configuration.
-		Config *commonpb.TimeSkippingConfig
+		Config *TimeSkippingConfig
 	}
 
 	// ScheduleActionResult describes when a schedule action took place

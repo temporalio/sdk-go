@@ -2,7 +2,6 @@ package testsuite
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"time"
 
@@ -12,84 +11,25 @@ import (
 	historypb "go.temporal.io/api/history/v1"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/interceptor"
-	"google.golang.org/protobuf/types/known/durationpb"
+	"go.temporal.io/sdk/internal"
 )
 
-// TimeSkippingConfig is the per-workflow time-skipping (v2) configuration.
-// Mirrors temporal.api.common.v1.TimeSkippingConfig.
-//
-// NOTE: Experimental
-type TimeSkippingConfig struct {
-	// Enabled controls whether time skipping is on for this workflow.
-	Enabled bool
+// Time-skipping configuration types. These are the same types the client
+// package exposes — defined once in internal so the client and testsuite APIs
+// cannot drift, and so a config built for StartWorkflowOptions or
+// ScheduleOptions can be handed straight to a TimeSkipper.
+type (
+	// TimeSkippingConfig is the time-skipping (v2) configuration for an
+	// execution or a schedule.
+	//
+	// NOTE: Experimental
+	TimeSkippingConfig = internal.TimeSkippingConfig
 
-	// FastForwardConfig is the one-shot fast-forward, if any. Nil means no
-	// bounded FF (either unbounded skipping when Enabled or no skipping at all).
-	FastForwardConfig *FastForwardConfig
-
-	// DisablePropagation stops the enabled flag from propagating to child
-	// workflow executions. Virtual start time still propagates.
-	DisablePropagation bool
-
-	// MaxSessionSkipCount caps the number of skips within one continuous
-	// time-skipping session. Zero (proto3 default) means "use server default".
-	MaxSessionSkipCount int32
-}
-
-// Validate checks internal consistency of the config.
-//
-// NOTE: Experimental
-func (c *TimeSkippingConfig) Validate() error {
-	if !c.Enabled && c.FastForwardConfig != nil {
-		return fmt.Errorf("FastForwardConfig cannot be set when Enabled is false")
-	}
-	return nil
-}
-
-// ToProto converts the SDK-level config to its proto counterpart. It performs
-// no defaulting or ID generation — the fields are copied 1:1.
-//
-// NOTE: Experimental
-func (c *TimeSkippingConfig) ToProto() *commonpb.TimeSkippingConfig {
-	if c == nil {
-		return nil
-	}
-	proto := &commonpb.TimeSkippingConfig{
-		Enabled:             c.Enabled,
-		DisablePropagation:  c.DisablePropagation,
-		MaxSessionSkipCount: c.MaxSessionSkipCount,
-	}
-	if c.FastForwardConfig != nil {
-		proto.FastForwardConfig = c.FastForwardConfig.ToProto()
-	}
-	return proto
-}
-
-// FastForwardConfig is a one-shot fast-forward inside a TimeSkippingConfig.
-// Both fields are required whenever a fast-forward is configured.
-//
-// NOTE: Experimental
-type FastForwardConfig struct {
-	// ID identifies this fast-forward for PollWorkflowExecutionTimeSkipping.
-	ID string
-
-	// Duration advances the workflow's virtual time by this amount. Time
-	// skipping auto-disables when the target is reached.
-	Duration time.Duration
-}
-
-// ToProto maps to the proto counterpart.
-//
-// NOTE: Experimental
-func (c *FastForwardConfig) ToProto() *commonpb.FastForwardConfig {
-	if c == nil {
-		return nil
-	}
-	return &commonpb.FastForwardConfig{
-		Id:       c.ID,
-		Duration: durationpb.New(c.Duration),
-	}
-}
+	// FastForwardConfig is a one-shot fast-forward inside a TimeSkippingConfig.
+	//
+	// NOTE: Experimental
+	FastForwardConfig = internal.FastForwardConfig
+)
 
 // FastForwardOption is a functional option passed to FastForward. The current
 // only option is WithDuration; more may be added.
@@ -215,13 +155,14 @@ func (t *TimeSkipper) WithTimeSkippingDisabled(f func()) {
 
 // stampConfig returns the config to stamp on a starting workflow, or nil when
 // stamping is currently suspended.
-func (t *TimeSkipper) stampConfig() *commonpb.TimeSkippingConfig {
+func (t *TimeSkipper) stampConfig() *TimeSkippingConfig {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	if !t.stampEnabled {
 		return nil
 	}
-	return t.config.ToProto()
+	cfg := t.config
+	return &cfg
 }
 
 // FastForward issues a fast-forward on the workflow and waits for it to
@@ -355,7 +296,7 @@ func (t *TimeSkipper) updateTimeSkippingConfig(
 	_, err := t.client.UpdateWorkflowExecutionOptions(ctx, client.UpdateWorkflowExecutionOptionsRequest{
 		WorkflowId: run.GetID(),
 		WorkflowExecutionOptionsChanges: client.WorkflowExecutionOptionsChanges{
-			TimeSkippingConfig: &client.TimeSkippingConfigChange{Value: config.ToProto()},
+			TimeSkippingConfig: &client.TimeSkippingConfigChange{Value: &config},
 		},
 	})
 	return err

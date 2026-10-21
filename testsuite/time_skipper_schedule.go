@@ -106,7 +106,7 @@ func (t *TimeSkipper) patchScheduleTimeSkippingConfig(
 	ctx context.Context, scheduleID string, config TimeSkippingConfig,
 ) error {
 	return t.client.ScheduleClient().GetHandle(ctx, scheduleID).
-		SetTimeSkippingConfig(ctx, client.ScheduleTimeSkippingOptions{Config: config.ToProto()})
+		SetTimeSkippingConfig(ctx, client.ScheduleTimeSkippingOptions{Config: &config})
 }
 
 // pollScheduleFastForwardCompletion waits for the fast-forward identified by

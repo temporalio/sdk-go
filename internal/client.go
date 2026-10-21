@@ -1326,7 +1326,7 @@ type (
 		// WorkflowTimeSkipping feature enabled.
 		//
 		// NOTE: Experimental
-		TimeSkippingConfig *commonpb.TimeSkippingConfig
+		TimeSkippingConfig *TimeSkippingConfig
 
 		// responseInfo - Optional pointer to store information of StartWorkflowExecution response.
 		// Only settable by the SDK - e.g. [temporalnexus.workflowRunOperation].
