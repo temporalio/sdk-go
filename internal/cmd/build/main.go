@@ -94,6 +94,13 @@ func (b *builder) check() error {
 		return fmt.Errorf("failed finding modules to check: %w", err)
 	}
 
+	// Runs first because it takes seconds, so a go.temporal.io/api bump that adds an unclassified
+	// payload field is reported before the slower linters.
+	if err := b.runCmd(b.cmdFromRoot(
+		"go", "run", "./internal/cmd/payload-limit-gen", "-check", "-out", "internal/payloadlimits/validator_gen.go",
+	)); err != nil {
+		return fmt.Errorf("payload limit validator check failed: %w", err)
+	}
 	// Run go vet
 	if err := b.runCmdInDirs(moduleDirs, "go", "vet", "./..."); err != nil {
 		return fmt.Errorf("go vet failed: %w", err)
