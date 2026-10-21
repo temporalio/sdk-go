@@ -4,7 +4,9 @@ import (
 	"go/ast"
 	"go/parser"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -167,7 +169,7 @@ func TestExtractTypeValueGeneric(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if value := extractTypeValue(expr); value != test.want {
+		if value := (internalPackages{"internal": ""}).extractTypeValue(expr); value != test.want {
 			t.Fatalf("extractTypeValue(%q) = %q, want %q", test.expression, value, test.want)
 		}
 	}
@@ -182,7 +184,93 @@ func TestIsInternalFunctionCallGeneric(t *testing.T) {
 	if !ok {
 		t.Fatalf("parsed expression is %T, want *ast.CallExpr", expr)
 	}
-	if value := isInternalFunctionCall(call); value != "NewLocalVar" {
+	if value := (internalPackages{"internal": ""}).isInternalFunctionCall(call); value != "NewLocalVar" {
 		t.Fatalf("isInternalFunctionCall() = %q, want NewLocalVar", value)
+	}
+}
+
+func TestNestedInternalPackage(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	files := map[string]string{
+		"converter/public.go": `package converter
+import (
+	commonconverter "go.temporal.io/sdk/internal/common/converter"
+	renamed "go.temporal.io/sdk/internal"
+	other "example.com/other"
+)
+type DataConverter = commonconverter.DataConverter
+type RootConverter = renamed.DataConverter
+type Unrelated = other.DataConverter
+func NewTransferTypeConverter[T any]() DataConverter {
+	return commonconverter.NewTransferTypeConverter[T]()
+}
+`,
+		"internal/root.go": `package internal
+// DataConverter is the root converter.
+//
+// Exposed as: [go.temporal.io/sdk/converter.RootConverter]
+type DataConverter interface {}
+`,
+		"internal/common/converter/converter.go": `package converter
+// DataConverter converts payloads.
+type DataConverter interface {}
+// NewTransferTypeConverter creates a converter.
+func NewTransferTypeConverter[T any]() DataConverter { return nil }
+`,
+	}
+	for path, source := range files {
+		path = filepath.Join(dir, path)
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(source), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	file, err := os.Open(filepath.Join(dir, "converter/public.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pairs, err := processPublic(file)
+	if closeErr := file.Close(); closeErr != nil {
+		t.Fatal(closeErr)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{
+		"DataConverter":            "/common/converter.DataConverter",
+		"RootConverter":            "DataConverter",
+		"NewTransferTypeConverter": "/common/converter.NewTransferTypeConverter",
+	}
+	if !reflect.DeepEqual(pairs, want) {
+		t.Fatalf("processPublic() = %v, want %v", pairs, want)
+	}
+
+	cmd := exec.Command("go", "run", "doclink.go", "-rootDir", dir)
+	output, err := cmd.CombinedOutput()
+	if err == nil || !strings.Contains(string(output), "Missing doc") {
+		t.Fatalf("check without links: error = %v, output:\n%s", err, output)
+	}
+	cmd = exec.Command("go", "run", "doclink.go", "-rootDir", dir, "-fix")
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("fix: %v\n%s", err, output)
+	}
+	cmd = exec.Command("go", "run", "doclink.go", "-rootDir", dir)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("check after fix: %v\n%s", err, output)
+	}
+	for _, path := range []string{"internal/root.go", "internal/common/converter/converter.go"} {
+		content, err := os.ReadFile(filepath.Join(dir, path))
+		if err != nil {
+			t.Fatal(err)
+		}
+		rootLink := strings.Contains(string(content), "[go.temporal.io/sdk/converter.RootConverter]")
+		nestedLink := strings.Contains(string(content), "[go.temporal.io/sdk/converter.DataConverter]")
+		if rootLink != (path == "internal/root.go") || nestedLink != (path != "internal/root.go") {
+			t.Fatalf("links were associated with the wrong package in %s:\n%s", path, content)
+		}
 	}
 }
