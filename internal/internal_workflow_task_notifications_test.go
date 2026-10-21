@@ -68,3 +68,58 @@ func TestWorkflowTaskNotificationsMatchActiveTask(t *testing.T) {
 		t.Fatal("unregistered task received a notification")
 	}
 }
+
+func TestWorkflowTaskNotificationsArriveBeforeTask(t *testing.T) {
+	n := newWorkflowTaskNotifications()
+	ch := make(chan struct{}, 1)
+	started := timestamppb.New(time.Unix(100, 0))
+	task := &workflowservice.PollWorkflowTaskQueueResponse{
+		WorkflowExecution: &commonpb.WorkflowExecution{RunId: "run"},
+		ScheduledEventId:  10,
+		StartedEventId:    11,
+		Attempt:           2,
+		StartedTime:       started,
+	}
+	command := &workerpb.WorkflowTaskHeartbeatNotificationCommand{
+		RunId: "run", ScheduledEventId: 10, StartedEventId: 11,
+		Attempt: 2, StartedTime: started,
+	}
+
+	n.notify(command)
+	n.notify(command)
+	n.register(task, ch)
+	if len(ch) != 1 {
+		t.Fatalf("early notifications = %d, want 1", len(ch))
+	}
+	<-ch
+	n.unregister("run", ch)
+
+	// A notification for a different task must not wake this task, even when
+	// the previous task is still registered when that notification arrives.
+	oldTask := &workflowservice.PollWorkflowTaskQueueResponse{
+		WorkflowExecution: &commonpb.WorkflowExecution{RunId: "run"},
+		ScheduledEventId:  8,
+		StartedEventId:    9,
+		Attempt:           1,
+		StartedTime:       timestamppb.New(time.Unix(99, 0)),
+	}
+	n.register(oldTask, ch)
+	n.notify(command)
+	if len(ch) != 0 {
+		t.Fatal("new task notification woke old task")
+	}
+	n.register(task, ch)
+	if len(ch) != 1 {
+		t.Fatal("notification was lost while old task was registered")
+	}
+	<-ch
+
+	// A different speculative task may reuse the event IDs and attempt.
+	n.unregister("run", ch)
+	command.StartedTime = timestamppb.New(time.Unix(101, 0))
+	n.notify(command)
+	n.register(task, ch)
+	if len(ch) != 0 {
+		t.Fatal("notification for a different task woke this task")
+	}
+}

@@ -38,6 +38,7 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- Workflow Task heartbeat notifications received before the matching task is registered are retained until the task arrives.
 - `converter.NewRemotePayloadCodec` now handles endpoint URLs with trailing slashes.
 - Fixed race when using `log.With` without a `WithLogger` implementation, where logs could overwrite each others' buffers.
 - The default timeout for client and worker RPCs has been extended. Previously, the default timeout
