@@ -387,11 +387,12 @@ func classify(f protoreflect.FieldDescriptor) target {
 			return target{isLeaf: true, leaf: leafMapPayload}
 		case v.FullName() == payloadsType:
 			return target{isLeaf: true, leaf: leafMapPayloads}
-		case v.FullName() == anyType:
-			// Skipping it would let an opaque, possibly payload-bearing field go unclassified, and
-			// no map of Any exists yet to decide how the server measures one.
-			panic(fmt.Sprintf("payload-limits: map field %s holds google.protobuf.Any values, which the "+
-				"generator cannot measure yet; add a leafKind for it", f.FullName()))
+		case leafTypes[v.FullName()]:
+			// The walk never descends into a leaf type, so treating the map as a struct would skip the
+			// field without it ever being classified, and no such map exists yet to decide how the
+			// server measures one.
+			panic(fmt.Sprintf("payload-limits: map field %s holds %s values, which the "+
+				"generator cannot measure yet; add a leafKind for it", f.FullName(), v.FullName()))
 		case isTemporal(v):
 			return target{shape: shapeMap, child: v}
 		}
