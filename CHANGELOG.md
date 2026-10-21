@@ -38,6 +38,7 @@ to docs, or any other relevant information.
 - The default timeout for client and worker RPCs has been extended. Previously, the default timeout
   was only half the caller's context deadline - now it uses the entire deadline, up to a maximum
   of ten seconds. RPCs with timeout overrides, like long-poll RPCs, are unchanged.
+- Query tracing now always records inbound spans when serving queries, regardless of `IsReplaying` state.
 
 ### Security
 
