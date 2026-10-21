@@ -2,6 +2,8 @@ package testsuite
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -10,6 +12,19 @@ import (
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/internal/log"
 )
+
+func TestPublishDownloadedFile(t *testing.T) {
+	dir := t.TempDir()
+	downloadPath := filepath.Join(dir, "downloading")
+	exePath := filepath.Join(dir, "temporal")
+	require.NoError(t, os.WriteFile(downloadPath, []byte("download"), 0600))
+	require.NoError(t, os.WriteFile(exePath, []byte("published"), 0600))
+
+	require.NoError(t, publishDownloadedFile(downloadPath, exePath))
+	info, err := os.Stat(exePath)
+	require.NoError(t, err)
+	require.True(t, info.Mode().IsRegular())
+}
 
 func TestWaitServerReady_respectsTimeout(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), time.Millisecond)
