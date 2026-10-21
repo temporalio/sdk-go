@@ -269,6 +269,37 @@ func TestRemoteDataConverter(t *testing.T) {
 	require.True(t, proto.Equal(localEncodedPayload, remoteEncodedPayload))
 }
 
+func TestRemotePayloadCodecTrailingSlash(t *testing.T) {
+	handler := NewPayloadCodecHTTPHandler(NewZlibCodec(ZlibCodecOptions{AlwaysEncode: true}))
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/codec/encode" && r.URL.Path != "/codec/decode" {
+			http.NotFound(w, r)
+			return
+		}
+		handler.ServeHTTP(w, r)
+	}))
+	defer server.Close()
+
+	payload, err := GetDefaultDataConverter().ToPayload("test")
+	require.NoError(t, err)
+
+	for _, suffix := range []string{"", "/"} {
+		t.Run(fmt.Sprintf("%d_trailing_slashes", len(suffix)), func(t *testing.T) {
+			codec := NewRemotePayloadCodec(RemotePayloadCodecOptions{Endpoint: server.URL + "/codec" + suffix})
+
+			encoded, err := codec.Encode([]*commonpb.Payload{payload})
+			require.NoError(t, err)
+			require.Len(t, encoded, 1)
+			require.Equal(t, "binary/zlib", string(encoded[0].Metadata[MetadataEncoding]))
+
+			decoded, err := codec.Decode(encoded)
+			require.NoError(t, err)
+			require.Len(t, decoded, 1)
+			require.True(t, proto.Equal(payload, decoded[0]))
+		})
+	}
+}
+
 func TestRawValueCodec(t *testing.T) {
 	require := require.New(t)
 	defaultConv := GetDefaultDataConverter()
