@@ -651,6 +651,20 @@ func TestConvertCommonLinkToNexusLink(t *testing.T) {
 			wantURL:  "temporal:///namespaces/ns/activities/act-id/run-id/details",
 			wantType: "temporal.api.common.v1.Link.Activity",
 		},
+		{
+			name: "callback",
+			input: &commonpb.Link{Variant: &commonpb.Link_Callback_{
+				Callback: &commonpb.Link_Callback{
+					Namespace: "ns",
+					Execution: &commonpb.Execution{
+						Type: enumspb.EXECUTION_TYPE_WORKFLOW, BusinessId: "wf-id", RunId: "run-id",
+					},
+					RequestId: "req-id",
+				},
+			}},
+			wantURL:  "temporal:///namespaces/ns/workflows/wf-id/run-id/callbacks/req-id",
+			wantType: "temporal.api.common.v1.Link.Callback",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := temporalnexus.ConvertCommonLinkToNexusLink(tc.input)
@@ -667,6 +681,9 @@ func TestConvertCommonLinkToNexusLink_NoLinkForm(t *testing.T) {
 	require.Equal(t, nexus.Link{}, temporalnexus.ConvertCommonLinkToNexusLink(&commonpb.Link{}))
 	require.Equal(t, nexus.Link{}, temporalnexus.ConvertCommonLinkToNexusLink(&commonpb.Link{
 		Variant: &commonpb.Link_BatchJob_{BatchJob: &commonpb.Link_BatchJob{JobId: "job-id"}},
+	}))
+	require.Equal(t, nexus.Link{}, temporalnexus.ConvertCommonLinkToNexusLink(&commonpb.Link{
+		Variant: &commonpb.Link_Callback_{Callback: &commonpb.Link_Callback{Namespace: "ns"}},
 	}))
 }
 
@@ -702,4 +719,26 @@ func TestConvertNexusLinkToLinkWorkflow_Invalid(t *testing.T) {
 		URL: eventURL, Type: "temporal.api.common.v1.Link.Workflow",
 	})
 	require.ErrorContains(t, err, "malformed URL path")
+}
+
+func TestConvertLinkCallbackRoundTrip(t *testing.T) {
+	input := &commonpb.Link_Callback{
+		Namespace: "ns",
+		Execution: &commonpb.Execution{
+			Type: enumspb.EXECUTION_TYPE_WORKFLOW, BusinessId: "wf-id", RunId: "run-id",
+		},
+		RequestId:     "req-id",
+		ComponentPath: []string{"a", "b"},
+	}
+
+	link, err := temporalnexus.ConvertLinkCallbackToNexusLink(input)
+	require.NoError(t, err)
+	require.Equal(t, "temporal.api.common.v1.Link.Callback", link.Type)
+
+	output, err := temporalnexus.ConvertNexusLinkToLinkCallback(link)
+	require.NoError(t, err)
+	require.Empty(t, cmp.Diff(input, output, protocmp.Transform()))
+
+	_, err = temporalnexus.ConvertLinkCallbackToNexusLink(&commonpb.Link_Callback{Namespace: "ns"})
+	require.ErrorContains(t, err, "unsupported execution type")
 }
