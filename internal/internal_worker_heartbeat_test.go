@@ -549,6 +549,59 @@ func TestWorkerCommandCancelActivity(t *testing.T) {
 	}
 }
 
+func TestWorkerCommandWorkflowTaskHeartbeatNotification(t *testing.T) {
+	t.Parallel()
+	ctrl := gomock.NewController(t)
+	mockService := workflowservicemock.NewMockWorkflowServiceClient(ctrl)
+	notifications := newWorkflowTaskNotifications()
+	notificationCh := make(chan struct{}, 1)
+	notifications.register(&workflowservice.PollWorkflowTaskQueueResponse{
+		WorkflowExecution: &commonpb.WorkflowExecution{RunId: "run"},
+		ScheduledEventId:  1,
+		StartedEventId:    2,
+		Attempt:           1,
+	}, notificationCh)
+	execReqBytes, err := proto.Marshal(&workerservicepb.ExecuteCommandsRequest{
+		Commands: []*workerpb.WorkerCommand{{
+			Type: &workerpb.WorkerCommand_WorkflowTaskHeartbeatNotification{
+				WorkflowTaskHeartbeatNotification: &workerpb.WorkflowTaskHeartbeatNotificationCommand{
+					RunId: "run", ScheduledEventId: 1, StartedEventId: 2, Attempt: 1,
+				},
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mockService.EXPECT().RespondNexusTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, req *workflowservice.RespondNexusTaskCompletedRequest, _ ...grpc.CallOption) (*workflowservice.RespondNexusTaskCompletedResponse, error) {
+			var response workerservicepb.ExecuteCommandsResponse
+			if err := proto.Unmarshal(req.GetResponse().GetStartOperation().GetSyncSuccess().GetPayload().GetData(), &response); err != nil {
+				t.Fatal(err)
+			}
+			if len(response.GetResults()) != 1 || response.GetResults()[0].GetWorkflowTaskHeartbeatNotification() == nil {
+				t.Fatalf("unexpected worker command results: %v", response.GetResults())
+			}
+			return &workflowservice.RespondNexusTaskCompletedResponse{}, nil
+		})
+	hw := &sharedNamespaceWorker{
+		client:    &WorkflowClient{workflowService: mockService, identity: "worker"},
+		namespace: "test-ns", metricsHandler: metrics.NopHandler,
+		workflowTaskNotifications: notifications,
+	}
+	if err := hw.handleWorkerCommandTask(&workflowservice.PollNexusTaskQueueResponse{
+		TaskToken: []byte{1},
+		Request: &nexuspb.Request{Variant: &nexuspb.Request_StartOperation{
+			StartOperation: &nexuspb.StartOperationRequest{Payload: &commonpb.Payload{Data: execReqBytes}},
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(notificationCh) != 1 {
+		t.Fatal("notification did not reach the active task")
+	}
+}
+
 func TestWorkerCommandsDisabledDoesNotPoll(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {

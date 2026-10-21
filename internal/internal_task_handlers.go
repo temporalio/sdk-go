@@ -81,8 +81,9 @@ type (
 		// when that workflow task processing returns. Local activity result and retry
 		// delivery wait on it to avoid blocking forever if nobody is receiving on
 		// laResultCh or laRetryCh.
-		doneCh     chan struct{}
-		laResultCh chan *localActivityResult
+		doneCh                  chan struct{}
+		laResultCh              chan *localActivityResult
+		heartbeatNotificationCh <-chan struct{}
 
 		// This channel must be initialized with a one-size buffer and is used to indicate when
 		// it is time for a local activity to be retried
@@ -1012,6 +1013,9 @@ processWorkflowLoop:
 
 					select {
 					case <-heartbeatTimer.C:
+						delayDuration = 0
+						continue heartbeatLoop
+					case <-workflowTask.heartbeatNotificationCh:
 						delayDuration = 0
 						continue heartbeatLoop
 
