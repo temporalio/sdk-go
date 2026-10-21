@@ -267,7 +267,7 @@ type (
 
 		outboundPayloadVisitor PayloadVisitor
 
-		payloadVisitorConcurrency int
+		storageParams extstore.StorageParameters
 
 		setErrorLimits func(*payloadLimits)
 	}
@@ -1883,6 +1883,7 @@ type WorkflowReplayer struct {
 	enableLoggingInReplay       bool
 	disableDeadlockDetection    bool
 	inboundPayloadVisitor       PayloadVisitor
+	storageParams               extstore.StorageParameters
 	mu                          sync.Mutex
 	workflowExecutionResults    map[string]*commonpb.Payloads
 	workflowReplayerInstanceKey string
@@ -1976,6 +1977,7 @@ func NewWorkflowReplayer(options WorkflowReplayerOptions) (*WorkflowReplayer, er
 		enableLoggingInReplay:       options.EnableLoggingInReplay,
 		disableDeadlockDetection:    options.DisableDeadlockDetection,
 		inboundPayloadVisitor:       extstore.NewExternalRetrievalVisitor(storageParams),
+		storageParams:               storageParams,
 		workflowExecutionResults:    make(map[string]*commonpb.Payloads),
 		workflowReplayerInstanceKey: workflowReplayerInstanceKey,
 		plugins:                     options.Plugins,
@@ -2207,6 +2209,7 @@ func (aw *WorkflowReplayer) replayWorkflowHistoryRoot(
 			taskQueue:     taskQueue,
 		},
 		inboundVisitor: aw.inboundPayloadVisitor,
+		storageParams:  aw.storageParams,
 	}
 	cache, cacheLease := newWorkerCache(&sharedWorkerCache{}, &sync.Mutex{}, 0)
 	defer cacheLease.release()
@@ -2421,10 +2424,6 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		panic("cannot set both DeploymentOptions.DefaultVersioningBehavior if DeploymentOptions.UseBuildIDForVersioning is false")
 	}
 
-	if options.MaxConcurrentWorkflowTaskExternalStorageVisits < 0 {
-		panic("MaxConcurrentWorkflowTaskExternalStorageVisits must not be negative")
-	}
-
 	// Pollers retain this callback, keeping the worker and cache lease live until they stop.
 	var aw *AggregatedWorker
 	noRepoll := &atomic.Bool{}
@@ -2490,6 +2489,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	}
 
 	payloadLimitVisitor, setErrorLimits := newPayloadLimitsVisitor(client.payloadWarningLimits, logger)
+	workerStorageParams := client.storageParams.WithOwnDriverOperationLimit().WithLogger(logger)
 
 	cache, cacheLease := NewWorkerCache()
 	constructionComplete := false
@@ -2543,12 +2543,12 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		workerPollCompleteOnShutdown:     workerPollCompleteOnShutdown,
 		serverSupportsAutoscaling:        &atomic.Bool{},
 		workflowTaskCompletionPagination: &workflowTaskCompletionPaginationConfig{},
-		inboundPayloadVisitor:            extstore.NewExternalRetrievalVisitor(client.storageParams),
+		inboundPayloadVisitor:            extstore.NewExternalRetrievalVisitor(workerStorageParams),
 		outboundPayloadVisitor: newCompositePayloadVisitor(
-			extstore.NewExternalStorageVisitor(client.storageParams),
+			extstore.NewExternalStorageVisitor(workerStorageParams),
 			payloadLimitVisitor,
 		),
-		payloadVisitorConcurrency: options.MaxConcurrentWorkflowTaskExternalStorageVisits,
+		storageParams: workerStorageParams,
 		setErrorLimits: func(limits *payloadLimits) {
 			if !options.DisablePayloadErrorLimit {
 				setErrorLimits(limits)
@@ -2991,9 +2991,6 @@ func setWorkerOptionsDefaults(options *WorkerOptions) autoEnrollEligibility {
 	}
 	if options.MaxHeartbeatThrottleInterval == 0 {
 		options.MaxHeartbeatThrottleInterval = defaultMaxHeartbeatThrottleInterval
-	}
-	if options.MaxConcurrentWorkflowTaskExternalStorageVisits == 0 {
-		options.MaxConcurrentWorkflowTaskExternalStorageVisits = defaultMaxConcurrentWorkflowTaskExternalStorageVisits
 	}
 	if options.Tuner == nil {
 		// Err cannot happen since these slot numbers are guaranteed valid

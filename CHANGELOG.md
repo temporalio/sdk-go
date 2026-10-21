@@ -22,6 +22,30 @@ to docs, or any other relevant information.
 
 ### Added
 
+- Added experimental `temporalnexus.ConvertLinkCallbackToNexusLink` and `temporalnexus.ConvertNexusLinkToLinkCallback`
+  for converting `Link_Callback` to and from Nexus links.
+
+### Changed
+
+### Deprecated
+
+### :boom: Breaking Changes
+
+### Fixed
+
+- `converter.NewRemotePayloadCodec` now handles endpoint URLs with trailing slashes.
+- Fixed race when using `log.With` without a `WithLogger` implementation, where logs could overwrite each others' buffers.
+- The default timeout for client and worker RPCs has been extended. Previously, the default timeout
+  was only half the caller's context deadline - now it uses the entire deadline, up to a maximum
+  of ten seconds. RPCs with timeout overrides, like long-poll RPCs, are unchanged.
+- Query tracing now always records inbound spans when serving queries, regardless of `IsReplaying` state.
+
+### Security
+
+## [1.50.0] - 2026-10-15
+
+### Added
+
 - Added `workflow.ChildWorkflowOptions.VersioningOverride` for explicitly pinning,
   auto-upgrading, or one-time routing a child workflow independently of its parent.
   This requires Temporal Server 1.32.0 or later.
@@ -41,6 +65,9 @@ to docs, or any other relevant information.
 - Added `workflow.NewLocalVar[T](ctx)` for type-safe values bound to a workflow run that can be
   accessed from workflow code and workflow interceptors. Copies of a `workflow.LocalVar[T]` share
   identity.
+- **Experimental**: New external storage concurrency controls. `ExternalStorage.Concurrency` sets
+  `MaxDriverOperations` (for one client or worker) and `MaxOperationsPerMessage` (for one
+  message). Drivers must use `ctx.GetLimiter()` for store and retrieve operations.
 
 ### Changed
 
@@ -54,10 +81,12 @@ to docs, or any other relevant information.
   seconds. It previously warned above a fixed 10 seconds, logged at info above a fixed 5 seconds,
   and logged at debug below that when trace logging was enabled.
 
-### Deprecated
-
 ### :boom: Breaking Changes
 
+- Moved the Google ADK integration from `contrib/googleadk` to
+  [temporalio/ai-integrations](https://github.com/temporalio/ai-integrations/tree/main/go/googleadk).
+  Its module path is now `go.temporal.io/googleadk` instead of
+  `go.temporal.io/sdk/contrib/googleadk`; see the integration README for installation and usage.
 - Plugin cleanup must not synchronously call the same worker's `Stop`: it now waits
   for that cleanup to finish and deadlocks. This includes `SimplePlugin.RunContextAfter`,
   whose callback receives no `next` function.
@@ -65,6 +94,8 @@ to docs, or any other relevant information.
   shutdown, no longer increments `temporal_sticky_cache_total_forced_eviction`. This aligns bulk
   cleanup with Java and Core-based SDKs. Qualifying capacity and other per-workflow removals remain
   counted, but dashboards may report fewer forced evictions.
+- **Experimental**: Removed `WorkerOptions.MaxConcurrentWorkflowTaskExternalStorageVisits`. Use
+  `ExternalStorage.Concurrency`.
 
 ### Fixed
 
@@ -92,8 +123,6 @@ to docs, or any other relevant information.
   `OnRegisterActivity` but not `OnRegisterDynamicActivity`.
 - Stopped workers now release sticky workflow cache ownership immediately. When the final worker
   stops, cached workflow state is cleared without waiting for garbage collection.
-
-### Security
 
 ## [1.49.0] - 2026-09-14
 
