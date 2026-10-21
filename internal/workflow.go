@@ -3078,7 +3078,13 @@ func (wc *workflowEnvironmentInterceptor) prepareNexusOperationParams(ctx Contex
 		return ExecuteNexusOperationParams{}, fmt.Errorf("invalid 'operation' parameter, must be an OperationReference or a string")
 	}
 
-	// Compute the serialization context, if any
+	// Compute the serialization context, if any.
+	// - In System Nexus, the payload we construct is a proto handled by the
+	//   temporal service itself, e.g. SignalWithStartWorkflowExecutionRequest.
+	//   We use the serialization context to encode payloads *within* the payload,
+	//   e.g. SignalWithStartWorkflowExecutionRequest.Input.
+	// - For ordinary nexus operations, the serialization context is used to
+	//   encode the top-level payload - the input to the nexus operation.
 	var sc converter.SerializationContext
 	if endpoint == systemNexusEndpoint {
 		if info, ok := nexusOperationRegistry[NexusOperationKey{
