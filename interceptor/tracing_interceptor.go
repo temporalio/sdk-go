@@ -551,7 +551,6 @@ func (t *tracingWorkflowInboundInterceptor) HandleQuery(
 	ctx workflow.Context,
 	in *HandleQueryInput,
 ) (any, error) {
-	// Queries are live requests even when rebuilding history leaves the replay flag set.
 	if t.root.options.DisableQueryTracing {
 		return t.Next.HandleQuery(ctx, in)
 	}
