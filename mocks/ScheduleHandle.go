@@ -102,6 +102,23 @@ func (_m *ScheduleHandle) GetID() string {
 }
 
 // Pause provides a mock function with given fields: ctx, options
+// SetTimeSkippingConfig provides a mock function with given fields: ctx, options
+func (_m *ScheduleHandle) SetTimeSkippingConfig(ctx context.Context, options client.ScheduleTimeSkippingOptions) error {
+	ret := _m.Called(ctx, options)
+
+	if len(ret) == 0 {
+		panic("no return value specified for SetTimeSkippingConfig")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(context.Context, client.ScheduleTimeSkippingOptions) error); ok {
+		r0 = rf(ctx, options)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
 func (_m *ScheduleHandle) Pause(ctx context.Context, options client.SchedulePauseOptions) error {
 	ret := _m.Called(ctx, options)
 

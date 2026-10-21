@@ -1178,6 +1178,32 @@ func (_m *Client) UpdateWorkflow(ctx context.Context, options client.UpdateWorkf
 }
 
 // UpdateWorkflowExecutionOptions provides a mock function with given fields: ctx, options
+// PollWorkflowTimeSkipping provides a mock function with given fields: ctx, options
+func (_m *Client) PollWorkflowTimeSkipping(ctx context.Context, options client.PollWorkflowTimeSkippingRequest) (bool, error) {
+	ret := _m.Called(ctx, options)
+
+	if len(ret) == 0 {
+		panic("no return value specified for PollWorkflowTimeSkipping")
+	}
+
+	var r0 bool
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, client.PollWorkflowTimeSkippingRequest) (bool, error)); ok {
+		return rf(ctx, options)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, client.PollWorkflowTimeSkippingRequest) bool); ok {
+		r0 = rf(ctx, options)
+	} else {
+		r0 = ret.Get(0).(bool)
+	}
+	if rf, ok := ret.Get(1).(func(context.Context, client.PollWorkflowTimeSkippingRequest) error); ok {
+		r1 = rf(ctx, options)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
 func (_m *Client) UpdateWorkflowExecutionOptions(ctx context.Context, options client.UpdateWorkflowExecutionOptionsRequest) (client.WorkflowExecutionOptions, error) {
 	ret := _m.Called(ctx, options)
 

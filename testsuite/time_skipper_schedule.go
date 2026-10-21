@@ -9,7 +9,6 @@ import (
 	"github.com/google/uuid"
 	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/sdk/client"
-	"go.temporal.io/sdk/internal"
 )
 
 // scheduleFastForwardPollInterval is how often FastForwardSchedule re-reads the
@@ -106,8 +105,8 @@ func (t *TimeSkipper) SetScheduleTimeSkippingConfig(
 func (t *TimeSkipper) patchScheduleTimeSkippingConfig(
 	ctx context.Context, scheduleID string, config TimeSkippingConfig,
 ) error {
-	return internal.PatchScheduleTimeSkippingConfig(
-		ctx, t.client.WorkflowService(), t.namespace, scheduleID, t.identity, config.ToProto())
+	return t.client.ScheduleClient().GetHandle(ctx, scheduleID).
+		SetTimeSkippingConfig(ctx, client.ScheduleTimeSkippingOptions{Config: config.ToProto()})
 }
 
 // pollScheduleFastForwardCompletion waits for the fast-forward identified by

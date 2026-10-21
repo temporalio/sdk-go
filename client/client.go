@@ -675,6 +675,16 @@ type (
 	// NOTE: Experimental
 	TimeSkippingConfigChange = internal.TimeSkippingConfigChange
 
+	// PollWorkflowTimeSkippingRequest is a request for [Client.PollWorkflowTimeSkipping].
+	//
+	// NOTE: Experimental
+	PollWorkflowTimeSkippingRequest = internal.PollWorkflowTimeSkippingRequest
+
+	// ScheduleTimeSkippingOptions configures [ScheduleHandle.SetTimeSkippingConfig].
+	//
+	// NOTE: Experimental
+	ScheduleTimeSkippingOptions = internal.ScheduleTimeSkippingOptions
+
 	// VersioningOverride is a property in [WorkflowExecutionOptions] that changes the versioning
 	// configuration of a specific workflow execution.
 	//
@@ -1603,6 +1613,21 @@ type (
 		//
 		// NOTE: Experimental
 		UpdateWorkflowExecutionOptions(ctx context.Context, options UpdateWorkflowExecutionOptionsRequest) (WorkflowExecutionOptions, error)
+
+		// PollWorkflowTimeSkipping waits for a time-skipping fast-forward to settle on a workflow
+		// execution, and reports whether it reached its target.
+		//
+		// A fast-forward is started by setting a TimeSkippingConfig carrying a FastForwardConfig,
+		// via [StartWorkflowOptions] at start or [Client.UpdateWorkflowExecutionOptions]
+		// afterwards. This blocks until that fast-forward completes, the execution ends, or time
+		// skipping is otherwise disabled. It returns an error if a later fast-forward replaces the
+		// one being waited on, since that one can then never complete.
+		//
+		// Time skipping is a testing facility and is not intended for production workloads. It
+		// requires a server with workflow time skipping enabled.
+		//
+		// NOTE: Experimental
+		PollWorkflowTimeSkipping(ctx context.Context, options PollWorkflowTimeSkippingRequest) (bool, error)
 
 		// UpdateWithStartWorkflow issues an update-with-start request. A
 		// WorkflowIDConflictPolicy must be set in the options. If the specified

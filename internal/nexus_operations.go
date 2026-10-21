@@ -984,6 +984,10 @@ func (t *testSuiteClientForNexusOperations) UpdateWorkflowExecutionOptions(ctx c
 	panic("not implemented in the test environment")
 }
 
+func (t *testSuiteClientForNexusOperations) PollWorkflowTimeSkipping(ctx context.Context, options PollWorkflowTimeSkippingRequest) (bool, error) {
+	panic("not implemented in the test environment")
+}
+
 func (t *testSuiteClientForNexusOperations) NewNexusClient(options ClientNexusClientOptions) (ClientNexusClient, error) {
 	panic("not implemented in the test environment")
 }

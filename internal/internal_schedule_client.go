@@ -356,6 +356,25 @@ func (scheduleHandle *scheduleHandleImpl) Trigger(ctx context.Context, options S
 	return err
 }
 
+func (scheduleHandle *scheduleHandleImpl) SetTimeSkippingConfig(ctx context.Context, options ScheduleTimeSkippingOptions) error {
+	// Time skipping is configured through SchedulePatch, as pause, unpause,
+	// trigger and backfill are. The Schedule message carries no field for it,
+	// so UpdateSchedule can neither set nor clear it.
+	request := &workflowservice.PatchScheduleRequest{
+		Namespace:  scheduleHandle.client.namespace,
+		ScheduleId: scheduleHandle.ID,
+		Patch: &schedulepb.SchedulePatch{
+			TimeSkippingConfig: options.Config,
+		},
+		Identity:  scheduleHandle.client.identity,
+		RequestId: uuid.NewString(),
+	}
+	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	defer cancel()
+	_, err := scheduleHandle.client.workflowService.PatchSchedule(grpcCtx, request)
+	return err
+}
+
 func (scheduleHandle *scheduleHandleImpl) Pause(ctx context.Context, options SchedulePauseOptions) error {
 	pauseNote := "Paused via Go SDK"
 	if options.Note != "" {

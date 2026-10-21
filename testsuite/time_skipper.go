@@ -3,7 +3,6 @@ package testsuite
 import (
 	"context"
 	"fmt"
-	"os"
 	"sync"
 	"time"
 
@@ -13,7 +12,6 @@ import (
 	historypb "go.temporal.io/api/history/v1"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/interceptor"
-	"go.temporal.io/sdk/internal"
 	"google.golang.org/protobuf/types/known/durationpb"
 )
 
@@ -132,7 +130,6 @@ func WithDuration(d time.Duration) FastForwardOption {
 type TimeSkipper struct {
 	client    client.Client
 	namespace string
-	identity  string
 
 	// mu guards config and stampEnabled, which callers may mutate from one
 	// goroutine while workflows are being started from another.
@@ -152,7 +149,6 @@ func NewTimeSkipper(c client.Client, namespace string, config TimeSkippingConfig
 	}
 	ts := &TimeSkipper{
 		namespace:    namespace,
-		identity:     defaultIdentity(),
 		config:       config,
 		stampEnabled: true,
 	}
@@ -341,12 +337,12 @@ func (t *TimeSkipper) enableUnboundedAndWait(
 func (t *TimeSkipper) pollFastForwardCompletion(
 	ctx context.Context, run client.WorkflowRun, ffID string,
 ) (bool, error) {
-	outcome, err := internal.PollWorkflowTimeSkipping(
-		ctx, t.client.WorkflowService(), t.namespace, run.GetID(), ffID)
-	if err != nil {
-		return false, err
-	}
-	return outcome == internal.TimeSkippingFastForwardCompleted, nil
+	// RunId is left unset so the server resolves the current run, letting a
+	// fast-forward follow a chain across retry / continue-as-new / cron.
+	return t.client.PollWorkflowTimeSkipping(ctx, client.PollWorkflowTimeSkippingRequest{
+		WorkflowID:    run.GetID(),
+		FastForwardID: ffID,
+	})
 }
 
 func (t *TimeSkipper) updateTimeSkippingConfig(
@@ -363,17 +359,6 @@ func (t *TimeSkipper) updateTimeSkippingConfig(
 		},
 	})
 	return err
-}
-
-// defaultIdentity mirrors the client's own default identity format. The
-// client's identity is not reachable through the client.Client interface, so
-// it is reconstructed here for the raw WorkflowService calls above.
-func defaultIdentity() string {
-	hostName, err := os.Hostname()
-	if err != nil {
-		hostName = "Unknown"
-	}
-	return fmt.Sprintf("%d@%s", os.Getpid(), hostName)
 }
 
 func isTerminalEvent(e *historypb.HistoryEvent) bool {
