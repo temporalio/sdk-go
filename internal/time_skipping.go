@@ -14,7 +14,7 @@ type (
 	//
 	// Time skipping is a testing facility and is not intended for production workloads.
 	//
-	// Exposed as: [go.temporal.io/sdk/client.TimeSkippingConfig], [go.temporal.io/sdk/testsuite.TimeSkippingConfig]
+	// Exposed as: [go.temporal.io/sdk/client.TimeSkippingConfig], [go.temporal.io/sdk/timeskipping.TimeSkippingConfig]
 	//
 	// NOTE: Experimental
 	TimeSkippingConfig struct {
@@ -41,7 +41,7 @@ type (
 	// FastForwardConfig is a one-shot fast-forward inside a [TimeSkippingConfig]. Both
 	// fields are required whenever a fast-forward is configured.
 	//
-	// Exposed as: [go.temporal.io/sdk/client.FastForwardConfig], [go.temporal.io/sdk/testsuite.FastForwardConfig]
+	// Exposed as: [go.temporal.io/sdk/timeskipping.FastForwardConfig], [go.temporal.io/sdk/client.FastForwardConfig]
 	//
 	// NOTE: Experimental
 	FastForwardConfig struct {

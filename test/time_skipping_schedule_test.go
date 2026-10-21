@@ -22,6 +22,7 @@ import (
 	historypb "go.temporal.io/api/history/v1"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/testsuite"
+	"go.temporal.io/sdk/timeskipping"
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
 )
@@ -30,7 +31,7 @@ type TimeSkippingScheduleTestSuite struct {
 	*require.Assertions
 	suite.Suite
 
-	server *testsuite.DevServerV2
+	server *timeskipping.DevServer
 }
 
 func TestTimeSkippingScheduleTestSuite(t *testing.T) {
@@ -44,14 +45,14 @@ func (s *TimeSkippingScheduleTestSuite) SetupTest() {
 func (s *TimeSkippingScheduleTestSuite) SetupSuite() {
 	s.Assertions = require.New(s.T())
 
-	srv, err := testsuite.StartDevServerV2(context.Background(), testsuite.DevServerV2Options{
+	srv, err := timeskipping.StartDevServer(context.Background(), timeskipping.DevServerOptions{
 		DevServerOptions: testsuite.DevServerOptions{
 			ExistingPath:   os.Getenv("TEMPORAL_DEV_SERVER_EXISTING_PATH"),
 			CachedDownload: testsuite.CachedDownload{Version: devServerVersion},
 			ClientOptions:  &client.Options{Namespace: "default"},
 			LogLevel:       "warn",
 		},
-		TSConfig: testsuite.TimeSkippingConfig{Enabled: true},
+		Config: timeskipping.TimeSkippingConfig{Enabled: true},
 	})
 	s.NoError(err)
 	s.server = srv
@@ -73,10 +74,10 @@ func (s *TimeSkippingScheduleTestSuite) requireScheduleTimeSkippingSupport() {
 	handle := s.createHourlySchedule(ctx, tq, ScheduleTargetWorkflow)
 	defer func() { _ = handle.Delete(context.Background()) }()
 
-	err := s.server.TimeSkipper().SetScheduleTimeSkippingConfig(ctx, handle,
-		testsuite.TimeSkippingConfig{
+	err := s.server.TimeSkipper.SetScheduleTimeSkippingConfig(ctx, handle,
+		timeskipping.TimeSkippingConfig{
 			Enabled: true,
-			FastForwardConfig: &testsuite.FastForwardConfig{
+			FastForwardConfig: &timeskipping.FastForwardConfig{
 				ID:       uuid.NewString(),
 				Duration: time.Minute,
 			},
@@ -170,7 +171,7 @@ func (s *TimeSkippingScheduleTestSuite) createHourlySchedule(
 }
 
 // TestFastForwardScheduleRequiresDuration asserts the schedule-specific rule
-// that unbounded skipping is rejected. For workflows an absent WithDuration
+// that unbounded skipping is rejected. For workflows a zero Duration
 // means "skip to the end"; a schedule has no end.
 func (s *TimeSkippingScheduleTestSuite) TestFastForwardScheduleRequiresDuration() {
 	ctx := context.Background()
@@ -181,10 +182,10 @@ func (s *TimeSkippingScheduleTestSuite) TestFastForwardScheduleRequiresDuration(
 	handle := s.createHourlySchedule(ctx, tq, ScheduleTargetWorkflow)
 	defer func() { _ = handle.Delete(ctx) }()
 
-	ok, err := s.server.FastForwardSchedule(ctx, handle)
+	ok, err := s.server.FastForwardSchedule(ctx, handle, timeskipping.FastForwardOptions{})
 	s.Error(err)
 	s.False(ok)
-	s.Contains(err.Error(), "WithDuration")
+	s.Contains(err.Error(), "requires a Duration")
 }
 
 // TestScheduleTimeSkippingInfoNilWhenNeverEnabled asserts Describe reports no
@@ -215,7 +216,7 @@ func (s *TimeSkippingScheduleTestSuite) TestFastForwardScheduleFiresActions() {
 	defer func() { _ = handle.Delete(ctx) }()
 
 	wallStart := time.Now()
-	ok, err := s.server.FastForwardSchedule(ctx, handle, testsuite.WithDuration(3*time.Hour))
+	ok, err := s.server.FastForwardSchedule(ctx, handle, timeskipping.FastForwardOptions{Duration: 3 * time.Hour})
 	s.NoError(err)
 	s.True(ok)
 
@@ -246,7 +247,7 @@ func (s *TimeSkippingScheduleTestSuite) TestSequentialFastForwardsOnOneSchedule(
 
 	var prevActions int
 	for i := 1; i <= 3; i++ {
-		ok, err := s.server.FastForwardSchedule(ctx, handle, testsuite.WithDuration(2*time.Hour))
+		ok, err := s.server.FastForwardSchedule(ctx, handle, timeskipping.FastForwardOptions{Duration: 2 * time.Hour})
 		s.NoErrorf(err, "fast-forward #%d failed", i)
 		s.Truef(ok, "fast-forward #%d did not report completion", i)
 
@@ -277,7 +278,7 @@ func (s *TimeSkippingScheduleTestSuite) TestFastForwardPausedScheduleReportsWhyI
 	ffCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	ok, err := s.server.FastForwardSchedule(ffCtx, handle, testsuite.WithDuration(3*time.Hour))
+	ok, err := s.server.FastForwardSchedule(ffCtx, handle, timeskipping.FastForwardOptions{Duration: 3 * time.Hour})
 	s.False(ok)
 	s.Error(err)
 	s.ErrorIs(err, context.DeadlineExceeded, "the caller's deadline is what ends the wait")
@@ -302,7 +303,7 @@ func (s *TimeSkippingScheduleTestSuite) TestScheduleDescribeSurfacesTimeSkipping
 	handle := s.createHourlySchedule(ctx, tq, ScheduleTargetWorkflow)
 	defer func() { _ = handle.Delete(ctx) }()
 
-	ok, err := s.server.FastForwardSchedule(ctx, handle, testsuite.WithDuration(2*time.Hour))
+	ok, err := s.server.FastForwardSchedule(ctx, handle, timeskipping.FastForwardOptions{Duration: 2 * time.Hour})
 	s.NoError(err)
 	s.True(ok)
 
@@ -337,7 +338,7 @@ func (s *TimeSkippingScheduleTestSuite) TestSchedulePropagatesTimeSkippingToWork
 	defer func() { _ = handle.Delete(ctx) }()
 
 	wallStart := time.Now()
-	ok, err := s.server.FastForwardSchedule(ctx, handle, testsuite.WithDuration(2*time.Hour))
+	ok, err := s.server.FastForwardSchedule(ctx, handle, timeskipping.FastForwardOptions{Duration: 2 * time.Hour})
 	s.NoError(err)
 	s.True(ok)
 

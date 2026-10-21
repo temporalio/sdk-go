@@ -1470,8 +1470,8 @@ func (wc *WorkflowClient) UpdateWorkflowExecutionOptions(ctx context.Context, re
 	return workflowExecutionOptionsFromProtoUpdateResponse(resp), nil
 }
 
-func (wc *WorkflowClient) PollWorkflowTimeSkipping(
-	ctx context.Context, request PollWorkflowTimeSkippingRequest,
+func (wc *WorkflowClient) pollWorkflowTimeSkipping(
+	ctx context.Context, request pollWorkflowTimeSkippingRequest,
 ) (bool, error) {
 	if err := wc.ensureInitialized(ctx); err != nil {
 		return false, err

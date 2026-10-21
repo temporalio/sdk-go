@@ -29,6 +29,7 @@ import (
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/testsuite"
+	"go.temporal.io/sdk/timeskipping"
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
 )
@@ -37,16 +38,16 @@ import (
 // Suite
 // ============================================================================
 
-// devServerVersion pins the dev server these tests run against. Time skipping
-// v2 is newer than the default CLI release, so the stock download does not
-// exercise it. Matches the pin the Python SDK's time-skipping tests use.
-const devServerVersion = "v1.8.3-server-1.32.0-162.0"
+// devServerVersion is the shared pin, not a time-skipping-specific one — the
+// SDK's whole test suite has used it all along. Referenced rather than
+// restated so the two cannot drift.
+const devServerVersion = testsuite.PinnedDevServerVersion
 
 type TimeSkippingV2TestSuite struct {
 	*require.Assertions
 	suite.Suite
 
-	server *testsuite.DevServerV2
+	server *timeskipping.DevServer
 }
 
 func TestTimeSkippingV2TestSuite(t *testing.T) {
@@ -65,14 +66,14 @@ func (s *TimeSkippingV2TestSuite) SetupSuite() {
 	s.Assertions = require.New(s.T())
 
 	// StartDevServerV2 adds the time-skipping dynamic config itself.
-	srv, err := testsuite.StartDevServerV2(context.Background(), testsuite.DevServerV2Options{
+	srv, err := timeskipping.StartDevServer(context.Background(), timeskipping.DevServerOptions{
 		DevServerOptions: testsuite.DevServerOptions{
 			ExistingPath:   os.Getenv("TEMPORAL_DEV_SERVER_EXISTING_PATH"),
 			CachedDownload: testsuite.CachedDownload{Version: devServerVersion},
 			ClientOptions:  &client.Options{Namespace: "default"},
 			LogLevel:       "warn",
 		},
-		TSConfig: testsuite.TimeSkippingConfig{Enabled: true},
+		Config: timeskipping.TimeSkippingConfig{Enabled: true},
 	})
 	s.NoError(err)
 	s.server = srv
@@ -398,7 +399,7 @@ func (s *TimeSkippingV2TestSuite) TestFastForwardWithResume() {
 	t0, err := s.server.GetCurrentTime(ctx, run)
 	s.NoError(err)
 
-	ok, err := s.server.FastForward(ctx, run, testsuite.WithDuration(1*time.Hour))
+	ok, err := s.server.FastForward(ctx, run, timeskipping.FastForwardOptions{Duration: 1 * time.Hour})
 	s.NoError(err)
 	s.True(ok, "expected first fast-forward to complete at 1h")
 	s.NoError(s.server.Client().SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "proceed", nil))
@@ -407,7 +408,7 @@ func (s *TimeSkippingV2TestSuite) TestFastForwardWithResume() {
 	s.NoError(err)
 	s.assertDurationSame(3600*time.Second, t1.Sub(t0), 10*time.Second)
 
-	ok, err = s.server.FastForward(ctx, run, testsuite.WithDuration(1*time.Hour))
+	ok, err = s.server.FastForward(ctx, run, timeskipping.FastForwardOptions{Duration: 1 * time.Hour})
 	s.NoError(err)
 	s.True(ok, "expected second fast-forward to complete at 2h total")
 	s.NoError(s.server.Client().SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "proceed", nil))
@@ -446,7 +447,7 @@ func (s *TimeSkippingV2TestSuite) TestPartialFastForwardThenUnbounded() {
 	t0, err := s.server.GetCurrentTime(ctx, run)
 	s.NoError(err)
 
-	ok, err := s.server.FastForward(ctx, run, testsuite.WithDuration(30*time.Minute))
+	ok, err := s.server.FastForward(ctx, run, timeskipping.FastForwardOptions{Duration: 30 * time.Minute})
 	s.NoError(err)
 	s.True(ok)
 
@@ -455,7 +456,7 @@ func (s *TimeSkippingV2TestSuite) TestPartialFastForwardThenUnbounded() {
 	s.assertDurationSame(30*60*time.Second, t1.Sub(t0), 10*time.Second)
 
 	// Unbounded resume: returns (false, nil) after termination.
-	ok, err = s.server.FastForward(ctx, run)
+	ok, err = s.server.FastForward(ctx, run, timeskipping.FastForwardOptions{})
 	s.NoError(err)
 	s.False(ok)
 
@@ -510,12 +511,12 @@ func (s *TimeSkippingV2TestSuite) TestChildWorkflowWithPropagationDisabled() {
 
 	// Temporarily override the skipper's config to disable propagation for
 	// child workflows started via the parent.
-	prev := s.server.TimeSkipper().Config()
-	s.NoError(s.server.TimeSkipper().SetConfig(testsuite.TimeSkippingConfig{
+	prev := s.server.TimeSkipper.Config()
+	s.NoError(s.server.TimeSkipper.SetConfig(timeskipping.TimeSkippingConfig{
 		Enabled:            true,
 		DisablePropagation: true,
 	}))
-	defer func() { _ = s.server.TimeSkipper().SetConfig(prev) }()
+	defer func() { _ = s.server.TimeSkipper.SetConfig(prev) }()
 
 	childID := "child-" + uuid.NewString()
 	run, err := s.server.Client().ExecuteWorkflow(ctx,
@@ -538,24 +539,12 @@ func (s *TimeSkippingV2TestSuite) TestChildWorkflowWithPropagationDisabled() {
 func (s *TimeSkippingV2TestSuite) TestTimeSkipperWrappingLocalEnvClient() {
 	ctx := context.Background()
 
-	// Fresh dev server WITHOUT DevServerV2 (no stamping) — mimics Python's
-	// "start_local, then wrap the client with TimeSkipper directly".
-	raw, err := testsuite.StartDevServer(ctx, testsuite.DevServerOptions{
-		ExistingPath:   os.Getenv("TEMPORAL_DEV_SERVER_EXISTING_PATH"),
-		CachedDownload: testsuite.CachedDownload{Version: devServerVersion},
-		ClientOptions:  &client.Options{Namespace: "default"},
-		LogLevel:       "warn",
-		// Set manually: this path deliberately skips StartDevServerV2, which is
-		// what normally supplies this.
-		ExtraArgs: []string{
-			"--dynamic-config-value", "frontend.WorkflowTimeSkippingEnabled=true",
-		},
-	})
-	s.NoError(err)
-	defer func() { _ = raw.Stop() }()
-
-	skipper, err := testsuite.NewTimeSkipper(raw.Client(), "default",
-		testsuite.TimeSkippingConfig{Enabled: true})
+	// The suite's own server, but wrapped by hand rather than used through
+	// DevServer.Client — s.server.DevServer.Client() is the unstamped client,
+	// which is what makes this the "wrap any client" path. No second server
+	// needed: nothing here varies at the *server* level.
+	skipper, err := timeskipping.NewTimeSkipper(s.server.DevServer.Client(), "default",
+		timeskipping.TimeSkippingConfig{Enabled: true})
 	s.NoError(err)
 
 	tq := "tq-" + uuid.NewString()
@@ -574,8 +563,8 @@ func (s *TimeSkippingV2TestSuite) TestTimeSkipperWrappingLocalEnvClient() {
 	wallElapsed := time.Since(wallStart)
 
 	s.Lessf(wallElapsed, 3*time.Second, "took %v; TS did not engage via bare TimeSkipper", wallElapsed)
-	// Engagement check via history (independent of DevServerV2):
-	found, err := historyHasEventType(ctx, raw.Client(), run,
+	// Engagement check via history, read through the unstamped client:
+	found, err := historyHasEventType(ctx, s.server.DevServer.Client(), run,
 		enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_TIME_SKIPPING_TRANSITIONED)
 	s.NoError(err)
 	s.True(found)
@@ -600,7 +589,7 @@ func (s *TimeSkippingV2TestSuite) TestFastForwardReturnsFalseWhenWorkflowTermina
 	s.NoError(err)
 
 	// FF beyond workflow's own sleep → workflow ends before FF target.
-	ok, err := s.server.FastForward(ctx, run, testsuite.WithDuration(2*time.Hour))
+	ok, err := s.server.FastForward(ctx, run, timeskipping.FastForwardOptions{Duration: 2 * time.Hour})
 	s.NoError(err)
 	s.False(ok, "expected fast_forward to return false when workflow terminated first")
 	s.assertTimeWasSkipped(ctx, run)
@@ -631,12 +620,12 @@ func (s *TimeSkippingV2TestSuite) TestFastForwardSpansRetries() {
 	})
 	s.NoError(err)
 
-	ok, err := s.server.FastForward(ctx, run, testsuite.WithDuration(2*time.Hour+30*time.Minute))
+	ok, err := s.server.FastForward(ctx, run, timeskipping.FastForwardOptions{Duration: 2*time.Hour + 30*time.Minute})
 	s.NoError(err)
 	s.True(ok, "expected FF to span retry")
 	// Re-enable unbounded skipping so the remaining ~30m of attempt-2 sleep
 	// is skipped rather than waited out.
-	_, err = s.server.FastForward(ctx, run)
+	_, err = s.server.FastForward(ctx, run, timeskipping.FastForwardOptions{})
 	s.NoError(err)
 	var result string
 	s.NoError(run.Get(ctx, &result))
@@ -662,11 +651,11 @@ func (s *TimeSkippingV2TestSuite) TestFastForwardSpansContinueAsNew() {
 	})
 	s.NoError(err)
 
-	ok, err := s.server.FastForward(ctx, run, testsuite.WithDuration(2*time.Hour))
+	ok, err := s.server.FastForward(ctx, run, timeskipping.FastForwardOptions{Duration: 2 * time.Hour})
 	s.NoError(err)
 	s.True(ok, "expected FF to span CAN chain")
 	// Re-enable unbounded.
-	_, err = s.server.FastForward(ctx, run)
+	_, err = s.server.FastForward(ctx, run, timeskipping.FastForwardOptions{})
 	s.NoError(err)
 	var result string
 	s.NoError(run.Get(ctx, &result))
@@ -694,7 +683,7 @@ func (s *TimeSkippingV2TestSuite) TestFastForwardSpansCronRestarts() {
 	s.NoError(err)
 	defer func() { _ = s.server.Client().CancelWorkflow(ctx, wfID, "") }()
 
-	ok, err := s.server.FastForward(ctx, run, testsuite.WithDuration(3*time.Hour))
+	ok, err := s.server.FastForward(ctx, run, timeskipping.FastForwardOptions{Duration: 3 * time.Hour})
 	s.NoError(err)
 	s.True(ok)
 
@@ -821,7 +810,7 @@ func (s *TimeSkippingV2TestSuite) TestTimeSkippingVirtualClock() {
 	s.NoError(err)
 
 	wallStart := time.Now().UTC()
-	ok, err := s.server.FastForward(ctx, run, testsuite.WithDuration(1*time.Hour))
+	ok, err := s.server.FastForward(ctx, run, timeskipping.FastForwardOptions{Duration: 1 * time.Hour})
 	s.NoError(err)
 	s.True(ok)
 
@@ -853,7 +842,7 @@ func (s *TimeSkippingV2TestSuite) TestTransitionEventPayload() {
 	})
 	s.NoError(err)
 
-	ok, err := s.server.FastForward(ctx, run, testsuite.WithDuration(1*time.Hour))
+	ok, err := s.server.FastForward(ctx, run, timeskipping.FastForwardOptions{Duration: 1 * time.Hour})
 	s.NoError(err)
 	s.True(ok)
 
@@ -941,7 +930,7 @@ func (s *TimeSkippingV2TestSuite) TestFastForwardClampedToExecutionTimeout() {
 	s.NoError(err)
 
 	// FF for 1h — but execution timeout is 30m; workflow times out at ~30m before FF completes.
-	ok, err := s.server.FastForward(ctx, run, testsuite.WithDuration(1*time.Hour))
+	ok, err := s.server.FastForward(ctx, run, timeskipping.FastForwardOptions{Duration: 1 * time.Hour})
 	s.NoError(err)
 	s.False(ok, "expected fast_forward to return false when workflow timed out first")
 
@@ -981,7 +970,7 @@ func (s *TimeSkippingV2TestSuite) TestOverridingFastForwardRaisesOnOriginal() {
 	}
 	firstCh := make(chan ffResult, 1)
 	go func() {
-		ok, err := s.server.FastForward(ctx, run, testsuite.WithDuration(2*time.Hour))
+		ok, err := s.server.FastForward(ctx, run, timeskipping.FastForwardOptions{Duration: 2 * time.Hour})
 		firstCh <- ffResult{ok, err}
 	}()
 
@@ -991,7 +980,7 @@ func (s *TimeSkippingV2TestSuite) TestOverridingFastForwardRaisesOnOriginal() {
 
 	secondCh := make(chan ffResult, 1)
 	go func() {
-		ok, err := s.server.FastForward(ctx, run, testsuite.WithDuration(30*time.Minute))
+		ok, err := s.server.FastForward(ctx, run, timeskipping.FastForwardOptions{Duration: 30 * time.Minute})
 		secondCh <- ffResult{ok, err}
 	}()
 
@@ -1016,7 +1005,7 @@ func (s *TimeSkippingV2TestSuite) TestOverridingFastForwardRaisesOnOriginal() {
 	s.True(secondRes.ok)
 
 	// Let the workflow finish quickly by re-enabling unbounded.
-	_, _ = s.server.FastForward(ctx, run)
+	_, _ = s.server.FastForward(ctx, run, timeskipping.FastForwardOptions{})
 	_ = run.Get(ctx, nil)
 	s.assertTimeWasSkipped(ctx, run)
 }
@@ -1026,17 +1015,12 @@ func (s *TimeSkippingV2TestSuite) TestOverridingFastForwardRaisesOnOriginal() {
 // the WorkflowExecutionStarted event.
 func (s *TimeSkippingV2TestSuite) TestMaxSessionSkipCountStampedByEnv() {
 	ctx := context.Background()
-	srv, err := testsuite.StartDevServerV2(ctx, testsuite.DevServerV2Options{
-		DevServerOptions: testsuite.DevServerOptions{
-			ExistingPath:   os.Getenv("TEMPORAL_DEV_SERVER_EXISTING_PATH"),
-			CachedDownload: testsuite.CachedDownload{Version: devServerVersion},
-			ClientOptions:  &client.Options{Namespace: "default"},
-			LogLevel:       "warn",
-		},
-		TSConfig: testsuite.TimeSkippingConfig{Enabled: true, MaxSessionSkipCount: 5},
-	})
+	// MaxSessionSkipCount is TimeSkipper configuration, not server
+	// configuration, so this builds a second skipper against the suite's
+	// server rather than starting another one.
+	srv, err := timeskipping.NewTimeSkipper(s.server.DevServer.Client(), "default",
+		timeskipping.TimeSkippingConfig{Enabled: true, MaxSessionSkipCount: 5})
 	s.NoError(err)
-	defer func() { _ = srv.Stop() }()
 
 	tq := "tq-" + uuid.NewString()
 	w := worker.New(srv.Client(), tq, worker.Options{})
@@ -1132,7 +1116,7 @@ func (s *TimeSkippingV2TestSuite) TestWorkflowEnvTimeSkippingManualV2() {
 	s.NoError(err)
 	s.assertTimestampFromNow(now, 0, 5*time.Second)
 
-	ok, err := s.server.FastForward(ctx, run, testsuite.WithDuration(1000*time.Second))
+	ok, err := s.server.FastForward(ctx, run, timeskipping.FastForwardOptions{Duration: 1000 * time.Second})
 	s.NoError(err)
 	s.True(ok)
 
@@ -1207,7 +1191,7 @@ func (s *TimeSkippingV2TestSuite) TestWorkflowEnvTimeSkippingBasicViaUpdateV2() 
 
 	// Unbounded: enables skipping and waits for the terminal event, always
 	// reporting false since there is no fast-forward completion to observe.
-	ok, err := s.server.FastForward(ctx, run)
+	ok, err := s.server.FastForward(ctx, run, timeskipping.FastForwardOptions{})
 	s.NoError(err)
 	s.False(ok)
 
@@ -1282,7 +1266,7 @@ func (s *TimeSkippingV2TestSuite) TestCancelSignalAndTimerFiredInSameTask() {
 	s.NoError(s.server.Client().SignalWorkflow(ctx, run.GetID(), run.GetRunID(),
 		"cancel_timer", nil))
 
-	_, err = s.server.FastForward(ctx, run, testsuite.WithDuration(2*time.Hour))
+	_, err = s.server.FastForward(ctx, run, timeskipping.FastForwardOptions{Duration: 2 * time.Hour})
 	s.NoError(err)
 	s.NoError(run.Get(ctx, nil))
 }

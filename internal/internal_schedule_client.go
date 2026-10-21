@@ -356,7 +356,7 @@ func (scheduleHandle *scheduleHandleImpl) Trigger(ctx context.Context, options S
 	return err
 }
 
-func (scheduleHandle *scheduleHandleImpl) SetTimeSkippingConfig(ctx context.Context, options ScheduleTimeSkippingOptions) error {
+func (scheduleHandle *scheduleHandleImpl) SetTimeSkippingConfig(ctx context.Context, options ScheduleSetTimeSkippingConfigOptions) error {
 	// Time skipping is configured through SchedulePatch, as pause, unpause,
 	// trigger and backfill are. The Schedule message carries no field for it,
 	// so UpdateSchedule can neither set nor clear it.

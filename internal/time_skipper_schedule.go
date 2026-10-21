@@ -1,4 +1,4 @@
-package testsuite
+package internal
 
 import (
 	"context"
@@ -8,7 +8,6 @@ import (
 
 	"github.com/google/uuid"
 	commonpb "go.temporal.io/api/common/v1"
-	"go.temporal.io/sdk/client"
 )
 
 // scheduleFastForwardPollInterval is how often FastForwardSchedule re-reads the
@@ -37,26 +36,16 @@ const scheduleFastForwardPollInterval = 100 * time.Millisecond
 //
 // NOTE: Experimental
 func (t *TimeSkipper) FastForwardSchedule(
-	ctx context.Context, handle client.ScheduleHandle, opts ...FastForwardOption,
+	ctx context.Context, handle ScheduleHandle, options FastForwardOptions,
 ) (bool, error) {
-	cfg := &fastForwardConfig{}
-	for _, o := range opts {
-		o.applyFastForward(cfg)
-	}
-	if cfg.duration == nil {
+	if options.Duration == 0 {
 		return false, errors.New(
-			"FastForwardSchedule requires WithDuration: a schedule has no terminal " +
+			"FastForwardSchedule requires a Duration: a schedule has no terminal " +
 				"state to skip to, so the server rejects unbounded time skipping on it")
 	}
 
 	ffID := uuid.NewString()
-	current := t.Config()
-	tsc := TimeSkippingConfig{
-		Enabled:             true,
-		FastForwardConfig:   &FastForwardConfig{ID: ffID, Duration: *cfg.duration},
-		DisablePropagation:  current.DisablePropagation,
-		MaxSessionSkipCount: current.MaxSessionSkipCount,
-	}
+	tsc := t.fastForwardConfigFrom(ffID, &options.Duration)
 	if err := t.patchScheduleTimeSkippingConfig(ctx, handle.GetID(), tsc); err != nil {
 		return false, err
 	}
@@ -74,7 +63,7 @@ func (t *TimeSkipper) FastForwardSchedule(
 //
 // NOTE: Experimental
 func (t *TimeSkipper) GetScheduleTimeSkippingInfo(
-	ctx context.Context, handle client.ScheduleHandle,
+	ctx context.Context, handle ScheduleHandle,
 ) (*commonpb.TimeSkippingInfo, error) {
 	desc, err := handle.Describe(ctx)
 	if err != nil {
@@ -90,7 +79,7 @@ func (t *TimeSkipper) GetScheduleTimeSkippingInfo(
 //
 // NOTE: Experimental
 func (t *TimeSkipper) SetScheduleTimeSkippingConfig(
-	ctx context.Context, handle client.ScheduleHandle, config TimeSkippingConfig,
+	ctx context.Context, handle ScheduleHandle, config TimeSkippingConfig,
 ) error {
 	if err := config.Validate(); err != nil {
 		return err
@@ -106,7 +95,7 @@ func (t *TimeSkipper) patchScheduleTimeSkippingConfig(
 	ctx context.Context, scheduleID string, config TimeSkippingConfig,
 ) error {
 	return t.client.ScheduleClient().GetHandle(ctx, scheduleID).
-		SetTimeSkippingConfig(ctx, client.ScheduleTimeSkippingOptions{Config: &config})
+		SetTimeSkippingConfig(ctx, ScheduleSetTimeSkippingConfigOptions{Config: &config})
 }
 
 // pollScheduleFastForwardCompletion waits for the fast-forward identified by
@@ -119,7 +108,7 @@ func (t *TimeSkipper) patchScheduleTimeSkippingConfig(
 // Describe every scheduleFastForwardPollInterval rather than a single blocking
 // call. Replace this with the schedules polling API once it exists.
 func (t *TimeSkipper) pollScheduleFastForwardCompletion(
-	ctx context.Context, handle client.ScheduleHandle, ffID string,
+	ctx context.Context, handle ScheduleHandle, ffID string,
 ) (bool, error) {
 	ticker := time.NewTicker(scheduleFastForwardPollInterval)
 	defer ticker.Stop()
@@ -187,7 +176,7 @@ func (t *TimeSkipper) pollScheduleFastForwardCompletion(
 // server state the SDK cannot see, so this says what was observed rather than
 // naming a cause.
 func scheduleFastForwardTimeout(
-	handle client.ScheduleHandle, ffID string, paused bool, actions int, cause error,
+	handle ScheduleHandle, ffID string, paused bool, actions int, cause error,
 ) error {
 	return fmt.Errorf(
 		"gave up waiting for fast_forward %q on schedule %q (paused=%v, actions so far=%d): "+

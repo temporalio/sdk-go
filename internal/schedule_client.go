@@ -657,15 +657,15 @@ type (
 		// It requires a server with schedule time skipping enabled.
 		//
 		// NOTE: Experimental
-		SetTimeSkippingConfig(ctx context.Context, options ScheduleTimeSkippingOptions) error
+		SetTimeSkippingConfig(ctx context.Context, options ScheduleSetTimeSkippingConfigOptions) error
 	}
 
-	// ScheduleTimeSkippingOptions configures [ScheduleHandle.SetTimeSkippingConfig].
+	// ScheduleSetTimeSkippingConfigOptions configures [ScheduleHandle.SetTimeSkippingConfig].
 	//
 	// NOTE: Experimental
 	//
-	// Exposed as: [go.temporal.io/sdk/client.ScheduleTimeSkippingOptions]
-	ScheduleTimeSkippingOptions struct {
+	// Exposed as: [go.temporal.io/sdk/client.ScheduleSetTimeSkippingConfigOptions]
+	ScheduleSetTimeSkippingConfigOptions struct {
 		// Config to apply. A nil Config clears the Schedule's time-skipping configuration.
 		Config *TimeSkippingConfig
 	}

@@ -64,10 +64,10 @@ type (
 		Value *TimeSkippingConfig
 	}
 
-	// PollWorkflowTimeSkippingRequest is a request for [Client.PollWorkflowTimeSkipping].
+	// pollWorkflowTimeSkippingRequest is a request for [Client.PollWorkflowTimeSkipping].
 	//
 	// NOTE: Experimental
-	PollWorkflowTimeSkippingRequest struct {
+	pollWorkflowTimeSkippingRequest struct {
 		// ID of the workflow.
 		WorkflowID string
 		// Running execution for a workflow ID. If empty, the server resolves the
