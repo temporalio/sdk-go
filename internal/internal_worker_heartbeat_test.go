@@ -557,15 +557,13 @@ func TestWorkerCommandWorkflowTaskHeartbeatNotification(t *testing.T) {
 	notificationCh := make(chan struct{}, 1)
 	notifications.register(&workflowservice.PollWorkflowTaskQueueResponse{
 		WorkflowExecution: &commonpb.WorkflowExecution{RunId: "run"},
-		ScheduledEventId:  1,
-		StartedEventId:    2,
-		Attempt:           1,
+		TaskToken:         []byte("workflow-task-token"),
 	}, notificationCh)
 	execReqBytes, err := proto.Marshal(&workerservicepb.ExecuteCommandsRequest{
 		Commands: []*workerpb.WorkerCommand{{
 			Type: &workerpb.WorkerCommand_WorkflowTaskHeartbeatNotification{
 				WorkflowTaskHeartbeatNotification: &workerpb.WorkflowTaskHeartbeatNotificationCommand{
-					RunId: "run", ScheduledEventId: 1, StartedEventId: 2, Attempt: 1,
+					TaskToken: []byte("workflow-task-token"),
 				},
 			},
 		}},
