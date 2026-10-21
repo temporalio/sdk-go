@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	commonpb "go.temporal.io/api/common/v1"
+	"go.temporal.io/sdk/internal/common/workflowcontext"
 )
 
 // -- USER API -----------------------------------------------------------
@@ -348,7 +349,7 @@ func (dc *transferAwareDataConverter) WithSerializationContext(ctx Serialization
 	return &result
 }
 
-func (dc *transferAwareDataConverter) WithWorkflowContext(ctx WorkflowContext) DataConverter {
+func (dc *transferAwareDataConverter) WithWorkflowContext(ctx workflowcontext.Context) DataConverter {
 	parent, ok := dc.parent.(ContextAware)
 	if !ok {
 		return dc
