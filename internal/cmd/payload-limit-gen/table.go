@@ -37,6 +37,7 @@ var defaultTable = decisionTable{
 		"temporal.api.command.v1.SignalExternalWorkflowExecutionCommandAttributes.input",
 		"temporal.api.command.v1.StartChildWorkflowExecutionCommandAttributes.input",
 		"temporal.api.command.v1.UpsertWorkflowSearchAttributesCommandAttributes.search_attributes", // indexed_fields data-sum
+		"temporal.api.common.v1.Callback.NexusHandler.source_context",
 		// Whole Any body: the server blob-checks proto.Size(body) when processing update messages
 		// and fails the workflow task when it's exceeded.
 		"temporal.api.protocol.v1.Message.body",

@@ -7,9 +7,11 @@ import (
 	"slices"
 
 	commandpb "go.temporal.io/api/command/v1"
+	commonpb "go.temporal.io/api/common/v1"
 	protocolpb "go.temporal.io/api/protocol/v1"
 	querypb "go.temporal.io/api/query/v1"
 	schedulepb "go.temporal.io/api/schedule/v1"
+	updatepb "go.temporal.io/api/update/v1"
 	workflowpb "go.temporal.io/api/workflow/v1"
 	workflowservicepb "go.temporal.io/api/workflowservice/v1"
 	"google.golang.org/protobuf/proto"
@@ -59,6 +61,8 @@ func dispatch(sink Sink, req proto.Message) {
 		checkWorkflowserviceStartWorkflowExecutionRequest(sink, r)
 	case *workflowservicepb.UpdateScheduleRequest:
 		checkWorkflowserviceUpdateScheduleRequest(sink, r)
+	case *workflowservicepb.UpdateWorkflowExecutionRequest:
+		checkWorkflowserviceUpdateWorkflowExecutionRequest(sink, r)
 	}
 }
 
@@ -179,6 +183,20 @@ func checkCommandUpsertWorkflowSearchAttributesCommandAttributes(sink Sink, msg 
 	}
 }
 
+func checkCommonCallback(sink Sink, msg *commonpb.Callback) {
+	if v := msg.GetNexusHandler(); v != nil {
+		sink.Enter("nexus_handler")
+		checkCommonCallback_NexusHandler(sink, v)
+		sink.Exit()
+	}
+}
+
+func checkCommonCallback_NexusHandler(sink Sink, msg *commonpb.Callback_NexusHandler) {
+	if v := msg.GetSourceContext(); v != nil {
+		sink.Check("source_context", LimitClassBlob, messageSize(v), true)
+	}
+}
+
 func checkProtocolMessage(sink Sink, msg *protocolpb.Message) {
 	if v := msg.GetBody(); v != nil {
 		sink.Check("body", LimitClassBlob, messageSize(v), true)
@@ -213,6 +231,14 @@ func checkScheduleScheduleAction(sink Sink, msg *schedulepb.ScheduleAction) {
 	}
 }
 
+func checkUpdateRequest(sink Sink, msg *updatepb.Request) {
+	for i, v := range msg.GetCompletionCallbacks() {
+		sink.EnterIndex("completion_callbacks", i)
+		checkCommonCallback(sink, v)
+		sink.Exit()
+	}
+}
+
 func checkWorkflowNewWorkflowExecutionInfo(sink Sink, msg *workflowpb.NewWorkflowExecutionInfo) {
 	if v := msg.GetInput(); v != nil {
 		sink.Check("input", LimitClassBlob, messageSize(v), true)
@@ -242,6 +268,11 @@ func checkWorkflowserviceExecuteMultiOperationRequest_Operation(sink Sink, msg *
 	if v := msg.GetStartWorkflow(); v != nil {
 		sink.Enter("start_workflow")
 		checkWorkflowserviceStartWorkflowExecutionRequest(sink, v)
+		sink.Exit()
+	}
+	if v := msg.GetUpdateWorkflow(); v != nil {
+		sink.Enter("update_workflow")
+		checkWorkflowserviceUpdateWorkflowExecutionRequest(sink, v)
 		sink.Exit()
 	}
 }
@@ -373,11 +404,21 @@ func checkWorkflowserviceStartActivityExecutionRequest(sink Sink, msg *workflows
 	if v := msg.GetInput(); v != nil {
 		sink.Check("input", LimitClassBlob, messageSize(v), true)
 	}
+	for i, v := range msg.GetCompletionCallbacks() {
+		sink.EnterIndex("completion_callbacks", i)
+		checkCommonCallback(sink, v)
+		sink.Exit()
+	}
 }
 
 func checkWorkflowserviceStartNexusOperationExecutionRequest(sink Sink, msg *workflowservicepb.StartNexusOperationExecutionRequest) {
 	if v := msg.GetInput(); v != nil {
 		sink.Check("input", LimitClassBlob, messageSize(v), true)
+	}
+	for i, v := range msg.GetCompletionCallbacks() {
+		sink.EnterIndex("completion_callbacks", i)
+		checkCommonCallback(sink, v)
+		sink.Exit()
 	}
 }
 
@@ -388,12 +429,25 @@ func checkWorkflowserviceStartWorkflowExecutionRequest(sink Sink, msg *workflows
 	if v := msg.GetMemo(); v != nil {
 		sink.Check("memo", LimitClassMemo, messageSize(v), true)
 	}
+	for i, v := range msg.GetCompletionCallbacks() {
+		sink.EnterIndex("completion_callbacks", i)
+		checkCommonCallback(sink, v)
+		sink.Exit()
+	}
 }
 
 func checkWorkflowserviceUpdateScheduleRequest(sink Sink, msg *workflowservicepb.UpdateScheduleRequest) {
 	if v := msg.GetSchedule(); v != nil {
 		sink.Enter("schedule")
 		checkScheduleSchedule(sink, v)
+		sink.Exit()
+	}
+}
+
+func checkWorkflowserviceUpdateWorkflowExecutionRequest(sink Sink, msg *workflowservicepb.UpdateWorkflowExecutionRequest) {
+	if v := msg.GetRequest(); v != nil {
+		sink.Enter("request")
+		checkUpdateRequest(sink, v)
 		sink.Exit()
 	}
 }
