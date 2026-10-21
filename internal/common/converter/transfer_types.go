@@ -35,6 +35,8 @@ import (
 // explicitly in the model or transfer type instead.
 //
 // NOTE: Experimental.
+//
+// Exposed as: [go.temporal.io/sdk/converter.ValueWithTransferTypeConverter]
 type ValueWithTransferTypeConverter interface {
 	TransferTypeConverter() (TransferTypeConverter, error)
 }
@@ -43,6 +45,8 @@ type ValueWithTransferTypeConverter interface {
 // [NewTransferTypeConverter] or [NewContextualTransferTypeConverter]. Do not embed this interface.
 //
 // NOTE: Experimental.
+//
+// Exposed as: [go.temporal.io/sdk/converter.TransferTypeConverter]
 type TransferTypeConverter interface {
 	// newTransferTypePtr returns a pointer to a zero transfer value.
 	newTransferTypePtr() any
@@ -64,6 +68,8 @@ type TransferTypeConverter interface {
 // Returns an error if Model or Transfer is a pointer type.
 //
 // NOTE: Experimental.
+//
+// Exposed as: [go.temporal.io/sdk/converter.NewTransferTypeConverter]
 func NewTransferTypeConverter[Model ValueWithTransferTypeConverter, Transfer any](
 	toTransferType func(*Model) (*Transfer, error),
 	fromTransferType func(*Transfer, *Model) error,
