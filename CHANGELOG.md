@@ -38,6 +38,7 @@ to docs, or any other relevant information.
 - The default timeout for client and worker RPCs has been extended. Previously, the default timeout
   was only half the caller's context deadline - now it uses the entire deadline, up to a maximum
   of ten seconds. RPCs with timeout overrides, like long-poll RPCs, are unchanged.
+- Query tracing now always records inbound spans when serving queries, regardless of `IsReplaying` state.
 
 ### Security
 
@@ -98,7 +99,6 @@ to docs, or any other relevant information.
 
 ### Fixed
 
-- Query tracing now always records inbound spans when serving queries, regardless of `IsReplaying` state.
 - Local activity mock lookup in `TestWorkflowEnvironment` no longer tries re-resolving the activity name.
   This fixes a bug where two closures with different registered names would alias each other.
 - mTLS client setup and schedule creation no longer modify caller-owned TLS
