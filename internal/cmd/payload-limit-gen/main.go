@@ -2,8 +2,8 @@
 // linked into this binary, so the output always matches the API version in go.mod.
 //
 // Starting from the request message of every WorkflowService and OperatorService RPC, it walks the
-// payload-bearing message closure, stopping at terminal payload and memo types, and emits one check
-// function per message plus a type switch over the request roots. Each terminal field is
+// payload-bearing message closure, stopping at leaf types such as payloads and memos, and emits one
+// check function per message plus a type switch over the request roots. Each leaf field is
 // classified by the decision table in table.go; how it's measured follows from its proto shape.
 package main
 
@@ -37,7 +37,7 @@ const (
 // The walk stops at these types and checks the holding field instead of descending. Failure is
 // measured whole because that's how the server size-checks it. Any is measured whole too: its
 // contents are opaque here and may hold payloads, so every Any field must be classified.
-var terminalLeaves = map[protoreflect.FullName]bool{
+var leafTypes = map[protoreflect.FullName]bool{
 	payloadType: true, payloadsType: true, memoType: true,
 	headerType: true, searchAttributesType: true, failureType: true, anyType: true,
 }
@@ -362,7 +362,7 @@ func (g *generator) limitsClosure(roots []protoreflect.MessageDescriptor) []prot
 	for len(queue) > 0 {
 		md := queue[0]
 		queue = queue[1:]
-		if terminalLeaves[md.FullName()] || seen[md.FullName()] || !g.included(md) {
+		if leafTypes[md.FullName()] || seen[md.FullName()] || !g.included(md) {
 			continue
 		}
 		seen[md.FullName()] = true
