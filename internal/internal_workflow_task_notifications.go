@@ -6,6 +6,7 @@ import (
 
 	workerpb "go.temporal.io/api/worker/v1"
 	"go.temporal.io/api/workflowservice/v1"
+	"google.golang.org/protobuf/encoding/protowire"
 )
 
 // workflowTaskNotifications routes best-effort notifications to the active task.
@@ -48,7 +49,7 @@ func (n *workflowTaskNotifications) register(task *workflowservice.PollWorkflowT
 	if oldToken, ok := n.runTokens[runID]; ok {
 		delete(n.tasks, oldToken)
 	}
-	token := string(task.GetTaskToken())
+	token := workflowTaskNotificationKey(task.GetTaskToken())
 	n.runTokens[runID] = token
 	n.tasks[token] = workflowTaskNotificationTarget{ch: ch}
 	if receivedAt, ok := n.pending[token]; ok {
@@ -77,7 +78,7 @@ func (n *workflowTaskNotifications) notify(command *workerpb.WorkflowTaskHeartbe
 	}
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	token := string(command.GetTaskToken())
+	token := workflowTaskNotificationKey(command.GetTaskToken())
 	if target, ok := n.tasks[token]; ok {
 		select {
 		case target.ch <- struct{}{}:
@@ -96,4 +97,28 @@ func (n *workflowTaskNotifications) notify(command *workerpb.WorkflowTaskHeartbe
 		}
 	}
 	n.pending[token] = time.Now()
+}
+
+// workflowTaskNotificationKey excludes the token's shard vector clock. History
+// creates the notification before it can see the clock added to the worker's
+// task token by RecordWorkflowTaskStarted. The clock is not task identity.
+func workflowTaskNotificationKey(taskToken []byte) string {
+	original := taskToken
+	key := make([]byte, 0, len(taskToken))
+	for len(taskToken) > 0 {
+		fieldNumber, wireType, tagSize := protowire.ConsumeTag(taskToken)
+		if tagSize < 0 {
+			return string(original)
+		}
+		valueSize := protowire.ConsumeFieldValue(fieldNumber, wireType, taskToken[tagSize:])
+		if valueSize < 0 {
+			return string(original)
+		}
+		fieldSize := tagSize + valueSize
+		if fieldNumber != 9 || wireType != protowire.BytesType {
+			key = append(key, taskToken[:fieldSize]...)
+		}
+		taskToken = taskToken[fieldSize:]
+	}
+	return string(key)
 }
