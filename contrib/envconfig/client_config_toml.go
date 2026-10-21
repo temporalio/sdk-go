@@ -3,23 +3,12 @@ package envconfig
 import (
 	"bytes"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/BurntSushi/toml"
 )
-
-// knownProfileKeys contains the TOML keys recognized for profile configuration.
-// This must be kept in sync with tomlClientConfigProfile's TOML tags.
-// See TestKnownProfileKeysInSync for validation.
-var knownProfileKeys = map[string]bool{
-	"address":   true,
-	"namespace": true,
-	"api_key":   true,
-	"tls":       true,
-	"codec":     true,
-	"grpc_meta": true,
-	"authority": true,
-}
 
 // ClientConfigToTOMLOptions are options for [ClientConfig.ToTOML].
 type ClientConfigToTOMLOptions struct {
@@ -46,23 +35,54 @@ func (c *ClientConfig) ToTOML(options ClientConfigToTOMLOptions) ([]byte, error)
 		return nil, err
 	}
 
-	// Merge additional fields into profiles
-	for profileName, additional := range options.AdditionalProfileFields {
-		profiles, _ := rawConf["profile"].(map[string]any)
-		if profiles == nil {
-			profiles = make(map[string]any)
-			rawConf["profile"] = profiles
+	if len(options.AdditionalProfileFields) > 0 {
+		// Look for recognized fields (at any level) in AdditionalProfileFields
+		buf.Reset()
+		if err := toml.NewEncoder(&buf).Encode(map[string]any{"profile": options.AdditionalProfileFields}); err != nil {
+			return nil, err
 		}
-		profile, _ := profiles[profileName].(map[string]any)
-		if profile == nil {
-			profile = make(map[string]any)
-			profiles[profileName] = profile
+
+		// also re-parse the additional fields as raw to normalize types and match what's in rawConf
+		var rawAdditional map[string]any
+		_, err := toml.Decode(buf.String(), &rawAdditional)
+		if err != nil {
+			return nil, err
 		}
-		for k, v := range additional {
-			if knownProfileKeys[k] {
-				return nil, fmt.Errorf("additional field %q in profile %q conflicts with known profile field", k, profileName)
+
+		var additionalConf tomlClientConfig
+		additionalMD, err := toml.Decode(buf.String(), &additionalConf)
+		if err != nil {
+			return nil, err
+		}
+		additionalKeys := additionalMD.Keys()
+		conflicts := make(map[string]toml.Key, len(additionalKeys))
+
+		// Assume everything is a conflict until proven otherwise
+		for _, key := range additionalKeys {
+			conflicts[key.String()] = key
+		}
+
+		// Undecodable fields are exactly what we want to merge back in
+		for _, key := range additionalMD.Undecoded() {
+			delete(conflicts, key.String())
+		}
+
+		// If there's an additional *nested* field, like profile.default.tls.future, its parent (profile.default.tls) will
+		// show up in keys. As long as that key is a table (or a list of tables), it's not a conflict.
+		for keyName, key := range conflicts {
+			keyType := additionalMD.Type(key...)
+			if keyType == "Hash" || keyType == "ArrayHash" {
+				delete(conflicts, keyName)
 			}
-			profile[k] = v
+		}
+
+		if len(conflicts) > 0 {
+			names := slices.Sorted(maps.Keys(conflicts))
+			return nil, fmt.Errorf("additional field(s) %s conflict with known profile fields", strings.Join(names, ", "))
+		}
+
+		for _, key := range additionalMD.Undecoded() {
+			copyConfig(rawAdditional, rawConf, key)
 		}
 	}
 
@@ -83,6 +103,7 @@ type ClientConfigFromTOMLOptions struct {
 	Strict bool
 	// If non-nil, populated with additional (unrecognized) profile fields.
 	// Key is profile name, value is map of field name to field value.
+	// Any existing values will be deleted.
 	// This allows callers to preserve custom profile fields without modifying
 	// this package. Note, if Strict is true the additional fields will cause an
 	// error before they can be captured here.
@@ -93,6 +114,7 @@ type ClientConfigFromTOMLOptions struct {
 // merging.
 func (c *ClientConfig) FromTOML(b []byte, options ClientConfigFromTOMLOptions) error {
 	var conf tomlClientConfig
+	clear(options.AdditionalProfileFields)
 	md, err := toml.Decode(string(b), &conf)
 	if err != nil {
 		return err
@@ -123,18 +145,60 @@ func (c *ClientConfig) FromTOML(b []byte, options ClientConfigFromTOMLOptions) e
 				continue
 			}
 			profileName := key[1]
-			fieldKey := key[2]
-			if v, ok := rawConf.Profiles[profileName][fieldKey]; ok {
-				if options.AdditionalProfileFields[profileName] == nil {
-					options.AdditionalProfileFields[profileName] = make(map[string]any)
-				}
-				options.AdditionalProfileFields[profileName][fieldKey] = v
+			if options.AdditionalProfileFields[profileName] == nil {
+				options.AdditionalProfileFields[profileName] = make(map[string]any)
 			}
+			copyConfig(rawConf.Profiles[profileName], options.AdditionalProfileFields[profileName], key[2:])
 		}
 	}
 
 	conf.applyToClientConfig(c)
 	return nil
+}
+
+// copyConfig copies the value of key from source to dest, ensuring the appropriate
+// maps and slices in the hierarchy are created. If non-empty, source and dest should
+// be populated via toml.Decode.
+func copyConfig(source, dest map[string]any, key toml.Key) {
+	for i, keyPart := range key {
+		var nextSource, nextDest map[string]any
+
+		switch sourceVal := source[keyPart].(type) {
+		case map[string]any:
+			nextSource = sourceVal
+			nextDest, _ = dest[keyPart].(map[string]any)
+			if nextDest == nil {
+				nextDest = make(map[string]any)
+				dest[keyPart] = nextDest
+			}
+			// no need to do anything more, subkeys will be copied as necessary
+		case []map[string]any:
+			destVal, _ := dest[keyPart].([]map[string]any)
+			if destVal == nil {
+				destVal = make([]map[string]any, 0, len(sourceVal))
+				dest[keyPart] = destVal
+			}
+
+			if i == len(key)-1 {
+				// seeing the list name starts a fresh map
+				destVal = append(destVal, make(map[string]any))
+				dest[keyPart] = destVal
+			} else {
+				// TOML doesn't allow list entries to be defined before the list itself is
+				// defined. We can trust that there will always be at least one entry by the
+				// time this branch is reached.
+				pos := len(destVal) - 1
+				nextDest = destVal[pos]
+				nextSource = sourceVal[pos]
+			}
+		default:
+			// everything else gets copied over
+			dest[keyPart] = sourceVal
+			return
+		}
+		source = nextSource
+		dest = nextDest
+	}
 }
 
 type tomlClientConfig struct {
