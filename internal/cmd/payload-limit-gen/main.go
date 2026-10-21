@@ -36,7 +36,7 @@ const (
 
 // The walk stops at these types and checks the holding field instead of descending. Failure is
 // measured whole because that's how the server size-checks it. Any is measured whole too: its
-// contents are opaque here and may hold payloads, so every Any field must be classified.
+// contents are opaque here and may hold payloads, so every Any field must be classified in table.go.
 var leafTypes = map[protoreflect.FullName]bool{
 	payloadType: true, payloadsType: true, memoType: true,
 	headerType: true, searchAttributesType: true, failureType: true, anyType: true,
