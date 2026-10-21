@@ -41,6 +41,7 @@ import (
 	"go.temporal.io/sdk/internal/common/util"
 	"go.temporal.io/sdk/internal/extstore"
 	ilog "go.temporal.io/sdk/internal/log"
+	"go.temporal.io/sdk/internal/payloadlimits"
 	"go.temporal.io/sdk/log"
 )
 
@@ -269,7 +270,13 @@ type (
 
 		storageParams extstore.StorageParameters
 
-		setErrorLimits func(*payloadLimits)
+		// workflowService is the worker's own client. It enforces the namespace's payload error
+		// limits on everything the worker sends, which a client's calls never do.
+		workflowService workflowservice.WorkflowServiceClient
+
+		payloadErrorLimits *atomic.Pointer[payloadlimits.Limits]
+
+		setErrorLimits func(*payloadlimits.Limits)
 	}
 
 	// HistoryJSONOptions are options for HistoryFromJSON.
@@ -371,8 +378,8 @@ func newWorkflowTaskWorkerInternal(
 	interceptors []WorkerInterceptor,
 ) *workflowWorker {
 	ensureRequiredParams(&params)
-	var service workflowservice.WorkflowServiceClient
-	if client != nil {
+	service := params.workflowService
+	if service == nil && client != nil {
 		service = client.workflowService
 	}
 	// Generate stickyUUID here so it can be stored in workflowWorker for ShutdownWorker call
@@ -648,8 +655,8 @@ func newActivityWorker(
 	env *registry,
 	sessionTokenBucket *sessionTokenBucket,
 ) *activityWorker {
-	var service workflowservice.WorkflowServiceClient
-	if client != nil {
+	service := params.workflowService
+	if service == nil && client != nil {
 		service = client.workflowService
 	}
 	workerStopChannel := make(chan struct{}, 1)
@@ -1491,9 +1498,9 @@ func (aw *AggregatedWorker) start() error {
 		if nsData.limits.MemoSizeLimitError > 0 {
 			memoSizeError = nsData.limits.MemoSizeLimitError
 		}
-		aw.executionParams.setErrorLimits(&payloadLimits{
-			payloadSize: payloadSizeError,
-			memoSize:    memoSizeError,
+		aw.executionParams.setErrorLimits(&payloadlimits.Limits{
+			BlobError: payloadSizeError,
+			MemoError: memoSizeError,
 		})
 	}
 
@@ -1600,7 +1607,7 @@ func (aw *AggregatedWorker) start() error {
 		aw.nexusWorker, err = newNexusWorker(nexusWorkerOptions{
 			executionParameters: aw.executionParams,
 			client:              aw.client,
-			workflowService:     aw.client.workflowService,
+			workflowService:     aw.executionParams.workflowService,
 			handler:             handler,
 			registry:            aw.registry,
 		})
@@ -2488,7 +2495,13 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		)
 	}
 
-	payloadLimitVisitor, setErrorLimits := newPayloadLimitsVisitor(client.payloadWarningLimits, logger)
+	// Error limits are filled in from the namespace once the worker starts.
+	payloadErrorLimits := &atomic.Pointer[payloadlimits.Limits]{}
+	workerService := client.workflowService
+	if client.conn != nil {
+		workerService = workflowservice.NewWorkflowServiceClient(
+			payloadlimits.NewConn(client.conn, client.payloadWarningLimits, payloadErrorLimits, logger))
+	}
 	workerStorageParams := client.storageParams.WithOwnDriverOperationLimit().WithLogger(logger)
 
 	cache, cacheLease := NewWorkerCache()
@@ -2544,14 +2557,13 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		serverSupportsAutoscaling:        &atomic.Bool{},
 		workflowTaskCompletionPagination: &workflowTaskCompletionPaginationConfig{},
 		inboundPayloadVisitor:            extstore.NewExternalRetrievalVisitor(workerStorageParams),
-		outboundPayloadVisitor: newCompositePayloadVisitor(
-			extstore.NewExternalStorageVisitor(workerStorageParams),
-			payloadLimitVisitor,
-		),
-		storageParams: workerStorageParams,
-		setErrorLimits: func(limits *payloadLimits) {
+		outboundPayloadVisitor:           extstore.NewExternalStorageVisitor(workerStorageParams),
+		storageParams:                    workerStorageParams,
+		workflowService:                  workerService,
+		payloadErrorLimits:               payloadErrorLimits,
+		setErrorLimits: func(limits *payloadlimits.Limits) {
 			if !options.DisablePayloadErrorLimit {
-				setErrorLimits(limits)
+				payloadErrorLimits.Store(limits)
 			}
 		},
 	}

@@ -3,6 +3,7 @@ package internal
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"sync/atomic"
 	"time"
@@ -20,6 +21,7 @@ import (
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/extstore"
 	ilog "go.temporal.io/sdk/internal/log"
+	"go.temporal.io/sdk/internal/payloadlimits"
 	"go.temporal.io/sdk/log"
 )
 
@@ -1017,6 +1019,20 @@ type (
 		PayloadLimits PayloadLimitOptions
 	}
 
+	// PayloadLimitOptions for when payload sizes exceed limits.
+	//
+	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/client.PayloadLimitOptions]
+	PayloadLimitOptions struct {
+		// The limit (in bytes) at which a payload size warning is logged.
+		// If unspecified or zero, defaults to 512 KiB.
+		PayloadSizeWarning int
+		// The limit (in bytes) at which an aggregate memo size warning is logged.
+		// If unspecified or zero, defaults to 2 KiB.
+		MemoSizeWarning int
+	}
+
 	// HeadersProvider returns a map of gRPC headers that should be used on every request.
 	HeadersProvider interface {
 		GetHeaders(ctx context.Context) (map[string]string, error)
@@ -1592,7 +1608,11 @@ func newClientPluginRoot(ctx context.Context, options ClientPluginNewClientOptio
 		return nil, fmt.Errorf("existing client must have been created directly from a client package call")
 	}
 
-	client := NewServiceClient(workflowservice.NewWorkflowServiceClient(connection), connection, options.ClientOptions)
+	// An invalid value panics in NewServiceClient below.
+	payloadWarningLimits, _ := payloadLimitOptionsToLimits(options.ClientOptions.PayloadLimits)
+	service := workflowservice.NewWorkflowServiceClient(
+		payloadlimits.NewConn(connection, payloadWarningLimits, nil, options.ClientOptions.Logger))
+	client := NewServiceClient(service, connection, options.ClientOptions)
 
 	// If using existing connection, always load its capabilities and use them for
 	// the new connection. Otherwise, only load server capabilities eagerly if not
@@ -2016,4 +2036,25 @@ func collectStorageDriverTypes(drivers []converter.StorageDriver) []string {
 		}
 	}
 	return result
+}
+
+func payloadLimitOptionsToLimits(options PayloadLimitOptions) (payloadlimits.Limits, error) {
+	payloadSizeWarning := int64(options.PayloadSizeWarning)
+	if payloadSizeWarning < 0 {
+		return payloadlimits.Limits{}, errors.New("PayloadSizeWarning must be greater than or equal to zero")
+	}
+	if payloadSizeWarning == 0 {
+		payloadSizeWarning = 512 * 1024
+	}
+	memoSizeWarning := int64(options.MemoSizeWarning)
+	if memoSizeWarning < 0 {
+		return payloadlimits.Limits{}, errors.New("MemoSizeWarning must be greater than or equal to zero")
+	}
+	if memoSizeWarning == 0 {
+		memoSizeWarning = 2 * 1024
+	}
+	return payloadlimits.Limits{
+		BlobWarn: payloadSizeWarning,
+		MemoWarn: memoSizeWarning,
+	}, nil
 }

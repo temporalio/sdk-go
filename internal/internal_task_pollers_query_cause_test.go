@@ -8,6 +8,8 @@ import (
 	"go.temporal.io/api/enums/v1"
 	querypb "go.temporal.io/api/query/v1"
 	"go.temporal.io/api/workflowservice/v1"
+
+	"go.temporal.io/sdk/internal/payloadlimits"
 )
 
 func TestWorkflowQueryFailureCause(t *testing.T) {
@@ -23,7 +25,7 @@ func TestWorkflowQueryFailureCause(t *testing.T) {
 		},
 		{
 			name: "payload size error",
-			err:  payloadSizeError{message: "too large", size: 100, limit: 50},
+			err:  payloadlimits.NewError(&payloadlimits.Violation{Severity: payloadlimits.SeverityError, Size: 100, Limit: 50}),
 			want: enums.WORKFLOW_TASK_FAILED_CAUSE_PAYLOADS_TOO_LARGE,
 		},
 		{
@@ -85,7 +87,7 @@ func TestTaskFailureCompletionQuerySetsCause(t *testing.T) {
 		},
 		{
 			name:      "payload size error",
-			err:       payloadSizeError{message: "too large", size: 100, limit: 50},
+			err:       payloadlimits.NewError(&payloadlimits.Violation{Severity: payloadlimits.SeverityError, Size: 100, Limit: 50}),
 			wantCause: enums.WORKFLOW_TASK_FAILED_CAUSE_PAYLOADS_TOO_LARGE,
 		},
 		{

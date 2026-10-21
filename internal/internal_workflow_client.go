@@ -39,6 +39,7 @@ import (
 	"go.temporal.io/sdk/internal/common/retry"
 	"go.temporal.io/sdk/internal/common/serializer"
 	"go.temporal.io/sdk/internal/extstore"
+	"go.temporal.io/sdk/internal/payloadlimits"
 	"go.temporal.io/sdk/log"
 )
 
@@ -96,7 +97,7 @@ type (
 		unclosedClients      *int32
 		storageParams        extstore.StorageParameters
 		storageDriverTypes   []string
-		payloadWarningLimits payloadLimits
+		payloadWarningLimits payloadlimits.Limits
 	}
 
 	// namespaceData caches DescribeNamespace fields needed when workers start.
@@ -1802,11 +1803,7 @@ func (wc *WorkflowClient) Close() {
 }
 
 func (wc *WorkflowClient) newOutboundPayloadVisitor() PayloadVisitor {
-	payloadLimitVisitor, _ := newPayloadLimitsVisitor(wc.payloadWarningLimits, wc.logger)
-	return newCompositePayloadVisitor(
-		extstore.NewExternalStorageVisitor(wc.storageParams.WithLogger(wc.logger)),
-		payloadLimitVisitor,
-	)
+	return extstore.NewExternalStorageVisitor(wc.storageParams.WithLogger(wc.logger))
 }
 
 // Register a namespace with temporal server

@@ -2018,7 +2018,7 @@ func TestHeartBeat_NoError(t *testing.T) {
 			Times(2)
 
 		temporalInvoker := newServiceInvoker(
-			nil, "Test_Temporal_Invoker", mockService, metrics.NopHandler, func(error) {}, heartbeatThrottleInterval,
+			nil, "Test_Temporal_Invoker", mockService, mockService, metrics.NopHandler, func(error) {}, heartbeatThrottleInterval,
 			make(chan struct{}), testNamespace, &atomic.Bool{}, nil, nil,
 		)
 		defer temporalInvoker.Close(t.Context(), false)
@@ -2053,7 +2053,7 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithError() {
 	mockService.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, serviceerror.NewNotFound(""))
 
 	temporalInvoker := newServiceInvoker(
-		nil, "Test_Temporal_Invoker", mockService, metrics.NopHandler, func(err error) {}, 0,
+		nil, "Test_Temporal_Invoker", mockService, mockService, metrics.NopHandler, func(err error) {}, 0,
 		make(chan struct{}), t.namespace, &atomic.Bool{}, nil, nil)
 
 	ctx, err := newActivityContext(context.Background(), nil, &activityEnvironment{serviceInvoker: temporalInvoker, logger: t.logger})
@@ -2074,7 +2074,7 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithNamespaceNotActiveE
 	cancelHandler := func(err error) { called = true }
 
 	temporalInvoker := newServiceInvoker(
-		nil, "Test_Temporal_Invoker", mockService, metrics.NopHandler, cancelHandler,
+		nil, "Test_Temporal_Invoker", mockService, mockService, metrics.NopHandler, cancelHandler,
 		0, make(chan struct{}), t.namespace, &atomic.Bool{}, nil, nil)
 
 	ctx, err := newActivityContext(context.Background(), nil, &activityEnvironment{serviceInvoker: temporalInvoker, logger: t.logger})
@@ -2227,6 +2227,50 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionWorkerStop() {
 	r := res.response
 	t.NoError(err)
 	t.NotNil(r)
+}
+
+// The worker's own service enforces the namespace's payload error limits; a client the activity gets
+// from its invoker must send through the client's service instead, which only warns.
+func (t *TaskHandlersTestSuite) TestActivityInvokerClientUsesClientService() {
+	activityName := "activityInvokerClientUsesClientService"
+	t.registry.RegisterActivityWithOptions(
+		func(ctx context.Context) error {
+			env := getActivityEnv(ctx)
+			return env.serviceInvoker.GetClient(ClientOptions{Namespace: env.namespace}).
+				SignalWorkflow(ctx, "wID", "rID", "signal", nil)
+		},
+		RegisterActivityOptions{Name: activityName, DisableAlreadyRegisteredCheck: true},
+	)
+
+	mockCtrl := gomock.NewController(t.T())
+	clientService := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
+	clientService.EXPECT().GetSystemInfo(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.GetSystemInfoResponse{}, nil).AnyTimes()
+	clientService.EXPECT().SignalWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.SignalWorkflowExecutionResponse{}, nil)
+	client := WorkflowClient{workflowService: clientService}
+	wep := t.getTestWorkerExecutionParams()
+	wep.workflowService = workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
+	activityHandler := newActivityTaskHandler(&client, wep, t.registry)
+	now := time.Now()
+	pats := &workflowservice.PollActivityTaskQueueResponse{
+		Attempt:                1,
+		TaskToken:              []byte("token"),
+		WorkflowExecution:      &commonpb.WorkflowExecution{WorkflowId: "wID", RunId: "rID"},
+		ActivityType:           &commonpb.ActivityType{Name: activityName},
+		ActivityId:             uuid.NewString(),
+		ScheduledTime:          timestamppb.New(now),
+		ScheduleToCloseTimeout: durationpb.New(time.Second),
+		StartedTime:            timestamppb.New(now),
+		StartToCloseTimeout:    durationpb.New(time.Second),
+		WorkflowType:           &commonpb.WorkflowType{Name: "wType"},
+		WorkflowNamespace:      wep.Namespace,
+	}
+
+	res, err := activityHandler.Execute(taskqueue, pats)
+
+	t.NoError(err)
+	t.IsType(&workflowservice.RespondActivityTaskCompletedRequest{}, res.response)
 }
 
 func (t *TaskHandlersTestSuite) TestActivityCancellationUsesIsCanceledError() {

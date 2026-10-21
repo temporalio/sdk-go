@@ -23,6 +23,7 @@ import (
 	"go.temporal.io/api/workflowservicemock/v1"
 	"go.temporal.io/sdk/internal/common/metrics"
 	ilog "go.temporal.io/sdk/internal/log"
+	"go.temporal.io/sdk/internal/payloadlimits"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -1312,7 +1313,7 @@ func TestErrorToFailWorkflowTaskCause(t *testing.T) {
 		},
 		{
 			name:  "payload size error",
-			err:   payloadSizeError{message: "too large", size: 100, limit: 50},
+			err:   payloadlimits.NewError(&payloadlimits.Violation{Severity: payloadlimits.SeverityError, Size: 100, Limit: 50}),
 			cause: enumspb.WORKFLOW_TASK_FAILED_CAUSE_PAYLOADS_TOO_LARGE,
 		},
 	}

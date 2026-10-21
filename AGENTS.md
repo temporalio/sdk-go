@@ -69,7 +69,7 @@ Useful focused commands:
 
 ```bash
 cd internal/cmd/build
-go run . unit-test -run "TestPayloadLimitsVisitor"
+go run . unit-test -run "TestValidateBlobFieldOverErrorLimit"
 go run . integration-test -dev-server -run "TestWorkerTunerTestSuite"
 go run . integration-test -dev-server -run "TestIntegrationSuite/TestShutdownDuringActiveTimerActivityWorkflows"
 ```
