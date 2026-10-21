@@ -22,6 +22,9 @@ to docs, or any other relevant information.
 
 ### Added
 
+- Added experimental `temporalnexus.ConvertLinkCallbackToNexusLink` and `temporalnexus.ConvertNexusLinkToLinkCallback`
+  for converting `Link_Callback` to and from Nexus links.
+
 ### Changed
 
 ### Deprecated
@@ -31,6 +34,10 @@ to docs, or any other relevant information.
 ### Fixed
 
 - `converter.NewRemotePayloadCodec` now handles endpoint URLs with trailing slashes.
+- Fixed race when using `log.With` without a `WithLogger` implementation, where logs could overwrite each others' buffers.
+- The default timeout for client and worker RPCs has been extended. Previously, the default timeout
+  was only half the caller's context deadline - now it uses the entire deadline, up to a maximum
+  of ten seconds. RPCs with timeout overrides, like long-poll RPCs, are unchanged.
 
 ### Security
 

@@ -402,6 +402,13 @@ var nexusLinkDecoders = map[string]func(nexus.Link) (*common.Link, error){
 		}
 		return &common.Link{Variant: &common.Link_NexusOperation_{NexusOperation: converted}}, nil
 	},
+	linkTypeName(&common.Link_Callback{}): func(link nexus.Link) (*common.Link, error) {
+		converted, err := ConvertNexusLinkToLinkCallback(link)
+		if err != nil {
+			return nil, err
+		}
+		return &common.Link{Variant: &common.Link_Callback_{Callback: converted}}, nil
+	},
 }
 
 func linkTypeName(m proto.Message) string {
