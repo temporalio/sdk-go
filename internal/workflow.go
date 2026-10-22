@@ -22,6 +22,7 @@ import (
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/common/workflowcontext"
 	"go.temporal.io/sdk/log"
+	commonconverter "go.temporal.io/sdk/internal/common/converter"
 )
 
 // HandlerUnfinishedPolicy actions taken if a workflow completes with running handlers.
@@ -3106,7 +3107,7 @@ func (wc *workflowEnvironmentInterceptor) prepareNexusOperationParams(ctx Contex
 	if endpoint == systemNexusEndpoint {
 		// System nexus operations use a special converter because they're
 		// meant for the server.
-		dc = newSystemNexusDataConverter(dc)
+		dc = commonconverter.WithDataConverterSystemNexusContext(systemNexusDataConverter, dc)
 	}
 
 	payload, err := dc.ToPayload(input.Input)

@@ -61,7 +61,7 @@ func (signalWithStartModel) TransferTypeConverter() (converter.TransferTypeConve
 		// into a SignalWithStartWorkflowExecutionRequest proto. As part of
 		// that encoding step, we encode the arguments (model.Input) using
 		// the callee's serialization context.
-		func(cfg *commonconverter.SystemNexusConfig, model *signalWithStartModel) (*workflowservice.SignalWithStartWorkflowExecutionRequest, error) {
+		func(cfg *commonconverter.SystemNexusContext, model *signalWithStartModel) (*workflowservice.SignalWithStartWorkflowExecutionRequest, error) {
 			input, err := cfg.DataConverter.ToPayloads(model.Input)
 			if err != nil {
 				return nil, err
@@ -76,7 +76,7 @@ func (signalWithStartModel) TransferTypeConverter() (converter.TransferTypeConve
 			}, nil
 		},
 		// Transfer type decoder
-		func(*commonconverter.SystemNexusConfig, *workflowservice.SignalWithStartWorkflowExecutionRequest, *signalWithStartModel) error {
+		func(*commonconverter.SystemNexusContext, *workflowservice.SignalWithStartWorkflowExecutionRequest, *signalWithStartModel) error {
 			return errors.New("signal-with-start test request is encode-only")
 		},
 	)
@@ -89,12 +89,12 @@ type signalWithStartResponseModel struct {
 func (signalWithStartResponseModel) TransferTypeConverter() (converter.TransferTypeConverter, error) {
 	return commonconverter.NewSystemNexusTransferTypeConverter(
 		// Transfer type encoder
-		func(_ *commonconverter.SystemNexusConfig, model *signalWithStartResponseModel) (*workflowservice.SignalWithStartWorkflowExecutionResponse, error) {
+		func(_ *commonconverter.SystemNexusContext, model *signalWithStartResponseModel) (*workflowservice.SignalWithStartWorkflowExecutionResponse, error) {
 			return &workflowservice.SignalWithStartWorkflowExecutionResponse{RunId: model.RunID}, nil
 		},
 		// This is transfer type decoder that turns a SignalWithStartWorkflowExecutionResponse proto
 		// into a signalWithStartResponseModel.
-		func(_ *commonconverter.SystemNexusConfig, response *workflowservice.SignalWithStartWorkflowExecutionResponse, model *signalWithStartResponseModel) error {
+		func(_ *commonconverter.SystemNexusContext, response *workflowservice.SignalWithStartWorkflowExecutionResponse, model *signalWithStartResponseModel) error {
 			model.RunID = response.GetRunId()
 			return nil
 		},

@@ -707,10 +707,10 @@ type systemNexusModel struct{ Value string }
 
 func (systemNexusModel) TransferTypeConverter() (converter.TransferTypeConverter, error) {
 	return commonconverter.NewSystemNexusTransferTypeConverter(
-		func(cfg *commonconverter.SystemNexusConfig, value *systemNexusModel) (*commonpb.Payload, error) {
+		func(cfg *commonconverter.SystemNexusContext, value *systemNexusModel) (*commonpb.Payload, error) {
 			return cfg.DataConverter.ToPayload(value.Value)
 		},
-		func(cfg *commonconverter.SystemNexusConfig, payload *commonpb.Payload, value *systemNexusModel) error {
+		func(cfg *commonconverter.SystemNexusContext, payload *commonpb.Payload, value *systemNexusModel) error {
 			return cfg.DataConverter.FromPayload(payload, &value.Value)
 		},
 	)
@@ -719,7 +719,8 @@ func (systemNexusModel) TransferTypeConverter() (converter.TransferTypeConverter
 func TestTransferAwareDataConverter_SystemNexusRoundTrip(t *testing.T) {
 	for _, batch := range []bool{false, true} {
 		t.Run(fmt.Sprintf("batch=%v", batch), func(t *testing.T) {
-			dc := newSystemNexusDataConverter(
+			dc := commonconverter.WithDataConverterSystemNexusContext(
+				systemNexusDataConverter,
 				MakeTransferAware(
 					converter.NewCodecDataConverter(
 						converter.NewCompositeDataConverter(converter.NewJSONPayloadConverter()),
@@ -786,7 +787,7 @@ func TestSystemNexusMock(t *testing.T) {
 		},
 	})
 
-	env.OnNexusOperation(service, operation, mock.Anything, mock.Anything).
+	env.OnNexusOperation(service, nexus.NewOperationReference[*commonpb.Payload, *commonpb.Payload](operation), mock.Anything, mock.Anything).
 		Run(func(args mock.Arguments) {
 			request := args.Get(1).(*commonpb.Payload)
 			require.True(t, proto.Equal(expectedInput, request))

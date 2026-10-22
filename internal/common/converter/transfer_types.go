@@ -38,8 +38,8 @@ type normalTransferTypeConverter interface {
 
 type systemNexusTransferTypeConverter interface {
 	TransferTypeConverter
-	toTransferType(cfg *SystemNexusConfig, value any) (any, error)
-	fromTransferType(cfg *SystemNexusConfig, transferTypePtr, valuePtr any) error
+	toTransferType(cfg *SystemNexusContext, value any) (any, error)
+	fromTransferType(cfg *SystemNexusContext, transferTypePtr, valuePtr any) error
 }
 
 // NewTransferTypeConverter builds a transfer type converter that can map
@@ -111,17 +111,17 @@ func (tc *transferTypeConverterImpl[ModelType, TransferType]) fromTransferType(t
 	return tc.fromTransferTypeFn(tvp, v)
 }
 
-type SystemNexusConfig struct {
+type SystemNexusContext struct {
 	DataConverter DataConverter
 }
 
 // NewSystemNexusTransferTypeConverter is a version of [NewTransferTypeConverter]
-// whose callbacks accept a non-nil [SystemNexusConfig].
+// whose callbacks accept a non-nil [SystemNexusContext].
 //
 // NOTE: Experimental.
 func NewSystemNexusTransferTypeConverter[Model ValueWithTransferTypeConverter, Transfer any](
-	toTransferType func(*SystemNexusConfig, *Model) (*Transfer, error),
-	fromTransferType func(*SystemNexusConfig, *Transfer, *Model) error,
+	toTransferType func(*SystemNexusContext, *Model) (*Transfer, error),
+	fromTransferType func(*SystemNexusContext, *Transfer, *Model) error,
 ) (TransferTypeConverter, error) {
 	if err := validateTransferTypeTypes[Model, Transfer](); err != nil {
 		return nil, err
@@ -133,15 +133,15 @@ func NewSystemNexusTransferTypeConverter[Model ValueWithTransferTypeConverter, T
 }
 
 type systemNexusTransferTypeConverterImpl[ModelType, TransferType any] struct {
-	toTransferTypeFn   func(*SystemNexusConfig, *ModelType) (*TransferType, error)
-	fromTransferTypeFn func(*SystemNexusConfig, *TransferType, *ModelType) error
+	toTransferTypeFn   func(*SystemNexusContext, *ModelType) (*TransferType, error)
+	fromTransferTypeFn func(*SystemNexusContext, *TransferType, *ModelType) error
 }
 
 func (tc *systemNexusTransferTypeConverterImpl[ModelType, TransferType]) newTransferTypePtr() any {
 	return new(TransferType)
 }
 
-func (tc *systemNexusTransferTypeConverterImpl[ModelType, TransferType]) toTransferType(cfg *SystemNexusConfig, value any) (any, error) {
+func (tc *systemNexusTransferTypeConverterImpl[ModelType, TransferType]) toTransferType(cfg *SystemNexusContext, value any) (any, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("system Nexus transfer type converter: cannot encode %T without a system Nexus config", value)
 	}
@@ -152,7 +152,7 @@ func (tc *systemNexusTransferTypeConverterImpl[ModelType, TransferType]) toTrans
 	return tc.toTransferTypeFn(cfg, valuePtr)
 }
 
-func (tc *systemNexusTransferTypeConverterImpl[ModelType, TransferType]) fromTransferType(cfg *SystemNexusConfig, transferTypePtr any, valuePtr any) error {
+func (tc *systemNexusTransferTypeConverterImpl[ModelType, TransferType]) fromTransferType(cfg *SystemNexusContext, transferTypePtr any, valuePtr any) error {
 	if cfg == nil {
 		return fmt.Errorf("system Nexus transfer type converter: cannot decode into %T without a system Nexus config", valuePtr)
 	}
@@ -167,7 +167,7 @@ func (tc *systemNexusTransferTypeConverterImpl[ModelType, TransferType]) fromTra
 	return tc.fromTransferTypeFn(cfg, tvp, v)
 }
 
-func encodeTransferType(tc TransferTypeConverter, cfg *SystemNexusConfig, value any) (any, error) {
+func encodeTransferType(tc TransferTypeConverter, cfg *SystemNexusContext, value any) (any, error) {
 	switch tc := tc.(type) {
 	case normalTransferTypeConverter:
 		return tc.toTransferType(value)
@@ -178,7 +178,7 @@ func encodeTransferType(tc TransferTypeConverter, cfg *SystemNexusConfig, value 
 	}
 }
 
-func decodeTransferType(tc TransferTypeConverter, cfg *SystemNexusConfig, transferTypePtr, valuePtr any) error {
+func decodeTransferType(tc TransferTypeConverter, cfg *SystemNexusContext, transferTypePtr, valuePtr any) error {
 	switch tc := tc.(type) {
 	case normalTransferTypeConverter:
 		return tc.fromTransferType(transferTypePtr, valuePtr)
@@ -197,7 +197,7 @@ func decodeTransferType(tc TransferTypeConverter, cfg *SystemNexusConfig, transf
 type transferAwareDataConverter struct {
 	parent DataConverter
 	// systemNexus configures callbacks created by [NewSystemNexusTransferTypeConverter].
-	systemNexus *SystemNexusConfig
+	systemNexus *SystemNexusContext
 	// transferTypeConverters is a cache that maps transfer-convertible types
 	// to their transfer type converters.
 	transferTypeConverters *sync.Map
@@ -427,8 +427,8 @@ func (dc *transferAwareDataConverter) WithContext(ctx context.Context) DataConve
 	return &result
 }
 
-func WithSystemNexusDataConverter(dc, targetDC DataConverter) DataConverter {
+func WithDataConverterSystemNexusContext(dc, targetDC DataConverter) DataConverter {
 	result := *dc.(*transferAwareDataConverter)
-	result.systemNexus = &SystemNexusConfig{DataConverter: targetDC}
+	result.systemNexus = &SystemNexusContext{DataConverter: targetDC}
 	return &result
 }
