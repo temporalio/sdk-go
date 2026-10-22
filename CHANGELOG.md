@@ -27,18 +27,25 @@ to docs, or any other relevant information.
 
 ### Changed
 
-- **Experimental**: `SignalWorkflow` and `SignalWithStartWorkflow` called from a Nexus operation handler
-  now reuse the operation's request ID, so a retried Nexus task no longer delivers the same signal twice.
+- **Experimental**: `SignalWorkflow` and `SignalWithStartWorkflow` called through
+  `NexusClient.GetWorkflowClient()` in a Temporal operation handler now reuse the operation's request
+  ID, so a retried Nexus task no longer delivers the same signal twice. Signals sent through
+  `temporalnexus.GetClient` keep an independent request ID per call and are not deduplicated.
 
 ### Deprecated
 
 ### :boom: Breaking Changes
 
-- **Experimental**: A Nexus operation handler can now send only one signal per call. `SignalWorkflow` and
-  `SignalWithStartWorkflow` count toward the same limit. While the first signal is in flight or after it
-  succeeds, a second signal to any workflow returns a `BAD_REQUEST` handler error instead of being
-  silently deduplicated. If the first signal returns an error, the limit resets and the handler can
-  signal again.
+- **Experimental**: A Temporal operation handler (`temporalnexus.NewTemporalOperation`) can now send only
+  one signal per operation invocation through `NexusClient.GetWorkflowClient()`. `SignalWorkflow` and
+  `SignalWithStartWorkflow` count toward the same limit. While the first signal is in flight, or after it
+  succeeds, a second signal to any workflow returns a `BAD_REQUEST` handler error. If the first signal
+  returns an error, the limit resets and the handler can signal again. Signals sent through
+  `temporalnexus.GetClient` are not limited.
+- **Experimental**: `SignalWithStartWorkflow` called through `NexusClient.GetWorkflowClient()` in a
+  Temporal operation handler now requires an explicit workflow ID and returns a `BAD_REQUEST` handler
+  error when it is empty. An empty ID is defaulted to a fresh UUID per call, so the server has no
+  record to deduplicate against and each retried Nexus task would start another workflow.
 
 ### Fixed
 

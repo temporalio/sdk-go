@@ -2593,7 +2593,7 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 		return nil, err
 	}
 
-	// A signalWithStart issued from inside a Nexus operation handler reuses the operation's request
+	// A signalWithStart issued through NexusClient.GetWorkflowClient reuses the operation's request
 	// ID so a retried Nexus task dedupes against the first attempt instead of signaling twice.
 	requestID, _ := ctx.Value(NexusOperationRequestIDKey).(string)
 	if requestID == "" {
