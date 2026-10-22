@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/golang/mock/gomock"
+	"github.com/nexus-rpc/sdk-go/nexus"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
@@ -22,6 +24,7 @@ import (
 	commonconverter "go.temporal.io/sdk/internal/common/converter"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
+	"github.com/google/uuid"
 )
 
 // -- BASIC TESTS ----------------------------------------------------
@@ -747,4 +750,60 @@ func TestTransferAwareDataConverter_SystemNexusRoundTrip(t *testing.T) {
 			require.Equal(t, systemNexusModel{Value: "value"}, result)
 		})
 	}
+}
+
+func TestSystemNexusMock(t *testing.T) {
+	// generate id
+	id := uuid.NewString()
+	service := "service" + id
+	operation := "operation" + id
+	namespace := "namespace" + id
+	workflowID := "workflow" + id
+
+	env := new(WorkflowUnitTest).NewTestWorkflowEnvironment()
+	dc := converter.NewCodecDataConverter(
+		converter.GetDefaultDataConverter(),
+		&serCtxSigningCodec{},
+		newSystemEnvelopeRejectingCodec(),
+	)
+	env.SetDataConverter(dc)
+	wsc := converter.WorkflowSerializationContext{Namespace: namespace, WorkflowID: workflowID}
+	dcsc := converter.WithDataConverterSerializationContext(dc, wsc)
+
+	input := systemNexusModel{Value: "input"}
+	result := systemNexusModel{Value: "result"}
+	expectedInput, err := dcsc.ToPayload(input.Value)
+	require.NoError(t, err)
+	response, err := dcsc.ToPayload(result.Value)
+	require.NoError(t, err)
+
+	UpdateNexusOperationRegistry(map[NexusOperationKey]NexusOperationRegistryEntry{
+		{Service: service, Operation: operation}: {
+			SerializationContext: func(value any) converter.SerializationContext {
+				require.Equal(t, input, value)
+				return wsc
+			},
+		},
+	})
+
+	env.OnNexusOperation(service, operation, mock.Anything, mock.Anything).
+		Run(func(args mock.Arguments) {
+			request := args.Get(1).(*commonpb.Payload)
+			require.True(t, proto.Equal(expectedInput, request))
+		}).
+		Return(&nexus.HandlerStartOperationResultSync[*commonpb.Payload]{Value: response}, nil).Once()
+
+	env.ExecuteWorkflow(func(ctx Context) (string, error) {
+		var output systemNexusModel
+		err := NewSystemNexusClient(service).
+			ExecuteOperation(ctx, operation, input, NexusOperationOptions{}).
+			Get(ctx, &output)
+		return output.Value, err
+	})
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	var output string
+	require.NoError(t, env.GetWorkflowResult(&output))
+	require.Equal(t, result.Value, output)
+	env.AssertExpectations(t)
 }
