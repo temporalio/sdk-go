@@ -323,11 +323,14 @@ func VersioningOverrideFromProto(_ converter.DataConverter, versioningOverride *
 		}}
 	}
 	if value == nil {
+		//lint:ignore SA1019 decode legacy versioning overrides
 		switch versioningOverride.GetBehavior() {
 		case enums.VERSIONING_BEHAVIOR_AUTO_UPGRADE:
 			value = &client.AutoUpgradeVersioningOverride{}
 		case enums.VERSIONING_BEHAVIOR_PINNED:
+			//lint:ignore SA1019 decode legacy versioning overrides
 			deploymentName := versioningOverride.GetDeployment().GetSeriesName()
+			//lint:ignore SA1019 decode legacy versioning overrides
 			buildID := versioningOverride.GetDeployment().GetBuildId()
 			value = &client.PinnedVersioningOverride{Version: internal.WorkerDeploymentVersion{
 				DeploymentName: deploymentName,
