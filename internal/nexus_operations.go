@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"sync"
+	"sync/atomic"
 
 	"github.com/google/uuid"
 	"github.com/nexus-rpc/sdk-go/nexus"
@@ -95,6 +96,63 @@ func (nc *NexusOperationContext) ResolveActivityName(activity any, args []any) (
 		return "", err
 	}
 	return at.Name, nil
+}
+
+// NewTemporalOperationClient is called by temporalnexus when it builds the NexusClient for a
+// Temporal operation handler. NexusClient.GetWorkflowClient is the only wrapped path;
+// temporalnexus.GetClient is unwrapped for every operation type.
+func NewTemporalOperationClient(c Client, requestID string) Client {
+	return &temporalOperationClient{Client: c, requestID: requestID}
+}
+
+// temporalOperationClient wraps the client for one Temporal operation invocation. Signals carry the
+// operation's request ID so a retried Nexus task doesn't deliver them twice; because they all share
+// that ID, a second signal to the same workflow would be silently dropped by the server, so any
+// second signal is rejected instead.
+type temporalOperationClient struct {
+	Client
+
+	requestID string
+	signaled  atomic.Bool
+}
+
+func (c *temporalOperationClient) claimSignal() error {
+	if !c.signaled.CompareAndSwap(false, true) {
+		return nexus.NewHandlerErrorf(nexus.HandlerErrorTypeBadRequest,
+			"only one signal can be sent per Nexus operation invocation")
+	}
+	return nil
+}
+
+func (c *temporalOperationClient) SignalWorkflow(ctx context.Context, workflowID string, runID string, signalName string, arg any) error {
+	if err := c.claimSignal(); err != nil {
+		return err
+	}
+	ctx = context.WithValue(ctx, NexusOperationRequestIDKey, c.requestID)
+	err := c.Client.SignalWorkflow(ctx, workflowID, runID, signalName, arg)
+	if err != nil {
+		c.signaled.Store(false)
+	}
+	return err
+}
+
+func (c *temporalOperationClient) SignalWithStartWorkflow(ctx context.Context, workflowID string, signalName string, signalArg any,
+	options StartWorkflowOptions, workflow any, workflowArgs ...any) (WorkflowRun, error) {
+	// An empty ID is defaulted to a fresh UUID per call, so the server has no record to dedupe
+	// against and every retried Nexus task starts another workflow.
+	if workflowID == "" {
+		return nil, nexus.NewHandlerErrorf(nexus.HandlerErrorTypeBadRequest,
+			"signalWithStart from a Nexus operation handler requires a workflow ID")
+	}
+	if err := c.claimSignal(); err != nil {
+		return nil, err
+	}
+	ctx = context.WithValue(ctx, NexusOperationRequestIDKey, c.requestID)
+	run, err := c.Client.SignalWithStartWorkflow(ctx, workflowID, signalName, signalArg, options, workflow, workflowArgs...)
+	if err != nil {
+		c.signaled.Store(false)
+	}
+	return run, err
 }
 
 type nexusOperationEnvironment struct {
