@@ -3087,7 +3087,7 @@ func (wc *workflowEnvironmentInterceptor) prepareNexusOperationParams(ctx Contex
 	//   encode the top-level payload - the input to the nexus operation.
 	var sc converter.SerializationContext
 	if endpoint == systemNexusEndpoint {
-		if info, ok := nexusOperationRegistry[NexusOperationKey{
+		if info, ok := systemNexusRegistry[SystemNexusRegistryKey{
 			Service:   service,
 			Operation: operationName,
 		}]; ok {

@@ -777,7 +777,7 @@ func TestSystemNexusMock(t *testing.T) {
 	response, err := dcsc.ToPayload(result.Value)
 	require.NoError(t, err)
 
-	UpdateNexusOperationRegistry(map[NexusOperationKey]NexusOperationRegistryEntry{
+	UpdateSystemNexusRegistry(map[SystemNexusRegistryKey]SystemNexusRegistryEntry{
 		{Service: service, Operation: operation}: {
 			SerializationContext: func(value any) converter.SerializationContext {
 				require.Equal(t, input, value)

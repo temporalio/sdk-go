@@ -42,7 +42,7 @@ type signalWithStartModel struct {
 func init() {
 	// Here we tell the system nexus data converter what serialization
 	// context it should use when encoding a signalWithStartModel.
-	internal.UpdateNexusOperationRegistry(map[internal.NexusOperationKey]internal.NexusOperationRegistryEntry{
+	internal.UpdateSystemNexusRegistry(map[internal.SystemNexusRegistryKey]internal.SystemNexusRegistryEntry{
 		{Service: systemNexusWorkflowService, Operation: systemNexusSignalWithStart}: {
 			SerializationContext: func(value any) converter.SerializationContext {
 				model := value.(signalWithStartModel)
