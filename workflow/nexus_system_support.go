@@ -1,4 +1,4 @@
-package systemsupport
+package workflow
 
 import (
 	"fmt"
@@ -13,14 +13,12 @@ import (
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal"
 	"go.temporal.io/sdk/temporal"
-	"go.temporal.io/sdk/worker"
-	"go.temporal.io/sdk/workflow"
 	"google.golang.org/protobuf/types/known/durationpb"
 )
 
 // WorkflowNamespace returns the namespace of the current workflow.
-func WorkflowNamespace(ctx workflow.Context) string {
-	return workflow.GetInfo(ctx).Namespace
+func WorkflowNamespace(ctx Context) string {
+	return GetInfo(ctx).Namespace
 }
 
 type SignalWithStartWorkflowModelRequest interface {
@@ -319,7 +317,7 @@ func VersioningOverrideFromProto(_ converter.DataConverter, versioningOverride *
 		value = &client.AutoUpgradeVersioningOverride{}
 	case *workflowpb.VersioningOverride_Pinned:
 		version := override.Pinned.GetVersion()
-		value = &client.PinnedVersioningOverride{Version: worker.WorkerDeploymentVersion{
+		value = &client.PinnedVersioningOverride{Version: internal.WorkerDeploymentVersion{
 			DeploymentName: version.GetDeploymentName(),
 			BuildID:        version.GetBuildId(),
 		}}
@@ -331,7 +329,7 @@ func VersioningOverrideFromProto(_ converter.DataConverter, versioningOverride *
 		case enums.VERSIONING_BEHAVIOR_PINNED:
 			deploymentName := versioningOverride.GetDeployment().GetSeriesName()
 			buildID := versioningOverride.GetDeployment().GetBuildId()
-			value = &client.PinnedVersioningOverride{Version: worker.WorkerDeploymentVersion{
+			value = &client.PinnedVersioningOverride{Version: internal.WorkerDeploymentVersion{
 				DeploymentName: deploymentName,
 				BuildID:        buildID,
 			}}
@@ -341,7 +339,7 @@ func VersioningOverrideFromProto(_ converter.DataConverter, versioningOverride *
 }
 
 // WorkflowFunctionName returns the registered name of a workflow function.
-func WorkflowFunctionName(ctx workflow.Context, value any) string {
+func WorkflowFunctionName(ctx Context, value any) string {
 	name, err := internal.GetWorkflowFunctionName(
 		internal.GetWorkflowEnvironment(ctx).GetRegistry(),
 		value,
