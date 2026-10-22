@@ -34,6 +34,7 @@ import (
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/common/util"
+	"go.temporal.io/sdk/internal/payloadlimits"
 	"go.temporal.io/sdk/log"
 )
 
@@ -160,6 +161,7 @@ type (
 		taskQueueName                    string
 		identity                         string
 		client                           *WorkflowClient
+		service                          workflowservice.WorkflowServiceClient
 		metricsHandler                   metrics.Handler
 		logger                           log.Logger
 		backgroundContext                context.Context
@@ -2093,10 +2095,15 @@ func newActivityTaskHandlerWithCustomProvider(
 	if (params.DeploymentOptions.Version != WorkerDeploymentVersion{}) {
 		seriesName = params.DeploymentOptions.Version.DeploymentName
 	}
+	service := params.workflowService
+	if service == nil && client != nil {
+		service = client.workflowService
+	}
 	return &activityTaskHandlerImpl{
 		taskQueueName:                    params.TaskQueue,
 		identity:                         params.Identity,
 		client:                           client,
+		service:                          service,
 		logger:                           params.Logger,
 		metricsHandler:                   params.MetricsHandler,
 		backgroundContext:                params.BackgroundContext,
@@ -2155,7 +2162,8 @@ func (r *activityCancellationCallbacks) cancel(taskToken []byte) bool {
 	return true
 }
 
-// heartbeatVisitorError wraps an outbound payload visitor error from a heartbeat.
+// heartbeatVisitorError wraps an error that failed a heartbeat before it was sent: an outbound payload
+// visitor error, or the heartbeat exceeding the payload error limits.
 // It is used as the context cancellation cause so Execute() can detect that
 // RespondActivityTaskFailed was already sent proactively and skip sending a second response.
 type heartbeatVisitorError struct{ err error }
@@ -2165,8 +2173,11 @@ func (e heartbeatVisitorError) Unwrap() error { return e.err }
 
 type temporalInvoker struct {
 	sync.Mutex
-	identity       string
-	service        workflowservice.WorkflowServiceClient
+	identity string
+	service  workflowservice.WorkflowServiceClient
+	// clientService backs GetClient. Calls made through it are client calls, which only warn on
+	// payload limits.
+	clientService  workflowservice.WorkflowServiceClient
 	metricsHandler metrics.Handler
 	taskToken      []byte
 	// cancelHandler is called when the activity is canceled by a heartbeat response
@@ -2261,24 +2272,32 @@ func (i *temporalInvoker) internalHeartBeat(ctx context.Context, details *common
 		ResourceId: getActivityResourceIdFromCtx(ctx),
 	}
 	var err error
-	if visitErr := visitProtoPayloads(ctx, i.outboundPayloadVisitor, request, 0); visitErr != nil {
+	failErr := visitProtoPayloads(ctx, i.outboundPayloadVisitor, request, 0)
+	if failErr == nil {
+		err = recordActivityHeartbeat(ctx, i.service, i.metricsHandler, request)
+		if payloadlimits.IsError(err) {
+			failErr = err
+		}
+	}
+	if failErr != nil {
 		// Proactively fail the task so the server can retry immediately rather than
 		// waiting for the heartbeat timeout. Errors are ignored — if the RPC fails the
 		// activity will still be timed out by the server.
 		failReq := &workflowservice.RespondActivityTaskFailedRequest{
 			TaskToken:  i.taskToken,
-			Failure:    i.failureConverter.ErrorToFailure(visitErr),
+			Failure:    i.failureConverter.ErrorToFailure(failErr),
 			Identity:   i.identity,
 			Namespace:  i.namespace,
 			ResourceId: getActivityResourceIdFromCtx(ctx),
 		}
+		if payloadlimits.IsError(failErr) {
+			failReq.Cause = enumspb.ACTIVITY_TASK_FAILED_CAUSE_PAYLOADS_TOO_LARGE
+		}
 		failCtx, failCancel := context.WithTimeout(context.Background(), recordTimeout)
 		defer failCancel()
 		_, _ = i.service.RespondActivityTaskFailed(failCtx, failReq)
-		err = heartbeatVisitorError{visitErr}
+		err = heartbeatVisitorError{failErr}
 		i.cancelHandler(err)
-	} else {
-		err = recordActivityHeartbeat(ctx, i.service, i.metricsHandler, request)
 	}
 
 	switch err.(type) {
@@ -2331,13 +2350,14 @@ func (i *temporalInvoker) Close(ctx context.Context, flushBufferedHeartbeat bool
 }
 
 func (i *temporalInvoker) GetClient(options ClientOptions) Client {
-	return NewServiceClient(i.service, nil, options)
+	return NewServiceClient(i.clientService, nil, options)
 }
 
 func newServiceInvoker(
 	taskToken []byte,
 	identity string,
 	service workflowservice.WorkflowServiceClient,
+	clientService workflowservice.WorkflowServiceClient,
 	metricsHandler metrics.Handler,
 	cancelHandler context.CancelCauseFunc,
 	heartbeatThrottleInterval time.Duration,
@@ -2351,6 +2371,7 @@ func newServiceInvoker(
 		taskToken:                 taskToken,
 		identity:                  identity,
 		service:                   service,
+		clientService:             clientService,
 		metricsHandler:            metricsHandler,
 		cancelHandler:             cancelHandler,
 		heartbeatThrottleInterval: heartbeatThrottleInterval,
@@ -2407,14 +2428,13 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 
 	if err := visitProtoPayloads(canCtx, ath.inboundPayloadVisitor, t, ath.storageParams.MaxOperationsPerMessage()); err != nil {
 		return activityTaskResult{
-			response:   ath.visitorErrorToActivityFailure("Activity task preprocess error: ", t, err),
-			failureErr: err,
+			response: ath.visitorErrorToActivityFailure("Activity task preprocess error: ", t, err),
 		}, nil
 	}
 
 	heartbeatThrottleInterval := ath.getHeartbeatThrottleInterval(t.GetHeartbeatTimeout().AsDuration())
 	invoker := newServiceInvoker(
-		t.TaskToken, ath.identity, ath.client.workflowService, ath.metricsHandler, cancel, heartbeatThrottleInterval,
+		t.TaskToken, ath.identity, ath.service, ath.client.workflowService, ath.metricsHandler, cancel, heartbeatThrottleInterval,
 		ath.workerStopCh, ath.namespace, ath.client.excludeInternalFromRetry, ath.outboundPayloadVisitor, failureConverter)
 
 	workflowType := t.WorkflowType.GetName()
@@ -2545,8 +2565,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 		outboundCtx := extstore.WithStorageTarget(outboundBase, storageTarget)
 		if err := visitProtoPayloads(outboundCtx, ath.outboundPayloadVisitor, msg, ath.storageParams.MaxOperationsPerMessage()); err != nil {
 			return activityTaskResult{
-				response:   ath.visitorErrorToActivityFailure("Activity task postprocess error: ", t, err),
-				failureErr: err,
+				response: ath.visitorErrorToActivityFailure("Activity task postprocess error: ", t, err),
 			}, nil
 		}
 	}
@@ -2560,13 +2579,6 @@ func (ath *activityTaskHandlerImpl) visitorErrorToActivityFailure(msgPrefix stri
 		tagRunID, t.WorkflowExecution.GetRunId(),
 		tagActivityType, t.ActivityType.Name,
 		tagAttempt, t.Attempt,
-	}
-
-	var errPayloadSize payloadSizeError
-	if errors.As(err, &errPayloadSize) {
-		keyvals = append(keyvals,
-			tagPayloadSize, errPayloadSize.size,
-			tagPayloadSizeLimit, errPayloadSize.limit)
 	}
 
 	ath.logger.Error(msgPrefix+err.Error(), keyvals...)

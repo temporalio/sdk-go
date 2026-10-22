@@ -186,18 +186,14 @@ func (s *CollectingSink) EnterIndex(name string, index int) { s.path.PushIndex(n
 func (s *CollectingSink) EnterKey(name string, key string)  { s.path.PushKey(name, key) }
 func (s *CollectingSink) Exit()                             { s.path.Pop() }
 
-// Validate checks req against limits. If any field exceeded its error threshold, it logs the
-// errors and returns the first as a *Violation without logging warnings; otherwise it logs each
-// warning and returns nil. A nil logger disables logging.
+// Validate checks req against limits. If any field exceeded its error threshold, it returns the
+// first as a *Violation, logging nothing: the caller decides what the violation means for the task
+// and logs it with that context. Otherwise it logs each warning and returns nil. A nil logger
+// disables logging.
 func Validate(req proto.Message, limits Limits, logger log.Logger) error {
 	sink := &CollectingSink{Limits: limits}
 	dispatch(sink, req)
 	if len(sink.Errors) > 0 {
-		if logger != nil {
-			for _, v := range sink.Errors {
-				logger.Error(v.Error(), logTags(v)...)
-			}
-		}
 		return sink.Errors[0]
 	}
 	if logger != nil {

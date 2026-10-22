@@ -62,6 +62,12 @@ func scheduleActivitiesRequest(n int) *workflowservice.RespondWorkflowTaskComple
 	return &workflowservice.RespondWorkflowTaskCompletedRequest{Commands: commands}
 }
 
+func makeTestPayload(size int) *commonpb.Payload {
+	return &commonpb.Payload{
+		Data: make([]byte, size),
+	}
+}
+
 // TestVisitProtoPayloads_ConcurrentVisitors verifies that when concurrencyLimit
 // equals the number of payload groups, all visitor calls overlap.
 func TestVisitProtoPayloads_ConcurrentVisitors(t *testing.T) {

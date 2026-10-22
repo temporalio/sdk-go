@@ -32,6 +32,7 @@ import (
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/common/serializer"
 	"go.temporal.io/sdk/internal/extstore"
+	"go.temporal.io/sdk/internal/payloadlimits"
 	"go.temporal.io/sdk/log"
 )
 
@@ -174,6 +175,7 @@ type (
 		inboundPayloadVisitor  PayloadVisitor
 		outboundPayloadVisitor PayloadVisitor
 		storageParams          extstore.StorageParameters
+		payloadErrorLimits     *atomic.Pointer[payloadlimits.Limits]
 
 		workflowTaskCompletionPagination *workflowTaskCompletionPaginationConfig
 	}
@@ -186,6 +188,7 @@ type (
 		identity            string
 		service             workflowservice.WorkflowServiceClient
 		taskHandler         ActivityTaskHandler
+		failureConverter    converter.FailureConverter
 		logger              log.Logger
 		activitiesPerSecond float64
 		numPollerMetric     *numPollerMetric
@@ -486,6 +489,7 @@ func newWorkflowTaskProcessor(
 		inboundPayloadVisitor:            params.inboundPayloadVisitor,
 		outboundPayloadVisitor:           params.outboundPayloadVisitor,
 		storageParams:                    params.storageParams,
+		payloadErrorLimits:               params.payloadErrorLimits,
 		workflowTaskCompletionPagination: params.workflowTaskCompletionPagination,
 	}
 }
@@ -716,19 +720,14 @@ func (wtp *workflowTaskProcessor) RespondTaskCompletedWithMetrics(
 			tagRunID, task.WorkflowExecution.GetRunId(),
 			tagAttempt, task.Attempt,
 		}
-		var errPayloadSize payloadSizeError
-		if errors.As(taskErr, &errPayloadSize) {
-			keyvals = append(keyvals,
-				tagPayloadSize, errPayloadSize.size,
-				tagPayloadSizeLimit, errPayloadSize.limit)
-		}
 		wtp.logger.Warn("Workflow task postprocess error: "+taskErr.Error(), keyvals...)
 		emitFailMetric = true
 		failureReason = metrics.FailureReasonWorkflowError
-		if errors.As(taskErr, new(payloadSizeError)) {
-			failureReason = metrics.FailureReasonPayloadsTooLarge
-		}
 		taskCompletion = wtp.taskFailureCompletion(task, taskErr)
+	} else if wtp.payloadErrorLimits != nil {
+		if errorLimits := wtp.payloadErrorLimits.Load(); errorLimits != nil {
+			payloadlimits.FailOversizedQueryResults(taskCompletion.rawRequest, errorLimits.BlobError)
+		}
 	}
 
 	// The namespace limit governs the server's recombined page buffer, so it only applies to a
@@ -804,6 +803,19 @@ func (wtp *workflowTaskProcessor) RespondTaskCompletedWithMetrics(
 		wtp.logger.Warn(
 			fmt.Sprintf("[TMPRL1104] %s Workflow task duration exceeded %d seconds.", taskID, int64(threshold/time.Second)),
 			loggerDurationKeyVals...)
+	}
+
+	if payloadlimits.IsError(err) {
+		// The completion was rejected before it was sent, so fail the task in its place.
+		wtp.logger.Warn("Workflow task postprocess error: "+err.Error(), append([]any{
+			tagWorkflowType, task.WorkflowType.GetName(),
+			tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
+			tagRunID, task.WorkflowExecution.GetRunId(),
+			tagAttempt, task.Attempt,
+		}, payloadlimits.LogTags(err)...)...)
+		emitFailMetric = true
+		failureReason = metrics.FailureReasonPayloadsTooLarge
+		response, err = wtp.sendTaskCompletedRequest(wtp.taskFailureCompletion(task, err), task)
 	}
 
 	var grpcMessageTooLargeErr *retry.GrpcMessageTooLargeError
@@ -902,6 +914,15 @@ func (wtp *workflowTaskProcessor) respondWorkflowTaskCompleted(
 ) (*workflowservice.RespondWorkflowTaskCompletedResponse, error) {
 	if wtp.workflowTaskCompletionPagination == nil || !wtp.workflowTaskCompletionPagination.enabled.Load() {
 		return wtp.service.RespondWorkflowTaskCompleted(grpcCtx, request)
+	}
+	// Pages are validated as they are sent, so validate a completion large enough to paginate as a
+	// whole first, rather than send pages of a completion that a later page would fail.
+	if wtp.payloadErrorLimits != nil && proto.Size(request) > maxWorkflowTaskCompletionPageBytes {
+		if errorLimits := wtp.payloadErrorLimits.Load(); errorLimits != nil {
+			if err := payloadlimits.ValidateErrors(request, *errorLimits); err != nil {
+				return nil, err
+			}
+		}
 	}
 	intermediatePages, finalPage := paginateWorkflowTaskCompletion(request, maxWorkflowTaskCompletionPageBytes)
 	if len(intermediatePages) == 0 {
@@ -1031,12 +1052,6 @@ func (wtp *workflowTaskProcessor) handleInboundVisitorError(task *workflowservic
 		tagRunID, task.WorkflowExecution.GetRunId(),
 		tagAttempt, task.Attempt,
 	}
-	var errPayloadSize payloadSizeError
-	if errors.As(visitErr, &errPayloadSize) {
-		keyvals = append(keyvals,
-			tagPayloadSize, errPayloadSize.size,
-			tagPayloadSizeLimit, errPayloadSize.limit)
-	}
 	wtp.logger.Warn("Workflow task preprocess error: "+visitErr.Error(), keyvals...)
 	// Submit an explicit failure so the server records the error immediately
 	// rather than waiting for the task to time out.
@@ -1085,7 +1100,7 @@ func (wtp *workflowTaskProcessor) errorToFailWorkflowTask(
 // for legacy query failure responses. Unlike workflowTaskFailureCause it keeps
 // UNSPECIFIED when no cause maps cleanly.
 func workflowQueryFailureCause(err error) enumspb.WorkflowTaskFailedCause {
-	if errors.As(err, new(payloadSizeError)) {
+	if payloadlimits.IsError(err) {
 		return enumspb.WORKFLOW_TASK_FAILED_CAUSE_PAYLOADS_TOO_LARGE
 	}
 	if panicErr, _ := err.(*workflowPanicError); panicErr != nil {
@@ -1115,7 +1130,7 @@ func workflowTaskFailureCause(err error) enumspb.WorkflowTaskFailedCause {
 		cause = enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR
 	} else if _, unknown := err.(unknownSdkFlagError); unknown {
 		cause = enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR
-	} else if errors.As(err, new(payloadSizeError)) {
+	} else if payloadlimits.IsError(err) {
 		cause = enumspb.WORKFLOW_TASK_FAILED_CAUSE_PAYLOADS_TOO_LARGE
 	}
 	return cause
@@ -1787,6 +1802,7 @@ func newActivityTaskPoller(
 			workerPollCompleteOnShutdown: params.workerPollCompleteOnShutdown,
 		},
 		taskHandler:         taskHandler,
+		failureConverter:    params.FailureConverter,
 		service:             service,
 		namespace:           params.Namespace,
 		taskQueueName:       params.TaskQueue,
@@ -1913,12 +1929,8 @@ func (atp *activityTaskPoller) ProcessTask(task any) error {
 	// in case if activity execution failed, request should be of type RespondActivityTaskFailedRequest
 	if req, ok := request.(*workflowservice.RespondActivityTaskFailedRequest); ok {
 		if !isBenignProtoApplicationFailure(req.Failure) {
-			failureReason := metrics.FailureReasonActivityError
-			if errors.As(result.failureErr, new(payloadSizeError)) {
-				failureReason = metrics.FailureReasonPayloadsTooLarge
-			}
 			activityMetricsHandler.
-				WithTags(metrics.ActivityTaskFailedTags(failureReason)).
+				WithTags(metrics.ActivityTaskFailedTags(metrics.FailureReasonActivityError)).
 				Counter(metrics.ActivityExecutionFailedCounter).Inc(1)
 		}
 	}
@@ -1930,6 +1942,20 @@ func (atp *activityTaskPoller) ProcessTask(task any) error {
 
 	rpcMetricsHandler := atp.metricsHandler.WithTags(metrics.RPCTags(workflowType, activityType, metrics.NoneTagValue))
 	reportErr := reportActivityComplete(context.Background(), atp.service, request, rpcMetricsHandler)
+	if failed := activityFailureForPayloadLimit(request, reportErr, atp.failureConverter); failed != nil {
+		// The completion or cancellation was rejected before it was sent, so fail the activity in its place.
+		atp.logger.Error("Activity task postprocess error: "+reportErr.Error(), append([]any{
+			tagWorkflowID, activityTask.task.WorkflowExecution.GetWorkflowId(),
+			tagRunID, activityTask.task.WorkflowExecution.GetRunId(),
+			tagActivityType, activityType,
+			tagAttempt, activityTask.task.Attempt,
+		}, payloadlimits.LogTags(reportErr)...)...)
+		activityMetricsHandler.
+			WithTags(metrics.ActivityTaskFailedTags(metrics.FailureReasonPayloadsTooLarge)).
+			Counter(metrics.ActivityExecutionFailedCounter).Inc(1)
+		request = failed
+		reportErr = reportActivityComplete(context.Background(), atp.service, request, rpcMetricsHandler)
+	}
 	if reportErr != nil {
 		traceLog(func() {
 			atp.logger.Debug("reportActivityComplete failed", tagError, reportErr)
@@ -1941,6 +1967,46 @@ func (atp *activityTaskPoller) ProcessTask(task any) error {
 		activityMetricsHandler.
 			Timer(metrics.ActivitySucceedEndToEndLatency).
 			Record(time.Since(activityTask.task.GetScheduledTime().AsTime()))
+	}
+	return nil
+}
+
+// activityFailureForPayloadLimit returns the failure that replaces an activity completion or
+// cancellation rejected for exceeding the payload error limits, or nil if err is not such a rejection.
+func activityFailureForPayloadLimit(request any, err error, failureConverter converter.FailureConverter) *workflowservice.RespondActivityTaskFailedRequest {
+	if !payloadlimits.IsError(err) {
+		return nil
+	}
+	failure := failureConverter.ErrorToFailure(err)
+	switch r := request.(type) {
+	case *workflowservice.RespondActivityTaskCompletedRequest:
+		return &workflowservice.RespondActivityTaskFailedRequest{
+			TaskToken: r.TaskToken,
+			Failure:   failure,
+			Cause:     enumspb.ACTIVITY_TASK_FAILED_CAUSE_PAYLOADS_TOO_LARGE,
+			Identity:  r.Identity,
+			Namespace: r.Namespace,
+			//lint:ignore SA1019 preserve deprecated build-ID versioning behavior
+			WorkerVersion: r.WorkerVersion,
+			//lint:ignore SA1019 support legacy worker deployment APIs
+			Deployment:        r.Deployment,
+			DeploymentOptions: r.DeploymentOptions,
+			ResourceId:        r.ResourceId,
+		}
+	case *workflowservice.RespondActivityTaskCanceledRequest:
+		return &workflowservice.RespondActivityTaskFailedRequest{
+			TaskToken: r.TaskToken,
+			Failure:   failure,
+			Cause:     enumspb.ACTIVITY_TASK_FAILED_CAUSE_PAYLOADS_TOO_LARGE,
+			Identity:  r.Identity,
+			Namespace: r.Namespace,
+			//lint:ignore SA1019 preserve deprecated build-ID versioning behavior
+			WorkerVersion: r.WorkerVersion,
+			//lint:ignore SA1019 support legacy worker deployment APIs
+			Deployment:        r.Deployment,
+			DeploymentOptions: r.DeploymentOptions,
+			ResourceId:        r.ResourceId,
+		}
 	}
 	return nil
 }

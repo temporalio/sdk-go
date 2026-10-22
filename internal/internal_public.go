@@ -88,9 +88,6 @@ type (
 		//  - RespondActivityTaskFailedRequest
 		//  - RespondActivityTaskCanceledRequest
 		response any
-		// failureErr is the error behind a failed response when the worker produced the failure
-		// itself, so callers can classify it. Nil when the activity reported the failure.
-		failureErr error
 	}
 
 	// ActivityTaskHandler represents activity task handlers.

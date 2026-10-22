@@ -78,6 +78,18 @@ func TestValidateUnderLimit(t *testing.T) {
 	require.NoError(t, Validate(req, workerLimits(100_000, 100_000), nil))
 }
 
+func TestValidateAtExactlyTheLimitIsNotAViolation(t *testing.T) {
+	req := &workflowservice.StartWorkflowExecutionRequest{Input: payloads(100)}
+	size := int64(proto.Size(req.GetInput()))
+	logger := ilog.NewMemoryLogger()
+
+	require.NoError(t, Validate(req, Limits{BlobWarn: size, BlobError: size}, logger))
+	require.Empty(t, logger.Lines())
+
+	v := requireViolation(t, Validate(req, Limits{BlobWarn: size - 1, BlobError: size - 1}, logger))
+	require.Equal(t, size, v.Size)
+}
+
 func TestValidateIgnoresRequestWithoutPayloadFields(t *testing.T) {
 	require.NoError(t, Validate(&workflowservice.DescribeWorkflowExecutionRequest{}, workerLimits(1, 1), nil))
 }
@@ -154,15 +166,13 @@ func TestValidateLogsWarningsWhenNoErrors(t *testing.T) {
 	require.Contains(t, lines[1], "MemoSizeLimit 10 PayloadPath memo")
 }
 
-func TestValidateErrorsSuppressWarnings(t *testing.T) {
+func TestValidateReturnsErrorsWithoutLogging(t *testing.T) {
 	logger := ilog.NewMemoryLogger()
 	// input exceeds its error limit; memo exceeds only its warning limit.
 	req := &workflowservice.StartWorkflowExecutionRequest{Input: payloads(500), Memo: memoWith("k", 50)}
 	v := requireViolation(t, Validate(req, workerLimits(100, 1_000_000), logger))
 	require.Equal(t, "input", v.Path)
-	lines := logger.Lines()
-	require.Len(t, lines, 1)
-	require.Contains(t, lines[0], "ERROR [TMPRL1103] Attempted to upload payloads with size that exceeded the error limit.")
+	require.Empty(t, logger.Lines())
 }
 
 func TestCollectingSinkClassifiesErrorVsWarning(t *testing.T) {

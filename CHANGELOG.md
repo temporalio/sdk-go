@@ -27,6 +27,10 @@ to docs, or any other relevant information.
 
 ### Changed
 
+- Payload and memo size warnings now follow the server's per-field limits. They now cover fields the
+  server checks, such as standalone Nexus operation input, and no longer fire for fields it doesn't,
+  such as termination details or schedule memos.
+
 ### Deprecated
 
 ### :boom: Breaking Changes
@@ -39,6 +43,8 @@ to docs, or any other relevant information.
   was only half the caller's context deadline - now it uses the entire deadline, up to a maximum
   of ten seconds. RPCs with timeout overrides, like long-poll RPCs, are unchanged.
 - Query tracing now always records inbound spans when serving queries, regardless of `IsReplaying` state.
+- Workers no longer fail a workflow task over an oversized field the server accepts, such as
+  continue-as-new failure or cancellation details.
 
 ### Security
 
