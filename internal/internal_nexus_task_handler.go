@@ -263,9 +263,6 @@ func (h *nexusTaskHandler) handleStartOperation(
 		requestID = uuid.NewString()
 	}
 	nctx.RequestID = requestID
-	// Propagate the operation's request ID so outbound RPCs the handler issues (signal,
-	// signalWithStart) dedupe server-side when the Nexus task is retried.
-	ctx = context.WithValue(ctx, NexusOperationRequestIDKey, requestID)
 	startOptions := nexus.StartOperationOptions{
 		RequestID:      requestID,
 		CallbackURL:    req.Callback,
@@ -532,7 +529,7 @@ func (h *nexusTaskHandler) newNexusOperationContext(response *workflowservice.Po
 	metricsHandler := h.metricsHandler.WithTags(metrics.NexusTags(service, operation, h.taskQueueName))
 
 	return &NexusOperationContext{
-		client:    &nexusOperationClient{Client: h.client},
+		client:    h.client,
 		Endpoint:  response.GetRequest().GetEndpoint(),
 		Namespace: h.namespace,
 		TaskQueue: h.taskQueueName,

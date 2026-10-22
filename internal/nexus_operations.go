@@ -98,17 +98,25 @@ func (nc *NexusOperationContext) ResolveActivityName(activity any, args []any) (
 	return at.Name, nil
 }
 
-// nexusOperationClient wraps the worker's client for a single Nexus operation invocation. Signals
-// carry the operation's request ID (see workflowClientInterceptor.SignalWorkflow) so retried Nexus
-// tasks don't deliver duplicates. Every signal in the invocation would share that ID, so the server
-// could silently drop all but the first; only one signal is allowed per invocation instead.
-type nexusOperationClient struct {
-	Client
-
-	signaled atomic.Bool
+// NewTemporalOperationClient is called by temporalnexus when it builds the NexusClient for a
+// Temporal operation handler. NexusClient.GetWorkflowClient is the only wrapped path;
+// temporalnexus.GetClient is unwrapped for every operation type.
+func NewTemporalOperationClient(c Client, requestID string) Client {
+	return &temporalOperationClient{Client: c, requestID: requestID}
 }
 
-func (c *nexusOperationClient) claimSignal() error {
+// temporalOperationClient wraps the client for one Temporal operation invocation. Signals carry the
+// operation's request ID so a retried Nexus task doesn't deliver them twice; because they all share
+// that ID, a second signal to the same workflow would be silently dropped by the server, so any
+// second signal is rejected instead.
+type temporalOperationClient struct {
+	Client
+
+	requestID string
+	signaled  atomic.Bool
+}
+
+func (c *temporalOperationClient) claimSignal() error {
 	if !c.signaled.CompareAndSwap(false, true) {
 		return nexus.NewHandlerErrorf(nexus.HandlerErrorTypeBadRequest,
 			"only one signal can be sent per Nexus operation invocation")
@@ -116,10 +124,11 @@ func (c *nexusOperationClient) claimSignal() error {
 	return nil
 }
 
-func (c *nexusOperationClient) SignalWorkflow(ctx context.Context, workflowID string, runID string, signalName string, arg any) error {
+func (c *temporalOperationClient) SignalWorkflow(ctx context.Context, workflowID string, runID string, signalName string, arg any) error {
 	if err := c.claimSignal(); err != nil {
 		return err
 	}
+	ctx = context.WithValue(ctx, NexusOperationRequestIDKey, c.requestID)
 	err := c.Client.SignalWorkflow(ctx, workflowID, runID, signalName, arg)
 	if err != nil {
 		c.signaled.Store(false)
@@ -127,17 +136,23 @@ func (c *nexusOperationClient) SignalWorkflow(ctx context.Context, workflowID st
 	return err
 }
 
-func (c *nexusOperationClient) SignalWithStartWorkflow(ctx context.Context, workflowID string, signalName string, signalArg any,
+func (c *temporalOperationClient) SignalWithStartWorkflow(ctx context.Context, workflowID string, signalName string, signalArg any,
 	options StartWorkflowOptions, workflow any, workflowArgs ...any) (WorkflowRun, error) {
+	// An empty ID is defaulted to a fresh UUID per call, so the server has no record to dedupe
+	// against and every retried Nexus task starts another workflow.
+	if workflowID == "" {
+		return nil, nexus.NewHandlerErrorf(nexus.HandlerErrorTypeBadRequest,
+			"signalWithStart from a Nexus operation handler requires a workflow ID")
+	}
 	if err := c.claimSignal(); err != nil {
 		return nil, err
 	}
+	ctx = context.WithValue(ctx, NexusOperationRequestIDKey, c.requestID)
 	run, err := c.Client.SignalWithStartWorkflow(ctx, workflowID, signalName, signalArg, options, workflow, workflowArgs...)
 	if err != nil {
 		c.signaled.Store(false)
-		return nil, err
 	}
-	return run, nil
+	return run, err
 }
 
 type nexusOperationEnvironment struct {
@@ -173,9 +188,8 @@ func (nc *nexusOperationEnvironment) GetLogger(ctx context.Context) log.Logger {
 	return nctx.log
 }
 
-// GetClient returns a client to be used in a Nexus operation's context. It delegates to the client
-// the worker was created with, scoped to the current operation invocation. Client methods will
-// panic when called from the test environment.
+// GetClient returns a client to be used in a Nexus operation's context, this is the same client that the worker was
+// created with. Client methods will panic when called from the test environment.
 func (nc *nexusOperationEnvironment) GetClient(ctx context.Context) Client {
 	nctx, ok := NexusOperationContextFromGoContext(ctx)
 	if !ok {
