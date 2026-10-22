@@ -241,16 +241,22 @@ func genService(options genServiceOptions) (string, error) {
 	return serviceFile, nil
 }
 
-// rewriteSystemNexusClient routes the reserved endpoint through the SDK-only constructor.
-// Remove this rewrite once nexgen supports selecting a service-specific Go client factory.
+// rewriteSystemNexusClient adapts the pinned nexgen output to the current SDK-internal APIs.
 func rewriteSystemNexusClient(contents []byte) ([]byte, error) {
 	const generated = `NewNexusClient("__temporal_system", "temporal.api.workflowservice.v1.WorkflowService")`
-	const replacement = `newSystemNexusClient("temporal.api.workflowservice.v1.WorkflowService")`
+	const replacement = `internal.NewSystemNexusClient("temporal.api.workflowservice.v1.WorkflowService")`
 
 	if count := strings.Count(string(contents), generated); count != 1 {
 		return nil, fmt.Errorf("expected one generated system Nexus client call, found %d", count)
 	}
-	return []byte(strings.Replace(string(contents), generated, replacement, 1)), nil
+	rewrites := strings.NewReplacer(
+		generated, replacement,
+		"commonconverter.SystemNexusConfig", "commonconverter.SystemNexusContext",
+		"internal.NexusOperationKey", "internal.SystemNexusRegistryKey",
+		"internal.NexusOperationRegistryEntry", "internal.SystemNexusRegistryEntry",
+		"internal.UpdateNexusOperationRegistry", "internal.UpdateSystemNexusRegistry",
+	)
+	return []byte(rewrites.Replace(string(contents))), nil
 }
 
 // formatAndCopyFile formats a Go source file, copies it into dstDir, and returns its output path.
