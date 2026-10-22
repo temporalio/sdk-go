@@ -233,6 +233,10 @@ type (
 	baseWorker struct {
 		options         baseWorkerOptions
 		isWorkerStarted bool
+		// pollerTargets records each autoscaling pool's target by poller type, for the
+		// heartbeat to report. Written by installPollerScalingReporters, read from the
+		// heartbeat goroutine, so it is a sync.Map rather than a plain field on options.
+		pollerTargets *pollerTargetTracker
 		// stopCh is created by newBaseWorker and closed by baseWorker.Stop().
 		// It is internal to baseWorker and stops its poller, dispatcher, autoscaler,
 		// and throttling/backoff loops.
@@ -415,6 +419,7 @@ func newBaseWorker(
 		taskLimiterContext:       taskLimiterCtx,
 		taskLimiterContextCancel: taskLimiterCancel,
 		sessionTokenBucket:       options.sessionTokenBucket,
+		pollerTargets:            &pollerTargetTracker{},
 	}
 	// Set secondary retrier as resource exhausted
 	bw.retrier.SetSecondaryRetryPolicy(pollResourceExhaustedRetryPolicy)
@@ -447,17 +452,38 @@ func (bw *baseWorker) installPollerScalingReporters(taskPollers []scalableTaskPo
 		if tw.pollerAutoscaler == nil {
 			continue // fixed-size pool: no target to report
 		}
+		autoscaler := tw.pollerAutoscaler
+
+		// Recorded before the reporter check below, because the heartbeat covers every
+		// autoscaling pool while the poll request covers only those whose request has a
+		// field for it -- nexus has an autoscaler and a heartbeat slot, but no such
+		// request field.
+		bw.pollerTargets.record(tw.taskPollerType, autoscaler)
+
 		reporter, ok := tw.taskPoller.(pollerScalingInfoReporter)
 		if !ok {
 			continue
 		}
-		autoscaler := tw.pollerAutoscaler
 		reporter.setPollerScalingInfo(func() *taskqueuepb.PollerScalingInfo {
 			return &taskqueuepb.PollerScalingInfo{
 				PollerTarget: int32(autoscaler.target.Load()),
 			}
 		})
 	}
+}
+
+// collectPollerTargets adds this worker's autoscaler target for each poller type it runs
+// into targets. Poller types with a fixed pool have no autoscaler and are left absent
+// rather than reported as zero, so a caller merging several workers cannot have a real
+// target overwritten by a zero.
+func (bw *baseWorker) collectPollerTargets(targets map[string]int32) {
+	if bw.pollerTargets == nil {
+		return
+	}
+	bw.pollerTargets.autoscalers.Range(func(k, v any) bool {
+		targets[k.(string)] = int32(v.(*pollerAutoscaler).target.Load())
+		return true
+	})
 }
 
 func (bw *baseWorker) validatePollers(taskPollers []scalableTaskPoller) {
