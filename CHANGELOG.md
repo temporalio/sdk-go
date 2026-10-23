@@ -47,6 +47,8 @@ to docs, or any other relevant information.
   `Version() string` method on the plugin.
 - `client.WorkflowExecutionDescription` now includes `RawResponse`, the full
   `workflowservice.DescribeWorkflowExecutionResponse` returned by the server.
+- Added experimental `workflow.SignalWithStartWorkflow` to signal a workflow,
+  starting it first if needed, through Temporal's System Nexus endpoint.
 - Added experimental `temporalnexus.ConvertLinkCallbackToNexusLink` and `temporalnexus.ConvertNexusLinkToLinkCallback`
   for converting `Link_Callback` to and from Nexus links.
 - Nexus handlers now propagate `NexusSerializationContext` to the workflows, workflow updates, and

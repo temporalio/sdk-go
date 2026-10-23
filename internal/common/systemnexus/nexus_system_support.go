@@ -1,4 +1,4 @@
-package workflow
+package systemnexus
 
 import (
 	"fmt"
@@ -17,8 +17,8 @@ import (
 )
 
 // WorkflowNamespace returns the namespace of the current workflow.
-func WorkflowNamespace(ctx Context) string {
-	return GetInfo(ctx).Namespace
+func WorkflowNamespace(ctx internal.Context) string {
+	return internal.GetWorkflowInfo(ctx).Namespace
 }
 
 type SignalWithStartWorkflowModelRequest interface {
@@ -342,7 +342,7 @@ func VersioningOverrideFromProto(_ converter.DataConverter, versioningOverride *
 }
 
 // WorkflowFunctionName returns the registered name of a workflow function.
-func WorkflowFunctionName(ctx Context, value any) string {
+func WorkflowFunctionName(ctx internal.Context, value any) string {
 	name, err := internal.GetWorkflowFunctionName(
 		internal.GetWorkflowEnvironment(ctx).GetRegistry(),
 		value,
