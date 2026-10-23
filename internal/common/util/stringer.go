@@ -17,6 +17,9 @@ func anyToString(d any) string {
 	v := reflect.ValueOf(d)
 	switch v.Kind() {
 	case reflect.Pointer:
+		if v.IsNil() {
+			return "<nil>"
+		}
 		return anyToString(v.Elem().Interface())
 	case reflect.Struct:
 		var buf bytes.Buffer

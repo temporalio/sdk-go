@@ -5,6 +5,9 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	commandpb "go.temporal.io/api/command/v1"
+	enumspb "go.temporal.io/api/enums/v1"
+	historypb "go.temporal.io/api/history/v1"
 )
 
 func Test_byteSliceToString(t *testing.T) {
@@ -87,4 +90,14 @@ func TestValueToString(t *testing.T) {
 
 	}
 
+}
+
+func TestHistoryEventToStringWithMissingAttributes(t *testing.T) {
+	event := &historypb.HistoryEvent{EventType: enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED}
+	require.Equal(t, event.GetEventType().String()+": <nil>", HistoryEventToString(event))
+}
+
+func TestCommandToStringWithMissingAttributes(t *testing.T) {
+	command := &commandpb.Command{CommandType: enumspb.COMMAND_TYPE_START_TIMER}
+	require.Equal(t, command.GetCommandType().String()+": <nil>", CommandToString(command))
 }
