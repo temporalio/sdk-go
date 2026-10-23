@@ -741,7 +741,7 @@ func (ts *IntegrationTestSuite) TestActivityRetryOnError() {
 	ts.Equal(ts.metricCount("temporal_request"), ts.metricCount("temporal_request_attempt"))
 	ts.assertMetricCountAtLeast("temporal_activity_execution_failed", 2)
 	ts.assertMetricCountAtLeast("temporal_workflow_task_queue_poll_succeed", 1)
-	ts.assertMetricCountAtLeast("temporal_long_request", 4, "operation", "PollActivityTaskQueue")
+	ts.assertMetricCountAtLeastEventually("temporal_long_request", 4, "operation", "PollActivityTaskQueue")
 	ts.assertMetricCountAtLeastEventually("temporal_long_request", 3, "operation", "PollWorkflowTaskQueue")
 	ts.Equal(ts.metricCount("temporal_long_request"), ts.metricCount("temporal_long_request_attempt"))
 }
