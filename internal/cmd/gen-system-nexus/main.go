@@ -2,16 +2,18 @@
 //
 // The generated bindings are emitted directly into go.temporal.io/sdk/workflow.
 //
-// Usage: go run ./internal/cmd/gen-system-nexus [--preserve-build-dir]
+// Usage: go run ./internal/cmd/gen-system-nexus [--nexgen-rev <commit>] [--preserve-build-dir]
 //
-// A pinned nexgen release is automatically installed unless NEX_GEN_BIN is set.
+// A pinned nexgen Git revision is automatically installed with Cargo.
 package main
 
 import (
+	"encoding/hex"
 	"errors"
 	"flag"
 	"fmt"
 	"go/format"
+	"io/fs"
 	"log"
 	"os"
 	"os/exec"
@@ -27,10 +29,13 @@ import (
 )
 
 const (
-	nexGenVersion = "0.2.1"
-	witFilePath   = "internal/nexussystem/wit/workflow-service.wit"
-	witDepsPath   = "internal/nexussystem/wit/deps"
-	dstPkgPath    = "workflow"
+	nexGenRepository = "https://github.com/temporalio/nexgen"
+	nexGenRevision   = "c03f1df573d737ebe63bb196d2989b6f839f83a4"
+	witFilePath      = "workflowservice/v1/workflow-service.wit"
+	witDepsPath      = "deps"
+	witOverridesPath = "internal/cmd/gen-system-nexus/wit-overrides"
+	dstPkgPath       = "workflow"
+	supportPackage   = "go.temporal.io/sdk/internal/common/systemnexus"
 )
 
 func main() {
@@ -49,8 +54,9 @@ func main() {
 
 type runOptions struct {
 	preserveBuildDir bool
-	witFile          string
-	witDepsDir       string
+	nexGenRevision   string
+	witDir           string
+	witOverridesDir  string
 	dstPkgDir        string
 }
 
@@ -58,28 +64,47 @@ func parseOptions(args []string, sdk string) (runOptions, error) {
 	var options runOptions
 	var err error
 
-	// Parse command-line args
 	flags := flag.NewFlagSet("gen-system-nexus", flag.ContinueOnError)
 	flags.BoolVar(&options.preserveBuildDir, "preserve-build-dir", false, "preserve the build directory, even if the command succeeds")
+	flags.StringVar(&options.nexGenRevision, "nexgen-rev", nexGenRevision, "full Git commit SHA of nexgen to install")
 	if err := flags.Parse(args); err != nil {
 		return options, err
 	}
-
-	// Check that input files actually exist
-	options.witFile, err = resolveExistingPath(sdk, witFilePath)
+	if flags.NArg() != 0 {
+		return options, fmt.Errorf("unexpected arguments: %s", strings.Join(flags.Args(), " "))
+	}
+	if revision, err := hex.DecodeString(options.nexGenRevision); err != nil || len(revision) != 20 {
+		return options, fmt.Errorf("-nexgen-rev must be a full 40-character Git commit SHA, got %q", options.nexGenRevision)
+	}
+	apiDir, err := apiModuleDir(sdk)
 	if err != nil {
 		return options, err
 	}
-	options.witDepsDir, err = resolveExistingPath(sdk, witDepsPath)
+	options.witDir, err = resolveExistingPath(apiDir, "systemnexus")
 	if err != nil {
 		return options, err
 	}
+	options.witOverridesDir = filepath.Join(sdk, filepath.FromSlash(witOverridesPath))
 	options.dstPkgDir, err = resolveExistingPath(sdk, dstPkgPath)
 	if err != nil {
 		return options, err
 	}
 
 	return options, nil
+}
+
+func apiModuleDir(sdk string) (string, error) {
+	cmd := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", "go.temporal.io/api")
+	cmd.Dir = sdk
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("locating go.temporal.io/api with go list: %w: %s", err, strings.TrimSpace(string(output)))
+	}
+	dir := strings.TrimSpace(string(output))
+	if dir == "" {
+		return "", fmt.Errorf("go list returned no directory for go.temporal.io/api")
+	}
+	return dir, nil
 }
 
 func resolveExistingPath(root, relativePath string) (string, error) {
@@ -109,12 +134,22 @@ func run(options runOptions) (retErr error) {
 	}()
 
 	nexGenBuildDir := filepath.Join(tmp, "nexgen")
+	witBuildDir := filepath.Join(tmp, "wit")
 	descriptorsBuildDir := filepath.Join(tmp, "descriptors")
 	serviceBuildDir := filepath.Join(tmp, "workflow")
 
-	// Get the nex-gen exe, build proto descriptors, and run nex-gen to generate the code we want.
-
-	nexGenExe, err := getNexGenExecutable(nexGenBuildDir)
+	if err := stageWIT(options.witDir, options.witOverridesDir, witBuildDir); err != nil {
+		return err
+	}
+	witFile, err := resolveExistingPath(witBuildDir, witFilePath)
+	if err != nil {
+		return err
+	}
+	witDepsDir, err := resolveExistingPath(witBuildDir, witDepsPath)
+	if err != nil {
+		return err
+	}
+	nexGenExe, err := getNexGenExecutable(nexGenBuildDir, options.nexGenRevision)
 	if err != nil {
 		return err
 	}
@@ -129,8 +164,8 @@ func run(options runOptions) (retErr error) {
 	serviceFile, err := genService(genServiceOptions{
 		nexGenExe:       nexGenExe,
 		descriptorsFile: descriptorsFile,
-		witFile:         options.witFile,
-		witDepsDir:      options.witDepsDir,
+		witFile:         witFile,
+		witDepsDir:      witDepsDir,
 		buildDir:        serviceBuildDir,
 	})
 	if err != nil {
@@ -149,11 +184,43 @@ func run(options runOptions) (retErr error) {
 	return nil
 }
 
-// getNexGenExecutable returns the nexgen executable, installing a pinned version unless overridden.
-func getNexGenExecutable(buildDir string) (string, error) {
-	if override := os.Getenv("NEX_GEN_BIN"); override != "" {
-		return override, nil
+func stageWIT(sourceDir, overridesDir, buildDir string) error {
+	if err := os.CopyFS(buildDir, os.DirFS(sourceDir)); err != nil {
+		return fmt.Errorf("copying API WIT from %s: %w", sourceDir, err)
 	}
+	if _, err := os.Stat(overridesDir); errors.Is(err, fs.ErrNotExist) {
+		return nil
+	} else if err != nil {
+		return fmt.Errorf("reading WIT overrides %s: %w", overridesDir, err)
+	}
+	return filepath.WalkDir(overridesDir, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return fmt.Errorf("reading WIT override %s: %w", path, err)
+		}
+		relative, err := filepath.Rel(overridesDir, path)
+		if err != nil {
+			return err
+		}
+		dst := filepath.Join(buildDir, relative)
+		if entry.IsDir() {
+			return os.MkdirAll(dst, 0o700)
+		}
+		if !entry.Type().IsRegular() || filepath.Ext(path) != ".wit" {
+			return fmt.Errorf("WIT override %s must be a regular .wit file", path)
+		}
+		contents, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("reading WIT override %s: %w", path, err)
+		}
+		if err := os.WriteFile(dst, contents, 0o600); err != nil {
+			return fmt.Errorf("writing WIT override %s: %w", dst, err)
+		}
+		return nil
+	})
+}
+
+// getNexGenExecutable installs the selected nexgen commit into the build directory.
+func getNexGenExecutable(buildDir, revision string) (string, error) {
 	nexGenPath := filepath.Join(buildDir, "bin", "nexgen")
 	if runtime.GOOS == "windows" {
 		nexGenPath += ".exe"
@@ -162,14 +229,15 @@ func getNexGenExecutable(buildDir string) (string, error) {
 	cmd := exec.Command(
 		"cargo", "install", "--locked",
 		"--features", "advanced",
-		"--version", "="+nexGenVersion,
+		"--git", nexGenRepository,
+		"--rev", revision,
 		"--root", buildDir,
 		"nexgen",
 	)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("installing nexgen version %s with cargo: %w", nexGenVersion, err)
+		return "", fmt.Errorf("installing nexgen revision %s with cargo: %w", revision, err)
 	}
 	if _, err := os.Stat(nexGenPath); err != nil {
 		return "", fmt.Errorf("checking installed nexgen binary %s: %w", nexGenPath, err)
@@ -226,6 +294,9 @@ func genService(options genServiceOptions) (string, error) {
 		options.witFile,
 		options.witDepsDir,
 		"--descriptors", options.descriptorsFile,
+		"--support-package", supportPackage,
+		"--system-nexus",
+		"--native-api",
 		"--output", options.buildDir,
 	)
 	cmd.Stdout = os.Stdout
@@ -241,33 +312,11 @@ func genService(options genServiceOptions) (string, error) {
 	return serviceFile, nil
 }
 
-// rewriteSystemNexusClient adapts the pinned nexgen output to the current SDK-internal APIs.
-func rewriteSystemNexusClient(contents []byte) ([]byte, error) {
-	const generated = `NewNexusClient("__temporal_system", "temporal.api.workflowservice.v1.WorkflowService")`
-	const replacement = `internal.NewSystemNexusClient("temporal.api.workflowservice.v1.WorkflowService")`
-
-	if count := strings.Count(string(contents), generated); count != 1 {
-		return nil, fmt.Errorf("expected one generated system Nexus client call, found %d", count)
-	}
-	rewrites := strings.NewReplacer(
-		generated, replacement,
-		"commonconverter.SystemNexusConfig", "commonconverter.SystemNexusContext",
-		"internal.NexusOperationKey", "internal.SystemNexusRegistryKey",
-		"internal.NexusOperationRegistryEntry", "internal.SystemNexusRegistryEntry",
-		"internal.UpdateNexusOperationRegistry", "internal.UpdateSystemNexusRegistry",
-	)
-	return []byte(rewrites.Replace(string(contents))), nil
-}
-
 // formatAndCopyFile formats a Go source file, copies it into dstDir, and returns its output path.
 func formatAndCopyFile(dstDir, inputFile string) (string, error) {
 	contents, err := os.ReadFile(inputFile)
 	if err != nil {
 		return "", fmt.Errorf("reading generated Go file %s: %w", inputFile, err)
-	}
-	contents, err = rewriteSystemNexusClient(contents)
-	if err != nil {
-		return "", err
 	}
 	formatted, err := format.Source(contents)
 	if err != nil {
