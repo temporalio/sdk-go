@@ -27,6 +27,9 @@ to docs, or any other relevant information.
 
 ### Changed
 
+- `WorkflowTaskPollerBehavior`, `ActivityTaskPollerBehavior`, and `NexusTaskPollerBehavior` worker
+  options are no longer marked experimental.
+
 ### Deprecated
 
 ### :boom: Breaking Changes
