@@ -835,10 +835,14 @@ func (env *testWorkflowEnvironmentImpl) executeWorkflowInternal(delayStart time.
 }
 
 func (env *testWorkflowEnvironmentImpl) getWorkflowDefinition(wt WorkflowType) (WorkflowDefinition, error) {
-	wf, ok := env.registry.getWorkflowFn(wt.Name)
+	lookup := wt.Name
+	if alias, ok := env.registry.getWorkflowAlias(lookup); ok {
+		lookup = alias
+	}
+	wf, ok := env.registry.getWorkflowFn(lookup)
 	if !ok {
 		supported := strings.Join(env.registry.getRegisteredWorkflowTypes(), ", ")
-		return nil, fmt.Errorf("unable to find workflow type: %v. Supported types: [%v]", wt.Name, supported)
+		return nil, fmt.Errorf("unable to find workflow type: %v. Supported types: [%v]", lookup, supported)
 	}
 	var dynamic bool
 	if d, ok := wf.(string); ok && d == "dynamic" {
