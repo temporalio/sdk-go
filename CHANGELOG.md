@@ -22,6 +22,8 @@ to docs, or any other relevant information.
 
 ### Added
 
+- Added experimental `workflow.SignalWithStartWorkflow` to signal a workflow,
+  starting it first if needed, through Temporal's System Nexus endpoint.
 - Added experimental `temporalnexus.ConvertLinkCallbackToNexusLink` and `temporalnexus.ConvertNexusLinkToLinkCallback`
   for converting `Link_Callback` to and from Nexus links.
 
