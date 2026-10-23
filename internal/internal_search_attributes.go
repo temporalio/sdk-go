@@ -488,7 +488,8 @@ func convertToTypedSearchAttributes(logger log.Logger, attributes map[string]*co
 			var value bool
 			err := converter.GetDefaultDataConverter().FromPayload(payload, &value)
 			if err != nil {
-				panic(err)
+				logger.Warn("Ignoring search attribute with a value that does not match its indexed type", "key", key, "type", valueType, "error", err)
+				continue
 			}
 			updates = append(updates, attr.ValueSet(value))
 		case enumspb.INDEXED_VALUE_TYPE_KEYWORD:
@@ -496,7 +497,8 @@ func convertToTypedSearchAttributes(logger log.Logger, attributes map[string]*co
 			var value string
 			err := converter.GetDefaultDataConverter().FromPayload(payload, &value)
 			if err != nil {
-				panic(err)
+				logger.Warn("Ignoring search attribute with a value that does not match its indexed type", "key", key, "type", valueType, "error", err)
+				continue
 			}
 			updates = append(updates, attr.ValueSet(value))
 		case enumspb.INDEXED_VALUE_TYPE_TEXT:
@@ -504,7 +506,8 @@ func convertToTypedSearchAttributes(logger log.Logger, attributes map[string]*co
 			var value string
 			err := converter.GetDefaultDataConverter().FromPayload(payload, &value)
 			if err != nil {
-				panic(err)
+				logger.Warn("Ignoring search attribute with a value that does not match its indexed type", "key", key, "type", valueType, "error", err)
+				continue
 			}
 			updates = append(updates, attr.ValueSet(value))
 		case enumspb.INDEXED_VALUE_TYPE_INT:
@@ -512,7 +515,8 @@ func convertToTypedSearchAttributes(logger log.Logger, attributes map[string]*co
 			var value int64
 			err := converter.GetDefaultDataConverter().FromPayload(payload, &value)
 			if err != nil {
-				panic(err)
+				logger.Warn("Ignoring search attribute with a value that does not match its indexed type", "key", key, "type", valueType, "error", err)
+				continue
 			}
 			updates = append(updates, attr.ValueSet(value))
 		case enumspb.INDEXED_VALUE_TYPE_DOUBLE:
@@ -520,7 +524,8 @@ func convertToTypedSearchAttributes(logger log.Logger, attributes map[string]*co
 			var value float64
 			err := converter.GetDefaultDataConverter().FromPayload(payload, &value)
 			if err != nil {
-				panic(err)
+				logger.Warn("Ignoring search attribute with a value that does not match its indexed type", "key", key, "type", valueType, "error", err)
+				continue
 			}
 			updates = append(updates, attr.ValueSet(value))
 		case enumspb.INDEXED_VALUE_TYPE_DATETIME:
@@ -528,7 +533,8 @@ func convertToTypedSearchAttributes(logger log.Logger, attributes map[string]*co
 			var value time.Time
 			err := converter.GetDefaultDataConverter().FromPayload(payload, &value)
 			if err != nil {
-				panic(err)
+				logger.Warn("Ignoring search attribute with a value that does not match its indexed type", "key", key, "type", valueType, "error", err)
+				continue
 			}
 			updates = append(updates, attr.ValueSet(value))
 		case enumspb.INDEXED_VALUE_TYPE_KEYWORD_LIST:
@@ -536,7 +542,8 @@ func convertToTypedSearchAttributes(logger log.Logger, attributes map[string]*co
 			var value []string
 			err := converter.GetDefaultDataConverter().FromPayload(payload, &value)
 			if err != nil {
-				panic(err)
+				logger.Warn("Ignoring search attribute with a value that does not match its indexed type", "key", key, "type", valueType, "error", err)
+				continue
 			}
 			updates = append(updates, attr.ValueSet(value))
 		default:
