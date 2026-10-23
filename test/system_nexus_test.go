@@ -3,6 +3,7 @@ package test_test
 import (
 	"context"
 	"errors"
+	"os"
 	"time"
 
 	"github.com/google/uuid"
@@ -105,6 +106,10 @@ func (signalWithStartResponseModel) TransferTypeConverter() (converter.TransferT
 // a caller workflow using system nexus. We verify that the call went through and
 // that the arguments were encoded using the callee's serialization context.
 func (ts *IntegrationTestSuite) TestSystemNexusSignalWithStart() {
+	skipOnCloud(ts.T(), cloudRequiresProvisioning, "system Nexus signal-with-start is not enabled in Cloud test namespaces")
+	if os.Getenv("DISABLE_SYSTEM_NEXUS_TESTS") != "" {
+		ts.T().Skip("server does not support system Nexus signal-with-start")
+	}
 	ctx, cancel := context.WithTimeout(ts.T().Context(), 30*time.Second)
 	defer cancel()
 
