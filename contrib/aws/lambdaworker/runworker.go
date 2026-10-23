@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-lambda-go/lambdacontext"
 
 	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/contrib/aws/secretsmanager"
 	"go.temporal.io/sdk/contrib/envconfig"
 	"go.temporal.io/sdk/worker"
 )
@@ -36,6 +37,7 @@ func defaultDeps() workerDeps {
 		loadConfig: func() (client.Options, error) {
 			return envconfig.LoadClientOptions(envconfig.LoadClientOptionsRequest{
 				ConfigFilePath: lambdaDefaultConfigFilePath(os.Getenv),
+				Extensions:     []envconfig.ClientConfigExtension{secretsmanager.Extension{}},
 			})
 		},
 		getenv:       os.Getenv,
