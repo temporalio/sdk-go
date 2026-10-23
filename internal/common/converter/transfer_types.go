@@ -222,7 +222,7 @@ func MakeTransferAware(dc DataConverter) DataConverter {
 }
 
 func (dc *transferAwareDataConverter) markSystemNexusPayload(payload *commonpb.Payload) {
-	if dc.systemNexus == nil || payload == nil {
+	if payload == nil {
 		return
 	}
 	payload.Metadata[proxy.SystemPayloadMetadataKey] = []byte("true")
@@ -260,7 +260,9 @@ func (dc *transferAwareDataConverter) ToPayload(value any) (*commonpb.Payload, e
 	if err != nil {
 		return payload, err
 	}
-	dc.markSystemNexusPayload(payload)
+	if dc.systemNexus != nil {
+		dc.markSystemNexusPayload(payload)
+	}
 	return payload, nil
 }
 
