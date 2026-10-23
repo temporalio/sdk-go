@@ -73,10 +73,6 @@ func (c *lru) Get(key string) any {
 
 	cacheEntry := elt.Value.(*cacheEntry)
 
-	if c.pin {
-		cacheEntry.refCount++
-	}
-
 	if cacheEntry.refCount == 0 && !cacheEntry.expiration.IsZero() && time.Now().After(cacheEntry.expiration) {
 		// Entry has expired
 		if c.rmFunc != nil {
@@ -85,6 +81,10 @@ func (c *lru) Get(key string) any {
 		c.byAccess.Remove(elt)
 		delete(c.byKey, cacheEntry.key)
 		return nil
+	}
+
+	if c.pin {
+		cacheEntry.refCount++
 	}
 
 	c.byAccess.MoveToFront(elt)
