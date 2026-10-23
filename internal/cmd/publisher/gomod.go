@@ -22,6 +22,18 @@ type moduleRequirement struct {
 	version    string
 }
 
+// validateModulePath checks that go.mod declares the module the release tag will version.
+func validateModulePath(goMod, modulePath string) error {
+	declaration := moduleDeclarationRE.FindStringSubmatch(goMod)
+	if declaration == nil {
+		return errors.New("could not find a module declaration in go.mod")
+	}
+	if declaration[1] != modulePath {
+		return fmt.Errorf("go.mod declares module %q, expected %q", declaration[1], modulePath)
+	}
+	return nil
+}
+
 // validateGoMod requires go.mod to declare the module the release tag will version,
 // and every Temporal module it depends on to use a tagged stable release instead of a
 // prerelease or git snapshot.
@@ -29,12 +41,9 @@ type moduleRequirement struct {
 // Returns the Temporal requirements, which the caller still has to check are
 // published.
 func validateGoMod(goMod, modulePath string) ([]moduleRequirement, error) {
-	declaration := moduleDeclarationRE.FindStringSubmatch(goMod)
-	if declaration == nil {
-		return nil, errors.New("could not find a module declaration in go.mod")
-	}
-	if declaration[1] != modulePath {
-		return nil, fmt.Errorf("go.mod declares module %q, expected %q", declaration[1], modulePath)
+	err := validateModulePath(goMod, modulePath)
+	if err != nil {
+		return nil, err
 	}
 	var requirements []moduleRequirement
 	for _, match := range temporalModuleRequirementRE.FindAllStringSubmatch(goMod, -1) {
