@@ -51,6 +51,9 @@
 // plus the worker stop timeout (default 7s). A minimum of 1 minute is recommended. If the timeout
 // is too short, the worker may be terminated before it can complete in-progress tasks.
 //
+// To stop polling early when there is no work, set [Options.IdleTimeout]. The worker then shuts
+// down gracefully once it has had no task in hand for that long.
+//
 // # Observability
 //
 // Observability (metrics, tracing) is opt-in. Set [Options.ClientOptions] fields directly

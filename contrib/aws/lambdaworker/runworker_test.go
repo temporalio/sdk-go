@@ -67,6 +67,7 @@ func newTestDeps() (workerDeps, *mockWorker, *mockClient) {
 		extractLambdaCtx: func(context.Context) (string, string, bool) {
 			return "req-123", "arn:aws:lambda:us-east-1:123:function:my-func", true
 		},
+		jitter: func(time.Duration) time.Duration { return 0 },
 	}
 	return deps, w, c
 }
@@ -558,12 +559,15 @@ func TestRunWorkerInternal_TightDeadlineReturnsError(t *testing.T) {
 }
 
 type capturingLogger struct {
+	infos  []string
 	warns  []string
 	errors []string
 }
 
 func (l *capturingLogger) Debug(string, ...any) {}
-func (l *capturingLogger) Info(string, ...any)  {}
+func (l *capturingLogger) Info(msg string, _ ...any) {
+	l.infos = append(l.infos, msg)
+}
 func (l *capturingLogger) Warn(msg string, _ ...any) {
 	l.warns = append(l.warns, msg)
 }
@@ -636,4 +640,314 @@ func TestRunWorkerInternal_PerInvocationLifecycle(t *testing.T) {
 	assert.Equal(t, 3, dialCount, "client.Dial should be called once per invocation")
 	w.AssertExpectations(t)
 	c.AssertExpectations(t)
+}
+
+// runIdleTestInvocation runs a single invocation with an hour-long deadline and returns how long
+// the handler took and what it returned.
+func runIdleTestInvocation(
+	t *testing.T,
+	deps workerDeps,
+	configure func(ctx *Options) error,
+) (elapsed time.Duration, handlerErr error) {
+	t.Helper()
+	deps.startLambda = func(handler any, options ...lambda.Option) {
+		if h, ok := handler.(func(context.Context) error); ok {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
+			defer cancel()
+			start := time.Now()
+			handlerErr = h(ctx)
+			elapsed = time.Since(start)
+		}
+	}
+	require.NoError(t, runWorkerInternal(testVersion, configure, deps))
+	return elapsed, handlerErr
+}
+
+func TestRunWorkerInternal_IdleTimeoutShutsDownEarly(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		deps, w, c := newTestDeps()
+		logger := &capturingLogger{}
+		deps.loadConfig = func() (client.Options, error) {
+			return client.Options{Logger: logger}, nil
+		}
+		w.On("Start").Return(nil).Once()
+		w.On("Stop").Once()
+		c.On("Close").Once()
+
+		elapsed, handlerErr := runIdleTestInvocation(t, deps, func(ctx *Options) error {
+			ctx.IdleTimeout = 10 * time.Second
+			return nil
+		})
+
+		require.NoError(t, handlerErr)
+		assert.GreaterOrEqual(t, elapsed, 10*time.Second+idleCheckInterval)
+		assert.Less(t, elapsed, 10*time.Second+2*idleCheckInterval)
+		assert.Contains(t, logger.infos, "Shutting down idle worker before the invocation deadline")
+		w.AssertExpectations(t)
+		c.AssertExpectations(t)
+	})
+}
+
+func TestRunWorkerInternal_IdleTimeoutWaitsForTaskInHand(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		deps, w, c := newTestDeps()
+		var capturedWorkerOpts worker.Options
+		deps.newWorker = func(_ client.Client, _ string, opts worker.Options) worker.Worker {
+			capturedWorkerOpts = opts
+			return w
+		}
+		// Simulate a workflow task that is held for 30s after the worker starts.
+		w.On("Start").Run(func(mock.Arguments) {
+			s := capturedWorkerOpts.Tuner.GetWorkflowTaskSlotSupplier()
+			permit := reserveSlot(t, s)
+			markSlotUsed(s, permit)
+			go func() {
+				time.Sleep(30 * time.Second)
+				releaseSlot(s, permit)
+			}()
+		}).Return(nil).Once()
+		w.On("Stop").Once()
+		c.On("Close").Once()
+
+		elapsed, handlerErr := runIdleTestInvocation(t, deps, func(ctx *Options) error {
+			ctx.IdleTimeout = 10 * time.Second
+			return nil
+		})
+
+		require.NoError(t, handlerErr)
+		assert.GreaterOrEqual(t, elapsed, 40*time.Second, "worker must be idle for the full timeout")
+		assert.Less(t, elapsed, 40*time.Second+2*idleCheckInterval)
+		w.AssertExpectations(t)
+		c.AssertExpectations(t)
+	})
+}
+
+func TestRunWorkerInternal_IdleTimeoutInstallsCountingTuner(t *testing.T) {
+	var capturedWorkerOpts worker.Options
+	deps, w, c := newTestDeps()
+	deps.newWorker = func(_ client.Client, _ string, opts worker.Options) worker.Worker {
+		capturedWorkerOpts = opts
+		return w
+	}
+	w.On("Start").Return(nil).Once()
+	w.On("Stop").Once()
+	c.On("Close").Once()
+
+	err := runWorkerInternal(testVersion, func(ctx *Options) error {
+		ctx.IdleTimeout = 10 * time.Second
+		ctx.WorkerOptions.MaxConcurrentActivityExecutionSize = 7
+		return nil
+	}, deps)
+
+	require.NoError(t, err)
+	require.NotNil(t, capturedWorkerOpts.Tuner)
+	assert.IsType(t, &countingSlotSupplier{}, capturedWorkerOpts.Tuner.GetActivityTaskSlotSupplier())
+	assert.Equal(t, 7, capturedWorkerOpts.Tuner.GetActivityTaskSlotSupplier().MaxSlots())
+	assert.Equal(t, defaultMaxConcurrentWorkflowTaskExecutionSize,
+		capturedWorkerOpts.Tuner.GetWorkflowTaskSlotSupplier().MaxSlots())
+	assert.Zero(t, capturedWorkerOpts.MaxConcurrentActivityExecutionSize)
+	assert.Zero(t, capturedWorkerOpts.MaxConcurrentWorkflowTaskExecutionSize)
+	assert.Zero(t, capturedWorkerOpts.MaxConcurrentLocalActivityExecutionSize)
+	assert.Zero(t, capturedWorkerOpts.MaxConcurrentNexusTaskExecutionSize)
+	w.AssertExpectations(t)
+	c.AssertExpectations(t)
+}
+
+func TestRunWorkerInternal_IdleTimeoutWrapsUserTuner(t *testing.T) {
+	var capturedWorkerOpts worker.Options
+	deps, w, c := newTestDeps()
+	deps.newWorker = func(_ client.Client, _ string, opts worker.Options) worker.Worker {
+		capturedWorkerOpts = opts
+		return w
+	}
+	w.On("Start").Return(nil).Once()
+	w.On("Stop").Once()
+	c.On("Close").Once()
+
+	userTuner, err := worker.NewFixedSizeTuner(worker.FixedSizeTunerOptions{NumActivitySlots: 3})
+	require.NoError(t, err)
+	err = runWorkerInternal(testVersion, func(ctx *Options) error {
+		ctx.IdleTimeout = 10 * time.Second
+		ctx.WorkerOptions.Tuner = userTuner
+		return nil
+	}, deps)
+
+	require.NoError(t, err)
+	require.NotNil(t, capturedWorkerOpts.Tuner)
+	assert.NotSame(t, userTuner, capturedWorkerOpts.Tuner)
+	activitySupplier, ok := capturedWorkerOpts.Tuner.GetActivityTaskSlotSupplier().(*countingSlotSupplier)
+	require.True(t, ok)
+	assert.Same(t, userTuner.GetActivityTaskSlotSupplier(), activitySupplier.inner)
+	assert.Zero(t, capturedWorkerOpts.MaxConcurrentActivityExecutionSize)
+	w.AssertExpectations(t)
+	c.AssertExpectations(t)
+}
+
+func TestRunWorkerInternal_UserTunerClearsConcurrencyDefaults(t *testing.T) {
+	var capturedWorkerOpts worker.Options
+	deps, w, c := newTestDeps()
+	deps.newWorker = func(_ client.Client, _ string, opts worker.Options) worker.Worker {
+		capturedWorkerOpts = opts
+		return w
+	}
+	w.On("Start").Return(nil).Once()
+	w.On("Stop").Once()
+	c.On("Close").Once()
+
+	userTuner, err := worker.NewFixedSizeTuner(worker.FixedSizeTunerOptions{})
+	require.NoError(t, err)
+	err = runWorkerInternal(testVersion, func(ctx *Options) error {
+		ctx.WorkerOptions.Tuner = userTuner
+		return nil
+	}, deps)
+
+	require.NoError(t, err)
+	assert.Same(t, userTuner, capturedWorkerOpts.Tuner)
+	assert.Zero(t, capturedWorkerOpts.MaxConcurrentActivityExecutionSize)
+	assert.Zero(t, capturedWorkerOpts.MaxConcurrentWorkflowTaskExecutionSize)
+	assert.Zero(t, capturedWorkerOpts.MaxConcurrentLocalActivityExecutionSize)
+	assert.Zero(t, capturedWorkerOpts.MaxConcurrentNexusTaskExecutionSize)
+	w.AssertExpectations(t)
+	c.AssertExpectations(t)
+}
+
+func TestRunWorkerInternal_ResourceBasedTunerDisablesIdleShutdown(t *testing.T) {
+	var capturedWorkerOpts worker.Options
+	deps, w, c := newTestDeps()
+	logger := &capturingLogger{}
+	deps.loadConfig = func() (client.Options, error) {
+		return client.Options{Logger: logger}, nil
+	}
+	deps.newWorker = func(_ client.Client, _ string, opts worker.Options) worker.Worker {
+		capturedWorkerOpts = opts
+		return w
+	}
+	w.On("Start").Return(nil).Once()
+	w.On("Stop").Once()
+	c.On("Close").Once()
+
+	fixed, err := worker.NewFixedSizeSlotSupplier(1)
+	require.NoError(t, err)
+	userTuner, err := worker.NewCompositeTuner(worker.CompositeTunerOptions{
+		WorkflowSlotSupplier:        fixed,
+		ActivitySlotSupplier:        &worker.ResourceBasedSlotSupplier{},
+		LocalActivitySlotSupplier:   fixed,
+		NexusSlotSupplier:           fixed,
+		SessionActivitySlotSupplier: fixed,
+	})
+	require.NoError(t, err)
+	err = runWorkerInternal(testVersion, func(ctx *Options) error {
+		ctx.IdleTimeout = 10 * time.Second
+		ctx.WorkerOptions.Tuner = userTuner
+		return nil
+	}, deps)
+
+	require.NoError(t, err)
+	assert.Same(t, userTuner, capturedWorkerOpts.Tuner)
+	require.Len(t, logger.warns, 1)
+	assert.Contains(t, logger.warns[0], "Idle shutdown is disabled")
+	w.AssertExpectations(t)
+	c.AssertExpectations(t)
+}
+
+func TestRunWorkerInternal_IdleTimeoutFromEnv(t *testing.T) {
+	deps, w, c := newTestDeps()
+	deps.getenv = func(k string) string {
+		switch k {
+		case envTaskQueue:
+			return "test-queue"
+		case envIdleTimeout:
+			return "30"
+		}
+		return ""
+	}
+	w.On("Start").Return(nil).Once()
+	w.On("Stop").Once()
+	c.On("Close").Once()
+
+	var idleTimeout time.Duration
+	err := runWorkerInternal(testVersion, func(ctx *Options) error {
+		idleTimeout = ctx.IdleTimeout
+		return nil
+	}, deps)
+
+	require.NoError(t, err)
+	assert.Equal(t, 30*time.Second, idleTimeout)
+	w.AssertExpectations(t)
+	c.AssertExpectations(t)
+}
+
+func TestRunWorkerInternal_IdleTimeoutDisabledByDefault(t *testing.T) {
+	var capturedWorkerOpts worker.Options
+	deps, w, c := newTestDeps()
+	deps.newWorker = func(_ client.Client, _ string, opts worker.Options) worker.Worker {
+		capturedWorkerOpts = opts
+		return w
+	}
+	w.On("Start").Return(nil).Once()
+	w.On("Stop").Once()
+	c.On("Close").Once()
+
+	err := runWorkerInternal(testVersion, func(ctx *Options) error {
+		assert.Zero(t, ctx.IdleTimeout)
+		return nil
+	}, deps)
+
+	require.NoError(t, err)
+	assert.Nil(t, capturedWorkerOpts.Tuner)
+	w.AssertExpectations(t)
+	c.AssertExpectations(t)
+}
+
+func TestRunWorkerInternal_InvalidIdleTimeout(t *testing.T) {
+	for _, v := range []string{"soon", "30s", "7.5"} {
+		t.Run("env var "+v, func(t *testing.T) {
+			deps, _, _ := newTestDeps()
+			deps.getenv = func(k string) string {
+				if k == envIdleTimeout {
+					return v
+				}
+				return "test-queue"
+			}
+			err := runWorkerInternal(testVersion, func(ctx *Options) error { return nil }, deps)
+			assert.ErrorContains(t, err, envIdleTimeout)
+		})
+	}
+
+	for _, timeout := range []time.Duration{-time.Second, time.Second} {
+		t.Run(timeout.String(), func(t *testing.T) {
+			deps, _, _ := newTestDeps()
+			err := runWorkerInternal(testVersion, func(ctx *Options) error {
+				ctx.IdleTimeout = timeout
+				return nil
+			}, deps)
+			assert.ErrorContains(t, err, "invalid idle timeout")
+		})
+	}
+}
+
+func TestRunWorkerInternal_IdleTimeoutJitter(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		deps, w, c := newTestDeps()
+		var maxJitter time.Duration
+		deps.jitter = func(n time.Duration) time.Duration {
+			maxJitter = n
+			return n - 1
+		}
+		w.On("Start").Return(nil).Once()
+		w.On("Stop").Once()
+		c.On("Close").Once()
+
+		elapsed, handlerErr := runIdleTestInvocation(t, deps, func(ctx *Options) error {
+			ctx.IdleTimeout = 10 * time.Second
+			return nil
+		})
+
+		require.NoError(t, handlerErr)
+		assert.Equal(t, 2*time.Second, maxJitter)
+		assert.GreaterOrEqual(t, elapsed, 10*time.Second+idleCheckInterval+maxJitter-1)
+		assert.Less(t, elapsed, 10*time.Second+2*idleCheckInterval+maxJitter)
+		w.AssertExpectations(t)
+		c.AssertExpectations(t)
+	})
 }
