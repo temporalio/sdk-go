@@ -59,13 +59,21 @@ type LoadClientOptionsRequest struct {
 
 	// Override the environment variable lookup. If nil, defaults to [EnvLookupOS].
 	EnvLookup EnvLookup
+
+	// Extensions to apply to the loaded profile. After the profile is converted to client options, each extension is
+	// called in order and any plugin it returns is appended to [client.Options.Plugins]. Extension names must be unique.
+	Extensions []ClientConfigExtension
 }
 
 // LoadClientOptions loads client options from file and then applies environment variable overrides. This will not fail
 // if the config file does not exist. This is effectively a shortcut for [LoadClientConfigProfile] +
-// [ClientConfigProfile.ToClientOptions]. See [LoadClientOptionsRequest] and [ClientConfigProfile] on how files and
-// environment variables are applied.
+// [ClientConfigProfile.ToClientOptions], plus applying any [LoadClientOptionsRequest.Extensions]. See
+// [LoadClientOptionsRequest] and [ClientConfigProfile] on how files and environment variables are applied.
 func LoadClientOptions(options LoadClientOptionsRequest) (client.Options, error) {
+	if err := validateExtensions(options.Extensions); err != nil {
+		return client.Options{}, err
+	}
+
 	// Load profile
 	prof, err := LoadClientConfigProfile(LoadClientConfigProfileOptions{
 		ConfigFilePath:    options.ConfigFilePath,
@@ -80,8 +88,24 @@ func LoadClientOptions(options LoadClientOptionsRequest) (client.Options, error)
 		return client.Options{}, err
 	}
 
-	// Convert to client options
-	return prof.ToClientOptions(ToClientOptionsRequest{IncludeRemoteCodec: options.IncludeRemoteCodec})
+	opts, err := prof.ToClientOptions(ToClientOptionsRequest{IncludeRemoteCodec: options.IncludeRemoteCodec})
+	if err != nil {
+		return client.Options{}, err
+	}
+
+	if len(options.Extensions) > 0 {
+		req := ClientConfigExtensionRequest{Profile: &prof}
+		if !options.DisableEnv {
+			req.Env = options.EnvLookup
+			if req.Env == nil {
+				req.Env = EnvLookupOS
+			}
+		}
+		if err := applyExtensions(&opts, options.Extensions, req); err != nil {
+			return client.Options{}, err
+		}
+	}
+	return opts, nil
 }
 
 // [LoadClientConfigOptions] are options for [LoadClientConfig].
