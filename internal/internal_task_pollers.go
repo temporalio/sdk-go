@@ -98,7 +98,8 @@ type (
 		// Unique identifier for worker
 		workerInstanceKey string
 		// Per-client queue used by the server to send worker commands.
-		workerControlTaskQueue string
+		workerControlTaskQueue    string
+		workflowTaskNotifications *workflowTaskNotifications
 		// Shared snapshot for this worker's task queue.
 		pollerGroupSnapshotStore *pollerGroupSnapshotStore
 		// Server cancels polls on shutdown
@@ -466,6 +467,7 @@ func newWorkflowTaskProcessor(
 			workerInstanceKey:            params.workerInstanceKey,
 			workerControlTaskQueue:       params.workerControlTaskQueue,
 			pollerGroupSnapshotStore:     params.pollerGroupSnapshotStore,
+			workflowTaskNotifications:    params.workflowTaskNotifications,
 			workerPollCompleteOnShutdown: params.workerPollCompleteOnShutdown,
 		},
 		service:                          service,
@@ -562,6 +564,9 @@ func (wtp *workflowTaskProcessor) processWorkflowTask(task *workflowTask) (retEr
 	doneCh := make(chan struct{})
 	laResultCh := make(chan *localActivityResult)
 	laRetryCh := make(chan *localActivityTask)
+	notificationCh := make(chan struct{}, 1)
+	runID := task.task.GetWorkflowExecution().GetRunId()
+	defer wtp.workflowTaskNotifications.unregister(runID, notificationCh)
 	// close doneCh so local activity worker won't get blocked forever when trying to send back result to laResultCh.
 	defer close(doneCh)
 
@@ -598,9 +603,11 @@ func (wtp *workflowTaskProcessor) processWorkflowTask(task *workflowTask) (retEr
 
 	for {
 		startTime := time.Now()
+		wtp.workflowTaskNotifications.register(task.task, notificationCh)
 		task.doneCh = doneCh
 		task.laResultCh = laResultCh
 		task.laRetryCh = laRetryCh
+		task.heartbeatNotificationCh = notificationCh
 		var taskCompletion *workflowTaskCompletion
 		taskCompletion, taskErr = wtp.taskHandler.ProcessWorkflowTask(
 			task,
@@ -628,6 +635,8 @@ func (wtp *workflowTaskProcessor) processWorkflowTask(task *workflowTask) (retEr
 				task.doneCh = doneCh
 				task.laResultCh = laResultCh
 				task.laRetryCh = laRetryCh
+				task.heartbeatNotificationCh = notificationCh
+				wtp.workflowTaskNotifications.register(task.task, notificationCh)
 				return task, nil
 			},
 		)
@@ -1518,8 +1527,9 @@ func (wtp *workflowTaskPoller) getPollRequestForKind(queueKind enumspb.TaskQueue
 			wtp.useBuildIDVersioning,
 			wtp.workerDeploymentVersion,
 		),
-		WorkerInstanceKey:      wtp.workerInstanceKey,
-		WorkerControlTaskQueue: wtp.workerControlTaskQueue,
+		WorkerInstanceKey:                         wtp.workerInstanceKey,
+		WorkerControlTaskQueue:                    wtp.workerControlTaskQueue,
+		SupportsWorkflowTaskHeartbeatNotification: wtp.workflowTaskNotifications != nil,
 	}
 	if wtp.getCapabilities().BuildIdBasedVersioning {
 		//lint:ignore SA1019 ignore deprecated versioning APIs

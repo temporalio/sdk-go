@@ -82,6 +82,7 @@ func (m *heartbeatManager) sharedNamespaceWorkerForLocked(namespace string) *sha
 		callbacks:                     make(map[string]func() *workerpb.WorkerHeartbeat),
 		heartbeatSuccessCallbacks:     make(map[string]func()),
 		activityCancellationCallbacks: newActivityCancellationCallbacks(),
+		workflowTaskNotifications:     newWorkflowTaskNotifications(),
 		workerControlTaskQueue:        controlTaskQueue,
 		workerInstanceKey:             uuid.NewString(),
 		metricsHandler:                metricsHandler,
@@ -171,6 +172,7 @@ type sharedNamespaceWorker struct {
 	heartbeatSuccessCallbacks map[string]func() // workerInstanceKey -> callback
 
 	activityCancellationCallbacks *activityCancellationCallbacks
+	workflowTaskNotifications     *workflowTaskNotifications
 	workerCommandsSupported       bool
 	workerControlTaskQueue        string
 	workerInstanceKey             string
@@ -391,6 +393,15 @@ func (hw *sharedNamespaceWorker) handleWorkerCommandTask(task *workflowservice.P
 			results = append(results, &workerpb.WorkerCommandResult{
 				Type: &workerpb.WorkerCommandResult_CancelActivity{
 					CancelActivity: &workerpb.CancelActivityResult{},
+				},
+			})
+		case *workerpb.WorkerCommand_WorkflowTaskHeartbeatNotification:
+			if cmd.WorkflowTaskHeartbeatNotification != nil && hw.workflowTaskNotifications != nil {
+				hw.workflowTaskNotifications.notify(cmd.WorkflowTaskHeartbeatNotification)
+			}
+			results = append(results, &workerpb.WorkerCommandResult{
+				Type: &workerpb.WorkerCommandResult_WorkflowTaskHeartbeatNotification{
+					WorkflowTaskHeartbeatNotification: &workerpb.WorkflowTaskHeartbeatNotificationResult{},
 				},
 			})
 		default:
