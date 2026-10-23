@@ -10,6 +10,8 @@ import "time"
 // API boundaries.
 //
 // Context's methods may be called by multiple goroutines simultaneously.
+//
+// Exposed as: [go.temporal.io/sdk/converter.WorkflowContext]
 type Context interface {
 	// Deadline returns the time when work done on behalf of this context
 	// should be canceled.  Deadline returns ok==false when no deadline is
