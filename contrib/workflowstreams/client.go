@@ -33,7 +33,7 @@ type Options struct {
 	//
 	// Only payload conversion happens here — never a payload codec
 	// (encryption, compression). The codec chain configured on the Temporal
-	// client runs once on the signal/update envelope that carries each batch,
+	// client runs once on the signal/update/query envelope that carries each batch,
 	// so encoding items here too would double-encode them; the
 	// []PayloadConverter type makes that mistake impossible. To decode
 	// subscribed items, use a converter built from the same PayloadConverters.
@@ -150,8 +150,9 @@ func (c *Client) GetOffset(ctx context.Context) (int64, error) {
 // Breaking out of the loop or cancelling ctx stops the subscription and tears
 // down the poll loop. Each yielded item carries the raw *commonpb.Payload in
 // Data; decode it with your data converter. The iterator ends cleanly when the
-// workflow reaches a terminal state, and automatically follows continue-as-new
-// chains.
+// workflow reaches a terminal state after querying its remaining retained items,
+// and automatically follows continue-as-new chains. Closed reads require a compatible
+// worker and retained history. Query failures propagate to the subscriber.
 func (c *Client) Subscribe(ctx context.Context, opts SubscribeOptions) iter.Seq2[WorkflowStreamItem, error] {
 	return func(yield func(WorkflowStreamItem, error) bool) {
 		pollCooldown := opts.PollCooldown
@@ -163,11 +164,7 @@ func (c *Client) Subscribe(ctx context.Context, opts SubscribeOptions) iter.Seq2
 			topics = []string{}
 		}
 		offset := opts.FromOffset
-		// polledRunID is the run the most recent poll's update was admitted to.
-		// We capture it before waiting for the update's outcome so that, if that
-		// run continues-as-new mid-poll (failing the outcome), we still know which
-		// run to inspect to tell a rollover apart from a terminal end.
-		var polledRunID string
+		var terminalRunID string
 
 		for {
 			if err := ctx.Err(); err != nil {
@@ -176,54 +173,87 @@ func (c *Client) Subscribe(ctx context.Context, opts SubscribeOptions) iter.Seq2
 			}
 
 			var result PollResult
-			// Wait only for ACCEPTED so UpdateWorkflow returns the handle (and its
-			// run id) as soon as the update is admitted; handle.Get then waits for
-			// the outcome. With WaitForStage Completed a mid-poll continue-as-new
-			// would fail UpdateWorkflow with a nil handle, losing the run id.
-			handle, err := c.c.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
-				WorkflowID:   c.workflowID,
-				UpdateName:   PollUpdateName,
-				Args:         []any{PollInput{Topics: topics, FromOffset: offset}},
-				WaitForStage: client.WorkflowUpdateStageAccepted,
-			})
-			if err == nil {
-				polledRunID = handle.RunID()
-				err = handle.Get(ctx, &result)
-			}
-			if err != nil {
-				var appErr *temporal.ApplicationError
-				if errors.As(err, &appErr) {
-					switch appErr.Type() {
-					case ErrTypeTruncatedOffset:
-						// Fell behind truncation; restart from the beginning of
-						// whatever still exists.
-						offset = 0
-						continue
-					case ErrTypeStreamDraining:
-						// The workflow is detaching for continue-as-new. Back off
-						// and retry; the poll lands on the successor run once the
-						// rollover completes (or the chain/terminal checks below
-						// fire on a genuine end).
-						select {
-						case <-time.After(pollCooldown):
-							continue
-						case <-ctx.Done():
-							yield(WorkflowStreamItem{}, ctx.Err())
-							return
-						}
-					}
+			var err error
+			if terminalRunID != "" {
+				var value converter.EncodedValue
+				value, err = c.c.QueryWorkflow(ctx, c.workflowID, terminalRunID, PollQueryName,
+					PollInput{Topics: topics, FromOffset: offset})
+				if err == nil {
+					err = value.Get(&result)
 				}
-				// The workflow may have continued-as-new or completed between
-				// polls. Follow the chain, exit cleanly on a terminal state,
-				// otherwise surface the error.
-				if followed := c.followContinueAsNew(ctx, polledRunID); followed {
-					continue
-				}
-				if c.isTerminal(ctx, polledRunID) {
+				if err != nil {
+					yield(WorkflowStreamItem{}, err)
 					return
 				}
-				yield(WorkflowStreamItem{}, err)
-				return
+			} else {
+				// Capture only this attempt's accepted run. A failed admission after
+				// continue-as-new must describe the current target, not an older run.
+				var polledRunID string
+				var handle client.WorkflowUpdateHandle
+				handle, err = c.c.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+					WorkflowID:   c.workflowID,
+					UpdateName:   PollUpdateName,
+					Args:         []any{PollInput{Topics: topics, FromOffset: offset}},
+					WaitForStage: client.WorkflowUpdateStageAccepted,
+				})
+				if err == nil {
+					polledRunID = handle.RunID()
+					err = handle.Get(ctx, &result)
+				}
+				if err != nil && ctx.Err() != nil {
+					yield(WorkflowStreamItem{}, ctx.Err())
+					return
+				}
+
+				if err != nil {
+					var appErr *temporal.ApplicationError
+					if errors.As(err, &appErr) {
+						switch appErr.Type() {
+						case ErrTypeTruncatedOffset:
+							// Fell behind truncation; restart from the beginning of
+							// whatever still exists.
+							offset = 0
+							continue
+						case ErrTypeStreamDraining:
+							// The workflow is detaching for continue-as-new. Back off
+							// and retry; the poll lands on the successor run once the
+							// rollover completes (or the chain/terminal checks below
+							// fire on a genuine end).
+							select {
+							case <-time.After(pollCooldown):
+								continue
+							case <-ctx.Done():
+								yield(WorkflowStreamItem{}, ctx.Err())
+								return
+							}
+						}
+					}
+					// Describe the attempted run once, then pin every fallback query to
+					// the confirmed execution so workflow ID reuse cannot change pages.
+					desc, describeErr := c.c.DescribeWorkflowExecution(ctx, c.workflowID, polledRunID)
+					if describeErr != nil {
+						yield(WorkflowStreamItem{}, describeErr)
+						return
+					}
+					info := desc.GetWorkflowExecutionInfo()
+					switch info.GetStatus() {
+					case enumspb.WORKFLOW_EXECUTION_STATUS_CONTINUED_AS_NEW:
+						if c.followCAN {
+							continue
+						}
+					case enumspb.WORKFLOW_EXECUTION_STATUS_COMPLETED,
+						enumspb.WORKFLOW_EXECUTION_STATUS_FAILED,
+						enumspb.WORKFLOW_EXECUTION_STATUS_CANCELED,
+						enumspb.WORKFLOW_EXECUTION_STATUS_TERMINATED,
+						enumspb.WORKFLOW_EXECUTION_STATUS_TIMED_OUT:
+						terminalRunID = info.GetExecution().GetRunId()
+						if terminalRunID != "" {
+							continue
+						}
+					}
+					yield(WorkflowStreamItem{}, err)
+					return
+				}
 			}
 
 			for _, wi := range result.Items {
@@ -239,6 +269,9 @@ func (c *Client) Subscribe(ctx context.Context, opts SubscribeOptions) iter.Seq2
 			offset = result.NextOffset
 
 			if !result.MoreReady {
+				if terminalRunID != "" {
+					return
+				}
 				select {
 				case <-time.After(pollCooldown):
 				case <-ctx.Done():
@@ -248,38 +281,4 @@ func (c *Client) Subscribe(ctx context.Context, opts SubscribeOptions) iter.Seq2
 			}
 		}
 	}
-}
-
-// followContinueAsNew reports whether runID (the run we were polling) rolled
-// over to a fresh run via continue-as-new. It describes that specific run: a
-// rolled-over run is closed with status CONTINUED_AS_NEW, whereas the latest run
-// would report RUNNING, so describing by run id is what makes the check fire.
-// The successor run id is not needed — subsequent polls use an empty run id and
-// so address the latest run automatically. A blank runID (no poll has been
-// admitted yet) falls back to describing the latest run.
-func (c *Client) followContinueAsNew(ctx context.Context, runID string) bool {
-	if !c.followCAN {
-		return false
-	}
-	desc, err := c.c.DescribeWorkflowExecution(ctx, c.workflowID, runID)
-	if err != nil {
-		return false
-	}
-	return desc.GetWorkflowExecutionInfo().GetStatus() == enumspb.WORKFLOW_EXECUTION_STATUS_CONTINUED_AS_NEW
-}
-
-func (c *Client) isTerminal(ctx context.Context, runID string) bool {
-	desc, err := c.c.DescribeWorkflowExecution(ctx, c.workflowID, runID)
-	if err != nil {
-		return false
-	}
-	switch desc.GetWorkflowExecutionInfo().GetStatus() {
-	case enumspb.WORKFLOW_EXECUTION_STATUS_COMPLETED,
-		enumspb.WORKFLOW_EXECUTION_STATUS_FAILED,
-		enumspb.WORKFLOW_EXECUTION_STATUS_CANCELED,
-		enumspb.WORKFLOW_EXECUTION_STATUS_TERMINATED,
-		enumspb.WORKFLOW_EXECUTION_STATUS_TIMED_OUT:
-		return true
-	}
-	return false
 }

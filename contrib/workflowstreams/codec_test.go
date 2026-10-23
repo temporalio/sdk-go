@@ -2,6 +2,7 @@ package workflowstreams
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -63,4 +64,19 @@ func TestBinaryPayloadRoundTrip(t *testing.T) {
 	var b []byte
 	require.NoError(t, converter.GetDefaultDataConverter().FromPayload(got, &b))
 	require.Equal(t, []byte{0x00, 0x01, 0xff}, b)
+}
+
+func TestWorkflowStreamProtocolVector(t *testing.T) {
+	const inputJSON = `{"topics":["events"],"from_offset":3}`
+	const resultJSON = `{"items":[{"topic":"events","data":"ChgKCGVuY29kaW5nEgxiaW5hcnkvcGxhaW4SA2FiYw==","offset":3}],"next_offset":4,"more_ready":false}`
+	input, err := json.Marshal(PollInput{Topics: []string{"events"}, FromOffset: 3})
+	require.NoError(t, err)
+	require.JSONEq(t, inputJSON, string(input))
+	payload, err := converter.GetDefaultDataConverter().ToPayload([]byte("abc"))
+	require.NoError(t, err)
+	wire, err := encodePayloadWire(payload)
+	require.NoError(t, err)
+	result, err := json.Marshal(PollResult{Items: []WireItem{{Topic: "events", Data: wire, Offset: 3}}, NextOffset: 4})
+	require.NoError(t, err)
+	require.JSONEq(t, resultJSON, string(result))
 }
