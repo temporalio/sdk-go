@@ -239,5 +239,59 @@ converter.NewCompositeDataConverter(
 
 Note: Payloads encoded with `proto/binary` will not be readable in the Temporal web UI.
 
+## Automatic header codecs
+
+Temporal Payload headers remain raw by default, independently of `DataConverter`.
+To opt in to automatic header encoding and decoding, configure an outermost
+`converter.HeaderEncodingDataConverter`. Workers created with that client inherit the converter.
+For example, enable header processing with a built-in codec-backed converter:
+
+```go
+dc, err := converter.NewHeaderEncodingDataConverter(converter.NewCodecDataConverterWithCodec(
+    converter.GetDefaultDataConverter(),
+    converter.NewZlibCodec(converter.ZlibCodecOptions{AlwaysEncode: true}),
+))
+if err != nil {
+    return err
+}
+options := client.Options{
+    DataConverter: dc,
+}
+```
+
+The wrapper requires `converter.DataConverterWithCodec`, which combines
+`DataConverter` and `PayloadCodecProvider` (`Codec() PayloadCodec`). Custom converters
+can implement this capability. Missing or empty codec stages are rejected at wrapper
+construction. Ordinary codec and remote converters expose codec stages but do not
+enable header processing. `NewCodecDataConverter` retains its existing return type
+and default behavior; `NewCodecDataConverterWithCodec` exposes the combined capability.
+The existing `DataConverter` interface is unchanged.
+
+The SDK detects opt-in through `converter.HeaderCodecProvider` (`HeaderCodec()
+PayloadCodec`). SDK-owned wrappers forward it. Custom outer wrappers must forward it
+explicitly or keep the header-encoding wrapper outermost. An opaque outer wrapper
+can hide the opt-in; the SDK never inspects its fields or invokes value conversion
+to infer codecs. A nil `HeaderCodec()` retains legacy behavior.
+
+In this mode, headers supplied through interceptors, context propagators, or
+payload-valued header APIs must be serialized **but not already codec-encoded**.
+Use the underlying payload converter to construct them, not the codec-backed
+converter's `ToPayload`. Remove manual header codec processing before enabling
+this option, or keep legacy mode. Header `Payload` objects are never value-converted.
+Tracing headers are included, retaining their standard-converter serialization.
+Nexus string-valued transport headers and gRPC metadata are unaffected.
+
+Header encoding happens after interceptors and propagation, before external
+storage; decoding happens after retrieval, before inbound consumers. Context-aware
+codecs receive the destination workflow or activity serialization context. If using
+`converter.NewPayloadCodecGRPCClientInterceptor` alongside this option, set its
+`SkipHeaders` option to `true` to avoid a second codec pass over headers.
+
+All readers must use compatible header codecs. Existing histories may contain
+plaintext or manually encoded headers, so verify decoder compatibility before
+enabling new writes; codec errors are not ignored as a plaintext fallback.
+Set `worker.WorkflowReplayerOptions.DataConverter` to the same header-encoding
+converter when replaying encoded histories.
+
 ## License
 MIT License, please see [LICENSE](LICENSE) for details.

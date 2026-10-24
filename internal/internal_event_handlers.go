@@ -163,6 +163,7 @@ type (
 		dataConverter            converter.DataConverter
 		failureConverter         converter.FailureConverter
 		rootDataConverter        converter.DataConverter
+		headerCodec              converter.PayloadCodec
 		rootFailureConverter     converter.FailureConverter
 		contextPropagators       []ContextPropagator
 		deadlockDetectionTimeout time.Duration
@@ -228,6 +229,7 @@ func newWorkflowExecutionEventHandler(
 	metricsHandler metrics.Handler,
 	registry *registry,
 	dataConverter converter.DataConverter,
+	headerCodec converter.PayloadCodec,
 	failureConverter converter.FailureConverter,
 	contextPropagators []ContextPropagator,
 	deadlockDetectionTimeout time.Duration,
@@ -245,6 +247,7 @@ func newWorkflowExecutionEventHandler(
 
 	context := &workflowEnvironmentImpl{
 		rootDataConverter:            rootDataConverter,
+		headerCodec:                  headerCodec,
 		rootFailureConverter:         rootFailureConverter,
 		workflowInfo:                 workflowInfo,
 		commandsHelper:               newCommandsHelper(),
@@ -766,6 +769,10 @@ func (wc *workflowEnvironmentImpl) GetFailureConverter() converter.FailureConver
 
 func (wc *workflowEnvironmentImpl) GetRootDataConverter() converter.DataConverter {
 	return wc.rootDataConverter
+}
+
+func (wc *workflowEnvironmentImpl) GetHeaderCodec() converter.PayloadCodec {
+	return wc.headerCodec
 }
 
 func (wc *workflowEnvironmentImpl) GetRootFailureConverter() converter.FailureConverter {

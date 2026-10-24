@@ -140,6 +140,7 @@ type (
 		laTunnel                  *localActivityTunnel
 		workflowPanicPolicy       WorkflowPanicPolicy
 		dataConverter             converter.DataConverter
+		headerCodec               converter.PayloadCodec
 		failureConverter          converter.FailureConverter
 		contextPropagators        []ContextPropagator
 		cache                     *WorkerCache
@@ -590,6 +591,7 @@ func newWorkflowTaskHandler(params workerExecutionParameters, ppMgr pressurePoin
 		registry:                  registry,
 		workflowPanicPolicy:       params.WorkflowPanicPolicy,
 		dataConverter:             params.DataConverter,
+		headerCodec:               params.HeaderCodec,
 		failureConverter:          params.FailureConverter,
 		contextPropagators:        params.ContextPropagators,
 		cache:                     params.cache,
@@ -699,6 +701,7 @@ func (w *workflowExecutionContextImpl) createEventHandler() {
 		w.wth.metricsHandler,
 		w.wth.registry,
 		w.wth.dataConverter,
+		w.wth.headerCodec,
 		w.wth.failureConverter,
 		w.wth.contextPropagators,
 		w.wth.deadlockDetectionTimeout,
@@ -2467,7 +2470,11 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 	}()
 
 	// propagate context information into the activity context from the headers
-	ctx, err = contextWithHeaderPropagated(ctx, t.Header, ath.contextPropagators)
+	var headerCodec converter.PayloadCodec
+	if ath.client != nil {
+		headerCodec = bindHeaderCodec(ath.client.headerCodec, actCtx)
+	}
+	ctx, err = contextWithHeaderPropagated(ctx, t.Header, ath.contextPropagators, headerCodec)
 	if err != nil {
 		return activityTaskResult{}, err
 	}

@@ -3,6 +3,7 @@ package converter
 import (
 	"bytes"
 	"compress/zlib"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,6 +11,8 @@ import (
 	"strings"
 
 	commonpb "go.temporal.io/api/common/v1"
+	commonconverter "go.temporal.io/sdk/internal/common/converter"
+	"go.temporal.io/sdk/internal/common/workflowcontext"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
@@ -31,18 +34,7 @@ import (
 // Codec implementations should handle transient failures locally when
 // possible. Panicking outside Workflow Task processing does not request a
 // Workflow Task retry.
-type PayloadCodec interface {
-	// Encode optionally encodes the given payloads which are guaranteed to never
-	// be nil. The parameters must not be mutated.
-	Encode([]*commonpb.Payload) ([]*commonpb.Payload, error)
-
-	// Decode optionally decodes the given payloads which are guaranteed to never
-	// be nil. The parameters must not be mutated.
-	//
-	// For compatibility reasons, implementers should take care not to decode
-	// payloads that were not previously encoded.
-	Decode([]*commonpb.Payload) ([]*commonpb.Payload, error)
-}
+type PayloadCodec = commonconverter.PayloadCodec
 
 // ZlibCodecOptions are options for NewZlibCodec. All fields are optional.
 type ZlibCodecOptions struct {
@@ -156,6 +148,13 @@ type CodecDataConverter struct {
 // encoders wrap the later ones. When decoding for FromPayload(s) and
 // ToString(s), the decoders are applied first to last to reverse the effect.
 func NewCodecDataConverter(parent DataConverter, codecs ...PayloadCodec) DataConverter {
+	return NewCodecDataConverterWithCodec(parent, codecs...)
+}
+
+// NewCodecDataConverterWithCodec is like NewCodecDataConverter but exposes the
+// codec-only capability for use with NewHeaderEncodingDataConverter.
+// It does not itself enable automatic header processing.
+func NewCodecDataConverterWithCodec(parent DataConverter, codecs ...PayloadCodec) DataConverterWithCodec {
 	return &CodecDataConverter{parent, codecs}
 }
 
@@ -165,6 +164,124 @@ func (e *CodecDataConverter) encode(payloads []*commonpb.Payload) ([]*commonpb.P
 
 func (e *CodecDataConverter) decode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
 	return decodePayloads(payloads, e.codecs)
+}
+
+// PayloadCodecProvider is an optional capability for DataConverters that expose
+// their codec-only stage. Wrappers must forward it explicitly; value conversion
+// is never used to discover codecs. Codec returns nil when no codecs are configured.
+type PayloadCodecProvider = commonconverter.PayloadCodecProvider
+
+// DataConverterWithCodec combines value conversion and codec-only processing.
+// Custom converters can implement this capability to support header encoding.
+type DataConverterWithCodec interface {
+	DataConverter
+	PayloadCodecProvider
+}
+
+// HeaderCodecProvider is an optional DataConverter capability that opts into
+// automatic header processing. A nil HeaderCodec retains legacy raw headers.
+// Custom outer wrappers must forward this capability or keep
+// HeaderEncodingDataConverter outermost.
+type HeaderCodecProvider = commonconverter.HeaderCodecProvider
+
+// Codec returns the codec-only stages, including those exposed by a parent
+// PayloadCodecProvider, without invoking value conversion or converter context
+// callbacks. It returns nil if no stages are configured or a built-in stage is nil.
+func (e *CodecDataConverter) Codec() PayloadCodec {
+	var codecs payloadCodecChain
+	for {
+		if len(e.codecs) == 0 {
+			return nil
+		}
+		for _, codec := range e.codecs {
+			if codec == nil {
+				return nil
+			}
+			codecs = append(codecs, codec)
+		}
+		if parent, ok := e.parent.(*CodecDataConverter); ok {
+			e = parent
+			continue
+		}
+		if parent, ok := e.parent.(PayloadCodecProvider); ok {
+			codec := parent.Codec()
+			if codec == nil {
+				return nil
+			}
+			codecs = append(codecs, codec)
+		} else if parent, ok := e.parent.(HeaderCodecProvider); ok {
+			if codec := parent.HeaderCodec(); codec != nil {
+				codecs = append(codecs, codec)
+			}
+		}
+		break
+	}
+	return codecs
+}
+
+// HeaderCodec forwards an explicitly enabled parent's header policy. Codec
+// stages alone do not enable automatic header processing.
+func (e *CodecDataConverter) HeaderCodec() PayloadCodec {
+	if provider, ok := e.parent.(HeaderCodecProvider); ok && provider.HeaderCodec() != nil {
+		codec := e.Codec()
+		if codec == nil {
+			return payloadCodecChain{nil}
+		}
+		return codec
+	}
+	return nil
+}
+
+type payloadCodecChain []PayloadCodec
+
+func (c payloadCodecChain) validate() error {
+	if len(c) == 0 {
+		return fmt.Errorf("payload codec chain has no stages after context binding")
+	}
+	for i, codec := range c {
+		if codec == nil {
+			return fmt.Errorf("payload codec stage %d is nil after context binding", i)
+		}
+	}
+	return nil
+}
+
+func (c payloadCodecChain) Encode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	if err := c.validate(); err != nil {
+		return nil, err
+	}
+	return encodePayloads(payloads, c)
+}
+
+func (c payloadCodecChain) Decode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	if err := c.validate(); err != nil {
+		return nil, err
+	}
+	return decodePayloads(payloads, c)
+}
+
+func (c payloadCodecChain) WithSerializationContext(ctx SerializationContext) PayloadCodec {
+	codecs := make(payloadCodecChain, len(c))
+	for i, codec := range c {
+		if contextual, ok := codec.(PayloadCodecWithSerializationContext); ok {
+			codecs[i] = contextual.WithSerializationContext(ctx)
+		} else {
+			codecs[i] = codec
+		}
+	}
+	return codecs
+}
+
+func (c payloadCodecChain) WithWorkflowContext(ctx workflowcontext.Context) PayloadCodec {
+	codecs := make(payloadCodecChain, len(c))
+	for i, codec := range c {
+		if contextual, ok := codec.(commonconverter.WorkflowContextAwarePayloadCodec); ok {
+			codecs[i] = contextual.WithWorkflowContext(ctx)
+		} else {
+			codecs[i] = codec
+		}
+	}
+	return codecs
 }
 
 // ToPayload implements DataConverter.ToPayload performing encoding on the
@@ -270,6 +387,24 @@ func (e *CodecDataConverter) WithSerializationContext(ctx SerializationContext) 
 		return e
 	}
 	return &CodecDataConverter{parent, codecs}
+}
+
+// WithContext preserves context-aware value conversion in the parent.
+func (e *CodecDataConverter) WithContext(ctx context.Context) DataConverter {
+	result := *e
+	if parent, ok := e.parent.(ContextAware); ok {
+		result.parent = parent.WithContext(ctx)
+	}
+	return &result
+}
+
+// WithWorkflowContext preserves context-aware value conversion in the parent.
+func (e *CodecDataConverter) WithWorkflowContext(ctx workflowcontext.Context) DataConverter {
+	result := *e
+	if parent, ok := e.parent.(ContextAware); ok {
+		result.parent = parent.WithWorkflowContext(ctx)
+	}
+	return &result
 }
 
 const remotePayloadCodecEncodePath = "/encode"
@@ -438,7 +573,7 @@ type RemoteDataConverterOptions struct {
 }
 
 type remoteDataConverter struct {
-	parent       DataConverter
+	*CodecDataConverter
 	payloadCodec PayloadCodec
 }
 
@@ -447,7 +582,10 @@ type remoteDataConverter struct {
 func NewRemoteDataConverter(parent DataConverter, options RemoteDataConverterOptions) DataConverter {
 	options.Endpoint = strings.TrimSuffix(options.Endpoint, "/")
 	payloadCodec := NewRemotePayloadCodec(RemotePayloadCodecOptions(options))
-	return &remoteDataConverter{parent, payloadCodec}
+	return &remoteDataConverter{
+		CodecDataConverter: &CodecDataConverter{parent, []PayloadCodec{payloadCodec}},
+		payloadCodec:       payloadCodec,
+	}
 }
 
 // ToPayload implements DataConverter.ToPayload performing remote encoding on the

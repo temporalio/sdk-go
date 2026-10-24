@@ -196,6 +196,8 @@ type (
 
 		DataConverter converter.DataConverter
 
+		HeaderCodec converter.PayloadCodec
+
 		FailureConverter converter.FailureConverter
 
 		// WorkerStopTimeout is the time delay before hard terminate worker
@@ -1878,6 +1880,7 @@ func (aw *AggregatedWorker) activeTaskQueueTypes() []enumspb.TaskQueueType {
 type WorkflowReplayer struct {
 	registry                    *registry
 	dataConverter               converter.DataConverter
+	headerCodec                 converter.PayloadCodec
 	failureConverter            converter.FailureConverter
 	contextPropagators          []ContextPropagator
 	enableLoggingInReplay       bool
@@ -1962,6 +1965,8 @@ func NewWorkflowReplayer(options WorkflowReplayerOptions) (*WorkflowReplayer, er
 		}
 	}
 
+	headerCodec := headerCodecFromDataConverter(options.DataConverter)
+
 	storageParams, err := extstore.ExternalStorageToParams(options.ExternalStorage)
 	if err != nil {
 		return nil, fmt.Errorf("invalid ExternalStorage options: %w", err)
@@ -1972,6 +1977,7 @@ func NewWorkflowReplayer(options WorkflowReplayerOptions) (*WorkflowReplayer, er
 	return &WorkflowReplayer{
 		registry:                    registry,
 		dataConverter:               MakeTransferAware(options.DataConverter),
+		headerCodec:                 headerCodec,
 		failureConverter:            options.FailureConverter,
 		contextPropagators:          options.ContextPropagators,
 		enableLoggingInReplay:       options.EnableLoggingInReplay,
@@ -2220,6 +2226,7 @@ func (aw *WorkflowReplayer) replayWorkflowHistoryRoot(
 		Logger:                logger,
 		cache:                 cache,
 		DataConverter:         aw.dataConverter,
+		HeaderCodec:           aw.headerCodec,
 		FailureConverter:      aw.failureConverter,
 		ContextPropagators:    aw.contextPropagators,
 		EnableLoggingInReplay: aw.enableLoggingInReplay,
@@ -2519,6 +2526,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		TaskQueueActivitiesPerSecond:     options.TaskQueueActivitiesPerSecond,
 		WorkflowPanicPolicy:              options.WorkflowPanicPolicy,
 		DataConverter:                    client.dataConverter,
+		HeaderCodec:                      client.headerCodec,
 		FailureConverter:                 client.failureConverter,
 		WorkerStopTimeout:                options.WorkerStopTimeout,
 		WorkerFatalErrorCallback:         fatalErrorCallback,

@@ -11,9 +11,13 @@ import (
 )
 
 // PayloadCodecGRPCClientInterceptorOptions holds interceptor options.
-// Currently this is just the list of codecs to use.
 type PayloadCodecGRPCClientInterceptorOptions struct {
 	Codecs []PayloadCodec
+
+	// SkipHeaders leaves Temporal Payload headers unchanged in both directions.
+	// Enable this when header codecs are already applied by the SDK to avoid
+	// processing the same headers twice. This does not affect gRPC metadata.
+	SkipHeaders bool
 }
 
 // NewPayloadCodecGRPCClientInterceptor returns a GRPC Client Interceptor that will mimic the encoding
@@ -27,6 +31,9 @@ func NewPayloadCodecGRPCClientInterceptor(options PayloadCodecGRPCClientIntercep
 	return proxy.NewPayloadVisitorInterceptor(proxy.PayloadVisitorInterceptorOptions{
 		Outbound: &proxy.VisitPayloadsOptions{
 			Visitor: func(vpc *proxy.VisitPayloadsContext, payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+				if _, header := vpc.Parent.(*commonpb.Header); header && options.SkipHeaders {
+					return payloads, nil
+				}
 				var err error
 				for i := len(options.Codecs) - 1; i >= 0; i-- {
 					if payloads, err = options.Codecs[i].Encode(payloads); err != nil {
@@ -40,6 +47,9 @@ func NewPayloadCodecGRPCClientInterceptor(options PayloadCodecGRPCClientIntercep
 		},
 		Inbound: &proxy.VisitPayloadsOptions{
 			Visitor: func(vpc *proxy.VisitPayloadsContext, payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+				if _, header := vpc.Parent.(*commonpb.Header); header && options.SkipHeaders {
+					return payloads, nil
+				}
 				var err error
 				for _, codec := range options.Codecs {
 					if payloads, err = codec.Decode(payloads); err != nil {
