@@ -7,6 +7,7 @@ import (
 
 	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/sdk/converter"
+	commonconverter "go.temporal.io/sdk/internal/common/converter"
 )
 
 type deadlockDetector struct {
@@ -154,6 +155,49 @@ type dataConverterWithoutDeadlock struct {
 var _ ContextAware = &dataConverterWithoutDeadlock{}
 var _ converter.DataConverterWithSerializationContext = &dataConverterWithoutDeadlock{}
 
+func (d *dataConverterWithoutDeadlock) HeaderCodec() converter.PayloadCodec {
+	if provider, ok := d.underlying.(converter.HeaderCodecProvider); ok {
+		if codec := provider.HeaderCodec(); codec != nil {
+			return &headerCodecWithoutDeadlock{context: d.context, underlying: codec}
+		}
+	}
+	return nil
+}
+
+type headerCodecWithoutDeadlock struct {
+	context    Context
+	underlying converter.PayloadCodec
+}
+
+func (c *headerCodecWithoutDeadlock) WithWorkflowContext(ctx Context) converter.PayloadCodec {
+	underlying := c.underlying
+	if contextual, ok := underlying.(commonconverter.WorkflowContextAwarePayloadCodec); ok {
+		underlying = contextual.WithWorkflowContext(ctx)
+		if underlying == nil {
+			return nil
+		}
+	}
+	return &headerCodecWithoutDeadlock{context: ctx, underlying: underlying}
+}
+
+func (c *headerCodecWithoutDeadlock) Encode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	PauseDeadlockDetector(c.context)
+	defer ResumeDeadlockDetector(c.context)
+	return c.underlying.Encode(payloads)
+}
+
+func (c *headerCodecWithoutDeadlock) Decode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	PauseDeadlockDetector(c.context)
+	defer ResumeDeadlockDetector(c.context)
+	return c.underlying.Decode(payloads)
+}
+
+func (c *headerCodecWithoutDeadlock) WithSerializationContext(sc converter.SerializationContext) converter.PayloadCodec {
+	PauseDeadlockDetector(c.context)
+	defer ResumeDeadlockDetector(c.context)
+	return &headerCodecWithoutDeadlock{context: c.context, underlying: bindHeaderCodec(c.underlying, sc)}
+}
+
 func (d *dataConverterWithoutDeadlock) ToPayload(value any) (*commonpb.Payload, error) {
 	PauseDeadlockDetector(d.context)
 	defer ResumeDeadlockDetector(d.context)
@@ -199,6 +243,8 @@ func (d *dataConverterWithoutDeadlock) WithContext(ctx context.Context) converte
 }
 
 func (d *dataConverterWithoutDeadlock) WithSerializationContext(sc converter.SerializationContext) converter.DataConverter {
+	PauseDeadlockDetector(d.context)
+	defer ResumeDeadlockDetector(d.context)
 	return &dataConverterWithoutDeadlock{
 		context:    d.context,
 		underlying: converter.WithDataConverterSerializationContext(d.underlying, sc),

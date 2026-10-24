@@ -22,6 +22,13 @@ to docs, or any other relevant information.
 
 ### Added
 
+- Added opt-in `converter.NewHeaderEncodingDataConverter` for automatic codec-only processing of Temporal Payload
+  headers, including tracing, inherited by workers. Headers remain raw by default. Enabling requires
+  a `converter.DataConverterWithCodec` with nonempty codec stages, available from the new
+  `converter.NewCodecDataConverterWithCodec` factory or custom converters. Ordinary codec converters
+  remain legacy; custom outer wrappers must forward `converter.HeaderCodecProvider` or keep the
+  opt-in wrapper outermost. Replay uses the configured converter. The gRPC codec interceptor's
+  `SkipHeaders` option avoids processing these headers twice.
 - Added experimental `temporalnexus.ConvertLinkCallbackToNexusLink` and `temporalnexus.ConvertNexusLinkToLinkCallback`
   for converting `Link_Callback` to and from Nexus links.
 
@@ -36,6 +43,7 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- `workflow.DataConverterWithoutDeadlockDetection` now also exempts automatic header codec calls and their serialization-context binding from workflow deadlock detection.
 - `converter.NewRemotePayloadCodec` now handles endpoint URLs with trailing slashes.
 - Fixed race when using `log.With` without a `WithLogger` implementation, where logs could overwrite each others' buffers.
 - The default timeout for client and worker RPCs has been extended. Previously, the default timeout

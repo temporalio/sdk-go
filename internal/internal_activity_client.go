@@ -866,7 +866,10 @@ func (w *workflowClientInterceptor) ExecuteActivity(
 	if request.Input, err = encodeArgs(dataConverter, in.Args); err != nil {
 		return nil, err
 	}
-	if request.Header, err = headerPropagated(ctx, w.client.contextPropagators); err != nil {
+	if request.Header, err = headerPropagated(ctx, w.client.contextPropagators, bindHeaderCodec(w.client.headerCodec,
+		converter.ActivitySerializationContext{
+			Namespace: w.client.namespace, ActivityType: in.ActivityType, TaskQueue: in.Options.TaskQueue,
+		})); err != nil {
 		return nil, err
 	}
 

@@ -15,3 +15,9 @@ type ContextAware interface {
 	WithWorkflowContext(ctx workflowcontext.Context) DataConverter
 	WithContext(ctx context.Context) DataConverter
 }
+
+// WorkflowContextAwarePayloadCodec lets SDK codec wrappers carry the running
+// workflow context to nested deadlock exemptions without binding value converters.
+type WorkflowContextAwarePayloadCodec interface {
+	WithWorkflowContext(ctx workflowcontext.Context) PayloadCodec
+}

@@ -188,6 +188,26 @@ type testCodec struct {
 	encodeFrom string
 }
 
+func TestCodecDataConverterCodec(t *testing.T) {
+	var legacyFactory func(DataConverter, ...PayloadCodec) DataConverter = NewCodecDataConverter
+	custom := newCapturingDC()
+	parent := legacyFactory(custom, &testCodec{
+		encoding: "inner", encodeFrom: "json/plain",
+	})
+	dc := NewCodecDataConverter(parent, &testCodec{encoding: "outer", encodeFrom: "inner"}, &signingCodec{})
+	codec := dc.(*CodecDataConverter).Codec().(PayloadCodecWithSerializationContext).
+		WithSerializationContext(WorkflowSerializationContext{WorkflowID: "headers"})
+	payload, err := GetDefaultDataConverter().ToPayload("header")
+	require.NoError(t, err)
+	encoded, err := codec.Encode([]*commonpb.Payload{payload})
+	require.NoError(t, err)
+	require.Equal(t, "outer", string(encoded[0].Metadata[MetadataEncoding]))
+	decoded, err := codec.Decode(encoded)
+	require.NoError(t, err)
+	require.True(t, proto.Equal(payload, decoded[0]))
+	require.Empty(t, custom.getCapturedContexts())
+}
+
 func (e *testCodec) Encode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
 	result := make([]*commonpb.Payload, len(payloads))
 	for i, p := range payloads {
@@ -267,6 +287,38 @@ func TestRemoteDataConverter(t *testing.T) {
 
 	require.NotEqual(t, unencodedPayload, localEncodedPayload)
 	require.True(t, proto.Equal(localEncodedPayload, remoteEncodedPayload))
+}
+
+func TestRemoteDataConverterCodec(t *testing.T) {
+	server := httptest.NewServer(NewPayloadCodecHTTPHandler(&testCodec{
+		encoding: "remote", encodeFrom: "inner",
+	}))
+	defer server.Close()
+	remote := NewRemoteDataConverter(
+		NewCodecDataConverter(GetDefaultDataConverter(), &testCodec{
+			encoding: "inner", encodeFrom: "json/plain",
+		}),
+		RemoteDataConverterOptions{Endpoint: server.URL},
+	)
+	for _, dc := range []DataConverter{
+		remote,
+		NewCodecDataConverter(remote, &testCodec{encoding: "outer", encodeFrom: "remote"}),
+	} {
+		payload, err := GetDefaultDataConverter().ToPayload("header")
+		require.NoError(t, err)
+		expected, err := dc.ToPayload("header")
+		require.NoError(t, err)
+		codec := dc.(PayloadCodecProvider).Codec()
+		require.NotNil(t, codec)
+		encoded, err := codec.Encode([]*commonpb.Payload{payload})
+		require.NoError(t, err)
+		require.Len(t, encoded, 1)
+		require.True(t, proto.Equal(expected, encoded[0]))
+		decoded, err := codec.Decode(encoded)
+		require.NoError(t, err)
+		require.Len(t, decoded, 1)
+		require.True(t, proto.Equal(payload, decoded[0]))
+	}
 }
 
 func TestRemotePayloadCodecTrailingSlash(t *testing.T) {

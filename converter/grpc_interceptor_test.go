@@ -78,6 +78,37 @@ func TestPayloadCodecGRPCClientInterceptor(t *testing.T) {
 	require.Equal("json/plain", payloadEncoding(response.Input))
 }
 
+func TestPayloadCodecGRPCClientInterceptorHeaders(t *testing.T) {
+	for _, skip := range []bool{false, true} {
+		t.Run(fmt.Sprintf("skip=%v", skip), func(t *testing.T) {
+			codec := NewZlibCodec(ZlibCodecOptions{AlwaysEncode: true})
+			intercept, err := NewPayloadCodecGRPCClientInterceptor(PayloadCodecGRPCClientInterceptorOptions{
+				Codecs: []PayloadCodec{codec}, SkipHeaders: skip,
+			})
+			require.NoError(t, err)
+			header := &commonpb.Header{Fields: map[string]*commonpb.Payload{"trace": unencodedPayloads().Payloads[0]}}
+			request := &workflowservice.StartWorkflowExecutionRequest{Header: header, Input: unencodedPayloads()}
+			response := &workflowservice.PollActivityTaskQueueResponse{}
+			err = intercept(t.Context(), "", request, response, nil,
+				func(_ context.Context, _ string, req, reply any, _ *grpc.ClientConn, _ ...grpc.CallOption) error {
+					want := "binary/zlib"
+					if skip {
+						want = "json/plain"
+					}
+					require.Equal(t, want, string(request.Header.Fields["trace"].Metadata[MetadataEncoding]))
+					require.Equal(t, "binary/zlib", payloadEncoding(request.Input))
+					result := reply.(*workflowservice.PollActivityTaskQueueResponse)
+					result.Header = header
+					result.Input = request.Input
+					return nil
+				})
+			require.NoError(t, err)
+			require.Equal(t, "json/plain", string(response.Header.Fields["trace"].Metadata[MetadataEncoding]))
+			require.Equal(t, "json/plain", payloadEncoding(response.Input))
+		})
+	}
+}
+
 func TestFailureGRPCClientInterceptor(t *testing.T) {
 	require := require.New(t)
 

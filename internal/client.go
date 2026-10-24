@@ -1628,6 +1628,7 @@ func newDialParameters(options *ClientOptions, excludeInternalFromRetry *atomic.
 
 // NewServiceClient creates workflow client from workflowservice.WorkflowServiceClient. Must be used internally in unit tests only.
 func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClient, conn *grpc.ClientConn, options ClientOptions) *WorkflowClient {
+	headerCodec := headerCodecFromDataConverter(options.DataConverter)
 	// Namespace can be empty in unit tests.
 	if options.Namespace == "" {
 		options.Namespace = DefaultNamespace
@@ -1717,6 +1718,7 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 		logger:                   options.Logger,
 		identity:                 options.Identity,
 		dataConverter:            options.DataConverter,
+		headerCodec:              headerCodec,
 		failureConverter:         options.FailureConverter,
 		contextPropagators:       options.ContextPropagators,
 		workerPlugins:            workerPlugins,
