@@ -150,3 +150,39 @@ func TestDataConverterWithoutDeadlockDetectionContext(t *testing.T) {
 	})
 
 }
+
+func TestDeadlockDetectorConcurrentPauseAndEnd(t *testing.T) {
+	// Pause/resume can run off the workflow goroutine (a local activity encoding
+	// its result with DataConverterWithoutDeadlockDetection) while the
+	// dispatcher ends a ticker.
+	d := newDeadlockDetector()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for range 2000 {
+			ticker := d.begin(time.Minute)
+			stop := make(chan struct{})
+			pausing := make(chan struct{})
+			go func() {
+				defer close(pausing)
+				for {
+					select {
+					case <-stop:
+						return
+					default:
+						d.pause()
+						d.resume()
+					}
+				}
+			}()
+			ticker.end()
+			close(stop)
+			<-pausing
+		}
+	}()
+	select {
+	case <-done:
+	case <-time.After(30 * time.Second):
+		t.Fatal("deadlock between deadlockTicker.end and deadlockDetector.pause/resume")
+	}
+}
