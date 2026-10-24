@@ -1316,7 +1316,16 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 	}
 
 	// propagate context information into the local activity context from the headers
-	ctx, err = contextWithHeaderPropagated(ctx, task.header, lath.contextPropagators)
+	var headerCodec converter.PayloadCodec
+	if lath.client != nil {
+		info := task.params.WorkflowInfo
+		headerCodec = bindHeaderCodec(lath.client.headerCodec, converter.ActivitySerializationContext{
+			Namespace: info.Namespace, WorkflowID: info.WorkflowExecution.ID,
+			WorkflowType: info.WorkflowType.Name, ActivityType: task.params.ActivityType,
+			TaskQueue: info.TaskQueueName, IsLocal: true,
+		})
+	}
+	ctx, err = contextWithHeaderPropagated(ctx, task.header, lath.contextPropagators, headerCodec)
 	if err != nil {
 		return &localActivityResult{task: task, err: err}
 	}

@@ -7,9 +7,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 
 	commonpb "go.temporal.io/api/common/v1"
+	commonconverter "go.temporal.io/sdk/internal/common/converter"
+	"go.temporal.io/sdk/internal/common/workflowcontext"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
@@ -31,18 +34,7 @@ import (
 // Codec implementations should handle transient failures locally when
 // possible. Panicking outside Workflow Task processing does not request a
 // Workflow Task retry.
-type PayloadCodec interface {
-	// Encode optionally encodes the given payloads which are guaranteed to never
-	// be nil. The parameters must not be mutated.
-	Encode([]*commonpb.Payload) ([]*commonpb.Payload, error)
-
-	// Decode optionally decodes the given payloads which are guaranteed to never
-	// be nil. The parameters must not be mutated.
-	//
-	// For compatibility reasons, implementers should take care not to decode
-	// payloads that were not previously encoded.
-	Decode([]*commonpb.Payload) ([]*commonpb.Payload, error)
-}
+type PayloadCodec = commonconverter.PayloadCodec
 
 // ZlibCodecOptions are options for NewZlibCodec. All fields are optional.
 type ZlibCodecOptions struct {
@@ -165,6 +157,81 @@ func (e *CodecDataConverter) encode(payloads []*commonpb.Payload) ([]*commonpb.P
 
 func (e *CodecDataConverter) decode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
 	return decodePayloads(payloads, e.codecs)
+}
+
+// PayloadCodecProvider is an optional capability for DataConverters that expose
+// their codec-only stage. Wrappers must forward it explicitly; value conversion
+// is never used to discover codecs. Codec returns nil when no codecs are configured.
+type PayloadCodecProvider = commonconverter.PayloadCodecProvider
+
+// Codec returns the codec-only stages, including those exposed by a parent
+// PayloadCodecProvider, without invoking value conversion or converter context
+// callbacks. It returns nil if no stages are configured.
+func (e *CodecDataConverter) Codec() PayloadCodec {
+	var codecs payloadCodecChain
+	for {
+		codecs = append(codecs, e.codecs...)
+		if parent, ok := e.parent.(*CodecDataConverter); ok {
+			e = parent
+			continue
+		}
+		if parent, ok := e.parent.(PayloadCodecProvider); ok {
+			codec := parent.Codec()
+			if codec != nil {
+				codecs = append(codecs, codec)
+			}
+		}
+		break
+	}
+	if len(codecs) == 0 {
+		return nil
+	}
+	return codecs
+}
+
+type payloadCodecChain []PayloadCodec
+
+func (c payloadCodecChain) validate() error {
+	for i, codec := range c {
+		if codec == nil {
+			return fmt.Errorf("payload codec stage %d is nil after context binding", i)
+		}
+	}
+	return nil
+}
+
+func (c payloadCodecChain) Encode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	if err := c.validate(); err != nil {
+		return nil, err
+	}
+	return encodePayloads(payloads, c)
+}
+
+func (c payloadCodecChain) Decode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	if err := c.validate(); err != nil {
+		return nil, err
+	}
+	return decodePayloads(payloads, c)
+}
+
+func (c payloadCodecChain) WithSerializationContext(ctx SerializationContext) PayloadCodec {
+	codecs := slices.Clone(c)
+	for i, codec := range c {
+		if contextual, ok := codec.(PayloadCodecWithSerializationContext); ok {
+			codecs[i] = contextual.WithSerializationContext(ctx)
+		}
+	}
+	return codecs
+}
+
+func (c payloadCodecChain) WithWorkflowContext(ctx workflowcontext.Context) PayloadCodec {
+	codecs := slices.Clone(c)
+	for i, codec := range c {
+		if contextual, ok := codec.(commonconverter.WorkflowContextAwarePayloadCodec); ok {
+			codecs[i] = contextual.WithWorkflowContext(ctx)
+		}
+	}
+	return codecs
 }
 
 // ToPayload implements DataConverter.ToPayload performing encoding on the
@@ -448,6 +515,10 @@ func NewRemoteDataConverter(parent DataConverter, options RemoteDataConverterOpt
 	options.Endpoint = strings.TrimSuffix(options.Endpoint, "/")
 	payloadCodec := NewRemotePayloadCodec(RemotePayloadCodecOptions(options))
 	return &remoteDataConverter{parent, payloadCodec}
+}
+
+func (rdc *remoteDataConverter) Codec() PayloadCodec {
+	return (&CodecDataConverter{rdc.parent, []PayloadCodec{rdc.payloadCodec}}).Codec()
 }
 
 // ToPayload implements DataConverter.ToPayload performing remote encoding on the

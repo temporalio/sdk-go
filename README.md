@@ -239,5 +239,45 @@ converter.NewCompositeDataConverter(
 
 Note: Payloads encoded with `proto/binary` will not be readable in the Temporal web UI.
 
+## Automatic header codecs
+
+User-supplied Temporal Payload headers should be wire-ready, including any codec encoding.
+Tracing and context propagators can independently opt into processing their own headers
+with the codec from the configured client's `DataConverter`. For example:
+
+```go
+dc := converter.NewCodecDataConverter(
+    converter.GetDefaultDataConverter(),
+    converter.NewZlibCodec(converter.ZlibCodecOptions{AlwaysEncode: true}),
+)
+options := client.Options{
+    DataConverter: dc,
+}
+```
+
+Set `EncodeHeaders: true` in tracing options to encode that integration's tracing
+headers, retaining standard tracing serialization. Context propagators opt in by
+implementing `workflow.CodecContextPropagator` with `EncodeHeaders() bool` returning
+true. Existing propagators default to false.
+Opted-in propagators must produce serialized **but not already codec-encoded**
+payloads. All other headers are left untouched, including already-encoded raw payloads.
+Opt-in follows the producer's key and payload instance; removing and reinserting that
+same payload does not cancel encoding.
+Receiving tracing integrations and propagators must opt in to read encoded headers
+and use a compatible codec. Each opted-in consumer receives a private decoded view of the
+original headers; codecs must pass through encodings they do not recognize.
+Built-in codec converters expose `converter.PayloadCodecProvider` (`Codec()
+PayloadCodec`); custom converter wrappers must forward that capability. Without
+a configured codec, processing is an identity operation. Header payloads are
+never value-converted. Nexus string headers and gRPC metadata are unaffected.
+
+Header encoding happens after interceptors and propagation, before external
+storage; decoding happens after retrieval, before inbound consumers. Context-aware
+codecs receive the destination workflow or activity serialization context.
+
+Codec errors propagate without falling back to plaintext.
+Set `worker.WorkflowReplayerOptions.DataConverter` to the same codec-backed
+converter and configure matching propagator/tracing opt-ins when replaying encoded histories.
+
 ## License
 MIT License, please see [LICENSE](LICENSE) for details.

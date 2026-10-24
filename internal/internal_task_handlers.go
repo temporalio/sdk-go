@@ -2386,13 +2386,14 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 	})
 	// The result and failure use the propagated Nexus context, because they are returned to the Nexus
 	// caller. WithActivityTask applies the same choice to heartbeat details and the activity context to input.
-	serializationContext := serializationContextFor(converter.ActivitySerializationContext{
+	activityContext := converter.ActivitySerializationContext{
 		Namespace:    ath.namespace,
 		WorkflowID:   t.WorkflowExecution.GetWorkflowId(),
 		WorkflowType: t.WorkflowType.GetName(),
 		ActivityType: t.ActivityType.GetName(),
 		TaskQueue:    taskQueue,
-	}, t.GetPropagatedNexusSerializationContext())
+	}
+	serializationContext := serializationContextFor(activityContext, t.GetPropagatedNexusSerializationContext())
 	dataConverter := converter.WithDataConverterSerializationContext(ath.dataConverter, serializationContext)
 	failureConverter := converter.WithFailureConverterSerializationContext(ath.failureConverter, serializationContext)
 
@@ -2470,7 +2471,11 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 	}()
 
 	// propagate context information into the activity context from the headers
-	ctx, err = contextWithHeaderPropagated(ctx, t.Header, ath.contextPropagators)
+	var headerCodec converter.PayloadCodec
+	if ath.client != nil {
+		headerCodec = bindHeaderCodec(ath.client.headerCodec, activityContext)
+	}
+	ctx, err = contextWithHeaderPropagated(ctx, t.Header, ath.contextPropagators, headerCodec)
 	if err != nil {
 		return activityTaskResult{}, err
 	}

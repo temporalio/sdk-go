@@ -33,3 +33,17 @@ type DataConverter interface {
 	// ToStrings converts payloads object into human readable strings.
 	ToStrings(input *commonpb.Payloads) []string
 }
+
+// PayloadCodec is exposed as [go.temporal.io/sdk/converter.PayloadCodec].
+type PayloadCodec interface {
+	// Encode optionally encodes non-nil payloads without mutating them.
+	Encode([]*commonpb.Payload) ([]*commonpb.Payload, error)
+	// Decode optionally decodes non-nil payloads without mutating them.
+	// For compatibility, implementations should not decode unencoded payloads.
+	Decode([]*commonpb.Payload) ([]*commonpb.Payload, error)
+}
+
+// PayloadCodecProvider is exposed as [go.temporal.io/sdk/converter.PayloadCodecProvider].
+type PayloadCodecProvider interface {
+	Codec() PayloadCodec
+}

@@ -828,11 +828,12 @@ func (w *workflowClientInterceptor) ExecuteActivity(
 	// Input and metadata use the activity context even when started by a Nexus handler. The propagated
 	// context is sent to the server and only applies to the result and failure.
 	propagatedNexusSerializationContext := propagatedNexusSerializationContextFromGoContext(ctx)
-	dataConverter = converter.WithDataConverterSerializationContext(dataConverter, converter.ActivitySerializationContext{
+	serializationContext := converter.ActivitySerializationContext{
 		Namespace:    w.client.namespace,
 		ActivityType: in.ActivityType,
 		TaskQueue:    in.Options.TaskQueue,
-	})
+	}
+	dataConverter = converter.WithDataConverterSerializationContext(dataConverter, serializationContext)
 
 	request := &workflowservice.StartActivityExecutionRequest{
 		Namespace:                           w.client.namespace,
@@ -870,7 +871,8 @@ func (w *workflowClientInterceptor) ExecuteActivity(
 	if request.Input, err = encodeArgs(dataConverter, in.Args); err != nil {
 		return nil, err
 	}
-	if request.Header, err = headerPropagated(ctx, w.client.contextPropagators); err != nil {
+	if request.Header, err = headerPropagated(ctx, w.client.contextPropagators, bindHeaderCodec(w.client.headerCodec,
+		serializationContext)); err != nil {
 		return nil, err
 	}
 
