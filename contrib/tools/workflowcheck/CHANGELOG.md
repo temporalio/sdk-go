@@ -24,6 +24,8 @@ or Security.
 
 ### Fixed
 
+- Avoid a panic when fact logging is enabled for packages without source files, such as `unsafe`.
+
 ### Security
 
 ## [0.6.0] - 2026-10-08
