@@ -57,6 +57,8 @@ type (
 		StartToCloseTimeout time.Duration
 		// ScheduledTime is the time when the activity was scheduled by a workflow.
 		ScheduledTime time.Time
+		// CurrentAttemptScheduledTime is the time when the current attempt was scheduled.
+		CurrentAttemptScheduledTime time.Time
 		// StartedTime is the time when the activity started.
 		StartedTime time.Time
 		// Deadline is the time of activity timeout.
@@ -323,6 +325,10 @@ func WithActivityTask(
 	client *WorkflowClient,
 ) (context.Context, error) {
 	scheduled := task.GetScheduledTime().AsTime()
+	currentAttemptScheduled := scheduled
+	if t := task.GetCurrentAttemptScheduledTime(); t != nil {
+		currentAttemptScheduled = t.AsTime()
+	}
 	started := task.GetStartedTime().AsTime()
 	scheduleToCloseTimeout := task.GetScheduleToCloseTimeout().AsDuration()
 	startToCloseTimeout := task.GetStartToCloseTimeout().AsDuration()
@@ -340,27 +346,28 @@ func WithActivityTask(
 	dataConverter = converter.WithDataConverterSerializationContext(dataConverter, actCtx)
 
 	env := &activityEnvironment{
-		taskToken:              task.TaskToken,
-		serviceInvoker:         invoker,
-		activityType:           ActivityType{Name: task.ActivityType.GetName()},
-		activityID:             task.ActivityId,
-		metricsHandler:         metricsHandler,
-		deadline:               deadline,
-		heartbeatTimeout:       heartbeatTimeout,
-		scheduleToCloseTimeout: scheduleToCloseTimeout,
-		startToCloseTimeout:    startToCloseTimeout,
-		scheduledTime:          scheduled,
-		startedTime:            started,
-		taskQueue:              taskQueue,
-		dataConverter:          dataConverter,
-		attempt:                task.GetAttempt(),
-		priority:               task.GetPriority(),
-		heartbeatDetails:       task.HeartbeatDetails,
-		namespace:              task.WorkflowNamespace,
-		retryPolicy:            convertFromPBRetryPolicy(task.RetryPolicy),
-		workerStopChannel:      workerStopChannel,
-		contextPropagators:     contextPropagators,
-		client:                 client,
+		taskToken:                   task.TaskToken,
+		serviceInvoker:              invoker,
+		activityType:                ActivityType{Name: task.ActivityType.GetName()},
+		activityID:                  task.ActivityId,
+		metricsHandler:              metricsHandler,
+		deadline:                    deadline,
+		heartbeatTimeout:            heartbeatTimeout,
+		scheduleToCloseTimeout:      scheduleToCloseTimeout,
+		startToCloseTimeout:         startToCloseTimeout,
+		scheduledTime:               scheduled,
+		currentAttemptScheduledTime: currentAttemptScheduled,
+		startedTime:                 started,
+		taskQueue:                   taskQueue,
+		dataConverter:               dataConverter,
+		attempt:                     task.GetAttempt(),
+		priority:                    task.GetPriority(),
+		heartbeatDetails:            task.HeartbeatDetails,
+		namespace:                   task.WorkflowNamespace,
+		retryPolicy:                 convertFromPBRetryPolicy(task.RetryPolicy),
+		workerStopChannel:           workerStopChannel,
+		contextPropagators:          contextPropagators,
+		client:                      client,
 	}
 
 	if task.WorkflowExecution.GetWorkflowId() == "" {
@@ -428,30 +435,35 @@ func WithLocalActivityTask(
 		scheduleToCloseTimeout = startToCloseTimeout
 	}
 	deadline := calculateActivityDeadline(task.scheduledTime, scheduleToCloseTimeout, startToCloseTimeout)
+	currentAttemptScheduled := task.currentAttemptScheduledTime
+	if currentAttemptScheduled.IsZero() {
+		currentAttemptScheduled = task.scheduledTime
+	}
 	if task.attempt > 1 && !task.expireTime.IsZero() && task.expireTime.Before(deadline) {
 		// this is attempt and expire time is before SCHEDULE_TO_CLOSE timeout
 		deadline = task.expireTime
 	}
 	return newActivityContext(ctx, interceptors, &activityEnvironment{
-		workflowType:           &workflowTypeLocal,
-		namespace:              task.params.WorkflowInfo.Namespace,
-		taskQueue:              task.params.WorkflowInfo.TaskQueueName,
-		activityType:           ActivityType{Name: activityType},
-		activityID:             fmt.Sprintf("%v", task.activityID),
-		workflowExecution:      task.params.WorkflowInfo.WorkflowExecution,
-		logger:                 logger,
-		metricsHandler:         metricsHandler,
-		scheduleToCloseTimeout: scheduleToCloseTimeout,
-		startToCloseTimeout:    startToCloseTimeout,
-		isLocalActivity:        true,
-		deadline:               deadline,
-		scheduledTime:          task.scheduledTime,
-		startedTime:            startedTime,
-		dataConverter:          dataConverter,
-		attempt:                task.attempt,
-		retryPolicy:            task.retryPolicy,
-		client:                 client,
-		workerStopChannel:      workerStopChannel,
+		workflowType:                &workflowTypeLocal,
+		namespace:                   task.params.WorkflowInfo.Namespace,
+		taskQueue:                   task.params.WorkflowInfo.TaskQueueName,
+		activityType:                ActivityType{Name: activityType},
+		activityID:                  fmt.Sprintf("%v", task.activityID),
+		workflowExecution:           task.params.WorkflowInfo.WorkflowExecution,
+		logger:                      logger,
+		metricsHandler:              metricsHandler,
+		scheduleToCloseTimeout:      scheduleToCloseTimeout,
+		startToCloseTimeout:         startToCloseTimeout,
+		isLocalActivity:             true,
+		deadline:                    deadline,
+		scheduledTime:               task.scheduledTime,
+		currentAttemptScheduledTime: currentAttemptScheduled,
+		startedTime:                 startedTime,
+		dataConverter:               dataConverter,
+		attempt:                     task.attempt,
+		retryPolicy:                 task.retryPolicy,
+		client:                      client,
+		workerStopChannel:           workerStopChannel,
 	})
 }
 

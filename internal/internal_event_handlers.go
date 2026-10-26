@@ -183,21 +183,22 @@ type (
 	localActivityTask struct {
 		sync.Mutex
 		// Owned by localActivityTunnel while the task is queued.
-		nextQueuedTask  *localActivityTask
-		workflowTask    *workflowTask
-		activityID      string
-		params          *ExecuteLocalActivityParams
-		callback        LocalActivityResultHandler
-		wc              *workflowExecutionContextImpl
-		canceled        bool
-		cancelFunc      func()
-		attempt         int32  // attempt starting from 1
-		attemptsThisWFT uint32 // Number of attempts started during this workflow task
-		pastFirstWFT    bool   // Set true once this LA has lived for more than one workflow task
-		retryPolicy     *RetryPolicy
-		expireTime      time.Time
-		scheduledTime   time.Time // Time the activity was scheduled initially.
-		header          *commonpb.Header
+		nextQueuedTask              *localActivityTask
+		workflowTask                *workflowTask
+		activityID                  string
+		params                      *ExecuteLocalActivityParams
+		callback                    LocalActivityResultHandler
+		wc                          *workflowExecutionContextImpl
+		canceled                    bool
+		cancelFunc                  func()
+		attempt                     int32  // attempt starting from 1
+		attemptsThisWFT             uint32 // Number of attempts started during this workflow task
+		pastFirstWFT                bool   // Set true once this LA has lived for more than one workflow task
+		retryPolicy                 *RetryPolicy
+		expireTime                  time.Time
+		scheduledTime               time.Time // Time the activity was scheduled initially.
+		currentAttemptScheduledTime time.Time // Set only when the activity is retried within a workflow task.
+		header                      *commonpb.Header
 	}
 
 	localActivityMarkerData struct {

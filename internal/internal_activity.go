@@ -110,32 +110,33 @@ type (
 	}
 
 	activityEnvironment struct {
-		taskToken              []byte
-		workflowExecution      WorkflowExecution
-		activityID             string
-		activityType           ActivityType
-		serviceInvoker         ServiceInvoker
-		logger                 log.Logger
-		metricsHandler         metrics.Handler
-		isLocalActivity        bool
-		heartbeatTimeout       time.Duration
-		scheduleToCloseTimeout time.Duration
-		startToCloseTimeout    time.Duration
-		deadline               time.Time
-		scheduledTime          time.Time
-		startedTime            time.Time
-		taskQueue              string
-		dataConverter          converter.DataConverter
-		attempt                int32 // starts from 1.
-		heartbeatDetails       *commonpb.Payloads
-		workflowType           *WorkflowType
-		namespace              string
-		workerStopChannel      <-chan struct{}
-		contextPropagators     []ContextPropagator
-		client                 *WorkflowClient
-		priority               *commonpb.Priority
-		retryPolicy            *RetryPolicy
-		activityRunID          string
+		taskToken                   []byte
+		workflowExecution           WorkflowExecution
+		activityID                  string
+		activityType                ActivityType
+		serviceInvoker              ServiceInvoker
+		logger                      log.Logger
+		metricsHandler              metrics.Handler
+		isLocalActivity             bool
+		heartbeatTimeout            time.Duration
+		scheduleToCloseTimeout      time.Duration
+		startToCloseTimeout         time.Duration
+		deadline                    time.Time
+		scheduledTime               time.Time
+		currentAttemptScheduledTime time.Time
+		startedTime                 time.Time
+		taskQueue                   string
+		dataConverter               converter.DataConverter
+		attempt                     int32 // starts from 1.
+		heartbeatDetails            *commonpb.Payloads
+		workflowType                *WorkflowType
+		namespace                   string
+		workerStopChannel           <-chan struct{}
+		contextPropagators          []ContextPropagator
+		client                      *WorkflowClient
+		priority                    *commonpb.Priority
+		retryPolicy                 *RetryPolicy
+		activityRunID               string
 	}
 
 	// context.WithValue need this type instead of basic type string to avoid lint error
@@ -364,25 +365,26 @@ func (a *activityEnvironmentInterceptor) GetInfo(ctx context.Context) ActivityIn
 	}
 
 	return ActivityInfo{
-		ActivityID:             a.env.activityID,
-		ActivityType:           a.env.activityType,
-		TaskToken:              a.env.taskToken,
-		WorkflowExecution:      a.env.workflowExecution,
-		HeartbeatTimeout:       a.env.heartbeatTimeout,
-		ScheduleToCloseTimeout: a.env.scheduleToCloseTimeout,
-		StartToCloseTimeout:    a.env.startToCloseTimeout,
-		Deadline:               a.env.deadline,
-		ScheduledTime:          a.env.scheduledTime,
-		StartedTime:            a.env.startedTime,
-		TaskQueue:              a.env.taskQueue,
-		Namespace:              a.env.namespace,
-		Attempt:                a.env.attempt,
-		WorkflowType:           a.env.workflowType,
-		WorkflowNamespace:      workflowNamespace,
-		IsLocalActivity:        a.env.isLocalActivity,
-		Priority:               convertFromPBPriority(a.env.priority),
-		RetryPolicy:            a.env.retryPolicy,
-		ActivityRunID:          a.env.activityRunID,
+		ActivityID:                  a.env.activityID,
+		ActivityType:                a.env.activityType,
+		TaskToken:                   a.env.taskToken,
+		WorkflowExecution:           a.env.workflowExecution,
+		HeartbeatTimeout:            a.env.heartbeatTimeout,
+		ScheduleToCloseTimeout:      a.env.scheduleToCloseTimeout,
+		StartToCloseTimeout:         a.env.startToCloseTimeout,
+		Deadline:                    a.env.deadline,
+		ScheduledTime:               a.env.scheduledTime,
+		CurrentAttemptScheduledTime: a.env.currentAttemptScheduledTime,
+		StartedTime:                 a.env.startedTime,
+		TaskQueue:                   a.env.taskQueue,
+		Namespace:                   a.env.namespace,
+		Attempt:                     a.env.attempt,
+		WorkflowType:                a.env.workflowType,
+		WorkflowNamespace:           workflowNamespace,
+		IsLocalActivity:             a.env.isLocalActivity,
+		Priority:                    convertFromPBPriority(a.env.priority),
+		RetryPolicy:                 a.env.retryPolicy,
+		ActivityRunID:               a.env.activityRunID,
 	}
 }
 

@@ -1028,9 +1028,12 @@ processWorkflowLoop:
 						}
 
 						laRetry.attempt++
+						prevScheduled := laRetry.currentAttemptScheduledTime
+						laRetry.currentAttemptScheduledTime = time.Now()
 
 						if !wth.laTunnel.sendTask(laRetry) {
 							laRetry.attempt--
+							laRetry.currentAttemptScheduledTime = prevScheduled
 						}
 
 					case lar := <-workflowTask.laResultCh:
