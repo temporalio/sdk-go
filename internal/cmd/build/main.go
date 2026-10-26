@@ -72,11 +72,13 @@ func newBuilder() *builder {
 
 func (b *builder) run() error {
 	if len(os.Args) < 2 {
-		return fmt.Errorf("missing command name, 'check', 'integration-test', or 'unit-test' required")
+		return fmt.Errorf("missing command name: use 'check', 'generate', 'integration-test', 'unit-test', or 'merge-coverage-files'")
 	}
 	switch os.Args[1] {
 	case "check":
 		return b.check()
+	case "generate":
+		return b.generate(os.Args[2:])
 	case "integration-test":
 		return b.integrationTest()
 	case "merge-coverage-files":
@@ -84,8 +86,33 @@ func (b *builder) run() error {
 	case "unit-test":
 		return b.unitTest()
 	default:
-		return fmt.Errorf("unrecognized command %q, 'check', 'integration-test', or 'unit-test' required", os.Args[1])
+		return fmt.Errorf("unrecognized command %q: use 'check', 'generate', 'integration-test', 'unit-test', or 'merge-coverage-files'", os.Args[1])
 	}
+}
+
+func (b *builder) generate(args []string) error {
+	flags := flag.NewFlagSet("generate", flag.ContinueOnError)
+	check := flags.Bool("check", false, "check generated files without modifying them")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 {
+		return fmt.Errorf("generate: unexpected arguments: %s", strings.Join(flags.Args(), " "))
+	}
+	for _, generator := range []struct {
+		name string
+		args []string
+	}{
+		{"payload limit validator", []string{"go", "run", "./internal/cmd/payload-limit-gen", "-out", "internal/payloadlimits/validator_gen.go"}},
+	} {
+		if *check {
+			generator.args = append(generator.args, "-check")
+		}
+		if err := b.runCmd(b.cmdFromRoot(generator.args...)); err != nil {
+			return fmt.Errorf("%s generation failed: %w", generator.name, err)
+		}
+	}
+	return nil
 }
 
 func (b *builder) check() error {
@@ -94,13 +121,6 @@ func (b *builder) check() error {
 		return fmt.Errorf("failed finding modules to check: %w", err)
 	}
 
-	// Runs first because it takes seconds, so a go.temporal.io/api bump that adds an unclassified
-	// payload field is reported before the slower linters.
-	if err := b.runCmd(b.cmdFromRoot(
-		"go", "run", "./internal/cmd/payload-limit-gen", "-check", "-out", "internal/payloadlimits/validator_gen.go",
-	)); err != nil {
-		return fmt.Errorf("payload limit validator check failed: %w", err)
-	}
 	// Run go vet
 	if err := b.runCmdInDirs(moduleDirs, "go", "vet", "./..."); err != nil {
 		return fmt.Errorf("go vet failed: %w", err)

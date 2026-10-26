@@ -77,39 +77,51 @@ We'd love your help in making the Temporal Go SDK great. Please review our [cont
 
 ### Prerequisites
 
-- [Go](https://go.dev/) 1.24+ (see [go.mod](go.mod) for the minimum supported version)
+- [Go](https://go.dev/)
+- [Mise](https://mise.jdx.dev/)
 
 ### Local development workflow
 
-The canonical local commands are provided by the build tool in `internal/cmd/build`.
+Use Mise to install dependencies located outside the Go ecosystem:
+
+```bash
+mise install
+```
 
 Tests are managed through the build tool at `internal/cmd/build`. This tool handles starting an embedded Temporal dev
 server with the required dynamic configs and search attributes, enforces consistent test flags (`-race`, `-count 1`, no caching),
 and manages coverage collection, so you don't need to manually configure a server or remember the right flags.
+All the `mise run` tasks below are thin wrappers around `internal/cmd/build`.
+
+Ensure generated code is up to date:
 
 ```bash
-cd internal/cmd/build
+mise run generate
 ```
 
 Run static analysis checks:
 
 ```bash
-go run . check
+mise run check
 ```
 
 Run unit tests (all packages except `test/`):
 
 ```bash
-go run . unit-test
+mise run unit-test
 ```
 
 Run integration tests with an embedded Temporal dev server:
 
 ```bash
-go run . integration-test -dev-server
+mise run integration-test
 ```
 
-If you omit `-dev-server`, integration tests connect to a server already running on `localhost:7233`.
+Run integration tests with a Temporal server running on `localhost:7233`:
+
+```bash
+mise run integration-test -- -dev-server=false
+```
 
 ### Test output and logs
 
@@ -119,35 +131,36 @@ the repository root.
 To show full test and dev-server output in the console while still saving the log files, use `-console-output full`:
 
 ```bash
-go run . unit-test -console-output full
-go run . integration-test -dev-server -console-output full
+mise run unit-test -- -console-output full
+mise run integration-test -- -console-output full
 ```
 
 Use `-log-dir` to write the files elsewhere. Relative paths are resolved from the repository root, and absolute paths
 are also accepted:
 
 ```bash
-go run . integration-test -dev-server -log-dir artifacts/test-logs
+mise run integration-test -- -log-dir artifacts/test-logs
 ```
 
 ### Running specific tests
 
-Use `-run` with the same semantics as `go test -run`.
+Pass build-tool options after `--`. Use `-run` with the same semantics as
+`go test -run`.
 
 Unit tests:
 
 ```bash
-go run . unit-test -run "TestMyFunction"
+mise run unit-test -- -run "TestMyFunction"
 ```
 
 Integration tests:
 
 ```bash
 # Single test in a suite
-go run . integration-test -dev-server -run "TestIntegrationSuite/TestMyTest"
+mise run integration-test -- -run "TestIntegrationSuite/TestMyTest"
 
 # Entire suite
-go run . integration-test -dev-server -run "TestWorkerTunerTestSuite"
+mise run integration-test -- -run "TestWorkerTunerTestSuite"
 ```
 
 ### Coverage
@@ -155,19 +168,19 @@ go run . integration-test -dev-server -run "TestWorkerTunerTestSuite"
 Unit test coverage (writes per-package profiles under `.build/coverage`):
 
 ```bash
-go run . unit-test -coverage
+mise run unit-test -- -coverage
 ```
 
 Integration test coverage:
 
 ```bash
-go run . integration-test -dev-server -coverage-file integration-test.out
+mise run integration-test -- -coverage-file integration-test.out
 ```
 
 Merge coverage files:
 
 ```bash
-go run . merge-coverage-files coverage.out
+mise run merge-coverage-files -- coverage.out
 ```
 
 ### Go module housekeeping
@@ -182,7 +195,7 @@ find . -name go.mod -execdir go mod tidy \;
 
 Before opening or updating a pull request:
 
-- Run `go run . check` from `internal/cmd/build`.
+- Run `mise run check` and `mise run generate`.
 - Run relevant tests (`unit-test` and, when needed, `integration-test -dev-server`).
 - Keep changes focused and include tests for behavior changes.
 - Update documentation/comments when public behavior changes.

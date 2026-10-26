@@ -1,0 +1,32 @@
+min_version = "2026.7.3"
+
+[tools]
+rust = { version = "1.96.0", profile = "minimal" }
+
+[tools."cargo:https://github.com/temporalio/nexgen"]
+version = "rev:c03f1df573d737ebe63bb196d2989b6f839f83a4"
+crate = "nexgen"
+features = "advanced"
+locked = true
+# Cargo installation can inherit the caller's toolchain. Keep this aligned with rust.
+install_env = { RUSTUP_TOOLCHAIN = "1.96.0" }
+
+[tasks.check]
+description = "Run static analysis checks"
+dir = "internal/cmd/build"
+run = "go run . check"
+
+[tasks.generate]
+description = "Run code generators"
+dir = "internal/cmd/build"
+run = "go run . generate"
+
+[tasks.integration-test]
+description = "Run integration tests"
+dir = "internal/cmd/build"
+run = "go run . integration-test"
+
+[tasks.unit-test]
+description = "Run unit tests"
+dir = "internal/cmd/build"
+run = "go run . unit-test"

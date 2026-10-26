@@ -8,18 +8,21 @@ quick reference for coding-agent work and pull requests.
 ## Requirements for coding agents
 
 - Use the Go requirement specified in `go.mod`.
-- Prefer the canonical build tool in `internal/cmd/build` for checks and tests.
+- Use the mise tasks that wrap the canonical build tool in `internal/cmd/build`
+  for checks and tests.
   It supplies the repo's expected flags, race detector, uncached test runs,
   coverage wiring, embedded dev server setup, dynamic config, and search
   attributes. Do not hand-roll equivalent integration-test commands unless you
   have a specific reason.
-- Run build-tool commands from `internal/cmd/build`:
-  - `go run . check`
-  - `go run . unit-test`
-  - `go run . integration-test -dev-server`
-- For focused tests, use the build tool's `-run` flag:
-  - `go run . unit-test -run "TestMyFunction"`
-  - `go run . integration-test -dev-server -run "TestIntegrationSuite/TestMyTest"`
+- Run `mise install` from the repository root to install generation tools.
+- Run checks and tests through mise:
+  - `mise run check`
+  - `mise run generate -- -check`
+  - `mise run unit-test`
+  - `mise run integration-test -- -dev-server`
+- For focused tests, pass the build tool's `-run` flag after `--`:
+  - `mise run unit-test -- -run "TestMyFunction"`
+  - `mise run integration-test -- -dev-server -run "TestIntegrationSuite/TestMyTest"`
 - If you need integration tests against an already-running server on
   `localhost:7233`, omit `-dev-server`. Otherwise prefer `-dev-server`.
 - Avoid fixed sleeps in tests. Prefer channels, callbacks, history/event
@@ -45,7 +48,7 @@ quick reference for coding-agent work and pull requests.
   incomplete or misleading.
 - If dependencies change, tidy all modules from the repository root with:
   `find . -name go.mod -execdir go mod tidy \;`
-- Run `go generate ./internal/payloadlimits` right after changing the
+- Run `mise run generate` right after changing the
   `go.temporal.io/api` version, before any other work, so unclassified payload
   fields surface early.
 - Treat generated files, mocks, and module metadata carefully. Regenerate with
@@ -56,35 +59,35 @@ quick reference for coding-agent work and pull requests.
 
 ## Building and testing
 
-The canonical local workflow is described in `CONTRIBUTING.md`.
+The canonical local workflow is described in `README.md`. Run these commands
+from the repository root:
 
 ```bash
-cd internal/cmd/build
-go run . check
-go run . unit-test
-go run . integration-test -dev-server
+mise install
+mise run generate -- -check
+mise run check
+mise run unit-test
+mise run integration-test -- -dev-server
 ```
 
 Useful focused commands:
 
 ```bash
-cd internal/cmd/build
-go run . unit-test -run "TestPayloadLimitsVisitor"
-go run . integration-test -dev-server -run "TestWorkerTunerTestSuite"
-go run . integration-test -dev-server -run "TestIntegrationSuite/TestShutdownDuringActiveTimerActivityWorkflows"
+mise run unit-test -- -run "TestPayloadLimitsVisitor"
+mise run integration-test -- -dev-server -run "TestWorkerTunerTestSuite"
+mise run integration-test -- -dev-server -run "TestIntegrationSuite/TestShutdownDuringActiveTimerActivityWorkflows"
 ```
 
 Coverage:
 
 ```bash
-cd internal/cmd/build
-go run . unit-test -coverage
-go run . integration-test -dev-server -coverage-file integration-test.out
-go run . merge-coverage-files coverage.out
+mise run unit-test -- -coverage
+mise run integration-test -- -dev-server -coverage-file integration-test.out
+mise exec -- go -C internal/cmd/build run . merge-coverage-files coverage.out
 ```
 
 Use direct `go test` for very small compile or package checks when that is the
-right tool, but prefer the build tool before considering a change verified.
+right tool, but prefer the mise tasks before considering a change verified.
 
 Prefer tests through exported APIs when feasible, especially for public SDK
 behavior. Use internal hooks only when the behavior cannot be observed
@@ -122,7 +125,7 @@ externally.
 - Use the organization-wide [pull request template](https://github.com/temporalio/.github/blob/main/.github/pull_request_template.md)
   when creating or updating a pull request description.
 - Keep changes focused and include tests for behavior changes.
-- Run `go run . check` from `internal/cmd/build`.
+- Run `mise run check` and `mise run generate -- -check`.
 - Run relevant unit tests, and integration tests with `-dev-server` when the
   change touches workflow execution, workers, clients, Nexus, payload handling,
   interceptors, or server interaction.
