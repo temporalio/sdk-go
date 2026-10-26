@@ -54,6 +54,8 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- Preserve Temporal service error codes when classifying retries, so a heartbeat
+  RPC deadline does not cancel an activity while its context is still live.
 - `converter.NewRemotePayloadCodec` now handles endpoint URLs with trailing slashes.
 - Fixed race when using `log.With` without a `WithLogger` implementation, where logs could overwrite each others' buffers.
 - The default timeout for client and worker RPCs has been extended. Previously, the default timeout
@@ -130,8 +132,6 @@ to docs, or any other relevant information.
   wait for worker cleanup, and `Run` returns the first fatal error even when
   interruption races with it.
 - Child context cancellation now follows creation order by default.
-- Preserve Temporal service error codes when classifying retries, so a heartbeat
-  RPC deadline does not cancel an activity while its context is still live.
 - Legacy query failure responses (`RespondQueryTaskCompletedRequest`) now set
   `WorkflowTaskFailedCause` for workflow task failures: `PAYLOADS_TOO_LARGE` for oversized payloads,
   `NON_DETERMINISTIC_ERROR` for illegal state machine panics, and

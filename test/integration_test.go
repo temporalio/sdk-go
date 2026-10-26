@@ -900,14 +900,14 @@ func (ts *IntegrationTestSuite) TestLongRunningActivityWithHBAndPersistentRpcDea
 	const workflowID = "test-persistent-heartbeat-rpc-deadline"
 	var expected []string
 	err := ts.executeWorkflow(workflowID, ts.workflows.LongRunningActivityWithHB, &expected)
-	ts.Error(err)
+	ts.Require().Error(err)
 	history := ts.client.GetWorkflowHistory(ts.T().Context(), workflowID, "", false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
 	heartbeatTimedOut := false
 	for history.HasNext() {
 		event, err := history.Next()
-		ts.NoError(err)
+		ts.Require().NoError(err)
 		if timeout := event.GetActivityTaskTimedOutEventAttributes(); timeout != nil {
-			heartbeatTimedOut = timeout.GetFailure().GetTimeoutFailureInfo().GetTimeoutType() == enumspb.TIMEOUT_TYPE_HEARTBEAT
+			heartbeatTimedOut = heartbeatTimedOut || timeout.GetFailure().GetTimeoutFailureInfo().GetTimeoutType() == enumspb.TIMEOUT_TYPE_HEARTBEAT
 		}
 	}
 	ts.True(heartbeatTimedOut)
@@ -1367,13 +1367,14 @@ func (ts *IntegrationTestSuite) TestSignalWorkflowWithStubbornGrpcError() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
-	ts.trafficController.AddError("SignalWorkflowExecution", serviceerror.NewInternal("server failure"), test.FailAllAttempts)
+	ts.trafficController.AddError("SignalWorkflowExecution", status.Error(codes.Unavailable, "server failure"), test.FailAllAttempts)
 	wfOpts := ts.startWorkflowOptions("test-signal-workflow-grpc-error")
 	run, err := ts.client.ExecuteWorkflow(ctx, wfOpts, ts.workflows.SignalWorkflow)
-	ts.Nil(err)
+	ts.Require().NoError(err)
 	err = ts.client.SignalWorkflow(ctx, "test-signal-workflow-grpc-error", run.GetRunID(), "string-signal", "string-value")
-	ts.Error(err)
-	ts.Equal("context deadline exceeded", err.Error())
+	var deadline *serviceerror.DeadlineExceeded
+	ts.ErrorAs(err, &deadline)
+	ts.Greater(ts.getReportedOperationCount("temporal_request_failure_attempt", "SignalWorkflowExecution"), int64(1))
 }
 
 func (ts *IntegrationTestSuite) TestWorkflowIDReuseRejectDuplicateNoChildWorkflow() {
