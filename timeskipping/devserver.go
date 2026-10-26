@@ -3,35 +3,10 @@ package timeskipping
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/testsuite"
 )
-
-// dynamicConfig are the dynamic-config values a dev server needs for time
-// skipping. The server defaults all of them off, and without them time skipping
-// is silently unavailable rather than loudly broken.
-//
-// These cannot simply be set on a shared dev server: forcing every schedule onto
-// the CHASM v2 scheduler changes behaviour that existing tests depend on, which
-// is why time skipping starts its own.
-//
-// The CLI parses values as JSON, so a non-scalar setting needs JSON encoding —
-// a string list is ["x"], not x. A bare value makes the server refuse to start.
-// That applies to anything a caller adds through ExtraArgs too.
-var dynamicConfig = []string{
-	"frontend.WorkflowTimeSkippingEnabled=true",
-
-	// Schedule time skipping is CHASM (v2) scheduler only, and new schedules are
-	// NOT created on CHASM by default — creation is off, behind a percentage
-	// rollout that also defaults to zero. Without all three of these a schedule
-	// lands on the v1 workflow-backed scheduler and its time-skipping config is
-	// quietly ignored.
-	"history.enableCHASMSchedulerTimeSkipping=true",
-	"history.enableCHASMSchedulerCreation=true",
-	"history.chasmSchedulerCreationRolloutPercent=100",
-}
 
 // DevServerOptions configures a time-skipping dev server. Same shape as
 // testsuite.DevServerOptions, plus the configuration stamped on every workflow
@@ -57,7 +32,26 @@ type DevServer struct {
 }
 
 func startDevServer(ctx context.Context, options DevServerOptions) (*DevServer, error) {
-	options.ExtraArgs = withDynamicConfig(options.ExtraArgs, dynamicConfig)
+	// The dynamic config time skipping needs. The server defaults all of it off,
+	// and without it time skipping is silently unavailable rather than loudly
+	// broken, so these are applied unconditionally rather than left to the caller
+	// to override through ExtraArgs.
+	//
+	// They cannot simply be set on a shared dev server: forcing every schedule
+	// onto the CHASM v2 scheduler changes behaviour that existing tests depend
+	// on, which is why time skipping starts its own.
+	//
+	// Schedule time skipping is CHASM (v2) scheduler only, and new schedules are
+	// NOT created on CHASM by default — creation is off, behind a percentage
+	// rollout that also defaults to zero. Without all three of the history
+	// settings a schedule lands on the v1 workflow-backed scheduler and its
+	// time-skipping config is quietly ignored.
+	options.ExtraArgs = append(options.ExtraArgs,
+		"--dynamic-config-value", "frontend.WorkflowTimeSkippingEnabled=true",
+		"--dynamic-config-value", "history.enableCHASMSchedulerTimeSkipping=true",
+		"--dynamic-config-value", "history.enableCHASMSchedulerCreation=true",
+		"--dynamic-config-value", "history.chasmSchedulerCreationRolloutPercent=100",
+	)
 	ds, err := testsuite.StartDevServer(ctx, options.DevServerOptions)
 	if err != nil {
 		return nil, err
@@ -84,38 +78,3 @@ func startDevServer(ctx context.Context, options DevServerOptions) (*DevServer, 
 //
 // NOTE: Experimental
 func (d *DevServer) Client() client.Client { return d.TimeSkipper.Client() }
-
-// withDynamicConfig appends each "key=value" as a --dynamic-config-value pair,
-// skipping any key the caller already set in extraArgs.
-func withDynamicConfig(extraArgs []string, values []string) []string {
-	for _, kv := range values {
-		key, _, ok := strings.Cut(kv, "=")
-		if !ok || dynamicConfigHasKey(extraArgs, key) {
-			continue
-		}
-		extraArgs = append(extraArgs, "--dynamic-config-value", kv)
-	}
-	return extraArgs
-}
-
-// dynamicConfigHasKey reports whether extraArgs already sets a dynamic-config
-// key. It understands both spellings the CLI accepts, and only inspects
-// arguments that are actually dynamic-config values — cutting on "=" across
-// every argument would read "--log-format=json" as the key "--log-format".
-func dynamicConfigHasKey(extraArgs []string, key string) bool {
-	for i, arg := range extraArgs {
-		// Separate form: --dynamic-config-value k=v
-		if arg == "--dynamic-config-value" && i+1 < len(extraArgs) {
-			if k, _, ok := strings.Cut(extraArgs[i+1], "="); ok && k == key {
-				return true
-			}
-		}
-		// Joined form: --dynamic-config-value=k=v
-		if rest, ok := strings.CutPrefix(arg, "--dynamic-config-value="); ok {
-			if k, _, ok := strings.Cut(rest, "="); ok && k == key {
-				return true
-			}
-		}
-	}
-	return false
-}

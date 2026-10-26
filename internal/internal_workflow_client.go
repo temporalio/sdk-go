@@ -1492,9 +1492,8 @@ func (wc *WorkflowClient) pollWorkflowTimeSkipping(
 		FastForwardId: request.FastForwardID,
 	}
 	for {
-		grpcCtx, cancel := newGRPCContext(ctx, grpcLongPoll(true), grpcTimeout(pollTimeSkippingTimeout))
-		grpcCtx = context.WithValue(grpcCtx, retry.ConfigKey,
-			createDynamicServiceRetryPolicy(grpcCtx).GrpcRetryConfig())
+		grpcCtx, cancel := newGRPCContext(ctx,
+			grpcLongPoll(true), grpcTimeout(pollTimeSkippingTimeout), defaultGrpcRetryParameters(ctx))
 		resp, err := wc.workflowService.PollWorkflowExecutionTimeSkipping(grpcCtx, req)
 		lapsed := grpcCtx.Err() != nil
 		cancel()

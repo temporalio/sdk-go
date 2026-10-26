@@ -38,10 +38,9 @@ import (
 // Suite
 // ============================================================================
 
-// devServerVersion is the shared pin, not a time-skipping-specific one — the
-// SDK's whole test suite has used it all along. Referenced rather than
-// restated so the two cannot drift.
-const devServerVersion = testsuite.PinnedDevServerVersion
+// devServerVersion must match the pin in internal/cmd/build/main.go, which is
+// what the integration suite normally runs against.
+const devServerVersion = "v1.8.3-server-1.32.0-162.0"
 
 type TimeSkippingV2TestSuite struct {
 	*require.Assertions
@@ -65,7 +64,7 @@ func (s *TimeSkippingV2TestSuite) SetupTest() {
 func (s *TimeSkippingV2TestSuite) SetupSuite() {
 	s.Assertions = require.New(s.T())
 
-	// StartDevServerV2 adds the time-skipping dynamic config itself.
+	// StartDevServer adds the time-skipping dynamic config itself.
 	srv, err := timeskipping.StartDevServer(context.Background(), timeskipping.DevServerOptions{
 		DevServerOptions: testsuite.DevServerOptions{
 			ExistingPath:   os.Getenv("TEMPORAL_DEV_SERVER_EXISTING_PATH"),
@@ -148,7 +147,7 @@ func (s *TimeSkippingV2TestSuite) waitForFastForwardID(
 			return "", err
 		}
 		if tsi != nil {
-			id := tsi.GetFastForwardInfo().GetFastForwardId()
+			id := tsi.FastForwardInfo.ID
 			if id != "" && id != expectChangeFrom {
 				return id, nil
 			}
@@ -751,14 +750,14 @@ func (s *TimeSkippingV2TestSuite) TestGetTimeSkippingInfoDuringWorkflow() {
 	// Give the workflow a moment to persist state.
 	require.Eventually(s.T(), func() bool {
 		tsi, _ := s.server.GetTimeSkippingInfo(ctx, run)
-		return tsi != nil && tsi.GetCurrentTime() != nil
+		return tsi != nil && !tsi.CurrentTime.IsZero()
 	}, 5*time.Second, 100*time.Millisecond, "TSI not populated after start")
 
 	tsi, err := s.server.GetTimeSkippingInfo(ctx, run)
 	s.NoError(err)
 	s.NotNil(tsi)
-	s.True(tsi.GetEffectiveConfig().GetEnabled(), "expected effective_config.enabled")
-	s.Nil(tsi.GetFastForwardInfo(), "no FF issued yet")
+	s.True(tsi.EffectiveConfig.Enabled, "expected effective_config.enabled")
+	s.Nil(tsi.FastForwardInfo, "no FF issued yet")
 
 	s.NoError(s.server.Client().SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "proceed", nil))
 	_ = run.Get(ctx, nil)

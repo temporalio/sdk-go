@@ -455,7 +455,7 @@ type (
 		// fast-forward. Unset if the schedule has never had time skipping enabled.
 		//
 		// NOTE: Experimental
-		TimeSkippingInfo *commonpb.TimeSkippingInfo
+		TimeSkippingInfo *TimeSkippingInfo
 	}
 
 	// ScheduleDescription describes the current Schedule details from ScheduleHandle.Describe.

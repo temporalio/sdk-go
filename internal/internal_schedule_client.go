@@ -555,7 +555,7 @@ func scheduleDescriptionFromPB(
 			NextActionTimes:               nextActionTimes,
 			CreatedAt:                     describeResponse.Info.GetCreateTime().AsTime(),
 			LastUpdateAt:                  describeResponse.Info.GetUpdateTime().AsTime(),
-			TimeSkippingInfo:              describeResponse.Info.GetTimeSkippingInfo(),
+			TimeSkippingInfo:              timeSkippingInfoFromProto(describeResponse.Info.GetTimeSkippingInfo()),
 		},
 		Memo:                  describeResponse.Memo,
 		SearchAttributes:      searchAttributes,

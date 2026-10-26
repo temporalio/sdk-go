@@ -35,14 +35,6 @@ type CachedDownload struct {
 	DestDir string
 }
 
-// PinnedDevServerVersion is the dev server release the SDK's own test suites
-// run against. It is pinned rather than tracking latest because the tests
-// depend on server behaviour that moves between releases.
-//
-// It lives here so the build tool and the test suites share one literal; having
-// the two drift would silently run them against different servers.
-const PinnedDevServerVersion = "v1.8.3-server-1.32.0-162.0"
-
 // DevServerOptions configures the dev server process.
 type DevServerOptions struct {
 	// Existing path on the filesystem for the executable.

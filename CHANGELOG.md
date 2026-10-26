@@ -24,17 +24,19 @@ to docs, or any other relevant information.
 
 - Added experimental time skipping for schedules. `client.ScheduleOptions.TimeSkippingConfig`
   configures a schedule at creation, `ScheduleInfo.TimeSkippingInfo` surfaces its state
-  from `ScheduleHandle.Describe`, and `testsuite.TimeSkipper.FastForwardSchedule` advances
-  a schedule's virtual clock so the actions in that window run back-to-back. A bounded
+  from `ScheduleHandle.Describe`, `ScheduleHandle.SetTimeSkippingConfig` applies one to an
+  existing schedule, and `timeskipping.TimeSkipper.FastForwardSchedule` advances a
+  schedule's virtual clock so the actions in that window run back-to-back. A bounded
   duration is required: a schedule has no terminal state to skip to. Requires a Temporal
   Server with schedule time skipping enabled, on the CHASM (v2) scheduler.
-- Added experimental per-workflow time skipping (v2): `testsuite.TimeSkipper` wraps a
-  client so every workflow it starts carries a `testsuite.TimeSkippingConfig`, and
-  exposes `FastForward`, `GetCurrentTime`, `GetTimeSkippingInfo`, and
-  `WithTimeSkippingDisabled` to drive and observe a running workflow's virtual clock.
-  `testsuite.StartDevServerV2` starts a dev server with the required dynamic config
-  already applied. Unlike the older Java test server, each workflow has its own virtual
-  clock. Requires a Temporal Server with the workflow time-skipping feature enabled.
+- Added experimental per-workflow time skipping (v2) in the new `timeskipping` package:
+  `timeskipping.TimeSkipper` wraps a client so every workflow it starts carries a
+  `client.TimeSkippingConfig`, and exposes `FastForward`, `GetCurrentTime`,
+  `GetTimeSkippingInfo`, and `WithTimeSkippingDisabled` to drive and observe a running
+  workflow's virtual clock. `timeskipping.StartDevServer` starts a dev server with the
+  required dynamic config already applied. Unlike the older Java test server, each
+  workflow has its own virtual clock. Requires a Temporal Server with the workflow
+  time-skipping feature enabled.
 - Added `workflow.ChildWorkflowOptions.VersioningOverride` for explicitly pinning,
   auto-upgrading, or one-time routing a child workflow independently of its parent.
   This requires Temporal Server 1.32.0 or later.

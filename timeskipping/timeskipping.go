@@ -52,10 +52,27 @@ type (
 	// NOTE: Experimental
 	FastForwardConfig = internal.FastForwardConfig
 
-	// FastForwardOptions configures a single fast-forward.
+	// FastForwardOptions configures a single fast-forward on a workflow.
 	//
 	// NOTE: Experimental
-	FastForwardOptions = internal.FastForwardOptions
+	FastForwardOptions = internal.TimeSkippingFastForwardOptions
+
+	// ScheduleFastForwardOptions configures a single fast-forward on a schedule.
+	//
+	// NOTE: Experimental
+	ScheduleFastForwardOptions = internal.ScheduleFastForwardOptions
+
+	// TimeSkippingInfo is the server's view of time skipping on an execution or a
+	// schedule.
+	//
+	// NOTE: Experimental
+	TimeSkippingInfo = internal.TimeSkippingInfo
+
+	// TimeSkippingFastForwardInfo is the server's view of one fast-forward inside a
+	// TimeSkippingInfo.
+	//
+	// NOTE: Experimental
+	TimeSkippingFastForwardInfo = internal.TimeSkippingFastForwardInfo
 )
 
 // NewTimeSkipper wraps c so that every workflow started through the returned

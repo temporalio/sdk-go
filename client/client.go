@@ -681,6 +681,18 @@ type (
 	// NOTE: Experimental
 	FastForwardConfig = internal.FastForwardConfig
 
+	// TimeSkippingInfo is the server's view of time skipping on an execution or a
+	// schedule, as reported by [ScheduleInfo.TimeSkippingInfo].
+	//
+	// NOTE: Experimental
+	TimeSkippingInfo = internal.TimeSkippingInfo
+
+	// TimeSkippingFastForwardInfo is the server's view of one fast-forward inside a
+	// [TimeSkippingInfo].
+	//
+	// NOTE: Experimental
+	TimeSkippingFastForwardInfo = internal.TimeSkippingFastForwardInfo
+
 	// TimeSkippingConfigChange sets or clears an execution's time-skipping
 	// configuration when used with [WorkflowExecutionOptionsChanges].
 	//
