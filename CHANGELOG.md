@@ -29,8 +29,6 @@ to docs, or any other relevant information.
 
 - `WorkflowTaskPollerBehavior`, `ActivityTaskPollerBehavior`, and `NexusTaskPollerBehavior` worker
   options are no longer marked experimental.
-- **Experimental**: `SignalWorkflow` and `SignalWithStartWorkflow` called from a Nexus operation handler
-  now reuse the operation's request ID, so a retried Nexus task no longer delivers the same signal twice.
 - **Experimental**: `SignalWorkflow` and `SignalWithStartWorkflow` called through
   `NexusClient.GetWorkflowClient()` in a Temporal operation handler now reuse the operation's request
   ID, so a retried Nexus task no longer delivers the same signal twice. Signals sent through
