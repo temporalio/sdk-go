@@ -1235,7 +1235,7 @@ func (we *workflowExecutor) Execute(ctx Context, input *commonpb.Payloads) (*com
 	result, err := envInterceptor.inboundInterceptor.ExecuteWorkflow(ctx, &ExecuteWorkflowInput{Args: args})
 	var serializedResult *commonpb.Payloads
 	if err == nil && result != nil {
-		serializedResult, err = encodeArg(dataConverter, result)
+		serializedResult, err = encodeArg(resultDataConverter(ctx), result)
 	}
 	return serializedResult, err
 }

@@ -824,18 +824,19 @@ func (w *workflowClientInterceptor) ExecuteActivity(
 	if dataConverter == nil {
 		dataConverter = converter.GetDefaultDataConverter()
 	}
-	dataConverter = converter.WithDataConverterSerializationContext(dataConverter,
-		converter.ActivitySerializationContext{
-			Namespace:    w.client.namespace,
-			ActivityType: in.ActivityType,
-			TaskQueue:    in.Options.TaskQueue,
-		})
+	propagatedNexusSerializationContext := propagatedNexusSerializationContextFromGoContext(ctx)
+	dataConverter = converter.WithDataConverterSerializationContext(dataConverter, serializationContextFor(converter.ActivitySerializationContext{
+		Namespace:    w.client.namespace,
+		ActivityType: in.ActivityType,
+		TaskQueue:    in.Options.TaskQueue,
+	}, propagatedNexusSerializationContext))
 
 	request := &workflowservice.StartActivityExecutionRequest{
-		Namespace:    w.client.namespace,
-		Identity:     w.client.identity,
-		RequestId:    uuid.NewString(),
-		ActivityType: &commonpb.ActivityType{Name: in.ActivityType},
+		Namespace:                           w.client.namespace,
+		Identity:                            w.client.identity,
+		RequestId:                           uuid.NewString(),
+		ActivityType:                        &commonpb.ActivityType{Name: in.ActivityType},
+		PropagatedNexusSerializationContext: propagatedNexusSerializationContext,
 	}
 	// Activity starts from a Nexus handler inherit its normalized request ID. Other
 	// Activity starts keep the fresh request ID initialized above.
@@ -984,11 +985,12 @@ func (w *workflowClientInterceptor) PollActivityResult(
 		return nil, err
 	}
 
-	actCtx := converter.ActivitySerializationContext{Namespace: w.client.namespace}
+	serializationContext := serializationContextFor(converter.ActivitySerializationContext{Namespace: w.client.namespace},
+		resp.GetPropagatedNexusSerializationContext())
 	dataConverter := converter.WithDataConverterSerializationContext(
-		WithContext(ctx, w.client.dataConverter), actCtx)
+		WithContext(ctx, w.client.dataConverter), serializationContext)
 	failureConverter := converter.WithFailureConverterSerializationContext(
-		w.client.failureConverter, actCtx)
+		w.client.failureConverter, serializationContext)
 
 	switch v := resp.GetOutcome().GetValue().(type) {
 	case *activitypb.ActivityExecutionOutcome_Result:
@@ -1031,11 +1033,11 @@ func (w *workflowClientInterceptor) DescribeActivity(
 		lastDeploymentVersion = &v
 	}
 
-	actCtx := converter.ActivitySerializationContext{
+	serializationContext := serializationContextFor(converter.ActivitySerializationContext{
 		Namespace:    w.client.namespace,
 		ActivityType: info.ActivityType.GetName(),
 		TaskQueue:    info.TaskQueue,
-	}
+	}, info.GetPropagatedNexusSerializationContext())
 
 	return &ClientDescribeActivityOutput{
 		Description: &ClientActivityExecutionDescription{
@@ -1073,9 +1075,9 @@ func (w *workflowClientInterceptor) DescribeActivity(
 			Priority:                convertFromPBPriority(info.Priority),
 			CanceledReason:          info.CanceledReason,
 			dataConverter: converter.WithDataConverterSerializationContext(
-				WithContext(ctx, w.client.dataConverter), actCtx),
+				WithContext(ctx, w.client.dataConverter), serializationContext),
 			failureConverter: converter.WithFailureConverterSerializationContext(
-				w.client.failureConverter, actCtx),
+				w.client.failureConverter, serializationContext),
 			inboundPayloadVisitor: w.inboundPayloadVisitor,
 		},
 	}, nil
