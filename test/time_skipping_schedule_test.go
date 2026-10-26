@@ -11,7 +11,6 @@ package test_test
 
 import (
 	"context"
-	"os"
 	"testing"
 	"time"
 
@@ -47,7 +46,6 @@ func (s *TimeSkippingScheduleTestSuite) SetupSuite() {
 
 	srv, err := timeskipping.StartDevServer(context.Background(), timeskipping.DevServerOptions{
 		DevServerOptions: testsuite.DevServerOptions{
-			ExistingPath:   os.Getenv("TEMPORAL_DEV_SERVER_EXISTING_PATH"),
 			CachedDownload: testsuite.CachedDownload{Version: devServerVersion},
 			ClientOptions:  &client.Options{Namespace: "default"},
 			LogLevel:       "warn",
@@ -56,62 +54,6 @@ func (s *TimeSkippingScheduleTestSuite) SetupSuite() {
 	})
 	s.NoError(err)
 	s.server = srv
-	s.requireScheduleTimeSkippingSupport()
-}
-
-// requireScheduleTimeSkippingSupport skips the suite unless the dev server
-// actually implements schedule time skipping. A server that predates it accepts
-// the patch and silently ignores it, which would otherwise leave every
-// fast-forward in this suite polling until the test binary times out.
-func (s *TimeSkippingScheduleTestSuite) requireScheduleTimeSkippingSupport() {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	tq := "tq-preflight-" + uuid.NewString()
-	w := s.startScheduleWorker(tq)
-	defer w.Stop()
-
-	handle := s.createHourlySchedule(ctx, tq, ScheduleTargetWorkflow)
-	defer func() { _ = handle.Delete(context.Background()) }()
-
-	err := handle.SetTimeSkippingConfig(ctx, client.ScheduleSetTimeSkippingConfigOptions{
-		Config: &client.TimeSkippingConfig{
-			Enabled: true,
-			FastForwardConfig: &client.FastForwardConfig{
-				ID:       uuid.NewString(),
-				Duration: time.Minute,
-			},
-		},
-	})
-	if err != nil {
-		w.Stop()
-		s.skipSuite("schedule time skipping unavailable on this dev server: %v", err)
-	}
-
-	deadline := time.Now().Add(10 * time.Second)
-	for time.Now().Before(deadline) {
-		tsi, tsiErr := s.server.GetScheduleTimeSkippingInfo(ctx, handle)
-		s.NoError(tsiErr)
-		if tsi != nil {
-			return
-		}
-		time.Sleep(250 * time.Millisecond)
-	}
-	w.Stop()
-	s.skipSuite("dev server accepted a schedule time-skipping patch but never reported " +
-		"TimeSkippingInfo, so it predates schedule time skipping; point " +
-		"TEMPORAL_DEV_SERVER_EXISTING_PATH at a newer server binary")
-}
-
-// skipSuite shuts the dev server down before skipping. Skipping from
-// SetupSuite bypasses TearDownSuite, which would otherwise leave the server
-// process alive holding the test binary's stdio open.
-func (s *TimeSkippingScheduleTestSuite) skipSuite(format string, args ...any) {
-	if s.server != nil {
-		_ = s.server.Stop()
-		s.server = nil
-	}
-	s.T().Skipf(format, args...)
 }
 
 func (s *TimeSkippingScheduleTestSuite) TearDownSuite() {

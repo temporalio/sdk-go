@@ -4,15 +4,13 @@ package test_test
 // 1:1 with the Python version where the language allows; each test ends with
 // an assertTimeWasSkipped/NotSkipped(handle) engagement check.
 //
-// Requires the built dev-server binary at
-// $TEMPORAL_DEV_SERVER_EXISTING_PATH (falls back to a downloaded default).
+// The dev server is downloaded; see devServerVersion.
 
 import (
 	"context"
 	"errors"
 	"fmt"
 	"math"
-	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -27,6 +25,7 @@ import (
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/internal"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/testsuite"
 	"go.temporal.io/sdk/timeskipping"
@@ -38,9 +37,10 @@ import (
 // Suite
 // ============================================================================
 
-// devServerVersion must match the pin in internal/cmd/build/main.go, which is
-// what the integration suite normally runs against.
-const devServerVersion = "v1.8.3-server-1.32.0-162.0"
+// devServerVersion is the shared pin, not a time-skipping-specific one. This
+// suite starts its own server because the time-skipping dynamic config cannot
+// be set on the shared one; see timeskipping.StartDevServer.
+const devServerVersion = internal.PinnedDevServerVersion
 
 type TimeSkippingV2TestSuite struct {
 	*require.Assertions
@@ -67,7 +67,6 @@ func (s *TimeSkippingV2TestSuite) SetupSuite() {
 	// StartDevServer adds the time-skipping dynamic config itself.
 	srv, err := timeskipping.StartDevServer(context.Background(), timeskipping.DevServerOptions{
 		DevServerOptions: testsuite.DevServerOptions{
-			ExistingPath:   os.Getenv("TEMPORAL_DEV_SERVER_EXISTING_PATH"),
 			CachedDownload: testsuite.CachedDownload{Version: devServerVersion},
 			ClientOptions:  &client.Options{Namespace: "default"},
 			LogLevel:       "warn",
