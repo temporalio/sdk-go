@@ -102,6 +102,16 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- Changed how test suites resolve workflow types for `ExecuteWorkflow` and `ExecuteChildWorkflow` when
+  registration aliasing is enabled (the default). Previously, implementation lookup used the workflow
+  type directly; it now performs an additional alias lookup, matching production workers. If `WorkflowA`
+  is registered as `"WorkflowB"` and `WorkflowB` as `"WorkflowC"`, executing `"WorkflowB"` now runs
+  function `WorkflowB` instead of `WorkflowA`. This unintuitive behavior brings test execution in line
+  with production.
+- Fixed how `TestWorkflowEnvironment.OnWorkflow` resolves workflow types when registration aliasing is
+  enabled. If your test suite registered workflow `WorkflowA` as `"WorkflowB"` and registered `WorkflowB`
+  under another name, `OnWorkflow(WorkflowA, ...)` could incorrectly install the mock under that second
+  name. It now installs the mock under `"WorkflowB"`.
 - Local activity mock lookup in `TestWorkflowEnvironment` no longer tries re-resolving the activity name.
   This fixes a bug where two closures with different registered names would alias each other.
 - mTLS client setup and schedule creation no longer modify caller-owned TLS
