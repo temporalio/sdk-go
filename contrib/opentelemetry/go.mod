@@ -33,7 +33,7 @@ require (
 	github.com/stretchr/objx v0.5.2 // indirect
 	go.opentelemetry.io/otel/metric v1.45.0
 	go.opentelemetry.io/otel/sdk/metric v1.45.0
-	go.temporal.io/api v1.64.0 // indirect
+	go.temporal.io/api v1.64.1-0.20261021210353-b74eacd0adbb // indirect
 	golang.org/x/net v0.58.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.41.0 // indirect

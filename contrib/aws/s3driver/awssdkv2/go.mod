@@ -8,7 +8,7 @@ require (
 	github.com/aws/smithy-go v1.24.2
 	github.com/johannesboyne/gofakes3 v0.0.0-20260208201424-4c385a1f6a73
 	github.com/stretchr/testify v1.10.0
-	go.temporal.io/api v1.64.0
+	go.temporal.io/api v1.64.1-0.20261021210353-b74eacd0adbb
 	go.temporal.io/sdk v1.50.0
 	go.temporal.io/sdk/contrib/aws/s3driver v0.3.0
 )

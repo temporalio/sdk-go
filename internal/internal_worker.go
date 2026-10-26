@@ -254,6 +254,7 @@ type (
 		pollerGroupSnapshotStore *pollerGroupSnapshotStore
 
 		activityCancellationCallbacks *activityCancellationCallbacks
+		workflowTaskNotifications     *workflowTaskNotifications
 
 		workerPollCompleteOnShutdown *atomic.Bool
 
@@ -2450,10 +2451,11 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	// should take a pointer to this struct and wait for it to be populated when the worker is run.
 	var capabilities workflowservice.GetSystemInfoResponse_Capabilities
 	var activityCancellationCallbacks *activityCancellationCallbacks
+	var workflowTaskNotifications *workflowTaskNotifications
 	if client.heartbeatManager != nil {
-		activityCancellationCallbacks = client.heartbeatManager.
-			sharedNamespaceWorkerFor(client.namespace).
-			activityCancellationCallbacks
+		sharedWorker := client.heartbeatManager.sharedNamespaceWorkerFor(client.namespace)
+		activityCancellationCallbacks = sharedWorker.activityCancellationCallbacks
+		workflowTaskNotifications = sharedWorker.workflowTaskNotifications
 	}
 
 	baseMetricsHandler := client.metricsHandler.WithTags(metrics.TaskQueueTags(taskQueue))
@@ -2540,6 +2542,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		workerControlTaskQueue:           workerControlTaskQueue(client.namespace, client.workerGroupingKey),
 		pollerGroupSnapshotStore:         newPollerGroupSnapshotStore(),
 		activityCancellationCallbacks:    activityCancellationCallbacks,
+		workflowTaskNotifications:        workflowTaskNotifications,
 		workerPollCompleteOnShutdown:     workerPollCompleteOnShutdown,
 		serverSupportsAutoscaling:        &atomic.Bool{},
 		workflowTaskCompletionPagination: &workflowTaskCompletionPaginationConfig{},
