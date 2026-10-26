@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/stretchr/testify/assert"
 	"go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	commonpb "go.temporal.io/api/common/v1"
@@ -127,11 +128,19 @@ func (ts *IntegrationTestSuite) TestHeaderCodec() {
 	run, err := c.ExecuteWorkflow(ctx, client.StartWorkflowOptions{ID: uuid.NewString(), TaskQueue: queue}, headerCodecWorkflow, false)
 	ts.Require().NoError(err)
 	startedRunID := run.GetRunID()
+	var value string
+	// The first run continues as new without registering handlers, so an early update can be rejected.
+	ts.Require().EventuallyWithT(func(t *assert.CollectT) {
+		query, err := c.QueryWorkflow(ctx, run.GetID(), "", "header")
+		if assert.NoError(t, err) {
+			assert.NoError(t, query.Get(&value))
+			assert.Equal(t, "header-value", value)
+		}
+	}, 10*time.Second, 10*time.Millisecond)
 	update, err := c.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
 		WorkflowID: run.GetID(), UpdateName: "header", WaitForStage: client.WorkflowUpdateStageCompleted,
 	})
 	ts.Require().NoError(err)
-	var value string
 	ts.Require().NoError(update.Get(ctx, &value))
 	ts.Equal("header-value", value)
 	bound := converter.WithDataConverterSerializationContext(dc,

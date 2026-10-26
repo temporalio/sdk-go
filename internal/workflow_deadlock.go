@@ -11,7 +11,7 @@ import (
 )
 
 type deadlockDetector struct {
-	lock    sync.RWMutex // Applies to all fields below
+	lock    sync.Mutex // Applies to all fields below
 	tickers map[*deadlockTicker]struct{}
 	paused  bool
 }
@@ -84,8 +84,8 @@ func (d *deadlockDetector) begin(timeout time.Duration) *deadlockTicker {
 }
 
 func (d *deadlockDetector) pause() {
-	d.lock.RLock()
-	defer d.lock.RUnlock()
+	d.lock.Lock()
+	defer d.lock.Unlock()
 	for t := range d.tickers {
 		t.pause()
 	}
@@ -93,8 +93,8 @@ func (d *deadlockDetector) pause() {
 }
 
 func (d *deadlockDetector) resume() {
-	d.lock.RLock()
-	defer d.lock.RUnlock()
+	d.lock.Lock()
+	defer d.lock.Unlock()
 	for t := range d.tickers {
 		t.resume()
 	}
@@ -137,11 +137,12 @@ func (d *deadlockTicker) resume() {
 }
 
 func (d *deadlockTicker) end() {
+	// Keep the detector-before-ticker order to avoid deadlocking with pause/resume.
+	d.d.lock.Lock()
+	defer d.d.lock.Unlock()
 	d.lock.Lock()
 	defer d.lock.Unlock()
-	d.d.lock.Lock()
 	delete(d.d.tickers, d)
-	d.d.lock.Unlock()
 	d.t.Stop()
 	d.t = nil
 }
