@@ -4,7 +4,8 @@ A durable publish/subscribe log hosted inside a Temporal Workflow.
 
 External code (activities, starters, other workflows) publishes messages to
 named topics via **signals**; subscribers long-poll for new items via
-**updates**; a **query** exposes the current offset. The stream is backed by
+**updates** while the workflow runs and read retained items via **queries** after
+closure; an offset **query** exposes the current offset. The stream is backed by
 Temporal's durable execution, giving ordered, durable, exactly-once delivery
 with client-side batching, publisher dedup, continue-as-new survival,
 truncation, and ~1 MB response paging.
@@ -29,7 +30,7 @@ SDK. See [CHANGELOG.md](CHANGELOG.md) for release notes.
 ## Workflow side
 
 Construct a `WorkflowStream` once at the start of your workflow. The constructor
-registers the publish signal, poll update, and offset query handlers.
+registers the publish signal, poll update, poll query, and offset query handlers.
 
 ```go
 type MyInput struct {
@@ -138,8 +139,16 @@ for item, err := range c.Subscribe(ctx, workflowstreams.SubscribeOptions{
 
 Breaking out of the loop or cancelling `ctx` stops the subscription and tears
 down the poll loop. The iterator ends cleanly when the workflow reaches a
-terminal state, automatically follows continue-as-new chains, and recovers from
-truncation by restarting from the current base offset.
+terminal state after reading its remaining retained items through queries. This
+applies to completed, failed, canceled, terminated, and timed-out runs. It
+automatically follows continue-as-new chains and recovers from truncation by
+restarting from the current base offset.
+
+Closed reads require retained history and an available compatible worker. Upgrade
+workers before clients: upgraded clients surface missing-query errors from older
+workers, and query failures remain visible. Reading a closed stream adds no history
+events and returns only retained items; truncated items and expired history cannot
+be recovered. Queries return immediately, even for empty streams or unmatched topics.
 
 Items yield the raw `*commonpb.Payload`; decode at the call site with your data
 converter. Offsets are **global** (across all topics), not per-topic.
@@ -156,10 +165,10 @@ converter. Offsets are **global** (across all topics), not per-topic.
 
 ## Cross-language protocol
 
-The handler names (`PublishSignalName`, `PollUpdateName`, `OffsetQueryName`),
+The handler names (`PublishSignalName`, `PollUpdateName`, `PollQueryName`, `OffsetQueryName`),
 the JSON envelope field names, and the per-item payload encoding (base64 of the
 marshaled `temporal.api.common.v1.Payload`) match the Python and TypeScript
 packages exactly, so a Go publisher or subscriber interoperates with a
 Python/TypeScript workflow and vice versa. The data converter codec chain
-(encryption, compression) runs once on the signal/update envelope — never per
+(encryption, compression) runs once on the signal/update/query envelope — never per
 item — so payloads are not double-encoded.

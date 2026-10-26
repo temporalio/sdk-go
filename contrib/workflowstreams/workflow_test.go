@@ -1,6 +1,7 @@
 package workflowstreams
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -174,4 +175,86 @@ func TestPollReturnsItemsWithTopicFilter(t *testing.T) {
 	var v string
 	require.NoError(t, converter.GetDefaultDataConverter().FromPayload(payload, &v))
 	require.Equal(t, "3", v)
+}
+
+func TestPollQueryAfterClosure(t *testing.T) {
+	var ts testsuite.WorkflowTestSuite
+	env := ts.NewTestWorkflowEnvironment()
+	env.ExecuteWorkflow(func(ctx workflow.Context) error {
+		stream, err := NewWorkflowStream(ctx, nil)
+		if err != nil {
+			return err
+		}
+		for _, topic := range []string{"a", "b", "a"} {
+			if err := stream.Topic(topic).Publish(topic); err != nil {
+				return err
+			}
+		}
+		if err := stream.Truncate(1); err != nil {
+			return err
+		}
+		stream.DetachPollers()
+		return nil
+	})
+	require.NoError(t, env.GetWorkflowError())
+	for _, tc := range []struct {
+		name    string
+		input   PollInput
+		offsets []int64
+	}{
+		{"all", PollInput{}, []int64{1, 2}},
+		{"stale", PollInput{FromOffset: -1}, []int64{1, 2}},
+		{"filtered", PollInput{Topics: []string{"a"}}, []int64{2}},
+		{"unmatched", PollInput{Topics: []string{"missing"}}, nil},
+		{"resumed", PollInput{FromOffset: 2}, []int64{2}},
+		{"exhausted", PollInput{FromOffset: 3}, nil},
+		{"future", PollInput{FromOffset: 100}, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			value, err := env.QueryWorkflow(PollQueryName, tc.input)
+			require.NoError(t, err)
+			var result PollResult
+			require.NoError(t, value.Get(&result))
+			var offsets []int64
+			for _, item := range result.Items {
+				offsets = append(offsets, item.Offset)
+			}
+			require.Equal(t, tc.offsets, offsets)
+			require.EqualValues(t, 3, result.NextOffset)
+			require.False(t, result.MoreReady)
+		})
+	}
+}
+
+func TestPollQueryPagesWithoutMutatingState(t *testing.T) {
+	var ts testsuite.WorkflowTestSuite
+	env := ts.NewTestWorkflowEnvironment()
+	env.ExecuteWorkflow(func(ctx workflow.Context) error {
+		stream, err := NewWorkflowStream(ctx, nil)
+		if err != nil {
+			return err
+		}
+		for range 3 {
+			if err := stream.Topic("events").Publish(strings.Repeat("x", 400_000)); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	require.NoError(t, env.GetWorkflowError())
+	for page := range 3 {
+		value, err := env.QueryWorkflow(PollQueryName, PollInput{FromOffset: int64(page)})
+		require.NoError(t, err)
+		var result PollResult
+		require.NoError(t, value.Get(&result))
+		require.Len(t, result.Items, 1)
+		require.EqualValues(t, page, result.Items[0].Offset)
+		require.EqualValues(t, page+1, result.NextOffset)
+		require.Equal(t, page < 2, result.MoreReady)
+	}
+	value, err := env.QueryWorkflow(PollQueryName, PollInput{})
+	require.NoError(t, err)
+	var result PollResult
+	require.NoError(t, value.Get(&result))
+	require.EqualValues(t, 0, result.Items[0].Offset)
 }
