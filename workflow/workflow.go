@@ -183,6 +183,45 @@ type (
 	// MutableSideEffectOptions are options for executing a mutable side effect.
 	MutableSideEffectOptions = internal.MutableSideEffectOptions
 
+	// SignalChildWorkflowOptions are options for [ChildWorkflowFuture.SignalChildWorkflowWithOptions].
+	//
+	// NOTE: Experimental
+	SignalChildWorkflowOptions = internal.SignalChildWorkflowOptions
+
+	// CancelExternalWorkflowOptions are options for [RequestCancelExternalWorkflowWithOptions].
+	//
+	// NOTE: Experimental
+	CancelExternalWorkflowOptions = internal.CancelExternalWorkflowOptions
+
+	// SignalExternalWorkflowOptions are options for [SignalExternalWorkflowWithOptions].
+	//
+	// NOTE: Experimental
+	SignalExternalWorkflowOptions = internal.SignalExternalWorkflowOptions
+
+	// GetVersionOptions are options for [GetVersionWithOptions].
+	//
+	// NOTE: Experimental
+	GetVersionOptions = internal.GetVersionOptions
+
+	// UpsertSearchAttributesOptions are options for [UpsertTypedSearchAttributesWithOptions].
+	//
+	// NOTE: Experimental
+	UpsertSearchAttributesOptions = internal.UpsertSearchAttributesOptions
+
+	// UpsertMemoOptions are options for [UpsertMemoWithOptions].
+	//
+	// NOTE: Experimental
+	UpsertMemoOptions = internal.UpsertMemoOptions
+
+	// WorkflowRandomStream is a deterministic pseudorandom source.
+	//
+	// Read and Uint64 may be interleaved freely on the same source: Uint64 is defined as reading the
+	// next 8 bytes off the stream and decoding them as a little-endian integer, so both methods always
+	// draw from a single, well-defined byte sequence regardless of call order.
+	//
+	// NOTE: Experimental
+	WorkflowRandomStream = internal.WorkflowRandomStream
+
 	// NOTE to maintainers, this interface definition is duplicated in the internal package to provide a better UX.
 
 	// NexusClient is a client for executing Nexus Operations from a workflow.
@@ -386,6 +425,14 @@ func RequestCancelExternalWorkflow(ctx Context, workflowID, runID string) Future
 	return internal.RequestCancelExternalWorkflow(ctx, workflowID, runID)
 }
 
+// RequestCancelExternalWorkflowWithOptions is [RequestCancelExternalWorkflow] with extra options like event groups.
+// See [RequestCancelExternalWorkflow] documentation for details.
+//
+// NOTE: Experimental
+func RequestCancelExternalWorkflowWithOptions(ctx Context, workflowID, runID string, options CancelExternalWorkflowOptions) Future {
+	return internal.RequestCancelExternalWorkflowWithOptions(ctx, workflowID, runID, options)
+}
+
 // SignalExternalWorkflow can be used to send signal info to an external workflow.
 // Input workflowID is the workflow ID of target workflow.
 // Input runID indicates the instance of a workflow. Input runID is optional (default is ""). When runID is not specified,
@@ -398,6 +445,14 @@ func RequestCancelExternalWorkflow(ctx Context, workflowID, runID string) Future
 // SignalExternalWorkflow return Future with failure or empty success result.
 func SignalExternalWorkflow(ctx Context, workflowID, runID, signalName string, arg any) Future {
 	return internal.SignalExternalWorkflow(ctx, workflowID, runID, signalName, arg)
+}
+
+// SignalExternalWorkflowWithOptions is [SignalExternalWorkflow] with extra options like event groups.
+// See [SignalExternalWorkflow] documentation for details.
+//
+// NOTE: Experimental
+func SignalExternalWorkflowWithOptions(ctx Context, workflowID, runID, signalName string, arg any, options SignalExternalWorkflowOptions) Future {
+	return internal.SignalExternalWorkflowWithOptions(ctx, workflowID, runID, signalName, arg, options)
 }
 
 // GetSignalChannel returns the channel corresponding to the signal name.
@@ -464,15 +519,6 @@ func SideEffect(ctx Context, f func(ctx Context) any) converter.EncodedValue {
 func SideEffectWithOptions(ctx Context, options SideEffectOptions, f func(ctx Context) any) converter.EncodedValue {
 	return internal.SideEffectWithOptions(ctx, options, f)
 }
-
-// WorkflowRandomStream is a deterministic pseudorandom source.
-//
-// Read and Uint64 may be interleaved freely on the same source: Uint64 is defined as reading the
-// next 8 bytes off the stream and decoding them as a little-endian integer, so both methods always
-// draw from a single, well-defined byte sequence regardless of call order.
-//
-// NOTE: Experimental
-type WorkflowRandomStream = internal.WorkflowRandomStream
 
 // GetRandomStream returns a deterministic pseudorandom source private to the given
 // name. Calling it again with the same name returns the same source, positioned
@@ -595,6 +641,14 @@ const DefaultVersion Version = internal.DefaultVersion
 //	}
 func GetVersion(ctx Context, changeID string, minSupported, maxSupported Version) Version {
 	return internal.GetVersion(ctx, changeID, minSupported, maxSupported)
+}
+
+// GetVersionWithOptions is [GetVersion] with extra options like event groups.
+// See [GetVersion] documentation for details.
+//
+// NOTE: Experimental
+func GetVersionWithOptions(ctx Context, changeID string, minSupported, maxSupported Version, options GetVersionOptions) Version {
+	return internal.GetVersionWithOptions(ctx, changeID, minSupported, maxSupported, options)
 }
 
 // SetQueryHandler sets the query handler to handle workflow query. The queryType specify which query type this handler
@@ -838,6 +892,14 @@ func UpsertTypedSearchAttributes(ctx Context, searchAttributeUpdate ...temporal.
 	return internal.UpsertTypedSearchAttributes(ctx, searchAttributeUpdate...)
 }
 
+// UpsertTypedSearchAttributesWithOptions is [UpsertTypedSearchAttributes] with extra options like event groups.
+// See [UpsertTypedSearchAttributes] documentation for details.
+//
+// NOTE: Experimental
+func UpsertTypedSearchAttributesWithOptions(ctx Context, options UpsertSearchAttributesOptions, attributes ...temporal.SearchAttributeUpdate) error {
+	return internal.UpsertTypedSearchAttributesWithOptions(ctx, options, attributes...)
+}
+
 // UpsertMemo is used to add or update workflow memo.
 // UpsertMemo will merge keys to the existing map in workflow. For example:
 //
@@ -866,6 +928,14 @@ func UpsertTypedSearchAttributes(ctx Context, searchAttributeUpdate ...temporal.
 // This is only supported with Temporal Server 1.18+
 func UpsertMemo(ctx Context, memo map[string]any) error {
 	return internal.UpsertMemo(ctx, memo)
+}
+
+// UpsertMemoWithOptions is [UpsertMemo] with extra options like event groups.
+// See [UpsertMemo] documentation for details.
+//
+// NOTE: Experimental
+func UpsertMemoWithOptions(ctx Context, memo map[string]any, options UpsertMemoOptions) error {
+	return internal.UpsertMemoWithOptions(ctx, memo, options)
 }
 
 // NewContinueAsNewError creates ContinueAsNewError instance

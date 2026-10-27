@@ -275,14 +275,43 @@ type WorkflowOutboundInterceptor interface {
 	// workflow.RequestCancelExternalWorkflow.
 	RequestCancelExternalWorkflow(ctx Context, workflowID, runID string) Future
 
+	// RequestCancelExternalWorkflowWithOptions intercepts
+	// workflow.RequestCancelExternalWorkflowWithOptions.
+	//
+	// NOTE: Experimental
+	RequestCancelExternalWorkflowWithOptions(ctx Context, workflowID, runID string, options CancelExternalWorkflowOptions) Future
+
 	// SignalExternalWorkflow intercepts workflow.SignalExternalWorkflow.
 	// interceptor.WorkflowHeader will return a non-nil map for this context.
 	SignalExternalWorkflow(ctx Context, workflowID, runID, signalName string, arg any) Future
+
+	// SignalExternalWorkflowWithOptions intercepts workflow.SignalExternalWorkflowWithOptions.
+	// interceptor.WorkflowHeader will return a non-nil map for this context.
+	//
+	// NOTE: Experimental
+	SignalExternalWorkflowWithOptions(
+		ctx Context,
+		workflowID, runID, signalName string,
+		arg any,
+		options SignalExternalWorkflowOptions,
+	) Future
 
 	// SignalChildWorkflow intercepts
 	// workflow.ChildWorkflowFuture.SignalChildWorkflow.
 	// interceptor.WorkflowHeader will return a non-nil map for this context.
 	SignalChildWorkflow(ctx Context, workflowID, signalName string, arg any) Future
+
+	// SignalChildWorkflowWithOptions intercepts
+	// workflow.ChildWorkflowFuture.SignalChildWorkflowWithOptions.
+	// interceptor.WorkflowHeader will return a non-nil map for this context.
+	//
+	// NOTE: Experimental
+	SignalChildWorkflowWithOptions(
+		ctx Context,
+		workflowID, signalName string,
+		arg any,
+		options SignalChildWorkflowOptions,
+	) Future
 
 	// UpsertSearchAttributes intercepts workflow.UpsertSearchAttributes.
 	UpsertSearchAttributes(ctx Context, attributes map[string]any) error
@@ -290,8 +319,22 @@ type WorkflowOutboundInterceptor interface {
 	// UpsertTypedSearchAttributes intercepts workflow.UpsertTypedSearchAttributes.
 	UpsertTypedSearchAttributes(ctx Context, attributes ...SearchAttributeUpdate) error
 
+	// UpsertTypedSearchAttributesWithOptions intercepts workflow.UpsertTypedSearchAttributesWithOptions.
+	//
+	// NOTE: Experimental
+	UpsertTypedSearchAttributesWithOptions(
+		ctx Context,
+		attributes []SearchAttributeUpdate,
+		options UpsertSearchAttributesOptions,
+	) error
+
 	// UpsertMemo intercepts workflow.UpsertMemo.
 	UpsertMemo(ctx Context, memo map[string]any) error
+
+	// UpsertMemoWithOptions intercepts workflow.UpsertMemoWithOptions.
+	//
+	// NOTE: Experimental
+	UpsertMemoWithOptions(ctx Context, memo map[string]any, options UpsertMemoOptions) error
 
 	// GetSignalChannel intercepts workflow.GetSignalChannel.
 	GetSignalChannel(ctx Context, signalName string) ReceiveChannel
@@ -327,6 +370,16 @@ type WorkflowOutboundInterceptor interface {
 	// GetVersion intercepts workflow.GetVersion.
 	GetVersion(ctx Context, changeID string, minSupported, maxSupported Version) Version
 
+	// GetVersionWithOptions intercepts workflow.GetVersionWithOptions.
+	//
+	// NOTE: Experimental
+	GetVersionWithOptions(
+		ctx Context,
+		changeID string,
+		minSupported, maxSupported Version,
+		options GetVersionOptions,
+	) Version
+
 	// SetQueryHandler intercepts workflow.SetQueryHandler.
 	SetQueryHandler(ctx Context, queryType string, handler any) error
 
@@ -353,6 +406,10 @@ type WorkflowOutboundInterceptor interface {
 	// NewContinueAsNewError intercepts workflow.NewContinueAsNewError.
 	// interceptor.WorkflowHeader will return a non-nil map for this context.
 	NewContinueAsNewError(ctx Context, wfn any, args ...any) error
+
+	// NewContinueAsNewErrorWithOptions intercepts workflow.NewContinueAsNewErrorWithOptions.
+	// interceptor.WorkflowHeader will return a non-nil map for this context.
+	NewContinueAsNewErrorWithOptions(ctx Context, options ContinueAsNewErrorOptions, wfn any, args ...any) error
 
 	// ExecuteNexusOperation intercepts NexusClient.ExecuteOperation.
 	//

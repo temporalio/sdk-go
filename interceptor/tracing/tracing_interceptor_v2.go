@@ -680,6 +680,28 @@ func (t *tracingWorkflowOutboundInterceptor) SignalExternalWorkflow(
 	return t.Next.SignalExternalWorkflow(ctx, workflowID, runID, signalName, arg)
 }
 
+func (t *tracingWorkflowOutboundInterceptor) SignalExternalWorkflowWithOptions(
+	ctx workflow.Context,
+	workflowID string,
+	runID string,
+	signalName string,
+	arg any,
+	options workflow.SignalExternalWorkflowOptions,
+) workflow.Future {
+	info := workflow.GetInfo(ctx)
+	ctx, endSpan, err := startOutboundWorkflowSpan(t.root.workflowTracer, ctx, &TracerStartSpanOptions{
+		Operation: "SignalExternalWorkflow",
+		Name:      signalName,
+		Tags:      workflowTags(info),
+	}, t.root.workflowHeaderWriter(t.root.workflowTracer, ctx))
+	if err != nil {
+		return workflowFutureFromErr(ctx, err)
+	}
+	defer endSpan(nil)
+
+	return t.Next.SignalExternalWorkflowWithOptions(ctx, workflowID, runID, signalName, arg, options)
+}
+
 func (t *tracingWorkflowOutboundInterceptor) SignalChildWorkflow(
 	ctx workflow.Context,
 	workflowID string,
@@ -698,6 +720,27 @@ func (t *tracingWorkflowOutboundInterceptor) SignalChildWorkflow(
 	defer endSpan(nil)
 
 	return t.Next.SignalChildWorkflow(ctx, workflowID, signalName, arg)
+}
+
+func (t *tracingWorkflowOutboundInterceptor) SignalChildWorkflowWithOptions(
+	ctx workflow.Context,
+	workflowID string,
+	signalName string,
+	arg any,
+	options workflow.SignalChildWorkflowOptions,
+) workflow.Future {
+	info := workflow.GetInfo(ctx)
+	ctx, endSpan, err := startOutboundWorkflowSpan(t.root.workflowTracer, ctx, &TracerStartSpanOptions{
+		Operation: "SignalChildWorkflow",
+		Name:      signalName,
+		Tags:      workflowTags(info),
+	}, t.root.workflowHeaderWriter(t.root.workflowTracer, ctx))
+	if err != nil {
+		return workflowFutureFromErr(ctx, err)
+	}
+	defer endSpan(nil)
+
+	return t.Next.SignalChildWorkflowWithOptions(ctx, workflowID, signalName, arg, options)
 }
 
 func (t *tracingWorkflowOutboundInterceptor) ExecuteNexusOperation(ctx workflow.Context, input interceptor.ExecuteNexusOperationInput) workflow.NexusOperationFuture {
@@ -741,6 +784,31 @@ func (t *tracingWorkflowOutboundInterceptor) NewContinueAsNewError(
 	var spanErr error
 	defer endSpan(&spanErr)
 	err = t.Next.NewContinueAsNewError(ctx, wfn, args...)
+	if !isContinueAsNewError(err) {
+		spanErr = err
+	}
+	return err
+}
+
+func (t *tracingWorkflowOutboundInterceptor) NewContinueAsNewErrorWithOptions(
+	ctx workflow.Context,
+	options workflow.ContinueAsNewErrorOptions,
+	wfn any,
+	args ...any,
+) error {
+	info := workflow.GetInfo(ctx)
+	ctx, endSpan, err := startOutboundWorkflowSpan(t.root.workflowTracer, ctx, &TracerStartSpanOptions{
+		Operation: "ContinueAsNew",
+		Name:      info.WorkflowType.Name,
+		Tags:      workflowTags(info),
+	}, t.root.workflowHeaderWriter(t.root.workflowTracer, ctx))
+	if err != nil {
+		return err
+	}
+
+	var spanErr error
+	defer endSpan(&spanErr)
+	err = t.Next.NewContinueAsNewErrorWithOptions(ctx, options, wfn, args...)
 	if !isContinueAsNewError(err) {
 		spanErr = err
 	}
@@ -1088,6 +1156,10 @@ type childWorkflowFuture struct{ workflow.Future }
 
 func (e childWorkflowFuture) GetChildWorkflowExecution() workflow.Future { return e }
 
-func (e childWorkflowFuture) SignalChildWorkflow(ctx workflow.Context, signalName string, data any) workflow.Future {
+func (e childWorkflowFuture) SignalChildWorkflow(workflow.Context, string, any) workflow.Future {
+	return e
+}
+
+func (e childWorkflowFuture) SignalChildWorkflowWithOptions(workflow.Context, string, any, workflow.SignalChildWorkflowOptions) workflow.Future {
 	return e
 }

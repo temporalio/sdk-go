@@ -22,6 +22,10 @@ to docs, or any other relevant information.
 
 ### Added
 
+
+- Added experimental Event Groups support: `workflow.NewEventGroup`, `workflow.WithEventGroups`,
+  and `EventGroups` on workflow command options. Update handlers get an implicit group. Signal
+  handlers do not.
 - Added experimental `temporalnexus.ConvertLinkCallbackToNexusLink` and `temporalnexus.ConvertNexusLinkToLinkCallback`
   for converting `Link_Callback` to and from Nexus links.
 - Nexus handlers now propagate `NexusSerializationContext` to the workflows and standalone

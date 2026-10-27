@@ -341,6 +341,12 @@ type (
 
 		// SignalChildWorkflow sends a signal to the child workflow. This call will block until child workflow is started.
 		SignalChildWorkflow(ctx Context, signalName string, data any) Future
+
+		// SignalChildWorkflowWithOptions sends a signal to the child workflow with extra options like event groups.
+		// This call blocks until the child workflow is started. See [ChildWorkflowFuture.SignalChildWorkflow].
+		//
+		// NOTE: Experimental
+		SignalChildWorkflowWithOptions(ctx Context, signalName string, data any, options SignalChildWorkflowOptions) Future
 	}
 
 	// WorkflowType identifies a workflow type.
@@ -504,6 +510,12 @@ type (
 		// Optional: defaults to none/empty.
 		StaticDetails string
 
+		// EventGroups are explicit Event Groups attached to the start-child command.
+		// They are combined with any groups on the context.
+		//
+		// NOTE: Experimental (Event Groups)
+		EventGroups []EventGroup
+
 		// Priority - Optional priority settings that control relative ordering of
 		// task processing when tasks are backed up in a queue.
 		Priority Priority
@@ -621,6 +633,12 @@ type (
 		// normal text, it is best to treat as a timer ID. This value will be
 		// visible in UI and CLI.
 		Summary string
+
+		// EventGroups are explicit Event Groups attached to this timer. They are
+		// combined with any groups on the context.
+		//
+		// NOTE: Experimental (Event Groups)
+		EventGroups []EventGroup
 	}
 
 	// AwaitOptions are options set when creating an await.
@@ -644,6 +662,12 @@ type (
 		//
 		// NOTE: Experimental
 		Summary string
+
+		// EventGroups are explicit Event Groups attached to the side effect marker.
+		// They are combined with any groups on the context.
+		//
+		// NOTE: Experimental (Event Groups)
+		EventGroups []EventGroup
 	}
 
 	// MutableSideEffectOptions are options for executing a mutable side effect.
@@ -657,6 +681,84 @@ type (
 		//
 		// NOTE: Experimental
 		Summary string
+
+		// EventGroups are explicit Event Groups attached to the mutable side effect
+		// marker. They are combined with any groups on the context.
+		//
+		// NOTE: Experimental (Event Groups)
+		EventGroups []EventGroup
+	}
+
+	// SignalChildWorkflowOptions are options for [ChildWorkflowFuture.SignalChildWorkflowWithOptions].
+	//
+	// NOTE: Experimental (Event Groups)
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.SignalChildWorkflowOptions]
+	SignalChildWorkflowOptions struct {
+		// EventGroups are combined with any groups on the context.
+		//
+		// NOTE: Experimental (Event Groups)
+		EventGroups []EventGroup
+	}
+
+	// CancelExternalWorkflowOptions are options for [RequestCancelExternalWorkflowWithOptions].
+	//
+	// NOTE: Experimental (Event Groups)
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.CancelExternalWorkflowOptions]
+	CancelExternalWorkflowOptions struct {
+		// EventGroups are combined with any groups on the context.
+		//
+		// NOTE: Experimental (Event Groups)
+		EventGroups []EventGroup
+	}
+
+	// SignalExternalWorkflowOptions are options for [SignalExternalWorkflowWithOptions].
+	//
+	// NOTE: Experimental (Event Groups)
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.SignalExternalWorkflowOptions]
+	SignalExternalWorkflowOptions struct {
+		// EventGroups are combined with any groups on the context.
+		//
+		// NOTE: Experimental (Event Groups)
+		EventGroups []EventGroup
+	}
+
+	// UpsertSearchAttributesOptions are options for [UpsertTypedSearchAttributesWithOptions].
+	//
+	// NOTE: Experimental (Event Groups)
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.UpsertSearchAttributesOptions]
+	UpsertSearchAttributesOptions struct {
+		// EventGroups are combined with any groups on the context.
+		//
+		// NOTE: Experimental (Event Groups)
+		EventGroups []EventGroup
+	}
+
+	// UpsertMemoOptions are options for [UpsertMemoWithOptions].
+	//
+	// NOTE: Experimental (Event Groups)
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.UpsertMemoOptions]
+	UpsertMemoOptions struct {
+		// EventGroups are combined with any groups on the context.
+		//
+		// NOTE: Experimental (Event Groups)
+		EventGroups []EventGroup
+	}
+
+	// GetVersionOptions are options for [GetVersionWithOptions].
+	//
+	// NOTE: Experimental (Event Groups)
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.GetVersionOptions]
+	GetVersionOptions struct {
+		// EventGroups are combined with any groups on the context.
+		//
+		// NOTE: Experimental (Event Groups)
+		EventGroups []EventGroup
 	}
 )
 
@@ -1051,6 +1153,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteActivity(ctx Context, typeName 
 	params.ActivityID = activityID
 	params.ScheduleID = scheduleID
 
+	params.EventGroupMarkers = eventGroupMarkersToProto(ctx, options.eventGroups)
 	ctxDone, cancellable := ctx.Done().(*channelImpl)
 	cancellationCallback := &receiveCallback{}
 	a := GetWorkflowEnvironment(ctx).ExecuteActivity(params, func(r *commonpb.Payloads, e error) {
@@ -1239,7 +1342,10 @@ func (wc *workflowEnvironmentInterceptor) ExecuteLocalActivity(ctx Context, type
 			err := f.Get(ctx, &result)
 			if retryErr, ok := err.(*needRetryError); ok && retryErr.Backoff > 0 {
 				// Backoff for retry
-				_ = Sleep(ctx, retryErr.Backoff)
+				_ = NewTimerWithOptions(ctx, retryErr.Backoff, TimerOptions{
+					Summary:     "LocalActivity Backoff",
+					EventGroups: params.eventGroups,
+				}).Get(ctx, nil)
 				// increase the attempt, and retry the local activity
 				params.Attempt = retryErr.Attempt + 1
 				continue
@@ -1267,6 +1373,7 @@ func (wc *workflowEnvironmentInterceptor) scheduleLocalActivity(ctx Context, par
 	f := &futureImpl{channel: NewChannel(ctx).(*channelImpl)}
 	ctxDone, cancellable := ctx.Done().(*channelImpl)
 	cancellationCallback := &receiveCallback{}
+	params.EventGroupMarkers = eventGroupMarkersToProto(ctx, params.eventGroups)
 	la := wc.env.ExecuteLocalActivity(*params, func(lar *LocalActivityResultWrapper) {
 		if cancellable {
 			// future is done, we don't need cancellation anymore
@@ -1402,14 +1509,15 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 	failureConverter := withRootFailureConverterSerializationContext(ctx, childWfCtx)
 
 	params := ExecuteWorkflowParams{
-		WorkflowOptions:  *options,
-		Input:            input,
-		WorkflowType:     wfType,
-		Header:           header,
-		scheduledTime:    Now(ctx), /* this is needed for test framework, and is not send to server */
-		attempt:          1,
-		dataConverter:    dc,
-		failureConverter: failureConverter,
+		WorkflowOptions:   *options,
+		Input:             input,
+		WorkflowType:      wfType,
+		Header:            header,
+		scheduledTime:     Now(ctx), /* this is needed for test framework, and is not send to server */
+		attempt:           1,
+		dataConverter:     dc,
+		failureConverter:  failureConverter,
+		EventGroupMarkers: eventGroupMarkersToProto(ctx, options.eventGroups),
 	}
 
 	ctxDone, cancellable := ctx.Done().(*channelImpl)
@@ -1708,7 +1816,7 @@ func (wc *workflowEnvironmentInterceptor) NewTimerWithOptions(
 
 	ctxDone, cancellable := ctx.Done().(*channelImpl)
 	cancellationCallback := &receiveCallback{}
-	timerID := wc.env.NewTimer(d, options, func(r *commonpb.Payloads, e error) {
+	timerID := wc.env.NewTimer(d, options, eventGroupMarkersToProto(ctx, options.EventGroups), func(r *commonpb.Payloads, e error) {
 		settable.Set(nil, e)
 		if cancellable {
 			// future is done, we don't need cancellation anymore
@@ -1770,9 +1878,25 @@ func RequestCancelExternalWorkflow(ctx Context, workflowID, runID string) Future
 	return i.RequestCancelExternalWorkflow(ctx, workflowID, runID)
 }
 
+// RequestCancelExternalWorkflowWithOptions is [RequestCancelExternalWorkflow] with extra options like event groups.
+// See [RequestCancelExternalWorkflow] documentation for details.
+//
+// NOTE: Experimental
+//
+// Exposed as: [go.temporal.io/sdk/workflow.RequestCancelExternalWorkflowWithOptions]
+func RequestCancelExternalWorkflowWithOptions(ctx Context, workflowID, runID string, options CancelExternalWorkflowOptions) Future {
+	assertNotInReadOnlyState(ctx)
+	i := getWorkflowOutboundInterceptor(ctx)
+	return i.RequestCancelExternalWorkflowWithOptions(ctx, workflowID, runID, options)
+}
+
 func (wc *workflowEnvironmentInterceptor) RequestCancelExternalWorkflow(ctx Context, workflowID, runID string) Future {
+	return wc.RequestCancelExternalWorkflowWithOptions(ctx, workflowID, runID, CancelExternalWorkflowOptions{})
+}
+
+func (wc *workflowEnvironmentInterceptor) RequestCancelExternalWorkflowWithOptions(ctx Context, workflowID, runID string, options CancelExternalWorkflowOptions) Future {
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
-	options := getWorkflowEnvOptions(ctx1)
+	envOptions := getWorkflowEnvOptions(ctx1)
 	future, settable := NewFuture(ctx1)
 
 	if workflowID == "" {
@@ -1785,9 +1909,10 @@ func (wc *workflowEnvironmentInterceptor) RequestCancelExternalWorkflow(ctx Cont
 	}
 
 	wc.env.RequestCancelExternalWorkflow(
-		options.Namespace,
+		envOptions.Namespace,
 		workflowID,
 		runID,
+		eventGroupMarkersToProto(ctx, options.EventGroups),
 		resultCallback,
 	)
 
@@ -1814,18 +1939,40 @@ func SignalExternalWorkflow(ctx Context, workflowID, runID, signalName string, a
 	return i.SignalExternalWorkflow(ctx, workflowID, runID, signalName, arg)
 }
 
+// SignalExternalWorkflowWithOptions is [SignalExternalWorkflow] with extra options like event groups.
+// See [SignalExternalWorkflow] documentation for details.
+//
+// NOTE: Experimental
+//
+// Exposed as: [go.temporal.io/sdk/workflow.SignalExternalWorkflowWithOptions]
+func SignalExternalWorkflowWithOptions(ctx Context, workflowID, runID, signalName string, arg any, options SignalExternalWorkflowOptions) Future {
+	assertNotInReadOnlyState(ctx)
+	i := getWorkflowOutboundInterceptor(ctx)
+	// Put header on context before executing
+	ctx = workflowContextWithNewHeader(ctx)
+	return i.SignalExternalWorkflowWithOptions(ctx, workflowID, runID, signalName, arg, options)
+}
+
 func (wc *workflowEnvironmentInterceptor) SignalExternalWorkflow(ctx Context, workflowID, runID, signalName string, arg any) Future {
+	return wc.SignalExternalWorkflowWithOptions(ctx, workflowID, runID, signalName, arg, SignalExternalWorkflowOptions{})
+}
+
+func (wc *workflowEnvironmentInterceptor) SignalExternalWorkflowWithOptions(ctx Context, workflowID, runID, signalName string, arg any, options SignalExternalWorkflowOptions) Future {
 	const childWorkflowOnly = false // this means we are not limited to child workflow
-	return signalExternalWorkflow(ctx, workflowID, runID, signalName, arg, childWorkflowOnly)
+	return signalExternalWorkflow(ctx, workflowID, runID, signalName, arg, childWorkflowOnly, options.EventGroups)
 }
 
 func (wc *workflowEnvironmentInterceptor) SignalChildWorkflow(ctx Context, workflowID, signalName string, arg any) Future {
-	const childWorkflowOnly = true // this means we are limited to child workflow
-	// Empty run ID to indicate current one
-	return signalExternalWorkflow(ctx, workflowID, "", signalName, arg, childWorkflowOnly)
+	return wc.SignalChildWorkflowWithOptions(ctx, workflowID, signalName, arg, SignalChildWorkflowOptions{})
 }
 
-func signalExternalWorkflow(ctx Context, workflowID, runID, signalName string, arg any, childWorkflowOnly bool) Future {
+func (wc *workflowEnvironmentInterceptor) SignalChildWorkflowWithOptions(ctx Context, workflowID, signalName string, arg any, options SignalChildWorkflowOptions) Future {
+	const childWorkflowOnly = true // this means we are limited to child workflow
+	// Empty run ID to indicate current one
+	return signalExternalWorkflow(ctx, workflowID, "", signalName, arg, childWorkflowOnly, options.EventGroups)
+}
+
+func signalExternalWorkflow(ctx Context, workflowID, runID, signalName string, arg any, childWorkflowOnly bool, groups []EventGroup) Future {
 	env := GetWorkflowEnvironment(ctx)
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
 	options := getWorkflowEnvOptions(ctx1)
@@ -1867,6 +2014,7 @@ func signalExternalWorkflow(ctx Context, workflowID, runID, signalName string, a
 		arg,
 		header,
 		childWorkflowOnly,
+		eventGroupMarkersToProto(ctx, groups),
 		resultCallback,
 	)
 
@@ -1918,7 +2066,7 @@ func (wc *workflowEnvironmentInterceptor) UpsertSearchAttributes(ctx Context, at
 	if _, ok := attributes[TemporalChangeVersion]; ok {
 		return errors.New("TemporalChangeVersion is a reserved key that cannot be set, please use other key")
 	}
-	return wc.env.UpsertSearchAttributes(attributes)
+	return wc.env.UpsertSearchAttributes(attributes, eventGroupMarkersToProto(ctx, nil))
 }
 
 // Exposed as: [go.temporal.io/sdk/workflow.UpsertTypedSearchAttributes]
@@ -1928,14 +2076,30 @@ func UpsertTypedSearchAttributes(ctx Context, attributes ...SearchAttributeUpdat
 	return i.UpsertTypedSearchAttributes(ctx, attributes...)
 }
 
+// UpsertTypedSearchAttributesWithOptions is [UpsertTypedSearchAttributes] with extra options like event groups.
+// See [UpsertTypedSearchAttributes] documentation for details.
+//
+// NOTE: Experimental
+//
+// Exposed as: [go.temporal.io/sdk/workflow.UpsertTypedSearchAttributesWithOptions]
+func UpsertTypedSearchAttributesWithOptions(ctx Context, options UpsertSearchAttributesOptions, attributes ...SearchAttributeUpdate) error {
+	assertNotInReadOnlyState(ctx)
+	i := getWorkflowOutboundInterceptor(ctx)
+	return i.UpsertTypedSearchAttributesWithOptions(ctx, attributes, options)
+}
+
 func (wc *workflowEnvironmentInterceptor) UpsertTypedSearchAttributes(ctx Context, attributes ...SearchAttributeUpdate) error {
+	return wc.UpsertTypedSearchAttributesWithOptions(ctx, attributes, UpsertSearchAttributesOptions{})
+}
+
+func (wc *workflowEnvironmentInterceptor) UpsertTypedSearchAttributesWithOptions(ctx Context, attributes []SearchAttributeUpdate, options UpsertSearchAttributesOptions) error {
 	sa := SearchAttributes{
 		untypedValue: make(map[SearchAttributeKey]any),
 	}
 	for _, attribute := range attributes {
 		attribute(&sa)
 	}
-	return wc.env.UpsertTypedSearchAttributes(sa)
+	return wc.env.UpsertTypedSearchAttributes(sa, eventGroupMarkersToProto(ctx, options.EventGroups))
 }
 
 // UpsertMemo is used to add or update workflow memo.
@@ -1972,8 +2136,24 @@ func UpsertMemo(ctx Context, memo map[string]any) error {
 	return i.UpsertMemo(ctx, memo)
 }
 
+// UpsertMemoWithOptions is [UpsertMemo] with extra options like event groups.
+// See [UpsertMemo] documentation for details.
+//
+// NOTE: Experimental
+//
+// Exposed as: [go.temporal.io/sdk/workflow.UpsertMemoWithOptions]
+func UpsertMemoWithOptions(ctx Context, memo map[string]any, options UpsertMemoOptions) error {
+	assertNotInReadOnlyState(ctx)
+	i := getWorkflowOutboundInterceptor(ctx)
+	return i.UpsertMemoWithOptions(ctx, memo, options)
+}
+
 func (wc *workflowEnvironmentInterceptor) UpsertMemo(ctx Context, memo map[string]any) error {
-	return wc.env.UpsertMemo(memo)
+	return wc.UpsertMemoWithOptions(ctx, memo, UpsertMemoOptions{})
+}
+
+func (wc *workflowEnvironmentInterceptor) UpsertMemoWithOptions(ctx Context, memo map[string]any, options UpsertMemoOptions) error {
+	return wc.env.UpsertMemo(memo, eventGroupMarkersToProto(ctx, options.EventGroups))
 }
 
 // WithChildWorkflowOptions adds all workflow options to the context.
@@ -2006,6 +2186,7 @@ func WithChildWorkflowOptions(ctx Context, cwo ChildWorkflowOptions) Context {
 	wfOptions.VersioningOverride = cwo.VersioningOverride
 	wfOptions.StaticSummary = cwo.StaticSummary
 	wfOptions.StaticDetails = cwo.StaticDetails
+	wfOptions.eventGroups = cwo.EventGroups
 	wfOptions.Priority = ConvertToPBPriority(cwo.Priority)
 
 	return ctx1
@@ -2039,6 +2220,7 @@ func GetChildWorkflowOptions(ctx Context) ChildWorkflowOptions {
 		VersioningOverride:       opts.VersioningOverride,
 		StaticSummary:            opts.StaticSummary,
 		StaticDetails:            opts.StaticDetails,
+		EventGroups:              opts.eventGroups,
 	}
 }
 
@@ -2289,7 +2471,7 @@ func (wc *workflowEnvironmentInterceptor) SideEffectWithOptions(ctx Context, opt
 	resultCallback := func(result *commonpb.Payloads, err error) {
 		settable.Set(EncodedValue{result, dc}, err)
 	}
-	wc.env.SideEffect(wrapperFunc, resultCallback, options.Summary)
+	wc.env.SideEffect(wrapperFunc, resultCallback, options.Summary, eventGroupMarkersToProto(ctx, options.EventGroups))
 	var encoded EncodedValue
 	if err := future.Get(ctx, &encoded); err != nil {
 		panic(err)
@@ -2347,7 +2529,7 @@ func (wc *workflowEnvironmentInterceptor) MutableSideEffectWithOptions(ctx Conte
 		coroutineState.dispatcher.setIsReadOnly(true)
 		return f(ctx)
 	}
-	return wc.env.MutableSideEffect(id, wrapperFunc, equals, options.Summary)
+	return wc.env.MutableSideEffect(id, wrapperFunc, equals, options.Summary, eventGroupMarkersToProto(ctx, options.EventGroups))
 }
 
 // DefaultVersion is a version returned by GetVersion for code that wasn't versioned before
@@ -2431,8 +2613,24 @@ func GetVersion(ctx Context, changeID string, minSupported, maxSupported Version
 	return i.GetVersion(ctx, changeID, minSupported, maxSupported)
 }
 
+// GetVersionWithOptions is [GetVersion] with extra options like event groups.
+// See [GetVersion] documentation for details.
+//
+// NOTE: Experimental
+//
+// Exposed as: [go.temporal.io/sdk/workflow.GetVersionWithOptions]
+func GetVersionWithOptions(ctx Context, changeID string, minSupported, maxSupported Version, options GetVersionOptions) Version {
+	assertNotInReadOnlyState(ctx)
+	i := getWorkflowOutboundInterceptor(ctx)
+	return i.GetVersionWithOptions(ctx, changeID, minSupported, maxSupported, options)
+}
+
 func (wc *workflowEnvironmentInterceptor) GetVersion(ctx Context, changeID string, minSupported, maxSupported Version) Version {
-	return wc.env.GetVersion(changeID, minSupported, maxSupported)
+	return wc.GetVersionWithOptions(ctx, changeID, minSupported, maxSupported, GetVersionOptions{})
+}
+
+func (wc *workflowEnvironmentInterceptor) GetVersionWithOptions(ctx Context, changeID string, minSupported, maxSupported Version, options GetVersionOptions) Version {
+	return wc.env.GetVersion(changeID, minSupported, maxSupported, eventGroupMarkersToProto(ctx, options.EventGroups))
 }
 
 // SetQueryHandler sets the query handler to handle workflow query. The queryType specify which query type this handler
@@ -2671,6 +2869,7 @@ func WithActivityOptions(ctx Context, options ActivityOptions) Context {
 	eap.VersioningIntent = options.VersioningIntent
 	eap.Priority = ConvertToPBPriority(options.Priority)
 	eap.Summary = options.Summary
+	eap.eventGroups = options.EventGroups
 	return ctx1
 }
 
@@ -2687,6 +2886,7 @@ func WithLocalActivityOptions(ctx Context, options LocalActivityOptions) Context
 	opts.StartToCloseTimeout = options.StartToCloseTimeout
 	opts.RetryPolicy = applyRetryPolicyDefaultsForLocalActivity(options.RetryPolicy)
 	opts.Summary = options.Summary
+	opts.eventGroups = options.EventGroups
 	return ctx1
 }
 
@@ -2741,6 +2941,7 @@ func GetActivityOptions(ctx Context) ActivityOptions {
 		VersioningIntent:       opts.VersioningIntent,
 		Priority:               convertFromPBPriority(opts.Priority),
 		Summary:                opts.Summary,
+		EventGroups:            opts.eventGroups,
 	}
 }
 
@@ -2757,6 +2958,7 @@ func GetLocalActivityOptions(ctx Context) LocalActivityOptions {
 		StartToCloseTimeout:    opts.StartToCloseTimeout,
 		RetryPolicy:            opts.RetryPolicy,
 		Summary:                opts.Summary,
+		EventGroups:            opts.eventGroups,
 	}
 }
 
@@ -2966,6 +3168,12 @@ type NexusOperationOptions struct {
 	//
 	// NOTE: Experimental
 	Summary string
+
+	// EventGroups are explicit Event Groups attached to the schedule-nexus command.
+	// They are combined with any groups on the context.
+	//
+	// NOTE: Experimental (Event Groups)
+	EventGroups []EventGroup
 }
 
 // NexusOperationExecution is the result of NexusOperationFuture.GetNexusOperationExecution.
@@ -3157,6 +3365,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteNexusOperation(ctx Context, inp
 		return result
 	}
 	result.dataConverter = params.dataConverter
+	params.eventGroupMarkers = eventGroupMarkersToProto(ctx, input.Options.EventGroups)
 
 	var operationToken string
 	seq := wc.env.ExecuteNexusOperation(params, func(r *commonpb.Payload, e error) {
