@@ -7,7 +7,6 @@ version = "rev:c03f1df573d737ebe63bb196d2989b6f839f83a4"
 crate = "nexgen"
 features = "advanced"
 locked = true
-# Cargo installation can inherit the caller's toolchain. Keep this aligned with rust.
 install_env = { RUSTUP_TOOLCHAIN = "1.96.0" }
 
 [tasks.check]

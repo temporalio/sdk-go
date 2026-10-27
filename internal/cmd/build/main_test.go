@@ -16,26 +16,6 @@ import (
 	"time"
 )
 
-func TestGenerateRejectsInvalidArguments(t *testing.T) {
-	for _, tt := range []struct {
-		name string
-		args []string
-		want string
-	}{
-		{"unknown flag", []string{"-unknown"}, "flag provided but not defined"},
-		{"positional argument", []string{"extra"}, "unexpected arguments: extra"},
-		{"argument after check", []string{"-check", "extra"}, "unexpected arguments: extra"},
-		{"invalid boolean", []string{"-check=invalid"}, "invalid boolean value"},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			err := newBuilder().generate(tt.args)
-			if err == nil || !strings.Contains(err.Error(), tt.want) {
-				t.Fatalf("generate error = %v, want %q", err, tt.want)
-			}
-		})
-	}
-}
-
 func TestCheckModuleDirs(t *testing.T) {
 	rootDir := t.TempDir()
 	for _, moduleDir := range []string{

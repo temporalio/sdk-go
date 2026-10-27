@@ -8,13 +8,11 @@ quick reference for coding-agent work and pull requests.
 ## Requirements for coding agents
 
 - Use the Go requirement specified in `go.mod`.
-- Use the mise tasks that wrap the canonical build tool in `internal/cmd/build`
-  for checks and tests.
   It supplies the repo's expected flags, race detector, uncached test runs,
   coverage wiring, embedded dev server setup, dynamic config, and search
   attributes. Do not hand-roll equivalent integration-test commands unless you
   have a specific reason.
-- Run `mise install` from the repository root to install generation tools.
+- Run `mise trust` and `mise install` before running any other mise tasks.
 - Run checks and tests through mise:
   - `mise run check`
   - `mise run generate -- -check`
@@ -59,10 +57,10 @@ quick reference for coding-agent work and pull requests.
 
 ## Building and testing
 
-The canonical local workflow is described in `README.md`. Run these commands
-from the repository root:
+The canonical local workflow is described in `CONTRIBUTING.md`.
 
 ```bash
+mise trust
 mise install
 mise run generate -- -check
 mise run check
