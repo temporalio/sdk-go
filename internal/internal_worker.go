@@ -1278,7 +1278,7 @@ func (ae *activityExecutor) Execute(ctx context.Context, input *commonpb.Payload
 }
 
 func (ae *activityExecutor) ExecuteWithActualArgs(ctx context.Context, args []any) (*commonpb.Payloads, error) {
-	dataConverter := getDataConverterFromActivityCtx(ctx)
+	dataConverter := resultDataConverterFromActivityCtx(ctx)
 
 	envInterceptor := getActivityEnvironmentInterceptor(ctx)
 	envInterceptor.fn = ae.fn
@@ -1313,6 +1313,15 @@ func getDataConverterFromActivityCtx(ctx context.Context) converter.DataConverte
 		dataConverter = converter.GetDefaultDataConverter()
 	}
 	return WithContext(ctx, dataConverter)
+}
+
+// resultDataConverterFromActivityCtx returns the data converter for the activity's result, which is
+// forwarded to the Nexus caller when the activity was started by a Nexus handler. See serializationContextFor.
+func resultDataConverterFromActivityCtx(ctx context.Context) converter.DataConverter {
+	if env := getActivityEnvironmentFromCtx(ctx); env != nil && env.resultDataConverter != nil {
+		return WithContext(ctx, env.resultDataConverter)
+	}
+	return getDataConverterFromActivityCtx(ctx)
 }
 
 func getActivityEnvironmentFromCtx(ctx context.Context) *activityEnvironment {

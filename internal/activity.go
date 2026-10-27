@@ -329,15 +329,20 @@ func WithActivityTask(
 	heartbeatTimeout := task.GetHeartbeatTimeout().AsDuration()
 	deadline := calculateActivityDeadline(scheduled, scheduleToCloseTimeout, startToCloseTimeout)
 
-	serializationContext := serializationContextFor(converter.ActivitySerializationContext{
+	// Only the result goes back to a Nexus caller, so only it uses the propagated Nexus context. Input
+	// and heartbeat details stay within the activity, and client heartbeats encode them with the
+	// activity context.
+	activityContext := converter.ActivitySerializationContext{
 		Namespace:    task.WorkflowNamespace,
 		WorkflowID:   task.WorkflowExecution.GetWorkflowId(),
 		WorkflowType: task.WorkflowType.GetName(),
 		ActivityType: task.ActivityType.GetName(),
 		TaskQueue:    taskQueue,
 		IsLocal:      false,
-	}, task.GetPropagatedNexusSerializationContext())
-	dataConverter = converter.WithDataConverterSerializationContext(dataConverter, serializationContext)
+	}
+	resultDataConverter := converter.WithDataConverterSerializationContext(dataConverter,
+		serializationContextFor(activityContext, task.GetPropagatedNexusSerializationContext()))
+	dataConverter = converter.WithDataConverterSerializationContext(dataConverter, activityContext)
 
 	env := &activityEnvironment{
 		taskToken:              task.TaskToken,
@@ -353,6 +358,7 @@ func WithActivityTask(
 		startedTime:            started,
 		taskQueue:              taskQueue,
 		dataConverter:          dataConverter,
+		resultDataConverter:    resultDataConverter,
 		attempt:                task.GetAttempt(),
 		priority:               task.GetPriority(),
 		heartbeatDetails:       task.HeartbeatDetails,
