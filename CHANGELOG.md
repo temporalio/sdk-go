@@ -25,8 +25,8 @@ to docs, or any other relevant information.
 - Added experimental `temporalnexus.ConvertLinkCallbackToNexusLink` and `temporalnexus.ConvertNexusLinkToLinkCallback`
   for converting `Link_Callback` to and from Nexus links.
 - Nexus handlers now propagate `NexusSerializationContext` to the workflows and standalone
-  activities they start. Workflows use it only for their results and failures, which are returned
-  to the caller.
+  activities they start. Workflows and standalone activities use it only for their results and
+  failures, which are returned to the caller.
 
 ### Changed
 
