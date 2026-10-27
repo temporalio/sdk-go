@@ -90,31 +90,6 @@ func (b *builder) run() error {
 	}
 }
 
-func (b *builder) generate(args []string) error {
-	flags := flag.NewFlagSet("generate", flag.ContinueOnError)
-	check := flags.Bool("check", false, "check generated files without modifying them")
-	if err := flags.Parse(args); err != nil {
-		return err
-	}
-	if flags.NArg() != 0 {
-		return fmt.Errorf("generate: unexpected arguments: %s", strings.Join(flags.Args(), " "))
-	}
-	for _, generator := range []struct {
-		name string
-		args []string
-	}{
-		{"payload limit validator", []string{"go", "run", "./internal/cmd/payload-limit-gen", "-out", "internal/payloadlimits/validator_gen.go"}},
-	} {
-		if *check {
-			generator.args = append(generator.args, "-check")
-		}
-		if err := b.runCmd(b.cmdFromRoot(generator.args...)); err != nil {
-			return fmt.Errorf("%s generation failed: %w", generator.name, err)
-		}
-	}
-	return nil
-}
-
 func (b *builder) check() error {
 	moduleDirs, err := b.checkModuleDirs()
 	if err != nil {
@@ -184,6 +159,28 @@ func (b *builder) check() error {
 			return fmt.Errorf("testsuiteassertions check failed in %s: %w", moduleDir, err)
 		}
 	}
+	return nil
+}
+
+func (b *builder) generate(args []string) error {
+	flags := flag.NewFlagSet("generate", flag.ContinueOnError)
+	check := flags.Bool("check", false, "check that generated files are up-to-date without modifying them")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 {
+		return fmt.Errorf("generate: unexpected arguments: %s", strings.Join(flags.Args(), " "))
+	}
+
+	// Run payload limit generator
+	cmd := []string{"go", "run", "./internal/cmd/payload-limit-gen", "-out", "internal/payloadlimits/validator_gen.go"}
+	if *check {
+		cmd = append(cmd, "-check")
+	}
+	if err := b.runCmd(b.cmdFromRoot(cmd...)); err != nil {
+		return fmt.Errorf("payload limit validator: %w", err)
+	}
+
 	return nil
 }
 
