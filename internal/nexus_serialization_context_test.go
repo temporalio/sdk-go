@@ -510,6 +510,31 @@ func TestNexusBackedUpdateCompletedResponseSerializationContext(t *testing.T) {
 	require.Equal(t, []nexusFailureConversion{{context: nexusContext, direction: "decode"}}, failureConverter.captured())
 }
 
+func TestNexusBackedUpdateCompletedResponseSuccessSerializationContext(t *testing.T) {
+	service := workflowservicemock.NewMockWorkflowServiceClient(gomock.NewController(t))
+	dataConverter := converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), &serCtxSigningCodec{})
+	client := NewServiceClient(service, nil, ClientOptions{DataConverter: dataConverter})
+	client.capabilities = &workflowservice.GetSystemInfoResponse_Capabilities{}
+	nexusContext := converter.NexusSerializationContext{Endpoint: "endpoint", Service: "service", Operation: "operation"}
+	result, err := converter.WithDataConverterSerializationContext(dataConverter, nexusContext).ToPayloads("result")
+	require.NoError(t, err)
+	service.EXPECT().UpdateWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.UpdateWorkflowExecutionResponse{
+			UpdateRef:                           &updatepb.UpdateRef{WorkflowExecution: &commonpb.WorkflowExecution{WorkflowId: "workflow-id"}, UpdateId: "update-id"},
+			Stage:                               enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_COMPLETED,
+			Outcome:                             &updatepb.Outcome{Value: &updatepb.Outcome_Success{Success: result}},
+			PropagatedNexusSerializationContext: nexusSerializationContextToProto(nexusContext),
+		}, nil)
+
+	handle, err := client.UpdateWorkflow(t.Context(), UpdateWorkflowOptions{
+		WorkflowID: "workflow-id", UpdateName: "update", WaitForStage: WorkflowUpdateStageCompleted,
+	})
+	require.NoError(t, err)
+	var decoded string
+	require.NoError(t, handle.Get(t.Context(), &decoded))
+	require.Equal(t, "result", decoded)
+}
+
 func TestNexusBackedWorkflowCompletionFailureSerializationContext(t *testing.T) {
 	nexusContext := converter.NexusSerializationContext{Endpoint: "endpoint", Service: "service", Operation: "operation"}
 	wfInfo := &WorkflowInfo{
