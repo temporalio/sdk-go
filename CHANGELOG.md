@@ -26,7 +26,7 @@ to docs, or any other relevant information.
   for converting `Link_Callback` to and from Nexus links.
 - Nexus handlers now propagate `NexusSerializationContext` to the workflows, workflow updates, and
   standalone activities they start. These use it only for their results and failures, which are
-  returned to the nexus caller.
+  returned to the Nexus caller.
 
 ### Changed
 

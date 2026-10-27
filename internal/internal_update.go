@@ -9,7 +9,6 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
-	nexuspb "go.temporal.io/api/nexus/v1"
 	protocolpb "go.temporal.io/api/protocol/v1"
 	updatepb "go.temporal.io/api/update/v1"
 	"go.temporal.io/sdk/converter"
@@ -84,19 +83,19 @@ type (
 	// implement the UpdateCallbacks abstraction. It handles callbacks by
 	// sending protocol messages.
 	updateProtocol struct {
-		protoInstanceID  string
-		clientIdentity   string
-		initialRequest   *updatepb.Request
-		requestMsgID     string
-		requestSeqID     int64
-		scheduleUpdate   func(name string, id string, args *commonpb.Payloads, header *commonpb.Header, callbacks UpdateCallbacks)
-		env              updateEnv
-		state            updateState
-		dataConverter    converter.DataConverter
-		failureConverter converter.FailureConverter
-		// nexusSerializationContext is set when the update was sent by a Nexus handler, which
-		// returns the update's outcome to its caller.
-		nexusSerializationContext *nexuspb.PropagatedSerializationContext
+		protoInstanceID string
+		clientIdentity  string
+		initialRequest  *updatepb.Request
+		requestMsgID    string
+		requestSeqID    int64
+		scheduleUpdate  func(name string, id string, args *commonpb.Payloads, header *commonpb.Header, callbacks UpdateCallbacks)
+		env             updateEnv
+		state           updateState
+		// outcomeDataConverter and outcomeFailureConverter encode the update's outcome. HandleMessage
+		// applies the propagated Nexus context when the update was sent by a Nexus handler, which
+		// returns the outcome to its caller. See serializationContextFor.
+		outcomeDataConverter    converter.DataConverter
+		outcomeFailureConverter converter.FailureConverter
 	}
 
 	// updateHandler is the underlying type that is registered into a workflow
@@ -110,7 +109,6 @@ type (
 		unfinishedPolicy HandlerUnfinishedPolicy
 		description      string
 		dataConverter    converter.DataConverter
-		failureConverter converter.FailureConverter
 	}
 )
 
@@ -122,12 +120,12 @@ func newUpdateProtocol(
 	env updateEnv,
 ) *updateProtocol {
 	return &updateProtocol{
-		protoInstanceID:  protoInstanceID,
-		env:              env,
-		scheduleUpdate:   scheduleUpdate,
-		state:            updateStateNew,
-		dataConverter:    env.GetDataConverter(),
-		failureConverter: env.GetFailureConverter(),
+		protoInstanceID:         protoInstanceID,
+		env:                     env,
+		scheduleUpdate:          scheduleUpdate,
+		state:                   updateStateNew,
+		outcomeDataConverter:    env.GetDataConverter(),
+		outcomeFailureConverter: env.GetFailureConverter(),
 	}
 }
 
@@ -144,7 +142,11 @@ func (up *updateProtocol) HandleMessage(msg *protocolpb.Message) error {
 		return err
 	}
 	up.initialRequest = &request
-	up.nexusSerializationContext = request.GetPropagatedNexusSerializationContext()
+	if propagated := request.GetPropagatedNexusSerializationContext(); propagated != nil {
+		nexusContext := nexusSerializationContextFromProto(propagated)
+		up.outcomeDataConverter = converter.WithDataConverterSerializationContext(up.env.GetRootDataConverter(), nexusContext)
+		up.outcomeFailureConverter = converter.WithFailureConverterSerializationContext(up.env.GetRootFailureConverter(), nexusContext)
+	}
 	up.requireState("update request", updateStateNew)
 	up.requestMsgID = msg.GetId()
 	up.requestSeqID = msg.GetEventId()
@@ -175,7 +177,6 @@ func (up *updateProtocol) Accept() {
 // Reject is called for an update if validation fails.
 func (up *updateProtocol) Reject(err error) {
 	up.requireState("reject", updateStateNew, updateStateRequestInitiated)
-	_, failureConverter := up.outcomeConverters()
 	up.env.Send(&protocolpb.Message{
 		Id:                 up.protoInstanceID + "/reject",
 		ProtocolInstanceId: up.protoInstanceID,
@@ -183,7 +184,7 @@ func (up *updateProtocol) Reject(err error) {
 			RejectedRequestMessageId:         up.requestMsgID,
 			RejectedRequestSequencingEventId: up.requestSeqID,
 			RejectedRequest:                  up.initialRequest,
-			Failure:                          failureConverter.ErrorToFailure(err),
+			Failure:                          up.outcomeFailureConverter.ErrorToFailure(err),
 		}),
 	})
 	up.state = updateStateCompleted
@@ -194,13 +195,12 @@ func (up *updateProtocol) Reject(err error) {
 func (up *updateProtocol) Complete(success any, outcomeErr error) {
 	up.requireState("complete", updateStateAccepted)
 	outcome := &updatepb.Outcome{}
-	dataConverter, failureConverter := up.outcomeConverters()
 	if outcomeErr != nil {
 		outcome.Value = &updatepb.Outcome_Failure{
-			Failure: failureConverter.ErrorToFailure(outcomeErr),
+			Failure: up.outcomeFailureConverter.ErrorToFailure(outcomeErr),
 		}
 	} else {
-		success, err := dataConverter.ToPayloads(success)
+		success, err := up.outcomeDataConverter.ToPayloads(success)
 		if err != nil {
 			panic(err)
 		}
@@ -220,16 +220,6 @@ func (up *updateProtocol) Complete(success any, outcomeErr error) {
 		}),
 	}, withExpectedEventPredicate(up.checkCompletedEvent))
 	up.state = updateStateCompleted
-}
-
-// outcomeConverters returns the converters for the update's outcome. See serializationContextFor.
-func (up *updateProtocol) outcomeConverters() (converter.DataConverter, converter.FailureConverter) {
-	if up.nexusSerializationContext == nil {
-		return up.dataConverter, up.failureConverter
-	}
-	nexusContext := nexusSerializationContextFromProto(up.nexusSerializationContext)
-	return converter.WithDataConverterSerializationContext(up.env.GetRootDataConverter(), nexusContext),
-		converter.WithFailureConverterSerializationContext(up.env.GetRootFailureConverter(), nexusContext)
 }
 
 func (up *updateProtocol) checkCompletedEvent(e *historypb.HistoryEvent) bool {
@@ -294,11 +284,6 @@ func defaultUpdateHandler(
 			}
 			callbacks.Reject(fmt.Errorf("unknown update %v. KnownUpdates=%v", name, keys))
 			return
-		}
-
-		if up, ok := callbacks.(*updateProtocol); ok {
-			up.dataConverter = handler.dataConverter
-			up.failureConverter = handler.failureConverter
 		}
 
 		args, err := decodeArgsToRawValues(
