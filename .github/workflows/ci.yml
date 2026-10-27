@@ -19,12 +19,7 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Setup Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version: stable
-
-      - name: Setup nexgen
+      - name: Setup build tools
         uses: jdx/mise-action@6d1e696aa24c1aa1bcc1adea0212707c71ab78a8 # v3.6.1
         with:
           version: "2026.7.3"

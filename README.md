@@ -77,14 +77,14 @@ We'd love your help in making the Temporal Go SDK great. Please review our [cont
 
 ### Prerequisites
 
-- [Go](https://go.dev/)
 - [Mise](https://mise.jdx.dev/)
 
 ### Local development workflow
 
-Use Mise to install dependencies located outside the Go ecosystem:
+Use Mise to install Go and the code generation tools:
 
 ```bash
+mise trust
 mise install
 ```
 

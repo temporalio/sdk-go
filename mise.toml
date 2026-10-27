@@ -1,6 +1,5 @@
-min_version = "2026.7.3"
-
 [tools]
+go = "1.27.0"
 rust = { version = "1.96.0", profile = "minimal" }
 
 [tools."cargo:https://github.com/temporalio/nexgen"]
