@@ -3109,14 +3109,14 @@ func (w *workflowClientInterceptor) PollWorkflowUpdate(
 		}
 
 		serializationContext := serializationContextFor(wfCtx, resp.GetPropagatedNexusSerializationContext())
-		dc := converter.WithDataConverterSerializationContext(w.client.dataConverter, serializationContext)
-		fc := converter.WithFailureConverterSerializationContext(w.client.failureConverter, serializationContext)
 		switch v := resp.GetOutcome().GetValue().(type) {
 		case *updatepb.Outcome_Failure:
+			fc := converter.WithFailureConverterSerializationContext(w.client.failureConverter, serializationContext)
 			return &ClientPollWorkflowUpdateOutput{
 				Error: fc.FailureToError(v.Failure),
 			}, nil
 		case *updatepb.Outcome_Success:
+			dc := converter.WithDataConverterSerializationContext(w.client.dataConverter, serializationContext)
 			return &ClientPollWorkflowUpdateOutput{
 				Result: newEncodedValue(v.Success, dc),
 			}, nil
