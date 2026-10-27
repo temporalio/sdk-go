@@ -3,6 +3,7 @@ package test_test
 import (
 	"context"
 	"fmt"
+	"os"
 	"slices"
 	"strings"
 	"time"
@@ -48,6 +49,9 @@ import (
 //     child context still requests cancel and inherits the start command's groups.
 
 func (ts *IntegrationTestSuite) TestEventGroups_Commands() {
+	if os.Getenv("DISABLE_EVENT_GROUPS_TESTS") != "" {
+		ts.T().Skip("event-groups-capable temporal server required")
+	}
 	skipOnCloud(ts.T(), cloudNeedsAdaptation, "requires custom namespace search attributes")
 	run := ts.executeEventGroupWorkflow(
 		[]any{eventGroupsCommandsWorkflow},
@@ -79,6 +83,9 @@ func (ts *IntegrationTestSuite) TestEventGroups_Commands() {
 }
 
 func (ts *IntegrationTestSuite) TestEventGroups_LocalActivityBackoff() {
+	if os.Getenv("DISABLE_EVENT_GROUPS_TESTS") != "" {
+		ts.T().Skip("event-groups-capable temporal server required")
+	}
 	run := ts.executeEventGroupWorkflow(
 		[]any{eventGroupsLocalActivityBackoffWorkflow},
 		nil,
@@ -104,6 +111,9 @@ func (ts *IntegrationTestSuite) TestEventGroups_LocalActivityBackoff() {
 }
 
 func (ts *IntegrationTestSuite) TestEventGroups_LocalActivityCancel() {
+	if os.Getenv("DISABLE_EVENT_GROUPS_TESTS") != "" {
+		ts.T().Skip("event-groups-capable temporal server required")
+	}
 	run := ts.executeEventGroupWorkflow(
 		[]any{eventGroupsLocalActivityCancelWorkflow},
 		nil,
@@ -123,6 +133,9 @@ func (ts *IntegrationTestSuite) TestEventGroups_LocalActivityCancel() {
 }
 
 func (ts *IntegrationTestSuite) TestEventGroups_CancelInherits() {
+	if os.Getenv("DISABLE_EVENT_GROUPS_TESTS") != "" {
+		ts.T().Skip("event-groups-capable temporal server required")
+	}
 	run := ts.executeEventGroupWorkflow(
 		[]any{eventGroupsCancelWorkflow},
 		[]any{eventGroupBlockingActivity},
@@ -140,6 +153,9 @@ func (ts *IntegrationTestSuite) TestEventGroups_CancelInherits() {
 }
 
 func (ts *IntegrationTestSuite) TestEventGroups_Child() {
+	if os.Getenv("DISABLE_EVENT_GROUPS_TESTS") != "" {
+		ts.T().Skip("event-groups-capable temporal server required")
+	}
 	run := ts.executeEventGroupWorkflow(
 		[]any{eventGroupsChildWorkflow, eventGroupChild, eventGroupSleepChild},
 		nil,
@@ -159,6 +175,9 @@ func (ts *IntegrationTestSuite) TestEventGroups_Child() {
 }
 
 func (ts *IntegrationTestSuite) TestEventGroups_External() {
+	if os.Getenv("DISABLE_EVENT_GROUPS_TESTS") != "" {
+		ts.T().Skip("event-groups-capable temporal server required")
+	}
 	run := ts.executeEventGroupWorkflow(
 		[]any{eventGroupsExternalWorkflow, eventGroupChild},
 		nil,
@@ -174,6 +193,9 @@ func (ts *IntegrationTestSuite) TestEventGroups_External() {
 }
 
 func (ts *IntegrationTestSuite) TestEventGroups_ScopeAndAggregation() {
+	if os.Getenv("DISABLE_EVENT_GROUPS_TESTS") != "" {
+		ts.T().Skip("event-groups-capable temporal server required")
+	}
 	run := ts.executeEventGroupWorkflow(
 		[]any{eventGroupsScopeWorkflow},
 		nil,
@@ -198,6 +220,9 @@ func (ts *IntegrationTestSuite) TestEventGroups_ScopeAndAggregation() {
 }
 
 func (ts *IntegrationTestSuite) TestEventGroups_UpdateImplicit() {
+	if os.Getenv("DISABLE_EVENT_GROUPS_TESTS") != "" {
+		ts.T().Skip("event-groups-capable temporal server required")
+	}
 	run := ts.executeEventGroupWorkflow(
 		[]any{eventGroupsUpdateWorkflow},
 		[]any{eventGroupActivity},
@@ -227,6 +252,9 @@ func (ts *IntegrationTestSuite) TestEventGroups_UpdateImplicit() {
 }
 
 func (ts *IntegrationTestSuite) TestEventGroups_ContinueAsNew() {
+	if os.Getenv("DISABLE_EVENT_GROUPS_TESTS") != "" {
+		ts.T().Skip("event-groups-capable temporal server required")
+	}
 	run := ts.executeEventGroupWorkflow(
 		[]any{eventGroupsCANWorkflow},
 		nil,
@@ -248,6 +276,9 @@ func (ts *IntegrationTestSuite) TestEventGroups_ContinueAsNew() {
 }
 
 func (ts *IntegrationTestSuite) TestEventGroups_LabelPayload() {
+	if os.Getenv("DISABLE_EVENT_GROUPS_TESTS") != "" {
+		ts.T().Skip("event-groups-capable temporal server required")
+	}
 	run := ts.executeEventGroupWorkflow(
 		[]any{eventGroupsLabelWorkflow},
 		nil,
@@ -269,6 +300,9 @@ func (ts *IntegrationTestSuite) TestEventGroups_LabelPayload() {
 }
 
 func (ts *IntegrationTestSuite) TestEventGroups_LabelPayloadIgnoresCustomConverter() {
+	if os.Getenv("DISABLE_EVENT_GROUPS_TESTS") != "" {
+		ts.T().Skip("event-groups-capable temporal server required")
+	}
 	// The control activity's input is the proof the custom converter is actually
 	// installed. Without it, a misconfigured converter could make the label
 	// assertion below pass for the wrong reason.
@@ -329,6 +363,9 @@ func (ts *IntegrationTestSuite) TestEventGroups_LabelPayloadIgnoresCustomConvert
 }
 
 func (ts *IntegrationTestSuite) TestEventGroups_ScopeBaseline() {
+	if os.Getenv("DISABLE_EVENT_GROUPS_TESTS") != "" {
+		ts.T().Skip("event-groups-capable temporal server required")
+	}
 	run := ts.executeEventGroupWorkflow(
 		[]any{eventGroupsScopeBaselineWorkflow, eventGroupNoopChildWorkflow},
 		[]any{eventGroupActivity},
@@ -344,6 +381,9 @@ func (ts *IntegrationTestSuite) TestEventGroups_ScopeBaseline() {
 }
 
 func (ts *IntegrationTestSuite) TestEventGroups_ScopeNesting() {
+	if os.Getenv("DISABLE_EVENT_GROUPS_TESTS") != "" {
+		ts.T().Skip("event-groups-capable temporal server required")
+	}
 	run := ts.executeEventGroupWorkflow(
 		[]any{eventGroupsScopeNestingWorkflow},
 		[]any{eventGroupActivity},
@@ -370,6 +410,9 @@ func (ts *IntegrationTestSuite) TestEventGroups_ScopeNesting() {
 }
 
 func (ts *IntegrationTestSuite) TestEventGroups_ScopeReenter() {
+	if os.Getenv("DISABLE_EVENT_GROUPS_TESTS") != "" {
+		ts.T().Skip("event-groups-capable temporal server required")
+	}
 	run := ts.executeEventGroupWorkflow(
 		[]any{eventGroupsScopeReenterWorkflow},
 		[]any{eventGroupActivity},
@@ -388,6 +431,9 @@ func (ts *IntegrationTestSuite) TestEventGroups_ScopeReenter() {
 }
 
 func (ts *IntegrationTestSuite) TestEventGroups_ScopeConcurrent() {
+	if os.Getenv("DISABLE_EVENT_GROUPS_TESTS") != "" {
+		ts.T().Skip("event-groups-capable temporal server required")
+	}
 	run := ts.executeEventGroupWorkflow(
 		[]any{eventGroupsScopeConcurrentWorkflow},
 		[]any{eventGroupActivity},
@@ -417,6 +463,9 @@ func (ts *IntegrationTestSuite) TestEventGroups_ScopeConcurrent() {
 }
 
 func (ts *IntegrationTestSuite) TestEventGroups_Aggregation() {
+	if os.Getenv("DISABLE_EVENT_GROUPS_TESTS") != "" {
+		ts.T().Skip("event-groups-capable temporal server required")
+	}
 	run := ts.executeEventGroupWorkflow(
 		[]any{eventGroupsAggregationWorkflow},
 		[]any{eventGroupActivity},
@@ -447,6 +496,9 @@ func (ts *IntegrationTestSuite) TestEventGroups_Aggregation() {
 }
 
 func (ts *IntegrationTestSuite) TestEventGroups_LabelIDs() {
+	if os.Getenv("DISABLE_EVENT_GROUPS_TESTS") != "" {
+		ts.T().Skip("event-groups-capable temporal server required")
+	}
 	run := ts.executeEventGroupWorkflow(
 		[]any{eventGroupsLabelIDsWorkflow},
 		[]any{eventGroupActivity},
@@ -470,6 +522,9 @@ func (ts *IntegrationTestSuite) TestEventGroups_LabelIDs() {
 }
 
 func (ts *IntegrationTestSuite) TestEventGroups_LabelPayloadCodec() {
+	if os.Getenv("DISABLE_EVENT_GROUPS_TESTS") != "" {
+		ts.T().Skip("event-groups-capable temporal server required")
+	}
 	codec := converter.NewZlibCodec(converter.ZlibCodecOptions{AlwaysEncode: true})
 	codecDC := converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), codec)
 	c, err := ts.newIntegrationTestClient(func(options *client.Options) {
@@ -525,6 +580,9 @@ func (ts *IntegrationTestSuite) TestEventGroups_LabelPayloadCodec() {
 }
 
 func (ts *IntegrationTestSuite) TestEventGroups_Nexus() {
+	if os.Getenv("DISABLE_EVENT_GROUPS_TESTS") != "" {
+		ts.T().Skip("event-groups-capable temporal server required")
+	}
 	skipOnCloud(ts.T(), cloudRequiresProvisioning, "Temporal-backed Nexus tests create namespace endpoints through Operator Service")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -1214,6 +1272,9 @@ func eventGroupLabelPayload(event *historypb.HistoryEvent, id string) *commonpb.
 }
 
 func (ts *IntegrationTestSuite) TestEventGroups_InterceptorCanAdjustGroups() {
+	if os.Getenv("DISABLE_EVENT_GROUPS_TESTS") != "" {
+		ts.T().Skip("event-groups-capable temporal server required")
+	}
 	taskQueue := ts.taskQueueName + "-eg-" + uuid.NewString()
 	w := worker.New(ts.client, taskQueue, worker.Options{
 		Interceptors: []interceptor.WorkerInterceptor{&eventGroupWorkerInterceptor{}},
