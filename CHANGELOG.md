@@ -54,8 +54,9 @@ to docs, or any other relevant information.
 
 ### Fixed
 
-- Preserve Temporal service error codes when classifying retries, so a heartbeat
-  RPC deadline does not cancel an activity while its context is still live.
+- Fixed premature activity cancellation when a heartbeat RPC returns `DeadlineExceeded`.
+  The SDK now preserves Temporal service error codes when deciding whether a heartbeat failure should cancel the activity.
+- Fixed concurrent dev-server CLI downloads failing on Windows when another process has already populated and started the cached executable.
 - `converter.NewRemotePayloadCodec` now handles endpoint URLs with trailing slashes.
 - Fixed race when using `log.With` without a `WithLogger` implementation, where logs could overwrite each others' buffers.
 - The default timeout for client and worker RPCs has been extended. Previously, the default timeout

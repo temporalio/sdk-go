@@ -526,7 +526,6 @@ func (b *builder) unitTest() error {
 }
 
 type unitWorker struct {
-	tempDir  string
 	output   testOutput
 	stdout   bytes.Buffer
 	stderr   bytes.Buffer
@@ -568,7 +567,7 @@ func (b *builder) runUnitModules(
 		go func(worker *unitWorker) {
 			defer wait.Done()
 			for moduleDir := range jobs {
-				if err := b.runUnitModule(moduleDir, run, coverage, worker); err != nil {
+				if err := b.runUnitModule(moduleDir, run, coverage, worker.output); err != nil {
 					worker.failures = append(worker.failures, unitFailure{moduleDir: moduleDir, err: err})
 				}
 			}
@@ -596,10 +595,6 @@ func (b *builder) runUnitModules(
 
 func (b *builder) prepareUnitWorker(tempDir string, index int, output testOutput, worker *unitWorker) error {
 	prefix := filepath.Join(tempDir, fmt.Sprintf("%03d", index))
-	worker.tempDir = prefix + ".tmp"
-	if err := os.Mkdir(worker.tempDir, 0700); err != nil {
-		return fmt.Errorf("creating unit worker temporary directory: %w", err)
-	}
 	workerOutput := output
 	workerOutput.logPath = prefix + ".log"
 	workerOutput.jsonLogPath = prefix + ".json"
@@ -618,7 +613,7 @@ func (b *builder) prepareUnitWorker(tempDir string, index int, output testOutput
 	return nil
 }
 
-func (b *builder) runUnitModule(moduleDir string, run string, coverage unitCoverage, worker *unitWorker) error {
+func (b *builder) runUnitModule(moduleDir string, run string, coverage unitCoverage, output testOutput) error {
 	args := []string{
 		"go", "test", "-json", "-count", "1", "-race", "-v", "-timeout", "5m",
 		"-p", unitTestPackageConcurrency,
@@ -642,9 +637,7 @@ func (b *builder) runUnitModule(moduleDir string, run string, coverage unitCover
 
 	cmd := b.cmdFromRoot(args...)
 	cmd.Dir = moduleDir
-	// Parallel modules must not replace a CLI executable another worker is using.
-	cmd.Env = append(cmd.Environ(), "TMPDIR="+worker.tempDir, "TMP="+worker.tempDir, "TEMP="+worker.tempDir)
-	return b.runTestCmd(cmd, worker.output)
+	return b.runTestCmd(cmd, output)
 }
 
 func mergeWorkerOutput(output testOutput, worker *unitWorker) error {
