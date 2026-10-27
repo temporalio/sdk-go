@@ -472,8 +472,6 @@ type (
 		// namespace is configured to auto-enroll workers into poller autoscaling, the worker
 		// will automatically use poller autoscaling for workflow tasks instead of a fixed
 		// number of pollers.
-		//
-		// NOTE: Experimental
 		WorkflowTaskPollerBehavior PollerBehavior
 
 		// Optional: If set, the worker will use the provided poller behavior when polling for activity tasks.
@@ -485,8 +483,6 @@ type (
 		// namespace is configured to auto-enroll workers into poller autoscaling, the worker
 		// will automatically use poller autoscaling for activity tasks instead of a fixed
 		// number of pollers.
-		//
-		// NOTE: Experimental
 		ActivityTaskPollerBehavior PollerBehavior
 
 		// Optional: If set, the worker will use the provided poller behavior when polling for nexus tasks.
@@ -498,8 +494,6 @@ type (
 		// namespace is configured to auto-enroll workers into poller autoscaling, the worker
 		// will automatically use poller autoscaling for nexus tasks instead of a fixed
 		// number of pollers.
-		//
-		// NOTE: Experimental
 		NexusTaskPollerBehavior PollerBehavior
 
 		// Plugins that can configure options and intercept start/stop worker.
@@ -511,21 +505,6 @@ type (
 		// Plugins themselves should never mutate this field, the behavior is
 		// undefined.
 		Plugins []WorkerPlugin
-
-		// MaxConcurrentWorkflowTaskExternalStorageVisits sets how many external
-		// storage operations (reads or writes) may run in parallel when the worker
-		// processes a single workflow task. When a workflow task contains many large
-		// payloads that need to be fetched from or uploaded to external storage,
-		// raising this value can reduce latency by overlapping those calls. Lower
-		// values reduce pressure on the storage backend.
-		// A value of 0 uses the default. Set to 1 to disable parallelism.
-		// Please report any issues you encounter with this setting or if you feel the
-		// default should be changed.
-		//
-		// NOTE: Experimental
-		//
-		// default: 3
-		MaxConcurrentWorkflowTaskExternalStorageVisits int
 
 		// Optional: Disable payload size error limit enforcement in the worker.
 		//

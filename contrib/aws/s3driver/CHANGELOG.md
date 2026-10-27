@@ -15,9 +15,14 @@ or Security.
 
 ### Changed
 
+- **Experimental**: Store and retrieve operations now respect `ExternalStorage.Concurrency`.
+
 ### Deprecated
 
 ### :boom: Breaking Changes
+
+- Raised the minimum Temporal Go SDK requirement from v1.49.0 to v1.50.0, which
+  provides the `ExternalStorage.Concurrency` limiter the driver now uses.
 
 ### Fixed
 

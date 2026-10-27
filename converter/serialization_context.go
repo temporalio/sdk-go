@@ -1,14 +1,14 @@
 package converter
 
+import commonconverter "go.temporal.io/sdk/internal/common/converter"
+
 // SerializationContext provides metadata about where serialization is occurring,
 // with the concrete type depending on the context:
 //
 //   - [WorkflowSerializationContext] for workflow-level payloads.
 //   - [ActivitySerializationContext] for activity-level payloads.
 //   - [NexusSerializationContext] for Nexus-level payloads.
-type SerializationContext interface {
-	isSerializationContext()
-}
+type SerializationContext = commonconverter.SerializationContext
 
 // WorkflowSerializationContext is the serialization context for workflow-level payloads.
 // This includes: workflow input/result, child workflow input/result, signal input,
@@ -17,37 +17,22 @@ type SerializationContext interface {
 //
 // For child workflows, WorkflowID is the child's ID, not the parent's.
 // For external signals, WorkflowID is the target workflow's ID.
-type WorkflowSerializationContext struct {
-	Namespace  string
-	WorkflowID string
-}
-
-func (WorkflowSerializationContext) isSerializationContext() {}
+type WorkflowSerializationContext = commonconverter.WorkflowSerializationContext
 
 // ActivitySerializationContext is the serialization context for activity-level payloads.
 // This includes: activity input/result, heartbeat details, and activity failure details.
-type ActivitySerializationContext struct {
-	Namespace string
-	// Empty for a standalone activity.
-	WorkflowID string
-	// Empty for a standalone activity.
-	WorkflowType string
-	ActivityType string
-	TaskQueue    string
-	IsLocal      bool
-}
-
-func (ActivitySerializationContext) isSerializationContext() {}
+type ActivitySerializationContext = commonconverter.ActivitySerializationContext
 
 // NexusSerializationContext is used when serializing Nexus operation payloads.
 // Callers receive it when encoding inputs and decoding results or failures.
 // Handlers receive it when decoding inputs, encoding synchronous results, and
 // encoding failures produced while handling a Nexus task.
 //
-// Operation is the resolved operation name. The context is not propagated to
-// the eventual result of an asynchronous operation. Standalone operation handles
-// use the context of their start request, including when an existing operation is
-// returned, while handles created without starting an operation do not receive it.
+// Operation is the resolved operation name. For Nexus-backed workflows and standalone
+// activities, this context is propagated to the backing execution. Workflows use it only
+// for their result and failure, which are returned to the caller. Standalone
+// operation handles use the context returned by the server when polling a result;
+// older servers fall back to the handle's start request context.
 //
 // For failures, callers receive this context in [FailureConverter.FailureToError],
 // while handlers receive it in [FailureConverter.ErrorToFailure]. Implementations
@@ -55,16 +40,7 @@ func (ActivitySerializationContext) isSerializationContext() {}
 // be self-describing and support legacy payloads without context.
 //
 // NOTE: Experimental
-type NexusSerializationContext struct {
-	// Endpoint is the Nexus endpoint name.
-	Endpoint string
-	// Service is the Nexus service name.
-	Service string
-	// Operation is the resolved Nexus operation name.
-	Operation string
-}
-
-func (NexusSerializationContext) isSerializationContext() {}
+type NexusSerializationContext = commonconverter.NexusSerializationContext
 
 // DataConverterWithSerializationContext is an optional interface that [DataConverter]
 // implementations can implement to receive serialization context.
@@ -78,9 +54,7 @@ func (NexusSerializationContext) isSerializationContext() {}
 //
 // This method should be cheap and fast. The SDK does not cache returned instances
 // and may call this method frequently. Avoid recreating expensive objects on every call.
-type DataConverterWithSerializationContext interface {
-	WithSerializationContext(SerializationContext) DataConverter
-}
+type DataConverterWithSerializationContext = commonconverter.DataConverterWithSerializationContext
 
 // PayloadCodecWithSerializationContext is an optional interface that [PayloadCodec]
 // implementations can implement to receive serialization context.
@@ -119,14 +93,7 @@ type FailureConverterWithSerializationContext interface {
 // [DataConverterWithSerializationContext], it delegates to that implementation;
 // otherwise it returns the original DataConverter unchanged.
 func WithDataConverterSerializationContext(dc DataConverter, ctx SerializationContext) DataConverter {
-	if sc, ok := dc.(DataConverterWithSerializationContext); ok {
-		result := sc.WithSerializationContext(ctx)
-		if result == nil {
-			panic("DataConverterWithSerializationContext.WithSerializationContext must not return nil")
-		}
-		return result
-	}
-	return dc
+	return commonconverter.WithDataConverterSerializationContext(dc, ctx)
 }
 
 // WithFailureConverterSerializationContext returns a FailureConverter that is aware of the given

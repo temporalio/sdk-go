@@ -1640,7 +1640,7 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 	if options.DataConverter == nil {
 		options.DataConverter = converter.GetDefaultDataConverter()
 	}
-	options.DataConverter = converter.MakeTransferAware(options.DataConverter)
+	options.DataConverter = MakeTransferAware(options.DataConverter)
 
 	if options.FailureConverter == nil {
 		options.FailureConverter = GetDefaultFailureConverter()
@@ -1743,7 +1743,7 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 	// Create outbound interceptor by wrapping backwards through chain
 	client.interceptor = &workflowClientInterceptor{
 		client:                 client,
-		inboundPayloadVisitor:  extstore.NewExternalRetrievalVisitor(storageParams),
+		inboundPayloadVisitor:  extstore.NewExternalRetrievalVisitor(storageParams.WithLogger(client.logger)),
 		outboundPayloadVisitor: client.newOutboundPayloadVisitor(),
 	}
 	for i := len(options.Interceptors) - 1; i >= 0; i-- {
