@@ -81,8 +81,10 @@ Coverage:
 ```bash
 mise run unit-test -- -coverage
 mise run integration-test -- -dev-server -coverage-file integration-test.out
-mise exec -- go -C internal/cmd/build run . merge-coverage-files coverage.out
+mise run merge-coverage-files -- coverage.out
 ```
+
+The merged profile is written to `internal/cmd/build/coverage.out`.
 
 Use direct `go test` for very small compile or package checks when that is the
 right tool, but prefer the mise tasks before considering a change verified.

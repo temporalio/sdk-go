@@ -114,13 +114,13 @@ mise run unit-test
 Run integration tests with an embedded Temporal dev server:
 
 ```bash
-mise run integration-test
+mise run integration-test -- -dev-server
 ```
 
 Run integration tests with a Temporal server running on `localhost:7233`:
 
 ```bash
-mise run integration-test -- -dev-server=false
+mise run integration-test
 ```
 
 ### Test output and logs
@@ -132,14 +132,14 @@ To show full test and dev-server output in the console while still saving the lo
 
 ```bash
 mise run unit-test -- -console-output full
-mise run integration-test -- -console-output full
+mise run integration-test -- -dev-server -console-output full
 ```
 
 Use `-log-dir` to write the files elsewhere. Relative paths are resolved from the repository root, and absolute paths
 are also accepted:
 
 ```bash
-mise run integration-test -- -log-dir artifacts/test-logs
+mise run integration-test -- -dev-server -log-dir artifacts/test-logs
 ```
 
 ### Running specific tests
@@ -157,10 +157,10 @@ Integration tests:
 
 ```bash
 # Single test in a suite
-mise run integration-test -- -run "TestIntegrationSuite/TestMyTest"
+mise run integration-test -- -dev-server -run "TestIntegrationSuite/TestMyTest"
 
 # Entire suite
-mise run integration-test -- -run "TestWorkerTunerTestSuite"
+mise run integration-test -- -dev-server -run "TestWorkerTunerTestSuite"
 ```
 
 ### Coverage
@@ -174,10 +174,10 @@ mise run unit-test -- -coverage
 Integration test coverage:
 
 ```bash
-mise run integration-test -- -coverage-file integration-test.out
+mise run integration-test -- -dev-server -coverage-file integration-test.out
 ```
 
-Merge coverage files:
+Merge coverage files to `internal/cmd/build/coverage.out`:
 
 ```bash
 mise run merge-coverage-files -- coverage.out

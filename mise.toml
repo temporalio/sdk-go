@@ -28,3 +28,8 @@ run = "go run . integration-test"
 description = "Run unit tests"
 dir = "internal/cmd/build"
 run = "go run . unit-test"
+
+[tasks.merge-coverage-files]
+description = "Merge coverage profiles"
+dir = "internal/cmd/build"
+run = "go run . merge-coverage-files"
