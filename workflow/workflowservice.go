@@ -13,7 +13,7 @@ import (
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal"
 	commonconverter "go.temporal.io/sdk/internal/common/converter"
-	support "go.temporal.io/sdk/internal/common/systemnexus"
+	support "go.temporal.io/sdk/internal/systemnexus"
 	"go.temporal.io/sdk/temporal"
 )
 

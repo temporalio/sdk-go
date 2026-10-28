@@ -112,26 +112,30 @@ to security@temporal.io instead.
 
 ### Regenerate System Nexus bindings
 
-Run from the repository root with Go and Rust installed:
+Run from the repository root with Go installed and a System Nexus-enabled
+`nexgen` executable on `PATH`:
 
 ```sh
-go run ./internal/cmd/gen-system-nexus
+go run ./internal/cmd/system-nexus-gen
 ```
 
-The command builds a pinned nexgen Git commit with Cargo and reads WIT from the
-selected `go.temporal.io/api` module, including local module replacements. Files
-under `internal/cmd/gen-system-nexus/wit-overrides` replace matching paths under
+The command reads WIT from the selected `go.temporal.io/api` module, including
+local module replacements. Files under
+`internal/cmd/system-nexus-gen/wit-overrides` replace matching paths under
 the module's `systemnexus` directory. Other WIT files come from the module.
 
-To test a different nexgen commit, pass its full 40-character SHA:
+To regenerate all bindings or check that they are up to date, invoke the build
+command directly:
 
 ```sh
-go run ./internal/cmd/gen-system-nexus --nexgen-rev <full-commit-sha>
+cd internal/cmd/build
+go run . generate
+go run . generate -check
 ```
 
 Use `--preserve-build-dir` to retain intermediate files after a successful run.
-Failed runs always retain them. CI uses Rust 1.96.0 and checks that regeneration
-does not change the checked-in bindings.
+Failed runs always retain them. Nexgen also requires `gofmt` on `PATH` to format
+the generated Go bindings.
 
 ### Review expectations
 
