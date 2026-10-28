@@ -72,6 +72,13 @@ type (
 		// when scheduling the activity. If the value is nil, it means the server didn't send information about
 		// retry policy (e.g. due to old server version), but it may still be defined server-side.
 		RetryPolicy *RetryPolicy
+		// NexusSerializationContext is the context of the Nexus operation handler that started this standalone
+		// activity, or nil if it wasn't started by one. The activity's result and failure are encoded with it. Pass it
+		// to CompleteActivityOptions or CompleteActivityByActivityIDOptions when completing this activity
+		// asynchronously.
+		//
+		// NOTE: Experimental
+		NexusSerializationContext *converter.NexusSerializationContext
 	}
 
 	// RegisterActivityOptions consists of options for registering an activity.
@@ -367,6 +374,10 @@ func WithActivityTask(
 		workerStopChannel:      workerStopChannel,
 		contextPropagators:     contextPropagators,
 		client:                 client,
+	}
+	if propagated := task.GetPropagatedNexusSerializationContext(); propagated != nil {
+		nexusContext := nexusSerializationContextFromProto(propagated)
+		env.nexusSerializationContext = &nexusContext
 	}
 
 	if task.WorkflowExecution.GetWorkflowId() == "" {

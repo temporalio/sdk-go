@@ -27,6 +27,11 @@ to docs, or any other relevant information.
 - Nexus handlers now propagate `NexusSerializationContext` to the workflows, workflow updates, and
   standalone activities they start. These use it only for their results and failures, which are
   returned to the Nexus caller.
+- **Experimental**: Added `activity.Info.NexusSerializationContext`, set when a Nexus handler started
+  the standalone activity, and a matching `NexusSerializationContext` field on
+  `client.CompleteActivityOptions` and `client.CompleteActivityByActivityIDOptions`. Pass it through
+  when completing such an activity asynchronously so its result and failure are encoded with the
+  Nexus caller's context.
 
 ### Changed
 

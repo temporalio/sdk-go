@@ -34,6 +34,11 @@ type ActivitySerializationContext = commonconverter.ActivitySerializationContext
 // operation handles use the context returned by the server when polling a result;
 // older servers fall back to the handle's start request context.
 //
+// Completing a Nexus-backed standalone activity asynchronously can't recover this context from the
+// task token. Pass the activity's activity.Info.NexusSerializationContext to
+// client.CompleteActivityOptions or client.CompleteActivityByActivityIDOptions so the result and
+// failure are encoded for the Nexus caller.
+//
 // For failures, callers receive this context in [FailureConverter.FailureToError],
 // while handlers receive it in [FailureConverter.ErrorToFailure]. Implementations
 // must not assume symmetric failure conversion. Context-dependent encodings should

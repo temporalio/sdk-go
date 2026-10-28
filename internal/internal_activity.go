@@ -137,6 +137,8 @@ type (
 		priority               *commonpb.Priority
 		retryPolicy            *RetryPolicy
 		activityRunID          string
+		// nil unless a Nexus handler started this activity
+		nexusSerializationContext *converter.NexusSerializationContext
 	}
 
 	// context.WithValue need this type instead of basic type string to avoid lint error
@@ -364,26 +366,34 @@ func (a *activityEnvironmentInterceptor) GetInfo(ctx context.Context) ActivityIn
 		workflowNamespace = a.env.namespace
 	}
 
+	var nexusSerializationContext *converter.NexusSerializationContext
+	if a.env.nexusSerializationContext != nil {
+		// Copy so callers can't mutate the environment's context.
+		nexusContext := *a.env.nexusSerializationContext
+		nexusSerializationContext = &nexusContext
+	}
+
 	return ActivityInfo{
-		ActivityID:             a.env.activityID,
-		ActivityType:           a.env.activityType,
-		TaskToken:              a.env.taskToken,
-		WorkflowExecution:      a.env.workflowExecution,
-		HeartbeatTimeout:       a.env.heartbeatTimeout,
-		ScheduleToCloseTimeout: a.env.scheduleToCloseTimeout,
-		StartToCloseTimeout:    a.env.startToCloseTimeout,
-		Deadline:               a.env.deadline,
-		ScheduledTime:          a.env.scheduledTime,
-		StartedTime:            a.env.startedTime,
-		TaskQueue:              a.env.taskQueue,
-		Namespace:              a.env.namespace,
-		Attempt:                a.env.attempt,
-		WorkflowType:           a.env.workflowType,
-		WorkflowNamespace:      workflowNamespace,
-		IsLocalActivity:        a.env.isLocalActivity,
-		Priority:               convertFromPBPriority(a.env.priority),
-		RetryPolicy:            a.env.retryPolicy,
-		ActivityRunID:          a.env.activityRunID,
+		ActivityID:                a.env.activityID,
+		ActivityType:              a.env.activityType,
+		TaskToken:                 a.env.taskToken,
+		WorkflowExecution:         a.env.workflowExecution,
+		HeartbeatTimeout:          a.env.heartbeatTimeout,
+		ScheduleToCloseTimeout:    a.env.scheduleToCloseTimeout,
+		StartToCloseTimeout:       a.env.startToCloseTimeout,
+		Deadline:                  a.env.deadline,
+		ScheduledTime:             a.env.scheduledTime,
+		StartedTime:               a.env.startedTime,
+		TaskQueue:                 a.env.taskQueue,
+		Namespace:                 a.env.namespace,
+		Attempt:                   a.env.attempt,
+		WorkflowType:              a.env.workflowType,
+		WorkflowNamespace:         workflowNamespace,
+		IsLocalActivity:           a.env.isLocalActivity,
+		Priority:                  convertFromPBPriority(a.env.priority),
+		RetryPolicy:               a.env.retryPolicy,
+		ActivityRunID:             a.env.activityRunID,
+		NexusSerializationContext: nexusSerializationContext,
 	}
 }
 
