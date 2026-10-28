@@ -724,7 +724,11 @@ func (wc *WorkflowClient) RecordActivityHeartbeatWithOptions(ctx context.Context
 		TaskQueue:    opts.TaskQueue,
 		IsLocal:      false, // async heartbeat is only for non-local activities
 	}
-	dataConverter := converter.WithDataConverterSerializationContext(WithContext(ctx, wc.dataConverter), actCtx)
+	var serializationContext converter.SerializationContext = actCtx
+	if opts.NexusSerializationContext != nil {
+		serializationContext = *opts.NexusSerializationContext
+	}
+	dataConverter := converter.WithDataConverterSerializationContext(WithContext(ctx, wc.dataConverter), serializationContext)
 	data, err := encodeArgs(dataConverter, opts.Details)
 	if err != nil {
 		return err

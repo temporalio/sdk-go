@@ -2384,8 +2384,8 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 			)
 		}
 	})
-	// Only the result and failure use the propagated Nexus context, because they are returned to the
-	// Nexus caller. The activity context created by WithActivityTask covers input and heartbeats.
+	// The result and failure use the propagated Nexus context, because they are returned to the Nexus
+	// caller. WithActivityTask applies the same choice to heartbeat details and the activity context to input.
 	serializationContext := serializationContextFor(converter.ActivitySerializationContext{
 		Namespace:    ath.namespace,
 		WorkflowID:   t.WorkflowExecution.GetWorkflowId(),

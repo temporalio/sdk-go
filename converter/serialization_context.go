@@ -28,16 +28,10 @@ type ActivitySerializationContext = commonconverter.ActivitySerializationContext
 // Handlers receive it when decoding inputs, encoding synchronous results, and
 // encoding failures produced while handling a Nexus task.
 //
-// Operation is the resolved operation name. For Nexus-backed workflows, workflow updates, and
-// standalone activities, this context is propagated to the backing execution. Workflows and
-// updates use it only for their result and failure, which are returned to the caller. Standalone
-// operation handles use the context returned by the server when polling a result;
-// older servers fall back to the handle's start request context.
-//
-// Completing a Nexus-backed standalone activity asynchronously can't recover this context from the
-// task token. Pass the activity's activity.Info.NexusSerializationContext to
-// client.CompleteActivityOptions or client.CompleteActivityByActivityIDOptions so the result and
-// failure are encoded for the Nexus caller.
+// Operation is the resolved operation name. Workflows, workflow updates, and standalone activities
+// started by a Nexus handler use this context for payloads returned to the caller: results,
+// failures, and, for standalone activities, heartbeat details. When completing or heartbeating such
+// an activity from a client, pass activity.Info.NexusSerializationContext in the options.
 //
 // For failures, callers receive this context in [FailureConverter.FailureToError],
 // while handlers receive it in [FailureConverter.ErrorToFailure]. Implementations
