@@ -22,38 +22,43 @@ func (ts *IntegrationTestSuite) TestSystemNexusSignalWithStartWorkflow() {
 	ctx, cancel := context.WithTimeout(ts.T().Context(), 30*time.Second)
 	defer cancel()
 
-	targetWorkflow := func(ctx workflow.Context, input string) (string, error) {
-		var signal string
-		workflow.GetSignalChannel(ctx, "greeting").Receive(ctx, &signal)
-		return input + ": " + signal, nil
-	}
+	caller := "system-nexus-proto-caller"
+	callee := "system-nexus-proto-callee"
+	taskQueue := ts.taskQueueName + "-system-nexus-proto"
+	id := uuid.NewString()
+	callerID := caller + id
+	calleeID := callee + id
+
 	callerWorkflow := func(ctx workflow.Context, targetID, taskQueue string) (string, error) {
 		var response workflow.SignalWithStartWorkflowResponse
 		err := workflow.SignalWithStartWorkflow(ctx, workflow.SignalWithStartWorkflowOptions{
 			ID:                       targetID,
 			TaskQueue:                taskQueue,
 			WorkflowExecutionTimeout: 20 * time.Second,
-		}, "greeting", "hello", targetWorkflow, "started").Get(ctx, &response)
+		}, "greeting", "hello", callee, "started").Get(ctx, &response)
 		if err != nil {
 			return "", err
 		}
 		return *response.RunID, nil
 	}
+	calleeWorkflow := func(ctx workflow.Context, input string) (string, error) {
+		var signal string
+		workflow.GetSignalChannel(ctx, "greeting").Receive(ctx, &signal)
+		return input + ": " + signal, nil
+	}
 
-	taskQueue := ts.taskQueueName + "-system-nexus"
 	c, w := ts.newSerCtxClientAndWorker(taskQueue)
 	defer c.Close()
-	w.RegisterWorkflow(targetWorkflow)
-	w.RegisterWorkflow(callerWorkflow)
+	w.RegisterWorkflowWithOptions(callerWorkflow, workflow.RegisterOptions{Name: caller})
+	w.RegisterWorkflowWithOptions(calleeWorkflow, workflow.RegisterOptions{Name: callee})
 	ts.NoError(w.Start())
 	defer w.Stop()
 
-	targetID := "system-nexus-target-" + uuid.NewString()
 	callerRun, err := c.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
-		ID:                       "system-nexus-caller-" + uuid.NewString(),
+		ID:                       callerID,
 		TaskQueue:                taskQueue,
 		WorkflowExecutionTimeout: 20 * time.Second,
-	}, callerWorkflow, targetID, taskQueue)
+	}, caller, calleeID, taskQueue)
 	ts.NoError(err)
 
 	var targetRunID string
@@ -61,7 +66,7 @@ func (ts *IntegrationTestSuite) TestSystemNexusSignalWithStartWorkflow() {
 	ts.NotEmpty(targetRunID)
 
 	var result string
-	ts.NoError(c.GetWorkflow(ctx, targetID, targetRunID).Get(ctx, &result))
+	ts.NoError(c.GetWorkflow(ctx, calleeID, targetRunID).Get(ctx, &result))
 	ts.Equal("started: hello", result)
 
 	history := c.GetWorkflowHistory(ctx, callerRun.GetID(), callerRun.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
@@ -78,5 +83,5 @@ func (ts *IntegrationTestSuite) TestSystemNexusSignalWithStartWorkflow() {
 	var request workflowservice.SignalWithStartWorkflowExecutionRequest
 	ts.NoError(proto.Unmarshal(scheduledInput.GetData(), &request))
 	ts.Len(request.GetInput().GetPayloads(), 1)
-	ts.Equal(targetID, string(request.GetInput().GetPayloads()[0].Metadata["ctx-signature"]))
+	ts.Equal(calleeID, string(request.GetInput().GetPayloads()[0].Metadata["ctx-signature"]))
 }

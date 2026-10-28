@@ -58,7 +58,7 @@ func (d sdkDir) witOverridesDir() string {
 	return filepath.Join(string(d), filepath.FromSlash("internal/cmd/system-nexus-gen/wit-overrides"))
 }
 
-func (d sdkDir) bindingsFile() string {
+func (d sdkDir) generatedFile() string {
 	return filepath.Join(string(d), filepath.FromSlash("workflow/workflowservice.go"))
 }
 
@@ -120,7 +120,7 @@ func (d buildDir) workflowDir() string {
 	return filepath.Join(string(d), "workflow")
 }
 
-func (d buildDir) bindingsFile() string {
+func (d buildDir) generatedFile() string {
 	return filepath.Join(d.workflowDir(), "workflowservice.go")
 }
 
@@ -214,19 +214,19 @@ func (a app) run() (err error) {
 	}
 
 	if a.options.check {
-		generated, err := os.ReadFile(a.tmp.bindingsFile())
+		generated, err := os.ReadFile(a.tmp.generatedFile())
 		if err != nil {
 			return err
 		}
-		checkedIn, err := os.ReadFile(a.sdk.bindingsFile())
+		checkedIn, err := os.ReadFile(a.sdk.generatedFile())
 		if err != nil {
 			return err
 		}
 		if !checkEqual(generated, checkedIn) {
-			return fmt.Errorf("%s is out of date", a.sdk.bindingsFile())
+			return fmt.Errorf("%s is out of date", a.sdk.generatedFile())
 		}
 	} else {
-		if err := os.Rename(a.tmp.bindingsFile(), a.sdk.bindingsFile()); err != nil {
+		if err := os.Rename(a.tmp.generatedFile(), a.sdk.generatedFile()); err != nil {
 			return err
 		}
 	}
