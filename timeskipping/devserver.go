@@ -46,11 +46,26 @@ func startDevServer(ctx context.Context, options DevServerOptions) (*DevServer, 
 	// rollout that also defaults to zero. Without all three of the history
 	// settings a schedule lands on the v1 workflow-backed scheduler and its
 	// time-skipping config is quietly ignored.
+	//
+	// The two feature flags use the names the server adopted after v1.33.0
+	// (main @ 0610a4f), with no aliases kept for the old ones:
+	//
+	//	frontend.WorkflowTimeSkippingEnabled      -> system.workflowTimeSkippingEnabled
+	//	history.enableCHASMSchedulerTimeSkipping  -> system.chasmSchedulerTimeSkippingEnabled
+	//
+	// These require a server at or past that rename. No published Temporal CLI
+	// release embeds one yet, so the pinned dev server
+	// (internal.PinnedDevServerVersion) does NOT satisfy this and the schedule
+	// and workflow time-skipping suites fail against it — the server ignores
+	// dynamic-config keys it does not recognise, so time skipping is simply off.
+	// Supply a newer binary through DevServerOptions.ExistingPath until a CLI
+	// release catches up.
 	options.ExtraArgs = append(options.ExtraArgs,
-		"--dynamic-config-value", "frontend.WorkflowTimeSkippingEnabled=true",
-		"--dynamic-config-value", "history.enableCHASMSchedulerTimeSkipping=true",
+		"--dynamic-config-value", "system.workflowTimeSkippingEnabled=true",
+		"--dynamic-config-value", "system.chasmSchedulerTimeSkippingEnabled=true",
 		"--dynamic-config-value", "history.enableCHASMSchedulerCreation=true",
 		"--dynamic-config-value", "history.chasmSchedulerCreationRolloutPercent=100",
+		"--dynamic-config-value", "history.enableCHASMSchedulerRouting=true",
 	)
 	ds, err := testsuite.StartDevServer(ctx, options.DevServerOptions)
 	if err != nil {

@@ -119,6 +119,59 @@ type (
 		Duration time.Duration
 	}
 
+	// FastForwardPollResult is the outcome of waiting for a fast-forward.
+	//
+	// A fast-forward that stops without completing is reported here rather than as
+	// an error: it is an outcome of the wait, not a failure of the call. Errors are
+	// reserved for the call itself failing — bad arguments, an RPC that could not be
+	// made, or the caller's context ending.
+	//
+	// Exposed as: [go.temporal.io/sdk/timeskipping.FastForwardPollResult]
+	//
+	// NOTE: Experimental
+	FastForwardPollResult struct {
+		// Completed is true when the fast-forward reached its target time.
+		Completed bool
+
+		// FailedReason says why the fast-forward stopped without completing, and is
+		// empty when Completed is true. For a workflow it is the server's own
+		// failed_reason; for a schedule, which has no polling RPC, it is derived
+		// from the schedule's reported state.
+		FailedReason string
+	}
+
+	// TimeSkippingPollFastForwardOptions identifies the workflow fast-forward to
+	// wait for.
+	//
+	// Exposed as: [go.temporal.io/sdk/timeskipping.PollFastForwardOptions]
+	//
+	// NOTE: Experimental
+	TimeSkippingPollFastForwardOptions struct {
+		// WorkflowID of the execution being fast-forwarded. Required.
+		WorkflowID string
+
+		// RunID pins the wait to one run. Leaving it empty lets the server resolve
+		// the current run, so the wait follows a chain across retry,
+		// continue-as-new and cron — which is usually what a caller wants.
+		RunID string
+
+		// FastForwardID of the fast-forward to wait for, as set in
+		// FastForwardConfig.ID. Required.
+		FastForwardID string
+	}
+
+	// PollScheduleFastForwardOptions identifies the schedule fast-forward to wait
+	// for.
+	//
+	// Exposed as: [go.temporal.io/sdk/timeskipping.PollScheduleFastForwardOptions]
+	//
+	// NOTE: Experimental
+	PollScheduleFastForwardOptions struct {
+		// FastForwardID of the fast-forward to wait for, as set in
+		// FastForwardConfig.ID. Required.
+		FastForwardID string
+	}
+
 	// TimeSkipper wraps a client with an interceptor that stamps a
 	// TimeSkippingConfig on every workflow started through TimeSkipper.Client.
 	// Callers can also FastForward a running workflow, read its virtual clock, or

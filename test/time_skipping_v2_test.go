@@ -11,7 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"strings"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -67,6 +67,10 @@ func (s *TimeSkippingV2TestSuite) SetupSuite() {
 	// StartDevServer adds the time-skipping dynamic config itself.
 	srv, err := timeskipping.StartDevServer(context.Background(), timeskipping.DevServerOptions{
 		DevServerOptions: testsuite.DevServerOptions{
+			// The time-skipping dynamic config uses the post-rename key names, which
+			// no published CLI release carries yet; point this at a newer binary to
+			// run these suites. See timeskipping.StartDevServer.
+			ExistingPath:   os.Getenv("TEMPORAL_DEV_SERVER_EXISTING_PATH"),
 			CachedDownload: testsuite.CachedDownload{Version: devServerVersion},
 			ClientOptions:  &client.Options{Namespace: "default"},
 			LogLevel:       "warn",
@@ -321,6 +325,128 @@ func registerTSTestWorkflows(w worker.Worker) {
 // ============================================================================
 
 // TestSkipFullRun ports test_skip_full_run: enable TS, let workflow run to completion.
+// TestPollFastForwardWithoutTimeSkipper covers the CLI's shape: the
+// fast-forward is issued through UpdateWorkflowExecutionOptions on a plain
+// client, and the wait is a separate call holding no TimeSkipper. This is the
+// path temporalio/cli#1246 went to the raw WorkflowService for, losing the
+// long-poll reissue loop in the process.
+func (s *TimeSkippingV2TestSuite) TestPollFastForwardWithoutTimeSkipper() {
+	ctx := context.Background()
+	tq := "tq-" + uuid.NewString()
+	w := worker.New(s.server.Client(), tq, worker.Options{})
+	registerTSTestWorkflows(w)
+	s.NoError(w.Start())
+	defer w.Stop()
+
+	// Start without stamping so the fast-forward below is what enables skipping.
+	var run client.WorkflowRun
+	s.server.WithTimeSkippingDisabled(func() {
+		var err error
+		run, err = s.server.Client().ExecuteWorkflow(ctx,
+			client.StartWorkflowOptions{ID: "wf-" + uuid.NewString(), TaskQueue: tq},
+			SleepWorkflow, 3600.0)
+		s.NoError(err)
+	})
+
+	cl := s.server.Client()
+	ffID := uuid.NewString()
+	_, err := cl.UpdateWorkflowExecutionOptions(ctx, client.UpdateWorkflowExecutionOptionsRequest{
+		WorkflowId: run.GetID(),
+		WorkflowExecutionOptionsChanges: client.WorkflowExecutionOptionsChanges{
+			TimeSkippingConfig: &client.TimeSkippingConfigChange{
+				Value: &client.TimeSkippingConfig{
+					Enabled:           true,
+					FastForwardConfig: &client.FastForwardConfig{ID: ffID, Duration: time.Hour},
+				},
+			},
+		},
+	})
+	s.NoError(err)
+
+	res, err := timeskipping.PollFastForward(ctx, cl, timeskipping.PollFastForwardOptions{
+		WorkflowID:    run.GetID(),
+		FastForwardID: ffID,
+	})
+	s.NoError(err)
+	s.True(res.Completed, "expected the fast-forward to complete")
+	s.Empty(res.FailedReason)
+
+	var result SleepResult
+	s.NoError(run.Get(ctx, &result))
+	s.assertTimeWasSkipped(ctx, run)
+}
+
+// TestPollFastForwardSurfacesServerReason checks the other half of what
+// PollFastForward reports: a fast-forward that stops without completing comes
+// back as a result carrying the server's own explanation, not as an error. This
+// is the path the CLI takes to tell a user why nothing happened, so the reason
+// has to survive the trip intact.
+func (s *TimeSkippingV2TestSuite) TestPollFastForwardSurfacesServerReason() {
+	ctx := context.Background()
+	tq := "tq-" + uuid.NewString()
+	w := worker.New(s.server.Client(), tq, worker.Options{})
+	registerTSTestWorkflows(w)
+	s.NoError(w.Start())
+	defer w.Stop()
+
+	var run client.WorkflowRun
+	s.server.WithTimeSkippingDisabled(func() {
+		var err error
+		run, err = s.server.Client().ExecuteWorkflow(ctx,
+			client.StartWorkflowOptions{ID: "wf-" + uuid.NewString(), TaskQueue: tq},
+			SleepWorkflow, 60.0)
+		s.NoError(err)
+	})
+
+	// Fast-forward well past the workflow's own sleep, so the execution ends
+	// before the fast-forward reaches its target.
+	cl := s.server.Client()
+	ffID := uuid.NewString()
+	_, err := cl.UpdateWorkflowExecutionOptions(ctx, client.UpdateWorkflowExecutionOptionsRequest{
+		WorkflowId: run.GetID(),
+		WorkflowExecutionOptionsChanges: client.WorkflowExecutionOptionsChanges{
+			TimeSkippingConfig: &client.TimeSkippingConfigChange{
+				Value: &client.TimeSkippingConfig{
+					Enabled:           true,
+					FastForwardConfig: &client.FastForwardConfig{ID: ffID, Duration: 2 * time.Hour},
+				},
+			},
+		},
+	})
+	s.NoError(err)
+
+	res, err := timeskipping.PollFastForward(ctx, cl, timeskipping.PollFastForwardOptions{
+		WorkflowID:    run.GetID(),
+		FastForwardID: ffID,
+	})
+	s.NoError(err, "stopping without completing is an outcome, not a call failure")
+	s.False(res.Completed)
+	s.Contains(res.FailedReason, "execution ended",
+		"expected the server's own reason, got %q", res.FailedReason)
+
+	s.NoError(run.Get(ctx, nil))
+	s.assertTimeWasSkipped(ctx, run)
+}
+
+// TestPollFastForwardValidatesArgs guards the two arguments the standalone wait
+// cannot default.
+func (s *TimeSkippingV2TestSuite) TestPollFastForwardValidatesArgs() {
+	ctx := context.Background()
+	cl := s.server.Client()
+
+	_, err := timeskipping.PollFastForward(ctx, cl, timeskipping.PollFastForwardOptions{
+		FastForwardID: uuid.NewString(),
+	})
+	s.Error(err)
+	s.Contains(err.Error(), "workflow id")
+
+	_, err = timeskipping.PollFastForward(ctx, cl, timeskipping.PollFastForwardOptions{
+		WorkflowID: "wf-" + uuid.NewString(),
+	})
+	s.Error(err)
+	s.Contains(err.Error(), "fast forward id")
+}
+
 func (s *TimeSkippingV2TestSuite) TestSkipFullRun() {
 	ctx := context.Background()
 	tq := "tq-" + uuid.NewString()
@@ -990,8 +1116,9 @@ func (s *TimeSkippingV2TestSuite) TestOverridingFastForwardRaisesOnOriginal() {
 	// FAST_FORWARD_POLLING_RESULT_FAST_FORWARD_FAILED with an id-mismatch reason.
 	firstRes := <-firstCh
 	s.Error(firstRes.err, "expected id-mismatch error on first FF")
-	s.Truef(strings.Contains(firstRes.err.Error(), "overridden") || strings.Contains(firstRes.err.Error(), "fast_forward_id"),
-		"expected mismatch reason in error, got %q", firstRes.err)
+	// The server's own wording, so this fails if the reason changes shape
+	// rather than passing on any error that mentions a fast-forward.
+	s.ErrorContains(firstRes.err, "does not match the execution's current fast-forward")
 
 	// Attach a worker so the workflow can complete and the second FF finishes.
 	w := worker.New(s.server.Client(), tq, worker.Options{})

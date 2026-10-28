@@ -73,6 +73,24 @@ type (
 	//
 	// NOTE: Experimental
 	TimeSkippingFastForwardInfo = internal.TimeSkippingFastForwardInfo
+
+	// PollFastForwardOptions identifies the workflow fast-forward to wait for.
+	//
+	// NOTE: Experimental
+	PollFastForwardOptions = internal.TimeSkippingPollFastForwardOptions
+
+	// PollScheduleFastForwardOptions identifies the schedule fast-forward to wait
+	// for.
+	//
+	// NOTE: Experimental
+	PollScheduleFastForwardOptions = internal.PollScheduleFastForwardOptions
+
+	// FastForwardPollResult is the outcome of waiting for a fast-forward. A
+	// fast-forward that stops without completing is reported in FailedReason
+	// rather than as an error; errors mean the call itself failed.
+	//
+	// NOTE: Experimental
+	FastForwardPollResult = internal.FastForwardPollResult
 )
 
 // NewTimeSkipper wraps c so that every workflow started through the returned
@@ -83,6 +101,44 @@ type (
 // NOTE: Experimental
 func NewTimeSkipper(c client.Client, namespace string, config TimeSkippingConfig) (*TimeSkipper, error) {
 	return internal.NewTimeSkipper(c, namespace, config)
+}
+
+// PollFastForward waits for the identified fast-forward on a workflow execution
+// to complete.
+//
+// Completion is reported in the result; a fast-forward that stops without
+// completing carries the server's reason in FailedReason rather than returning
+// an error, so a caller can report it. Errors mean the call itself failed.
+//
+// This is the wait half of TimeSkipper.FastForward on its own, for callers that
+// issued the fast-forward separately and hold only a client — a CLI, where
+// starting a fast-forward and waiting for it are different invocations. The wait
+// is a server long poll reissued until ctx ends.
+//
+// NOTE: Experimental
+func PollFastForward(
+	ctx context.Context, c client.Client, options PollFastForwardOptions,
+) (FastForwardPollResult, error) {
+	return internal.PollFastForward(ctx, c, options)
+}
+
+// PollScheduleFastForward waits for the identified fast-forward on a schedule to
+// complete.
+//
+// Completion is reported in the result; a fast-forward that stops without
+// completing carries the reason in FailedReason rather than returning an error.
+// Errors mean the call itself failed.
+//
+// This is the wait half of TimeSkipper.FastForwardSchedule on its own, for
+// callers that issued the fast-forward separately. It needs no TimeSkipper — the
+// schedule handle carries everything required. Schedules have no polling RPC, so
+// the wait re-reads Describe on a ticker until ctx ends.
+//
+// NOTE: Experimental
+func PollScheduleFastForward(
+	ctx context.Context, handle client.ScheduleHandle, options PollScheduleFastForwardOptions,
+) (FastForwardPollResult, error) {
+	return internal.PollScheduleFastForward(ctx, handle, options)
 }
 
 // StartDevServer starts a Temporal dev server with time skipping enabled and

@@ -4,12 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
+	"go.temporal.io/api/workflowservice/v1"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -286,6 +290,101 @@ func (t *TimeSkipper) fastForwardConfigFrom(ffID string, d *time.Duration) TimeS
 	return tsc
 }
 
+func (wc *WorkflowClient) pollWorkflowTimeSkipping(
+	ctx context.Context, request pollWorkflowTimeSkippingRequest,
+) (FastForwardPollResult, error) {
+	if err := wc.ensureInitialized(ctx); err != nil {
+		return FastForwardPollResult{}, err
+	}
+	if request.WorkflowID == "" {
+		return FastForwardPollResult{}, errors.New("missing workflow id argument")
+	}
+	if request.FastForwardID == "" {
+		return FastForwardPollResult{}, errors.New("missing fast forward id argument")
+	}
+
+	req := &workflowservice.PollWorkflowExecutionTimeSkippingRequest{
+		Namespace: wc.namespace,
+		WorkflowExecution: &commonpb.WorkflowExecution{
+			WorkflowId: request.WorkflowID,
+			RunId:      request.RunID,
+		},
+		FastForwardId: request.FastForwardID,
+	}
+	for {
+		grpcCtx, cancel := newGRPCContext(ctx,
+			grpcLongPoll(true), grpcTimeout(pollTimeSkippingTimeout), defaultGrpcRetryParameters(ctx))
+		resp, err := wc.workflowService.PollWorkflowExecutionTimeSkipping(grpcCtx, req)
+		lapsed := grpcCtx.Err() != nil
+		cancel()
+
+		if err != nil {
+			if ctx.Err() != nil {
+				return FastForwardPollResult{}, ctx.Err()
+			}
+			// Our own poll window closed, as a context error or as the gRPC
+			// status it can surface as. Reissue rather than fail.
+			if code := status.Code(err); lapsed || code == codes.DeadlineExceeded || code == codes.Canceled {
+				continue
+			}
+			return FastForwardPollResult{}, err
+		}
+
+		switch resp.GetFastForwardPollingResult() {
+		case enumspb.FAST_FORWARD_POLLING_RESULT_FAST_FORWARD_COMPLETED:
+			return FastForwardPollResult{Completed: true}, nil
+		case enumspb.FAST_FORWARD_POLLING_RESULT_FAST_FORWARD_FAILED:
+			// The server's own reason is handed back rather than interpreted. It
+			// distinguishes an id mismatch — a later fast-forward replaced this
+			// one, so it can never complete — from benign endings such as the
+			// execution finishing first, and callers differ on which of those
+			// deserve to be errors.
+			reason := resp.GetFailedReason()
+			if reason == "" {
+				reason = "the server reported the fast-forward as failed without a reason"
+			}
+			return FastForwardPollResult{FailedReason: reason}, nil
+		case enumspb.FAST_FORWARD_POLLING_RESULT_POLL_TIMEOUT:
+			continue
+		default:
+			return FastForwardPollResult{}, fmt.Errorf(
+				"PollWorkflowExecutionTimeSkipping returned unknown result %v",
+				resp.GetFastForwardPollingResult())
+		}
+	}
+}
+
+// PollFastForward waits for the identified fast-forward on a workflow execution
+// to complete.
+//
+// It is the wait half of [TimeSkipper.FastForward], usable on its own by callers
+// that issued the fast-forward separately — a CLI, for instance, where starting
+// the fast-forward and waiting for it are different invocations.
+//
+// Returns (true, nil) on completion; (false, nil) when the workflow chain
+// terminates or the fast-forward is superseded, reset, or time skipping is
+// disabled before it completes; (false, err) when the server reports that the
+// fast-forward ID no longer matches.
+//
+// The wait is a server long poll, reissued until the caller's context ends, so
+// the context is what bounds it.
+//
+// Exposed as: [go.temporal.io/sdk/timeskipping.PollFastForward]
+//
+// NOTE: Experimental
+func PollFastForward(
+	ctx context.Context, c Client, options TimeSkippingPollFastForwardOptions,
+) (FastForwardPollResult, error) {
+	// The poll is an unexported method on the concrete client because it has no
+	// entry on the Client interface; resolve it here the way NewTimeSkipper does.
+	wc, ok := c.(*WorkflowClient)
+	if !ok {
+		return FastForwardPollResult{}, fmt.Errorf(
+			"polling a fast-forward needs the SDK's own client implementation, got %T", c)
+	}
+	return wc.pollWorkflowTimeSkipping(ctx, pollWorkflowTimeSkippingRequest(options))
+}
+
 func (t *TimeSkipper) doBoundedFastForward(
 	ctx context.Context, run WorkflowRun, d time.Duration,
 ) (bool, error) {
@@ -296,10 +395,23 @@ func (t *TimeSkipper) doBoundedFastForward(
 	}
 	// RunId is left unset so the server resolves the current run, letting a
 	// fast-forward follow a chain across retry / continue-as-new / cron.
-	return t.client.pollWorkflowTimeSkipping(ctx, pollWorkflowTimeSkippingRequest{
+	res, err := t.client.pollWorkflowTimeSkipping(ctx, pollWorkflowTimeSkippingRequest{
 		WorkflowID:    run.GetID(),
 		FastForwardID: ffID,
 	})
+	if err != nil {
+		return false, err
+	}
+	// An id mismatch means another caller superseded this fast-forward, which is
+	// their bug rather than an outcome worth tolerating, so it stays an error
+	// here. Benign endings — the execution finished first, time skipping was
+	// reset — stay a plain false, which is what a test wants to branch on.
+	if strings.Contains(res.FailedReason, "fast_forward_id does not match") {
+		return false, fmt.Errorf(
+			"fast_forward %q was replaced by a later fast_forward call (server: %s)",
+			ffID, res.FailedReason)
+	}
+	return res.Completed, nil
 }
 
 func (t *TimeSkipper) enableUnboundedAndWait(
@@ -385,7 +497,17 @@ func (t *TimeSkipper) FastForwardSchedule(
 	if err := t.patchScheduleTimeSkippingConfig(ctx, handle.GetID(), tsc); err != nil {
 		return false, err
 	}
-	return t.pollScheduleFastForwardCompletion(ctx, handle, ffID)
+	res, err := PollScheduleFastForward(ctx, handle, PollScheduleFastForwardOptions{FastForwardID: ffID})
+	if err != nil {
+		return false, err
+	}
+	// TimeSkipper's callers are tests driving one fast-forward at a time, so a
+	// fast-forward that stopped without completing is a failed test rather than
+	// an outcome to branch on. The standalone poll reports it as data instead.
+	if res.FailedReason != "" {
+		return false, fmt.Errorf("fast_forward %q did not complete: %s", ffID, res.FailedReason)
+	}
+	return res.Completed, nil
 }
 
 // GetScheduleTimeSkippingInfo returns the schedule's server-side
@@ -419,8 +541,13 @@ func (t *TimeSkipper) patchScheduleTimeSkippingConfig(
 		SetTimeSkippingConfig(ctx, ScheduleSetTimeSkippingConfigOptions{Config: &config})
 }
 
-// pollScheduleFastForwardCompletion waits for the fast-forward identified by
-// ffID to complete.
+// PollScheduleFastForward waits for the identified fast-forward on a schedule to
+// complete, returning (true, nil) when it does.
+//
+// It is the wait half of [TimeSkipper.FastForwardSchedule], usable on its own by
+// callers that issued the fast-forward separately — a CLI, for instance, where
+// starting the fast-forward and waiting for it are different invocations. It
+// needs no TimeSkipper: the schedule handle carries everything required.
 //
 // "Poll" here is client-side: unlike the workflow path, which hands the wait to
 // the server via PollWorkflowExecutionTimeSkipping, schedules have no such RPC,
@@ -428,9 +555,19 @@ func (t *TimeSkipper) patchScheduleTimeSkippingConfig(
 // TimeSkippingFastForwardInfo.HasCompleted. One fast-forward therefore costs a
 // Describe every scheduleFastForwardPollInterval rather than a single blocking
 // call. Replace this with the schedules polling API once it exists.
-func (t *TimeSkipper) pollScheduleFastForwardCompletion(
-	ctx context.Context, handle ScheduleHandle, ffID string,
-) (bool, error) {
+//
+// The caller's context bounds the wait; there is no internal timeout.
+//
+// Exposed as: [go.temporal.io/sdk/timeskipping.PollScheduleFastForward]
+//
+// NOTE: Experimental
+func PollScheduleFastForward(
+	ctx context.Context, handle ScheduleHandle, options PollScheduleFastForwardOptions,
+) (FastForwardPollResult, error) {
+	ffID := options.FastForwardID
+	if ffID == "" {
+		return FastForwardPollResult{}, errors.New("missing FastForwardID argument")
+	}
 	ticker := time.NewTicker(scheduleFastForwardPollInterval)
 	defer ticker.Stop()
 
@@ -449,13 +586,13 @@ func (t *TimeSkipper) pollScheduleFastForwardCompletion(
 			// select below, and that error arrives gRPC-wrapped with the cause
 			// no longer in the chain. Normalize both paths to the same report.
 			if ctxErr := ctx.Err(); ctxErr != nil {
-				return false, scheduleFastForwardTimeout(handle, ffID, lastPaused, lastActions, ctxErr)
+				return FastForwardPollResult{}, scheduleFastForwardTimeout(handle, ffID, lastPaused, lastActions, ctxErr)
 			}
 			// Describe retries transient codes itself, so anything surfacing
 			// here is terminal (the schedule is gone, or the caller cannot read
 			// it) or has already exhausted those retries. Either way polling
 			// again will not help — abort, but say what the read was for.
-			return false, fmt.Errorf(
+			return FastForwardPollResult{}, fmt.Errorf(
 				"reading schedule %q while waiting for fast_forward %q: %w",
 				handle.GetID(), ffID, err)
 		}
@@ -471,27 +608,48 @@ func (t *TimeSkipper) pollScheduleFastForwardCompletion(
 		// and their own bug if so. It is handled because it is the one reading
 		// under which ours provably can never complete, not because it is
 		// expected.
-		var ffi *TimeSkippingFastForwardInfo
-		if desc.Info.TimeSkippingInfo != nil {
-			ffi = desc.Info.TimeSkippingInfo.FastForwardInfo
+		// No time-skipping state at all means the schedule has never had it
+		// enabled, so nothing can be waiting to land and the caller is polling
+		// for something that does not exist. FastForwardSchedule never sees this
+		// — it patches an enabled config before polling — but a caller that
+		// issued the fast-forward separately, or mistyped a schedule ID, does.
+		if desc.Info.TimeSkippingInfo == nil {
+			return FastForwardPollResult{
+				FailedReason: "time skipping has never been enabled on this schedule",
+			}, nil
 		}
+
+		// FastForwardInfo absent while time skipping is configured is the window
+		// before the patch is reflected, so keep waiting.
+		ffi := desc.Info.TimeSkippingInfo.FastForwardInfo
 		if ffi != nil {
 			switch {
 			case ffi.ID == ffID:
 				if ffi.HasCompleted {
-					return true, nil
+					return FastForwardPollResult{Completed: true}, nil
 				}
 			case ffi.ID != "":
-				return false, fmt.Errorf(
-					"fast_forward %q can never complete: the schedule's current fast_forward is %q, "+
-						"so this one was replaced by a later FastForwardSchedule call",
-					ffID, ffi.ID)
+				return FastForwardPollResult{FailedReason: fmt.Sprintf(
+					"the schedule's current fast-forward is %q, so this one was replaced "+
+						"by a later call", ffi.ID)}, nil
 			}
+		}
+
+		// Time skipping switching off before our fast-forward finished means it
+		// can never finish: the session skip cap was reached, or someone disabled
+		// it. Completion clears the same flag, but that is returned above, so
+		// reaching here with it clear is a genuine stop. Without this the loop
+		// would wait out the caller's deadline and report an opaque timeout.
+		if tsi := desc.Info.TimeSkippingInfo; tsi != nil &&
+			tsi.EffectiveConfig != nil && !tsi.EffectiveConfig.Enabled {
+			return FastForwardPollResult{FailedReason: "time skipping is no longer enabled on " +
+				"this schedule — it was either disabled by another caller or stopped because " +
+				"MaxSessionSkipCount was reached"}, nil
 		}
 
 		select {
 		case <-ctx.Done():
-			return false, scheduleFastForwardTimeout(handle, ffID, lastPaused, lastActions, ctx.Err())
+			return FastForwardPollResult{}, scheduleFastForwardTimeout(handle, ffID, lastPaused, lastActions, ctx.Err())
 		case <-ticker.C:
 		}
 	}

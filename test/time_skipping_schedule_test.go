@@ -11,6 +11,7 @@ package test_test
 
 import (
 	"context"
+	"os"
 	"testing"
 	"time"
 
@@ -46,6 +47,10 @@ func (s *TimeSkippingScheduleTestSuite) SetupSuite() {
 
 	srv, err := timeskipping.StartDevServer(context.Background(), timeskipping.DevServerOptions{
 		DevServerOptions: testsuite.DevServerOptions{
+			// The time-skipping dynamic config uses the post-rename key names, which
+			// no published CLI release carries yet; point this at a newer binary to
+			// run these suites. See timeskipping.StartDevServer.
+			ExistingPath:   os.Getenv("TEMPORAL_DEV_SERVER_EXISTING_PATH"),
 			CachedDownload: testsuite.CachedDownload{Version: devServerVersion},
 			ClientOptions:  &client.Options{Namespace: "default"},
 			LogLevel:       "warn",
@@ -200,6 +205,93 @@ func (s *TimeSkippingScheduleTestSuite) TestSequentialFastForwardsOnOneSchedule(
 			"fast-forward #%d fired no new actions (still %d)", i, desc.Info.NumActions)
 		prevActions = desc.Info.NumActions
 	}
+}
+
+// TestPollScheduleFastForwardWithoutTimeSkipper covers the CLI's shape: the
+// fast-forward is issued through the plain schedule handle, and the wait is a
+// separate call holding no TimeSkipper. This is the path temporalio/cli#1246
+// hand-rolled because it was not reachable.
+func (s *TimeSkippingScheduleTestSuite) TestPollScheduleFastForwardWithoutTimeSkipper() {
+	ctx := context.Background()
+	tq := "tq-" + uuid.NewString()
+	w := s.startScheduleWorker(tq)
+	defer w.Stop()
+
+	handle := s.createHourlySchedule(ctx, tq, ScheduleTargetWorkflow)
+	defer func() { _ = handle.Delete(ctx) }()
+
+	ffID := uuid.NewString()
+	s.NoError(handle.SetTimeSkippingConfig(ctx, client.ScheduleSetTimeSkippingConfigOptions{
+		Config: &client.TimeSkippingConfig{
+			Enabled:           true,
+			FastForwardConfig: &client.FastForwardConfig{ID: ffID, Duration: 3 * time.Hour},
+		},
+	}))
+
+	res, err := timeskipping.PollScheduleFastForward(ctx, handle,
+		timeskipping.PollScheduleFastForwardOptions{FastForwardID: ffID})
+	s.NoError(err)
+	s.True(res.Completed)
+	s.Empty(res.FailedReason)
+
+	desc, err := handle.Describe(ctx)
+	s.NoError(err)
+	s.Greater(desc.Info.NumActions, 0, "expected the fast-forward to have fired actions")
+}
+
+// TestPollScheduleFastForwardRequiresID guards the one argument the standalone
+// wait cannot default.
+func (s *TimeSkippingScheduleTestSuite) TestPollScheduleFastForwardRequiresID() {
+	ctx := context.Background()
+	tq := "tq-" + uuid.NewString()
+	w := s.startScheduleWorker(tq)
+	defer w.Stop()
+
+	handle := s.createHourlySchedule(ctx, tq, ScheduleTargetWorkflow)
+	defer func() { _ = handle.Delete(ctx) }()
+
+	res, err := timeskipping.PollScheduleFastForward(ctx, handle,
+		timeskipping.PollScheduleFastForwardOptions{})
+	s.Error(err, "a missing argument is a failure of the call, not an outcome")
+	s.False(res.Completed)
+	s.Contains(err.Error(), "FastForwardID")
+}
+
+// TestPollScheduleFastForwardReportsTimeSkippingDisabled asserts the wait gives
+// up with a diagnosis, rather than spinning to the caller's deadline, when time
+// skipping is switched off before the fast-forward finishes.
+func (s *TimeSkippingScheduleTestSuite) TestPollScheduleFastForwardReportsTimeSkippingDisabled() {
+	ctx := context.Background()
+	tq := "tq-" + uuid.NewString()
+	w := s.startScheduleWorker(tq)
+	defer w.Stop()
+
+	handle := s.createHourlySchedule(ctx, tq, ScheduleTargetWorkflow)
+	defer func() { _ = handle.Delete(ctx) }()
+
+	// Pause first so the clock cannot advance and complete the fast-forward
+	// before the disable lands.
+	s.NoError(handle.Pause(ctx, client.SchedulePauseOptions{Note: "hold for disable test"}))
+
+	ffID := uuid.NewString()
+	s.NoError(handle.SetTimeSkippingConfig(ctx, client.ScheduleSetTimeSkippingConfigOptions{
+		Config: &client.TimeSkippingConfig{
+			Enabled:           true,
+			FastForwardConfig: &client.FastForwardConfig{ID: ffID, Duration: 3 * time.Hour},
+		},
+	}))
+	s.NoError(handle.SetTimeSkippingConfig(ctx, client.ScheduleSetTimeSkippingConfigOptions{
+		Config: &client.TimeSkippingConfig{Enabled: false},
+	}))
+
+	waitCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	res, err := timeskipping.PollScheduleFastForward(waitCtx, handle,
+		timeskipping.PollScheduleFastForwardOptions{FastForwardID: ffID})
+	s.NoError(err, "stopping without completing is an outcome, not a call failure")
+	s.False(res.Completed)
+	s.Contains(res.FailedReason, "no longer enabled",
+		"should diagnose, not wait out the deadline")
 }
 
 // TestFastForwardPausedScheduleReportsWhyItGaveUp covers the realistic way a

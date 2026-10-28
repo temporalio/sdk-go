@@ -1470,69 +1470,6 @@ func (wc *WorkflowClient) UpdateWorkflowExecutionOptions(ctx context.Context, re
 	return workflowExecutionOptionsFromProtoUpdateResponse(resp), nil
 }
 
-func (wc *WorkflowClient) pollWorkflowTimeSkipping(
-	ctx context.Context, request pollWorkflowTimeSkippingRequest,
-) (bool, error) {
-	if err := wc.ensureInitialized(ctx); err != nil {
-		return false, err
-	}
-	if request.WorkflowID == "" {
-		return false, errors.New("missing workflow id argument")
-	}
-	if request.FastForwardID == "" {
-		return false, errors.New("missing fast forward id argument")
-	}
-
-	req := &workflowservice.PollWorkflowExecutionTimeSkippingRequest{
-		Namespace: wc.namespace,
-		WorkflowExecution: &commonpb.WorkflowExecution{
-			WorkflowId: request.WorkflowID,
-			RunId:      request.RunID,
-		},
-		FastForwardId: request.FastForwardID,
-	}
-	for {
-		grpcCtx, cancel := newGRPCContext(ctx,
-			grpcLongPoll(true), grpcTimeout(pollTimeSkippingTimeout), defaultGrpcRetryParameters(ctx))
-		resp, err := wc.workflowService.PollWorkflowExecutionTimeSkipping(grpcCtx, req)
-		lapsed := grpcCtx.Err() != nil
-		cancel()
-
-		if err != nil {
-			if ctx.Err() != nil {
-				return false, ctx.Err()
-			}
-			// Our own poll window closed, as a context error or as the gRPC
-			// status it can surface as. Reissue rather than fail.
-			if code := status.Code(err); lapsed || code == codes.DeadlineExceeded || code == codes.Canceled {
-				continue
-			}
-			return false, err
-		}
-
-		switch resp.GetFastForwardPollingResult() {
-		case enumspb.FAST_FORWARD_POLLING_RESULT_FAST_FORWARD_COMPLETED:
-			return true, nil
-		case enumspb.FAST_FORWARD_POLLING_RESULT_FAST_FORWARD_FAILED:
-			// failed_reason distinguishes an id mismatch — a later fast-forward
-			// replaced this one, so it can never complete — from benign endings
-			// such as the execution finishing first.
-			if strings.Contains(resp.GetFailedReason(), "fast_forward_id does not match") {
-				return false, fmt.Errorf(
-					"fast_forward %q was replaced by a later fast_forward call (server: %s)",
-					request.FastForwardID, resp.GetFailedReason())
-			}
-			return false, nil
-		case enumspb.FAST_FORWARD_POLLING_RESULT_POLL_TIMEOUT:
-			continue
-		default:
-			return false, fmt.Errorf(
-				"PollWorkflowExecutionTimeSkipping returned unknown result %v",
-				resp.GetFastForwardPollingResult())
-		}
-	}
-}
-
 // DescribeTaskQueueEnhanced returns information about the target task queue, broken down by Build Id:
 //   - List of pollers
 //   - Workflow Reachability status
