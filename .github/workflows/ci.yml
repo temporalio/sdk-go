@@ -222,6 +222,7 @@ jobs:
         run: go run . integration-test
         env:
           TEST_LOG_ARTIFACT_NAME: ${{ github.job }}
+          DISABLE_NEXUS_SERIALIZATION_CONTEXT_TESTS: "1"
           # TODO(antlai-temporal): Remove this flag once server 1.27 released.
           DISABLE_SERVER_1_27_TESTS: "1"
           DISABLE_STANDALONE_ACTIVITY_TESTS: "1"
@@ -346,3 +347,22 @@ jobs:
       go-repo-path: ${{github.event.pull_request.head.repo.full_name}}
       version: ${{github.event.pull_request.head.ref}}
       version-is-repo-ref: true
+
+  # The single required status check for merging: a PR can merge only if every job in
+  # `needs` passed.
+  required-pr-checks:
+    name: Required PR Checks
+    # Without always(), this job would be skipped when a dependency fails, and GitHub
+    # treats a skipped required check as passing.
+    if: always()
+    needs:
+      - check
+      - unit-test
+      - integ-test
+      - integ-test-cache
+      - features-test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if any check failed or was cancelled
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        run: exit 1

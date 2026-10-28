@@ -779,8 +779,9 @@ func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *workflowservice.
 		// Use the original execution run ID from the start event as the initial seed.
 		// Original execution run ID stays the same for the entire chain of workflow resets.
 		// This helps us keep child workflow IDs consistent up until a reset-point is encountered.
-		currentRunID: attributes.GetOriginalExecutionRunId(),
-		Priority:     convertFromPBPriority(attributes.Priority),
+		currentRunID:                        attributes.GetOriginalExecutionRunId(),
+		Priority:                            convertFromPBPriority(attributes.Priority),
+		propagatedNexusSerializationContext: attributes.GetPropagatedNexusSerializationContext(),
 	}
 
 	return newWorkflowExecutionContext(workflowInfo, wth), nil
@@ -1938,11 +1939,11 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		}
 		closeCommand = createNewCommand(enumspb.COMMAND_TYPE_FAIL_WORKFLOW_EXECUTION)
 		wfInfo := eventHandler.workflowInfo
-		wfCtx := converter.WorkflowSerializationContext{
+		serializationContext := serializationContextFor(converter.WorkflowSerializationContext{
 			Namespace:  wfInfo.Namespace,
 			WorkflowID: wfInfo.WorkflowExecution.ID,
-		}
-		fc := converter.WithFailureConverterSerializationContext(wth.failureConverter, wfCtx)
+		}, wfInfo.propagatedNexusSerializationContext)
+		fc := converter.WithFailureConverterSerializationContext(wth.failureConverter, serializationContext)
 		failure := fc.ErrorToFailure(workflowContext.err)
 		closeCommand.Attributes = &commandpb.Command_FailWorkflowExecutionCommandAttributes{FailWorkflowExecutionCommandAttributes: &commandpb.FailWorkflowExecutionCommandAttributes{
 			Failure: failure,
@@ -2383,15 +2384,17 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 			)
 		}
 	})
-	actCtx := converter.ActivitySerializationContext{
+	// Only the result and failure use the propagated Nexus context, because they are returned to the
+	// Nexus caller. The activity context created by WithActivityTask covers input and heartbeats.
+	serializationContext := serializationContextFor(converter.ActivitySerializationContext{
 		Namespace:    ath.namespace,
 		WorkflowID:   t.WorkflowExecution.GetWorkflowId(),
 		WorkflowType: t.WorkflowType.GetName(),
 		ActivityType: t.ActivityType.GetName(),
 		TaskQueue:    taskQueue,
-	}
-	dataConverter := converter.WithDataConverterSerializationContext(ath.dataConverter, actCtx)
-	failureConverter := converter.WithFailureConverterSerializationContext(ath.failureConverter, actCtx)
+	}, t.GetPropagatedNexusSerializationContext())
+	dataConverter := converter.WithDataConverterSerializationContext(ath.dataConverter, serializationContext)
+	failureConverter := converter.WithFailureConverterSerializationContext(ath.failureConverter, serializationContext)
 
 	// The root context is only cancelled when the worker is finished shutting down.
 	rootCtx := ath.backgroundContext

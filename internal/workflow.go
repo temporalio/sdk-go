@@ -17,6 +17,7 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	failurepb "go.temporal.io/api/failure/v1"
+	nexuspb "go.temporal.io/api/nexus/v1"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
@@ -1514,7 +1515,8 @@ type WorkflowInfo struct {
 	currentHistorySize   int
 	currentHistoryLength int
 	// currentRunID is the current run ID of the workflow task, deterministic over reset
-	currentRunID string
+	currentRunID                        string
+	propagatedNexusSerializationContext *nexuspb.PropagatedSerializationContext
 }
 
 // UpdateInfo information about a currently running update

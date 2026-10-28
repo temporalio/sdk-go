@@ -1668,6 +1668,16 @@ func withRootFailureConverterSerializationContext(ctx Context, sc converter.Seri
 	return fc
 }
 
+// resultDataConverter returns the data converter for the workflow's result, which is forwarded to
+// the Nexus caller when the workflow was started by a Nexus handler. See serializationContextFor.
+func resultDataConverter(ctx Context) converter.DataConverter {
+	propagated := GetWorkflowEnvironment(ctx).WorkflowInfo().propagatedNexusSerializationContext
+	if propagated == nil {
+		return GetDataConverterFromWorkflowContext(ctx)
+	}
+	return withRootDataConverterSerializationContext(ctx, nexusSerializationContextFromProto(propagated))
+}
+
 func rootDataConverterFromEnvironment(env WorkflowEnvironment) converter.DataConverter {
 	if root, ok := env.(interface {
 		GetRootDataConverter() converter.DataConverter
@@ -1853,9 +1863,8 @@ func setUpdateHandler(ctx Context, updateName string, handler any, opts UpdateHa
 		return err
 	}
 	eo := getWorkflowEnvOptions(ctx)
-	// Data and Failure converter wrapped with WorkflowSerializationContext in newWorkflowExecutionEventHandler.
+	// Data converter wrapped with WorkflowSerializationContext in newWorkflowExecutionEventHandler.
 	uh.dataConverter = GetWorkflowEnvironment(ctx).GetDataConverter()
-	uh.failureConverter = GetWorkflowEnvironment(ctx).GetFailureConverter()
 	eo.updateHandlers[updateName] = uh
 	if GetWorkflowEnvironment(ctx).TryUse(SDKPriorityUpdateHandling) {
 		GetWorkflowEnvironment(ctx).HandleQueuedUpdates(updateName)
