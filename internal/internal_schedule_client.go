@@ -757,14 +757,14 @@ func convertFromPBScheduleAction(
 			WorkflowExecutionTimeout: workflow.GetWorkflowExecutionTimeout().AsDuration(),
 			WorkflowRunTimeout:       workflow.GetWorkflowRunTimeout().AsDuration(),
 			WorkflowTaskTimeout:      workflow.GetWorkflowTaskTimeout().AsDuration(),
-			RetryPolicy:              convertFromPBRetryPolicy(workflow.RetryPolicy),
+			RetryPolicy:              ConvertFromPBRetryPolicy(workflow.RetryPolicy),
 			Memo:                     memos,
 			TypedSearchAttributes:    searchAttrs,
 			UntypedSearchAttributes:  untypedSearchAttrs,
-			VersioningOverride:       versioningOverrideFromProto(workflow.VersioningOverride),
+			VersioningOverride:       VersioningOverrideFromProto(workflow.VersioningOverride),
 			StaticSummary:            *convertedSummary,
 			StaticDetails:            *convertedDetails,
-			Priority:                 convertFromPBPriority(workflow.GetPriority()),
+			Priority:                 ConvertFromPBPriority(workflow.GetPriority()),
 		}, nil
 	default:
 		// TODO maybe just panic instead?

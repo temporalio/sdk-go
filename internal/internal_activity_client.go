@@ -1070,14 +1070,14 @@ func (w *workflowClientInterceptor) DescribeActivity(
 			LastStartedTime:         info.LastStartedTime.AsTime(),
 			Attempt:                 info.Attempt,
 			TotalHeartbeatCount:     info.TotalHeartbeatCount,
-			RetryPolicy:             convertFromPBRetryPolicy(info.RetryPolicy),
+			RetryPolicy:             ConvertFromPBRetryPolicy(info.RetryPolicy),
 			ExpirationTime:          info.ExpirationTime.AsTime(),
 			LastWorkerIdentity:      info.LastWorkerIdentity,
 			CurrentRetryInterval:    info.CurrentRetryInterval.AsDuration(),
 			LastAttemptCompleteTime: info.LastAttemptCompleteTime.AsTime(),
 			NextAttemptScheduleTime: info.NextAttemptScheduleTime.AsTime(),
 			LastDeploymentVersion:   lastDeploymentVersion,
-			Priority:                convertFromPBPriority(info.Priority),
+			Priority:                ConvertFromPBPriority(info.Priority),
 			CanceledReason:          info.CanceledReason,
 			dataConverter: converter.WithDataConverterSerializationContext(
 				WithContext(ctx, w.client.dataConverter), activityContext),
@@ -1217,8 +1217,8 @@ func activityOptionsFromProto(options *activitypb.ActivityOptions) *ClientActivi
 		StartToCloseTimeout:    options.GetStartToCloseTimeout().AsDuration(),
 		HeartbeatTimeout:       options.GetHeartbeatTimeout().AsDuration(),
 		StartDelay:             options.GetStartDelay().AsDuration(),
-		RetryPolicy:            convertFromPBRetryPolicy(options.GetRetryPolicy()),
-		Priority:               convertFromPBPriority(options.GetPriority()),
+		RetryPolicy:            ConvertFromPBRetryPolicy(options.GetRetryPolicy()),
+		Priority:               ConvertFromPBPriority(options.GetPriority()),
 	}
 }
 
