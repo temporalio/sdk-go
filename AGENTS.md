@@ -20,6 +20,8 @@ quick reference for coding-agent work and pull requests.
 - For focused tests, use the build tool's `-run` flag:
   - `go run . unit-test -run "TestMyFunction"`
   - `go run . integration-test -dev-server -run "TestIntegrationSuite/TestMyTest"`
+- Use the build tool to update generated code immediately after bumping `go.temporal.io/api`:
+  - `go run . generate` (assumes you have [nexgen](https://github.com/temporalio/nexgen) installed)
 - If you need integration tests against an already-running server on
   `localhost:7233`, omit `-dev-server`. Otherwise prefer `-dev-server`.
 - Avoid fixed sleeps in tests. Prefer channels, callbacks, history/event
@@ -45,9 +47,6 @@ quick reference for coding-agent work and pull requests.
   incomplete or misleading.
 - If dependencies change, tidy all modules from the repository root with:
   `find . -name go.mod -execdir go mod tidy \;`
-- Run `go generate ./internal/payloadlimits` right after changing the
-  `go.temporal.io/api` version, before any other work, so unclassified payload
-  fields surface early.
 - Treat generated files, mocks, and module metadata carefully. Regenerate with
   existing repo tooling when available, and avoid unrelated churn.
 - Do not hand-edit generated mocks or generated protocol artifacts unless the
