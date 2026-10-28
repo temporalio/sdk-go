@@ -74,21 +74,7 @@ func RetryPolicyToProto(_ converter.DataConverter, p *temporal.RetryPolicy) (*co
 }
 
 func RetryPolicyFromProto(_ converter.DataConverter, p *common.RetryPolicy) (*temporal.RetryPolicy, error) {
-	if p == nil {
-		return nil, nil
-	}
-	policy := temporal.RetryPolicy{
-		BackoffCoefficient:     p.GetBackoffCoefficient(),
-		MaximumAttempts:        p.GetMaximumAttempts(),
-		NonRetryableErrorTypes: p.GetNonRetryableErrorTypes(),
-	}
-	if interval := p.GetInitialInterval(); interval != nil {
-		policy.InitialInterval = interval.AsDuration()
-	}
-	if interval := p.GetMaximumInterval(); interval != nil {
-		policy.MaximumInterval = interval.AsDuration()
-	}
-	return &policy, nil
+	return internal.ConvertFromPBRetryPolicy(p), nil
 }
 
 // --- Priority (temporal.api.common.v1.Priority) ---
@@ -104,11 +90,8 @@ func PriorityFromProto(_ converter.DataConverter, p *common.Priority) (*temporal
 	if p == nil {
 		return nil, nil
 	}
-	return &temporal.Priority{
-		PriorityKey:    int(p.GetPriorityKey()),
-		FairnessKey:    p.GetFairnessKey(),
-		FairnessWeight: p.GetFairnessWeight(),
-	}, nil
+	value := internal.ConvertFromPBPriority(p)
+	return &value, nil
 }
 
 // --- WorkflowType (temporal.api.common.v1.WorkflowType) ---
@@ -311,33 +294,7 @@ func VersioningOverrideFromProto(_ converter.DataConverter, versioningOverride *
 		return nil, nil
 	}
 
-	var value client.VersioningOverride
-	switch override := versioningOverride.GetOverride().(type) {
-	case *workflowpb.VersioningOverride_AutoUpgrade:
-		value = &client.AutoUpgradeVersioningOverride{}
-	case *workflowpb.VersioningOverride_Pinned:
-		version := override.Pinned.GetVersion()
-		value = &client.PinnedVersioningOverride{Version: internal.WorkerDeploymentVersion{
-			DeploymentName: version.GetDeploymentName(),
-			BuildID:        version.GetBuildId(),
-		}}
-	}
-	if value == nil {
-		//lint:ignore SA1019 decode legacy versioning overrides
-		switch versioningOverride.GetBehavior() {
-		case enums.VERSIONING_BEHAVIOR_AUTO_UPGRADE:
-			value = &client.AutoUpgradeVersioningOverride{}
-		case enums.VERSIONING_BEHAVIOR_PINNED:
-			//lint:ignore SA1019 decode legacy versioning overrides
-			deploymentName := versioningOverride.GetDeployment().GetSeriesName()
-			//lint:ignore SA1019 decode legacy versioning overrides
-			buildID := versioningOverride.GetDeployment().GetBuildId()
-			value = &client.PinnedVersioningOverride{Version: internal.WorkerDeploymentVersion{
-				DeploymentName: deploymentName,
-				BuildID:        buildID,
-			}}
-		}
-	}
+	value := internal.VersioningOverrideFromProto(versioningOverride)
 	return &value, nil
 }
 

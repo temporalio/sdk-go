@@ -2208,8 +2208,8 @@ func GetChildWorkflowOptions(ctx Context) ChildWorkflowOptions {
 		WorkflowTaskTimeout:      opts.WorkflowTaskTimeout,
 		WaitForCancellation:      opts.WaitForCancellation,
 		WorkflowIDReusePolicy:    opts.WorkflowIDReusePolicy,
-		RetryPolicy:              convertFromPBRetryPolicy(opts.RetryPolicy),
-		Priority:                 convertFromPBPriority(opts.Priority),
+		RetryPolicy:              ConvertFromPBRetryPolicy(opts.RetryPolicy),
+		Priority:                 ConvertFromPBPriority(opts.Priority),
 		CronSchedule:             opts.CronSchedule,
 		Memo:                     opts.Memo,
 		SearchAttributes:         opts.SearchAttributes,
@@ -2935,10 +2935,10 @@ func GetActivityOptions(ctx Context) ActivityOptions {
 		HeartbeatTimeout:       opts.HeartbeatTimeout,
 		WaitForCancellation:    opts.WaitForCancellation,
 		ActivityID:             opts.ActivityID,
-		RetryPolicy:            convertFromPBRetryPolicy(opts.RetryPolicy),
+		RetryPolicy:            ConvertFromPBRetryPolicy(opts.RetryPolicy),
 		DisableEagerExecution:  opts.DisableEagerExecution,
 		VersioningIntent:       opts.VersioningIntent,
-		Priority:               convertFromPBPriority(opts.Priority),
+		Priority:               ConvertFromPBPriority(opts.Priority),
 		Summary:                opts.Summary,
 		EventGroups:            opts.eventGroups,
 	}
@@ -3046,7 +3046,7 @@ func ConvertToPBRetryPolicy(retryPolicy *RetryPolicy) *commonpb.RetryPolicy {
 	}
 }
 
-func convertFromPBRetryPolicy(retryPolicy *commonpb.RetryPolicy) *RetryPolicy {
+func ConvertFromPBRetryPolicy(retryPolicy *commonpb.RetryPolicy) *RetryPolicy {
 	if retryPolicy == nil {
 		return nil
 	}
@@ -3080,7 +3080,7 @@ func ConvertToPBPriority(priority Priority) *commonpb.Priority {
 	}
 }
 
-func convertFromPBPriority(priority *commonpb.Priority) Priority {
+func ConvertFromPBPriority(priority *commonpb.Priority) Priority {
 	// If the priority is nil, return the default value.
 	if priority == nil {
 		return Priority{}

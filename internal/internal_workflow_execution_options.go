@@ -180,7 +180,7 @@ func VersioningOverrideToProto(versioningOverride VersioningOverride) *workflowp
 	}
 }
 
-func versioningOverrideFromProto(versioningOverride *workflowpb.VersioningOverride) VersioningOverride {
+func VersioningOverrideFromProto(versioningOverride *workflowpb.VersioningOverride) VersioningOverride {
 	if versioningOverride == nil {
 		return nil
 	}
@@ -250,7 +250,7 @@ func workflowExecutionOptionsFromProtoUpdateResponse(response *workflowservice.U
 	versioningOverride := response.GetWorkflowExecutionOptions().GetVersioningOverride()
 
 	return WorkflowExecutionOptions{
-		VersioningOverride: versioningOverrideFromProto(versioningOverride),
+		VersioningOverride: VersioningOverrideFromProto(versioningOverride),
 	}
 }
 
