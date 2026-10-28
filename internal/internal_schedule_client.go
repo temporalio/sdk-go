@@ -505,7 +505,7 @@ func scheduleDescriptionFromPB(
 	var typedSearchAttributes SearchAttributes
 	searchAttributes := describeResponse.SearchAttributes
 	if searchAttributes != nil {
-		typedSearchAttributes = convertToTypedSearchAttributes(logger, searchAttributes.IndexedFields)
+		typedSearchAttributes = ConvertToTypedSearchAttributes(logger, searchAttributes.IndexedFields)
 	}
 
 	return &ScheduleDescription{
@@ -717,7 +717,7 @@ func convertFromPBScheduleAction(
 			memos[key] = element
 		}
 
-		searchAttrs := convertToTypedSearchAttributes(logger, workflow.GetSearchAttributes().GetIndexedFields())
+		searchAttrs := ConvertToTypedSearchAttributes(logger, workflow.GetSearchAttributes().GetIndexedFields())
 		// Create untyped list for any attribute not in the existing list
 		untypedSearchAttrs := map[string]*commonpb.Payload{}
 		for k, v := range workflow.GetSearchAttributes().GetIndexedFields() {
@@ -757,14 +757,14 @@ func convertFromPBScheduleAction(
 			WorkflowExecutionTimeout: workflow.GetWorkflowExecutionTimeout().AsDuration(),
 			WorkflowRunTimeout:       workflow.GetWorkflowRunTimeout().AsDuration(),
 			WorkflowTaskTimeout:      workflow.GetWorkflowTaskTimeout().AsDuration(),
-			RetryPolicy:              convertFromPBRetryPolicy(workflow.RetryPolicy),
+			RetryPolicy:              ConvertFromPBRetryPolicy(workflow.RetryPolicy),
 			Memo:                     memos,
 			TypedSearchAttributes:    searchAttrs,
 			UntypedSearchAttributes:  untypedSearchAttrs,
-			VersioningOverride:       versioningOverrideFromProto(workflow.VersioningOverride),
+			VersioningOverride:       VersioningOverrideFromProto(workflow.VersioningOverride),
 			StaticSummary:            *convertedSummary,
 			StaticDetails:            *convertedDetails,
-			Priority:                 convertFromPBPriority(workflow.GetPriority()),
+			Priority:                 ConvertFromPBPriority(workflow.GetPriority()),
 		}, nil
 	default:
 		// TODO maybe just panic instead?

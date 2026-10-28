@@ -381,7 +381,7 @@ func (a *activityEnvironmentInterceptor) GetInfo(ctx context.Context) ActivityIn
 		WorkflowType:           a.env.workflowType,
 		WorkflowNamespace:      workflowNamespace,
 		IsLocalActivity:        a.env.isLocalActivity,
-		Priority:               convertFromPBPriority(a.env.priority),
+		Priority:               ConvertFromPBPriority(a.env.priority),
 		RetryPolicy:            a.env.retryPolicy,
 		ActivityRunID:          a.env.activityRunID,
 	}

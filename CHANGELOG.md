@@ -22,6 +22,7 @@ to docs, or any other relevant information.
 
 ### Added
 
+- Added experimental API for calling `SignalWithStartWorkflow` within a workflow.
 - Added experimental `temporalnexus.ConvertLinkCallbackToNexusLink` and `temporalnexus.ConvertNexusLinkToLinkCallback`
   for converting `Link_Callback` to and from Nexus links.
 - Nexus handlers now propagate `NexusSerializationContext` to the workflows, workflow updates, and

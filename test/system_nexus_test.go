@@ -2,110 +2,21 @@ package test_test
 
 import (
 	"context"
-	"errors"
 	"os"
 	"time"
 
 	"github.com/google/uuid"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
-	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/client"
-	"go.temporal.io/sdk/converter"
-	"go.temporal.io/sdk/internal"
-	commonconverter "go.temporal.io/sdk/internal/common/converter"
+	"go.temporal.io/sdk/temporal"
+	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
 	"google.golang.org/protobuf/proto"
 )
 
-// Below we declare a SignalWithStart "model type" whose transfer type is
-// SignalWithStartWorkflowExecutionRequest, and a SignalWithStartResponse
-// model type whose transfer type is SignalWithStartWorkflowExecutionResponse.
-// Soon these mock fixtures will be replaced with real model types that we
-// expose to the user. For now we use them to test the workflow system
-// nexus execution path end-to-end.
-
-const (
-	systemNexusWorkflowService = "temporal.api.workflowservice.v1.WorkflowService"
-	systemNexusSignalWithStart = "SignalWithStartWorkflowExecution"
-)
-
-type signalWithStartModel struct {
-	Namespace    string
-	WorkflowID   string
-	WorkflowType string
-	TaskQueue    string
-	SignalName   string
-	Input        string
-}
-
-func init() {
-	// Here we tell the system nexus data converter what serialization
-	// context it should use when encoding a signalWithStartModel.
-	internal.UpdateSystemNexusRegistry(map[internal.SystemNexusRegistryKey]internal.SystemNexusRegistryEntry{
-		{Service: systemNexusWorkflowService, Operation: systemNexusSignalWithStart}: {
-			SerializationContext: func(value any) converter.SerializationContext {
-				model := value.(signalWithStartModel)
-				return converter.WorkflowSerializationContext{
-					Namespace:  model.Namespace,
-					WorkflowID: model.WorkflowID,
-				}
-			},
-		},
-	})
-}
-
-func (signalWithStartModel) TransferTypeConverter() (converter.TransferTypeConverter, error) {
-	return commonconverter.NewSystemNexusTransferTypeConverter(
-		// This is the transfer type encoder that turns signalWithStartModel
-		// into a SignalWithStartWorkflowExecutionRequest proto. As part of
-		// that encoding step, we encode the arguments (model.Input) using
-		// the callee's serialization context.
-		func(cfg *commonconverter.SystemNexusContext, model *signalWithStartModel) (*workflowservice.SignalWithStartWorkflowExecutionRequest, error) {
-			input, err := cfg.DataConverter.ToPayloads(model.Input)
-			if err != nil {
-				return nil, err
-			}
-			return &workflowservice.SignalWithStartWorkflowExecutionRequest{
-				Namespace:    model.Namespace,
-				WorkflowId:   model.WorkflowID,
-				WorkflowType: &commonpb.WorkflowType{Name: model.WorkflowType},
-				TaskQueue:    &taskqueuepb.TaskQueue{Name: model.TaskQueue},
-				SignalName:   model.SignalName,
-				Input:        input,
-			}, nil
-		},
-		// Transfer type decoder
-		func(*commonconverter.SystemNexusContext, *workflowservice.SignalWithStartWorkflowExecutionRequest, *signalWithStartModel) error {
-			return errors.New("signal-with-start test request is encode-only")
-		},
-	)
-}
-
-type signalWithStartResponseModel struct {
-	RunID string
-}
-
-func (signalWithStartResponseModel) TransferTypeConverter() (converter.TransferTypeConverter, error) {
-	return commonconverter.NewSystemNexusTransferTypeConverter(
-		// Transfer type encoder
-		func(_ *commonconverter.SystemNexusContext, model *signalWithStartResponseModel) (*workflowservice.SignalWithStartWorkflowExecutionResponse, error) {
-			return &workflowservice.SignalWithStartWorkflowExecutionResponse{RunId: model.RunID}, nil
-		},
-		// This is transfer type decoder that turns a SignalWithStartWorkflowExecutionResponse proto
-		// into a signalWithStartResponseModel.
-		func(_ *commonconverter.SystemNexusContext, response *workflowservice.SignalWithStartWorkflowExecutionResponse, model *signalWithStartResponseModel) error {
-			model.RunID = response.GetRunId()
-			return nil
-		},
-	)
-}
-
-// TestSystemNexusSignalWithStartSerializationContext invokes SignalWithStart from
-// a caller workflow using system nexus. We verify that the call went through and
-// that the arguments were encoded using the callee's serialization context.
-func (ts *IntegrationTestSuite) TestSystemNexusSignalWithStart() {
+func (ts *IntegrationTestSuite) TestSystemNexusSignalWithStartWorkflow() {
 	skipOnCloud(ts.T(), cloudRequiresProvisioning, "system Nexus signal-with-start is not enabled in Cloud test namespaces")
 	if os.Getenv("DISABLE_SYSTEM_NEXUS_TESTS") != "" {
 		ts.T().Skip("server does not support system Nexus signal-with-start")
@@ -121,22 +32,32 @@ func (ts *IntegrationTestSuite) TestSystemNexusSignalWithStart() {
 	calleeID := callee + id
 
 	callerWorkflow := func(ctx workflow.Context, targetID, taskQueue string) (string, error) {
-		request := signalWithStartModel{
-			Namespace:    workflow.GetInfo(ctx).Namespace,
-			WorkflowID:   targetID,
-			WorkflowType: callee,
-			TaskQueue:    taskQueue,
-			SignalName:   "greeting",
-			Input:        "started",
+		var response workflow.SignalWithStartWorkflowResponse
+		err := workflow.SignalWithStartWorkflow(ctx, workflow.SignalWithStartWorkflowOptions{
+			ID:                       targetID,
+			TaskQueue:                taskQueue,
+			WorkflowExecutionTimeout: 20 * time.Second,
+			WorkflowRunTimeout:       15 * time.Second,
+			WorkflowTaskTimeout:      5 * time.Second,
+			RetryPolicy:              &temporal.RetryPolicy{InitialInterval: time.Second, MaximumAttempts: 1},
+			Priority:                 &temporal.Priority{PriorityKey: 2},
+			StartDelay:               time.Second,
+			Memo:                     map[string]any{"memo": "memo value"},
+			StaticSummary:            "summary",
+			StaticDetails:            "details",
+			TypedSearchAttributes: temporal.NewSearchAttributes(
+				temporal.NewSearchAttributeKeyKeyword("CustomKeywordField").ValueSet("keyword"),
+			),
+		}, "greeting", "hello", callee, "started").Get(ctx, &response)
+		if err != nil {
+			return "", err
 		}
-		var response signalWithStartResponseModel
-		err := internal.NewSystemNexusClient(systemNexusWorkflowService).
-			ExecuteOperation(ctx, systemNexusSignalWithStart, request, workflow.NexusOperationOptions{}).
-			Get(ctx, &response)
-		return response.RunID, err
+		return *response.RunID, nil
 	}
-	calleeWorkflow := func(_ workflow.Context, input string) (string, error) {
-		return input, nil
+	calleeWorkflow := func(ctx workflow.Context, input string) (string, error) {
+		var signal string
+		workflow.GetSignalChannel(ctx, "greeting").Receive(ctx, &signal)
+		return input + ": " + signal, nil
 	}
 
 	c, w := ts.newSerCtxClientAndWorker(taskQueue)
@@ -159,9 +80,9 @@ func (ts *IntegrationTestSuite) TestSystemNexusSignalWithStart() {
 
 	var result string
 	ts.NoError(c.GetWorkflow(ctx, calleeID, targetRunID).Get(ctx, &result))
-	ts.Equal("started", result)
+	ts.Equal("started: hello", result)
 
-	history := c.GetWorkflowHistory(ctx, callerID, callerRun.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+	history := c.GetWorkflowHistory(ctx, callerRun.GetID(), callerRun.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
 	var scheduledInput *commonpb.Payload
 	for history.HasNext() {
 		event, err := history.Next()
@@ -176,4 +97,164 @@ func (ts *IntegrationTestSuite) TestSystemNexusSignalWithStart() {
 	ts.NoError(proto.Unmarshal(scheduledInput.GetData(), &request))
 	ts.Len(request.GetInput().GetPayloads(), 1)
 	ts.Equal(calleeID, string(request.GetInput().GetPayloads()[0].Metadata["ctx-signature"]))
+	ts.Len(request.GetSignalInput().GetPayloads(), 1)
+	ts.Equal(calleeID, string(request.GetSignalInput().GetPayloads()[0].Metadata["ctx-signature"]))
+	ts.Equal(calleeID, string(request.GetMemo().GetFields()["memo"].Metadata["ctx-signature"]))
+	ts.Equal(calleeID, string(request.GetUserMetadata().GetSummary().GetMetadata()["ctx-signature"]))
+	ts.Equal(calleeID, string(request.GetUserMetadata().GetDetails().GetMetadata()["ctx-signature"]))
+	ts.Equal(20*time.Second, request.GetWorkflowExecutionTimeout().AsDuration())
+	ts.Equal(15*time.Second, request.GetWorkflowRunTimeout().AsDuration())
+	ts.Equal(5*time.Second, request.GetWorkflowTaskTimeout().AsDuration())
+	ts.Equal(int32(1), request.GetRetryPolicy().GetMaximumAttempts())
+	ts.Equal(time.Second, request.GetRetryPolicy().GetInitialInterval().AsDuration())
+	ts.Equal(int32(2), request.GetPriority().GetPriorityKey())
+	ts.Equal(time.Second, request.GetWorkflowStartDelay().AsDuration())
+	ts.Equal("Keyword", string(request.GetSearchAttributes().GetIndexedFields()["CustomKeywordField"].GetMetadata()["type"]))
+
+	calleeHistory := c.GetWorkflowHistory(ctx, calleeID, targetRunID, false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+	event, err := calleeHistory.Next()
+	ts.NoError(err)
+	ts.Equal(time.Second, event.GetWorkflowExecutionStartedEventAttributes().GetFirstWorkflowTaskBackoff().AsDuration())
+}
+
+func (ts *IntegrationTestSuite) TestSystemNexusSignalWithStartWorkflowExisting() {
+	skipOnCloud(ts.T(), cloudRequiresProvisioning, "system Nexus signal-with-start is not enabled in Cloud test namespaces")
+	if os.Getenv("DISABLE_SYSTEM_NEXUS_TESTS") != "" {
+		ts.T().Skip("server does not support system Nexus signal-with-start")
+	}
+	ctx, cancel := context.WithTimeout(ts.T().Context(), 30*time.Second)
+	defer cancel()
+
+	caller := "system-nexus-existing-caller"
+	callee := "system-nexus-existing-callee"
+	taskQueue := ts.taskQueueName + "-system-nexus-existing"
+	calleeID := callee + uuid.NewString()
+	callerWorkflow := func(ctx workflow.Context) ([]workflow.SignalWithStartWorkflowResponse, error) {
+		var responses []workflow.SignalWithStartWorkflowResponse
+		for _, signal := range []string{"first", "second"} {
+			var response workflow.SignalWithStartWorkflowResponse
+			err := workflow.SignalWithStartWorkflow(ctx, workflow.SignalWithStartWorkflowOptions{
+				ID: calleeID, TaskQueue: taskQueue, WorkflowExecutionTimeout: 20 * time.Second,
+			}, "greeting", signal, callee).Get(ctx, &response)
+			if err != nil {
+				return nil, err
+			}
+			responses = append(responses, response)
+		}
+		return responses, nil
+	}
+	calleeWorkflow := func(ctx workflow.Context) ([]string, error) {
+		var signals []string
+		for range 2 {
+			var signal string
+			workflow.GetSignalChannel(ctx, "greeting").Receive(ctx, &signal)
+			signals = append(signals, signal)
+		}
+		return signals, nil
+	}
+
+	c, w := ts.newSerCtxClientAndWorker(taskQueue)
+	defer c.Close()
+	w.RegisterWorkflowWithOptions(callerWorkflow, workflow.RegisterOptions{Name: caller})
+	w.RegisterWorkflowWithOptions(calleeWorkflow, workflow.RegisterOptions{Name: callee})
+	ts.NoError(w.Start())
+	defer w.Stop()
+	callerRun, err := c.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
+		ID: caller + uuid.NewString(), TaskQueue: taskQueue,
+	}, caller)
+	ts.NoError(err)
+
+	var responses []workflow.SignalWithStartWorkflowResponse
+	ts.NoError(callerRun.Get(ctx, &responses))
+	ts.Len(responses, 2)
+	ts.True(*responses[0].Started)
+	ts.False(*responses[1].Started)
+	ts.Equal(*responses[0].RunID, *responses[1].RunID)
+	var signals []string
+	ts.NoError(c.GetWorkflow(ctx, calleeID, *responses[0].RunID).Get(ctx, &signals))
+	ts.Equal([]string{"first", "second"}, signals)
+}
+
+func (ts *IntegrationTestSuite) TestSystemNexusSignalWithStartWorkflowEncodingError() {
+	skipOnCloud(ts.T(), cloudRequiresProvisioning, "system Nexus signal-with-start is not enabled in Cloud test namespaces")
+	if os.Getenv("DISABLE_SYSTEM_NEXUS_TESTS") != "" {
+		ts.T().Skip("server does not support system Nexus signal-with-start")
+	}
+	ctx, cancel := context.WithTimeout(ts.T().Context(), 30*time.Second)
+	defer cancel()
+
+	caller := "system-nexus-encoding-caller"
+	callee := "system-nexus-encoding-callee"
+	taskQueue := ts.taskQueueName + "-system-nexus-encoding"
+	calleeID := callee + uuid.NewString()
+	callerWorkflow := func(ctx workflow.Context) error {
+		return workflow.SignalWithStartWorkflow(ctx, workflow.SignalWithStartWorkflowOptions{
+			ID: calleeID, TaskQueue: taskQueue,
+		}, "greeting", func() {}, callee).Get(ctx, nil)
+	}
+	c, w := ts.newSerCtxClientAndWorker(taskQueue)
+	defer c.Close()
+	w.RegisterWorkflowWithOptions(callerWorkflow, workflow.RegisterOptions{Name: caller})
+	ts.NoError(w.Start())
+	defer w.Stop()
+	callerRun, err := c.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
+		ID: caller + uuid.NewString(), TaskQueue: taskQueue,
+	}, caller)
+	ts.NoError(err)
+	ts.ErrorContains(callerRun.Get(ctx, nil), "unsupported type")
+
+	history := c.GetWorkflowHistory(ctx, callerRun.GetID(), callerRun.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+	for history.HasNext() {
+		event, err := history.Next()
+		ts.NoError(err)
+		ts.Nil(event.GetNexusOperationScheduledEventAttributes(), "encoding failure must not schedule an operation")
+	}
+}
+
+func (ts *IntegrationTestSuite) TestSystemNexusSignalWithStartWorkflowContextPropagation() {
+	ctx, cancel := context.WithTimeout(ts.T().Context(), 30*time.Second)
+	defer cancel()
+
+	caller := "system-nexus-context-caller"
+	callee := "system-nexus-context-callee"
+	taskQueue := ts.taskQueueName + "-system-nexus-context"
+	calleeID := callee + uuid.NewString()
+	callerWorkflow := func(ctx workflow.Context) (string, error) {
+		var response workflow.SignalWithStartWorkflowResponse
+		err := workflow.SignalWithStartWorkflow(ctx, workflow.SignalWithStartWorkflowOptions{
+			ID: calleeID, TaskQueue: taskQueue, WorkflowExecutionTimeout: 20 * time.Second,
+		}, "greeting", "hello", callee).Get(ctx, &response)
+		if err != nil {
+			return "", err
+		}
+		return *response.RunID, nil
+	}
+	calleeWorkflow := func(ctx workflow.Context) (string, error) {
+		var signal string
+		workflow.GetSignalChannel(ctx, "greeting").Receive(ctx, &signal)
+		value, _ := ctx.Value(contextKey(testContextKey1)).(string)
+		return value, nil
+	}
+
+	c, err := ts.newDefaultClient(func(options *client.Options) {
+		options.ContextPropagators = []workflow.ContextPropagator{NewKeysPropagator([]string{testContextKey1})}
+	})
+	ts.NoError(err)
+	defer c.Close()
+	w := worker.New(c, taskQueue, worker.Options{})
+	w.RegisterWorkflowWithOptions(callerWorkflow, workflow.RegisterOptions{Name: caller})
+	w.RegisterWorkflowWithOptions(calleeWorkflow, workflow.RegisterOptions{Name: callee})
+	ts.NoError(w.Start())
+	defer w.Stop()
+	ctx = context.WithValue(ctx, contextKey(testContextKey1), "propagated")
+	callerRun, err := c.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
+		ID: caller + uuid.NewString(), TaskQueue: taskQueue,
+	}, caller)
+	ts.NoError(err)
+
+	var targetRunID string
+	ts.NoError(callerRun.Get(ctx, &targetRunID))
+	var result string
+	ts.NoError(c.GetWorkflow(ctx, calleeID, targetRunID).Get(ctx, &result))
+	ts.Equal("propagated", result)
 }
