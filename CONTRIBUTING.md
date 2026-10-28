@@ -110,35 +110,6 @@ to security@temporal.io instead.
 
 ## Review and CI
 
-### Regenerate System Nexus bindings
-
-Run from the repository root with Go installed and a System Nexus-enabled
-`nexgen` executable on `PATH`:
-
-```sh
-go run ./internal/cmd/system-nexus-gen
-```
-
-The command reads WIT from the selected `go.temporal.io/api` module, including
-local module replacements. Files under
-`internal/cmd/system-nexus-gen/wit-overrides` replace matching paths under
-the module's `systemnexus` directory. Other WIT files come from the module.
-
-To regenerate all bindings or check that they are up to date, invoke the build
-command directly:
-
-```sh
-cd internal/cmd/build
-go run . generate
-go run . generate -check
-```
-
-Use `--preserve-build-dir` to retain intermediate files after a successful run.
-Failed runs always retain them. Nexgen also requires `gofmt` on `PATH` to format
-the generated Go bindings.
-
-### Review expectations
-
 Maintainers review pull requests for correctness, compatibility, test coverage,
 documentation, and long-term maintainability. Review may require changes before a
 pull request can be merged, and it may take maintainers some time to review a

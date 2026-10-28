@@ -78,6 +78,7 @@ We'd love your help in making the Temporal Go SDK great. Please review our [cont
 ### Prerequisites
 
 - [Go](https://go.dev/) 1.24+ (see [go.mod](go.mod) for the minimum supported version)
+- [NexGen](https://github.com/temporalio/nexgen) (only needed when updating the `go.temporal.io/api` dependency)
 
 ### Local development workflow
 
@@ -110,6 +111,12 @@ go run . integration-test -dev-server
 ```
 
 If you omit `-dev-server`, integration tests connect to a server already running on `localhost:7233`.
+
+If you update the `go.temporal.io/api` dependency, run the following command to bring generated code up to date (assuming you have [`nexgen`](https://github.com/temporalio/nexgen) on your PATH): 
+
+```bash
+go run . generate
+```
 
 ### Test output and logs
 
