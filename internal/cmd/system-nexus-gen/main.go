@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	workflowservice "go.temporal.io/api/workflowservice/v1"
@@ -44,8 +45,13 @@ func newOptions(args []string) (options, error) {
 // sdkDir is a path to the SDK root directory
 type sdkDir string
 
-func newSDKDir() sdkDir {
-	return sdkDir(".")
+func newSDKDir() (sdkDir, error) {
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		return "", errors.New("could not locate system-nexus-gen source file")
+	}
+	root := filepath.Clean(filepath.Join(filepath.Dir(file), "../../.."))
+	return sdkDir(root), nil
 }
 
 func (d sdkDir) witOverridesDir() string {
@@ -59,8 +65,9 @@ func (d sdkDir) bindingsFile() string {
 // apiDir is a path to the go.temporal.io/api module directory
 type apiDir string
 
-func newAPIDir() (apiDir, error) {
+func newAPIDir(sdk sdkDir) (apiDir, error) {
 	cmd := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", "go.temporal.io/api")
+	cmd.Dir = string(sdk)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	output, err := cmd.Output()
@@ -126,9 +133,12 @@ type app struct {
 }
 
 func newApp(options options) (app, error) {
-	sdk := newSDKDir()
+	sdk, err := newSDKDir()
+	if err != nil {
+		return app{}, err
+	}
 
-	api, err := newAPIDir()
+	api, err := newAPIDir(sdk)
 	if err != nil {
 		return app{}, err
 	}
