@@ -14,6 +14,7 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/serviceerror"
+	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -232,6 +233,10 @@ type (
 	baseWorker struct {
 		options         baseWorkerOptions
 		isWorkerStarted bool
+		// pollerTargets records each autoscaling pool's target by poller type, for the
+		// heartbeat to report. Written by installPollerScalingReporters, read from the
+		// heartbeat goroutine, so it is a sync.Map rather than a plain field on options.
+		pollerTargets *pollerTargetTracker
 		// stopCh is created by newBaseWorker and closed by baseWorker.Stop().
 		// It is internal to baseWorker and stops its poller, dispatcher, autoscaler,
 		// and throttling/backoff loops.
@@ -414,6 +419,7 @@ func newBaseWorker(
 		taskLimiterContext:       taskLimiterCtx,
 		taskLimiterContextCancel: taskLimiterCancel,
 		sessionTokenBucket:       options.sessionTokenBucket,
+		pollerTargets:            &pollerTargetTracker{},
 	}
 	// Set secondary retrier as resource exhausted
 	bw.retrier.SetSecondaryRetryPolicy(pollResourceExhaustedRetryPolicy)
@@ -421,6 +427,7 @@ func newBaseWorker(
 		bw.pollLimiter = rate.NewLimiter(rate.Limit(options.pollerRate), 1)
 	}
 	bw.validatePollers(options.taskPollers)
+	bw.installPollerScalingReporters(options.taskPollers)
 
 	return bw
 }
@@ -432,6 +439,51 @@ func (bw *baseWorker) initializeTaskPollers(taskPollers []scalableTaskPoller) {
 	}
 	bw.options.taskPollers = taskPollers
 	bw.validatePollers(taskPollers)
+	bw.installPollerScalingReporters(taskPollers)
+}
+
+// installPollerScalingReporters lets each autoscaling poller report its pool state to the
+// server on every poll, so scaling suggestions can be spread across a fleet by share
+// rather than landing on whoever happens to receive the most tasks. baseWorker is the only
+// place holding the autoscaler, which is why the wiring lives here rather than at each
+// poller construction site.
+func (bw *baseWorker) installPollerScalingReporters(taskPollers []scalableTaskPoller) {
+	for _, tw := range taskPollers {
+		if tw.pollerAutoscaler == nil {
+			continue // fixed-size pool: no target to report
+		}
+		autoscaler := tw.pollerAutoscaler
+
+		// Recorded before the reporter check below, because the heartbeat covers every
+		// autoscaling pool while the poll request covers only those whose request has a
+		// field for it -- nexus has an autoscaler and a heartbeat slot, but no such
+		// request field.
+		bw.pollerTargets.record(tw.taskPollerType, autoscaler)
+
+		reporter, ok := tw.taskPoller.(pollerScalingInfoReporter)
+		if !ok {
+			continue
+		}
+		reporter.setPollerScalingInfo(func() *taskqueuepb.PollerScalingInfo {
+			return &taskqueuepb.PollerScalingInfo{
+				PollerTarget: int32(autoscaler.target.Load()),
+			}
+		})
+	}
+}
+
+// collectPollerTargets adds this worker's autoscaler target for each poller type it runs
+// into targets. Poller types with a fixed pool have no autoscaler and are left absent
+// rather than reported as zero, so a caller merging several workers cannot have a real
+// target overwritten by a zero.
+func (bw *baseWorker) collectPollerTargets(targets map[string]int32) {
+	if bw.pollerTargets == nil {
+		return
+	}
+	bw.pollerTargets.autoscalers.Range(func(k, v any) bool {
+		targets[k.(string)] = int32(v.(*pollerAutoscaler).target.Load())
+		return true
+	})
 }
 
 func (bw *baseWorker) validatePollers(taskPollers []scalableTaskPoller) {
