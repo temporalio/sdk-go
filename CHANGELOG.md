@@ -30,6 +30,8 @@ to docs, or any other relevant information.
 
 ### Changed
 
+- Existing gRPC retries now honor positive `google.rpc.RetryInfo` delays on `ResourceExhausted` responses as a
+  minimum wait. Retry eligibility, limits, and context deadlines are unchanged.
 - `WorkflowTaskPollerBehavior`, `ActivityTaskPollerBehavior`, and `NexusTaskPollerBehavior` worker
   options are no longer marked experimental.
 - **Experimental**: `SignalWorkflow` and `SignalWithStartWorkflow` called through
