@@ -23,6 +23,7 @@ import (
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/common/retry"
+	grpcerrdetails "google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -36,6 +37,7 @@ import (
 	"google.golang.org/grpc/stats"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/durationpb"
 )
 
 func TestErrorWrapper_SimpleError(t *testing.T) {
@@ -203,6 +205,51 @@ func TestInternalErrorRetry(t *testing.T) {
 	_, isInternalError = err.(*serviceerror.Internal)
 	require.True(t, isInternalError)
 	require.Equal(t, 1, srv.signalWorkflowInvokeCount())
+}
+
+func TestResourceExhaustedRetryInfoDelayFloor(t *testing.T) {
+	srv, err := startTestGRPCServer()
+	require.NoError(t, err)
+	defer srv.Stop()
+	srv.signalWorkflowExecutionInvocationTimes = make(chan time.Time, 2)
+
+	responseStatus, err := status.New(codes.ResourceExhausted, "namespace rate limited").WithDetails(
+		&errordetails.ResourceExhaustedFailure{
+			Cause: enums.RESOURCE_EXHAUSTED_CAUSE_RPS_LIMIT,
+			Scope: enums.RESOURCE_EXHAUSTED_SCOPE_NAMESPACE,
+		},
+		&grpcerrdetails.RetryInfo{RetryDelay: durationpb.New(100 * time.Millisecond)},
+	)
+	require.NoError(t, err)
+	srv.signalWorkflowExecutionResponseError = responseStatus.Err()
+
+	client, err := DialClient(t.Context(), ClientOptions{HostPort: srv.addr})
+	require.NoError(t, err)
+	defer client.Close()
+
+	retryConfig := retry.NewGrpcRetryConfig(time.Millisecond)
+	retryConfig.SetBackoffCoefficient(1)
+	retryConfig.SetMaximumInterval(time.Millisecond)
+	retryConfig.SetMaximumAttempts(2)
+	retryConfig.SetJitter(0)
+	ctx, cancel := context.WithTimeout(context.WithValue(t.Context(), retry.ConfigKey, retryConfig), 5*time.Second)
+	defer cancel()
+	_, err = client.WorkflowService().SignalWorkflowExecution(ctx, &workflowservice.SignalWorkflowExecutionRequest{})
+	require.Error(t, err)
+	require.Equal(t, 2, srv.signalWorkflowInvokeCount())
+
+	firstAttempt := <-srv.signalWorkflowExecutionInvocationTimes
+	secondAttempt := <-srv.signalWorkflowExecutionInvocationTimes
+	require.GreaterOrEqual(t, secondAttempt.Sub(firstAttempt), 100*time.Millisecond)
+	var resourceExhausted *serviceerror.ResourceExhausted
+	require.ErrorAs(t, err, &resourceExhausted)
+	require.Equal(t, enums.RESOURCE_EXHAUSTED_CAUSE_RPS_LIMIT, resourceExhausted.Cause)
+	require.Equal(t, enums.RESOURCE_EXHAUSTED_SCOPE_NAMESPACE, resourceExhausted.Scope)
+
+	gotDetails := serviceerror.ToStatus(err).Details()
+	require.Len(t, gotDetails, 2)
+	require.IsType(t, &errordetails.ResourceExhaustedFailure{}, gotDetails[0])
+	require.IsType(t, &grpcerrdetails.RetryInfo{}, gotDetails[1])
 }
 
 func TestEagerAndLazyClient(t *testing.T) {
@@ -746,17 +793,18 @@ func TestCredentialsMTLS(t *testing.T) {
 type testGRPCServer struct {
 	workflowservice.UnimplementedWorkflowServiceServer
 	*grpc.Server
-	addr                                 string
-	healthServer                         *health.Server
-	statsHandler                         *compressionStatsHandler
-	sigWfCount                           int32
-	rejectGzipGetSystemInfo              bool
-	getSystemInfoRequestContext          context.Context
-	getSystemInfoResponse                workflowservice.GetSystemInfoResponse
-	getSystemInfoResponseError           error
-	lastSignalWorkflowExecutionContext   context.Context
-	signalWorkflowExecutionResponse      workflowservice.SignalWorkflowExecutionResponse
-	signalWorkflowExecutionResponseError error
+	addr                                   string
+	healthServer                           *health.Server
+	statsHandler                           *compressionStatsHandler
+	sigWfCount                             int32
+	rejectGzipGetSystemInfo                bool
+	getSystemInfoRequestContext            context.Context
+	getSystemInfoResponse                  workflowservice.GetSystemInfoResponse
+	getSystemInfoResponseError             error
+	lastSignalWorkflowExecutionContext     context.Context
+	signalWorkflowExecutionResponse        workflowservice.SignalWorkflowExecutionResponse
+	signalWorkflowExecutionResponseError   error
+	signalWorkflowExecutionInvocationTimes chan time.Time
 }
 
 func startTestGRPCServer() (*testGRPCServer, error) {
@@ -824,6 +872,9 @@ func (t *testGRPCServer) SignalWorkflowExecution(
 	_ *workflowservice.SignalWorkflowExecutionRequest,
 ) (*workflowservice.SignalWorkflowExecutionResponse, error) {
 	atomic.AddInt32(&t.sigWfCount, 1)
+	if t.signalWorkflowExecutionInvocationTimes != nil {
+		t.signalWorkflowExecutionInvocationTimes <- time.Now()
+	}
 	t.lastSignalWorkflowExecutionContext = ctx
 	return &t.signalWorkflowExecutionResponse, t.signalWorkflowExecutionResponseError
 }
