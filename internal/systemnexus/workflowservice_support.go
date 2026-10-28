@@ -12,6 +12,7 @@ import (
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal"
+	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/temporal"
 	"google.golang.org/protobuf/types/known/durationpb"
 )
@@ -234,49 +235,7 @@ func SearchAttributesFromProto(_ converter.DataConverter, searchAttributes *comm
 		return nil, nil
 	}
 
-	updates := make([]temporal.SearchAttributeUpdate, 0, len(searchAttributes.GetIndexedFields()))
-	for name, payload := range searchAttributes.GetIndexedFields() {
-		valueType, err := enums.IndexedValueTypeFromString(string(payload.GetMetadata()["type"]))
-		if err != nil {
-			return nil, fmt.Errorf("decode search attribute [%s] type error: %v", name, err)
-		}
-		switch valueType {
-		case enums.INDEXED_VALUE_TYPE_BOOL:
-			var value bool
-			err = converter.GetDefaultDataConverter().FromPayload(payload, &value)
-			updates = append(updates, temporal.NewSearchAttributeKeyBool(name).ValueSet(value))
-		case enums.INDEXED_VALUE_TYPE_KEYWORD:
-			var value string
-			err = converter.GetDefaultDataConverter().FromPayload(payload, &value)
-			updates = append(updates, temporal.NewSearchAttributeKeyKeyword(name).ValueSet(value))
-		case enums.INDEXED_VALUE_TYPE_TEXT:
-			var value string
-			err = converter.GetDefaultDataConverter().FromPayload(payload, &value)
-			updates = append(updates, temporal.NewSearchAttributeKeyString(name).ValueSet(value))
-		case enums.INDEXED_VALUE_TYPE_INT:
-			var value int64
-			err = converter.GetDefaultDataConverter().FromPayload(payload, &value)
-			updates = append(updates, temporal.NewSearchAttributeKeyInt64(name).ValueSet(value))
-		case enums.INDEXED_VALUE_TYPE_DOUBLE:
-			var value float64
-			err = converter.GetDefaultDataConverter().FromPayload(payload, &value)
-			updates = append(updates, temporal.NewSearchAttributeKeyFloat64(name).ValueSet(value))
-		case enums.INDEXED_VALUE_TYPE_DATETIME:
-			var value time.Time
-			err = converter.GetDefaultDataConverter().FromPayload(payload, &value)
-			updates = append(updates, temporal.NewSearchAttributeKeyTime(name).ValueSet(value))
-		case enums.INDEXED_VALUE_TYPE_KEYWORD_LIST:
-			var value []string
-			err = converter.GetDefaultDataConverter().FromPayload(payload, &value)
-			updates = append(updates, temporal.NewSearchAttributeKeyKeywordList(name).ValueSet(value))
-		default:
-			return nil, fmt.Errorf("decode search attribute [%s] error: unknown type %v", name, valueType)
-		}
-		if err != nil {
-			return nil, fmt.Errorf("decode search attribute [%s] error: %v", name, err)
-		}
-	}
-	value := temporal.NewSearchAttributes(updates...)
+	value := internal.ConvertToTypedSearchAttributes(ilog.NewDefaultLogger(), searchAttributes.GetIndexedFields())
 	return &value, nil
 }
 

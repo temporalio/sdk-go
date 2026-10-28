@@ -2916,7 +2916,7 @@ func (w *workflowClientInterceptor) DescribeWorkflow(
 		},
 		TaskQueueName:           info.GetTaskQueue(),
 		Memo:                    info.Memo,
-		TypedSearchAttributes:   convertToTypedSearchAttributes(w.client.logger, info.GetSearchAttributes().IndexedFields),
+		TypedSearchAttributes:   ConvertToTypedSearchAttributes(w.client.logger, info.GetSearchAttributes().IndexedFields),
 		Status:                  info.GetStatus(),
 		ParentWorkflowExecution: parentWorkflowExecution,
 		RootWorkflowExecution:   rootWorkflowExecution,

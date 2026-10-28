@@ -597,7 +597,7 @@ func (wc *WorkflowClient) ListNexusOperations(ctx context.Context, options Clien
 						ScheduledTime:        op.ScheduleTime.AsTime(),
 						CloseTime:            op.CloseTime.AsTime(),
 						Status:               op.Status,
-						SearchAttributes:     convertToTypedSearchAttributes(wc.logger, op.SearchAttributes.GetIndexedFields()),
+						SearchAttributes:     ConvertToTypedSearchAttributes(wc.logger, op.SearchAttributes.GetIndexedFields()),
 						StateTransitionCount: op.StateTransitionCount,
 						ExecutionDuration:    op.ExecutionDuration.AsDuration(),
 					}, nil) {
@@ -860,7 +860,7 @@ func (w *workflowClientInterceptor) DescribeNexusOperation(
 				ScheduledTime:        info.ScheduleTime.AsTime(),
 				CloseTime:            info.CloseTime.AsTime(),
 				Status:               info.Status,
-				SearchAttributes:     convertToTypedSearchAttributes(w.client.logger, info.SearchAttributes.GetIndexedFields()),
+				SearchAttributes:     ConvertToTypedSearchAttributes(w.client.logger, info.SearchAttributes.GetIndexedFields()),
 				StateTransitionCount: info.StateTransitionCount,
 				ExecutionDuration:    info.ExecutionDuration.AsDuration(),
 			},

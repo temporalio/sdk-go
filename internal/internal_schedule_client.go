@@ -505,7 +505,7 @@ func scheduleDescriptionFromPB(
 	var typedSearchAttributes SearchAttributes
 	searchAttributes := describeResponse.SearchAttributes
 	if searchAttributes != nil {
-		typedSearchAttributes = convertToTypedSearchAttributes(logger, searchAttributes.IndexedFields)
+		typedSearchAttributes = ConvertToTypedSearchAttributes(logger, searchAttributes.IndexedFields)
 	}
 
 	return &ScheduleDescription{
@@ -717,7 +717,7 @@ func convertFromPBScheduleAction(
 			memos[key] = element
 		}
 
-		searchAttrs := convertToTypedSearchAttributes(logger, workflow.GetSearchAttributes().GetIndexedFields())
+		searchAttrs := ConvertToTypedSearchAttributes(logger, workflow.GetSearchAttributes().GetIndexedFields())
 		// Create untyped list for any attribute not in the existing list
 		untypedSearchAttrs := map[string]*commonpb.Payload{}
 		for k, v := range workflow.GetSearchAttributes().GetIndexedFields() {

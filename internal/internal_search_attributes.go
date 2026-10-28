@@ -469,7 +469,7 @@ func SerializeSearchAttributes(
 	return sanitizeSearchAttributesForStart(searchAttr), nil
 }
 
-func convertToTypedSearchAttributes(logger log.Logger, attributes map[string]*commonpb.Payload) SearchAttributes {
+func ConvertToTypedSearchAttributes(logger log.Logger, attributes map[string]*commonpb.Payload) SearchAttributes {
 	updates := make([]SearchAttributeUpdate, 0, len(attributes))
 	for key, payload := range attributes {
 		if payload.Data == nil {
