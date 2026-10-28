@@ -61,9 +61,11 @@ type apiDir string
 
 func newAPIDir() (apiDir, error) {
 	cmd := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", "go.temporal.io/api")
-	output, err := cmd.CombinedOutput()
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	output, err := cmd.Output()
 	if err != nil {
-		return "", fmt.Errorf("locating go.temporal.io/api with go list: %w: %s", err, strings.TrimSpace(string(output)))
+		return "", fmt.Errorf("locating go.temporal.io/api with go list: %w: %s", err, strings.TrimSpace(stderr.String()))
 	}
 	dir := strings.TrimSpace(string(output))
 	if dir == "" {
@@ -79,8 +81,8 @@ func (d apiDir) witDir() string {
 // buildDir is a path to the temporary build directory
 type buildDir string
 
-func newBuildDir() (buildDir, error) {
-	tmp, err := os.MkdirTemp("", "system-nexus-gen-")
+func newBuildDir(sdk sdkDir) (buildDir, error) {
+	tmp, err := os.MkdirTemp(string(sdk), ".system-nexus-gen-")
 	if err != nil {
 		return "", fmt.Errorf("creating build dir: %w", err)
 	}
@@ -131,7 +133,7 @@ func newApp(options options) (app, error) {
 		return app{}, err
 	}
 
-	tmp, err := newBuildDir()
+	tmp, err := newBuildDir(sdk)
 	if err != nil {
 		return app{}, err
 	}
@@ -159,6 +161,9 @@ func (a app) cleanup(runErr error) error {
 func main() {
 	log.SetFlags(0)
 	options, err := newOptions(os.Args[1:])
+	if errors.Is(err, flag.ErrHelp) {
+		return
+	}
 	if err != nil {
 		log.Fatalf("system-nexus-gen: %v", err)
 	}
@@ -191,15 +196,18 @@ func (a app) run() (err error) {
 		descriptors:    []string{a.tmp.descriptorsFile()},
 		supportPackage: "go.temporal.io/sdk/internal/systemnexus",
 		output:         a.tmp.workflowDir(),
+		systemNexus:    true,
+		nativeAPI:      true,
+		format:         true,
 	}); err != nil {
 		return fmt.Errorf("nexgen: %w", err)
 	}
 
-	generated, err := os.ReadFile(a.tmp.bindingsFile())
-	if err != nil {
-		return err
-	}
 	if a.options.check {
+		generated, err := os.ReadFile(a.tmp.bindingsFile())
+		if err != nil {
+			return err
+		}
 		checkedIn, err := os.ReadFile(a.sdk.bindingsFile())
 		if err != nil {
 			return err
@@ -208,7 +216,7 @@ func (a app) run() (err error) {
 			return fmt.Errorf("%s is out of date", a.sdk.bindingsFile())
 		}
 	} else {
-		if err := os.WriteFile(a.sdk.bindingsFile(), generated, 0o644); err != nil {
+		if err := os.Rename(a.tmp.bindingsFile(), a.sdk.bindingsFile()); err != nil {
 			return err
 		}
 	}
@@ -290,6 +298,9 @@ type nexgenOptions struct {
 	descriptors    []string
 	supportPackage string
 	output         string
+	systemNexus    bool
+	nativeAPI      bool
+	format         bool
 }
 
 func nexgen(options nexgenOptions) error {
@@ -308,7 +319,15 @@ func nexgen(options nexgenOptions) error {
 	if options.output != "" {
 		args = append(args, "--output", options.output)
 	}
-	args = append(args, "--system-nexus", "--native-api", "--format")
+	if options.systemNexus {
+		args = append(args, "--system-nexus")
+	}
+	if options.nativeAPI {
+		args = append(args, "--native-api")
+	}
+	if options.format {
+		args = append(args, "--format")
+	}
 
 	cmd := exec.Command(nexGenExe, args...)
 	cmd.Stdout = os.Stdout
