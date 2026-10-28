@@ -2064,6 +2064,30 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithError() {
 	t.IsType(&serviceerror.NotFound{}, heartbeatErr, "heartbeatErr must be of type NotFound.")
 }
 
+func (t *TaskHandlersTestSuite) TestHeartBeat_DeadlineDoesNotCancelActivity() {
+	mockCtrl := gomock.NewController(t.T())
+	mockService := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
+	deadline := serviceerror.NewDeadlineExceeded("persistence timeout")
+	gomock.InOrder(
+		mockService.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, deadline),
+		mockService.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.RecordActivityTaskHeartbeatResponse{}, nil),
+	)
+
+	ctx, cancel := context.WithCancelCause(t.T().Context())
+	defer cancel(nil)
+	invoker := newServiceInvoker(
+		nil, "Test_Temporal_Invoker", mockService, metrics.NopHandler, cancel,
+		8*time.Second, make(chan struct{}), t.namespace, &atomic.Bool{}, nil, nil)
+	defer invoker.Close(t.T().Context(), false)
+	ctx, err := newActivityContext(ctx, nil, &activityEnvironment{serviceInvoker: invoker, logger: t.logger})
+	t.Require().NoError(err)
+
+	t.ErrorIs(invoker.Heartbeat(ctx, nil, false), deadline)
+	t.Require().NoError(ctx.Err())
+	t.NoError(invoker.Heartbeat(ctx, nil, false))
+	t.NoError(ctx.Err())
+}
+
 func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithNamespaceNotActiveError() {
 	mockCtrl := gomock.NewController(t.T())
 	mockService := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)

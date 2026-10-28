@@ -3041,9 +3041,10 @@ func (w *workflowClientInterceptor) createUpdateWorkflowRequest(
 		},
 		FirstExecutionRunId: in.FirstExecutionRunID,
 		Request: &updatepb.Request{
-			RequestId:           in.requestID,
-			CompletionCallbacks: in.callbacks,
-			Links:               in.links,
+			RequestId:                           in.requestID,
+			CompletionCallbacks:                 in.callbacks,
+			Links:                               in.links,
+			PropagatedNexusSerializationContext: propagatedNexusSerializationContextFromGoContext(ctx),
 			Meta: &updatepb.Meta{
 				UpdateId: in.UpdateID,
 				Identity: w.client.identity,
@@ -3068,8 +3069,6 @@ func (w *workflowClientInterceptor) PollWorkflowUpdate(
 		Namespace:  w.client.namespace,
 		WorkflowID: in.UpdateRef.GetWorkflowExecution().GetWorkflowId(),
 	}
-	dc := converter.WithDataConverterSerializationContext(w.client.dataConverter, wfCtx)
-	fc := converter.WithFailureConverterSerializationContext(w.client.failureConverter, wfCtx)
 
 	pollReq := workflowservice.PollWorkflowExecutionUpdateRequest{
 		Namespace: w.client.namespace,
@@ -3109,12 +3108,15 @@ func (w *workflowClientInterceptor) PollWorkflowUpdate(
 			return nil, err
 		}
 
+		serializationContext := serializationContextFor(wfCtx, resp.GetPropagatedNexusSerializationContext())
 		switch v := resp.GetOutcome().GetValue().(type) {
 		case *updatepb.Outcome_Failure:
+			fc := converter.WithFailureConverterSerializationContext(w.client.failureConverter, serializationContext)
 			return &ClientPollWorkflowUpdateOutput{
 				Error: fc.FailureToError(v.Failure),
 			}, nil
 		case *updatepb.Outcome_Success:
+			dc := converter.WithDataConverterSerializationContext(w.client.dataConverter, serializationContext)
 			return &ClientPollWorkflowUpdateOutput{
 				Result: newEncodedValue(v.Success, dc),
 			}, nil
@@ -3152,10 +3154,10 @@ func (w *workflowClientInterceptor) updateHandleFromResponse(
 		}
 	}
 
-	uhCtx := converter.WorkflowSerializationContext{
+	uhCtx := serializationContextFor(converter.WorkflowSerializationContext{
 		Namespace:  w.client.namespace,
 		WorkflowID: resp.GetUpdateRef().GetWorkflowExecution().GetWorkflowId(),
-	}
+	}, resp.GetPropagatedNexusSerializationContext())
 	dc := converter.WithDataConverterSerializationContext(w.client.dataConverter, uhCtx)
 	fc := converter.WithFailureConverterSerializationContext(w.client.failureConverter, uhCtx)
 

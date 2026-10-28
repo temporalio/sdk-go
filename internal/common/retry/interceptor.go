@@ -182,7 +182,7 @@ func IsRetryable(err error, excludeInternalFromRetry *atomic.Bool) bool {
 	if IsWorkflowTaskCompletionBufferLost(err) {
 		return false
 	}
-	grpcStatus := status.Convert(err)
+	grpcStatus := serviceerror.ToStatus(err)
 	if grpcStatus == nil {
 		return false
 	}

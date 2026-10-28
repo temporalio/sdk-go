@@ -2,6 +2,7 @@ package retry
 
 import (
 	"context"
+	"fmt"
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
@@ -121,6 +122,49 @@ func errorWithDetails(t *testing.T, code codes.Code, details ...protoadapt.Messa
 	st, err := status.New(code, "test error").WithDetails(details...)
 	require.NoError(t, err)
 	return st.Err()
+}
+
+func TestIsRetryablePreservesErrorStatus(t *testing.T) {
+	for _, tc := range []struct {
+		code  codes.Code
+		retry bool
+	}{
+		{codes.DeadlineExceeded, false},
+		{codes.Canceled, false},
+		{codes.PermissionDenied, false},
+		{codes.Unauthenticated, false},
+		{codes.InvalidArgument, false},
+		{codes.NotFound, false},
+		{codes.AlreadyExists, false},
+		{codes.Unavailable, true},
+		{codes.ResourceExhausted, true},
+		{codes.Aborted, true},
+		{codes.Unknown, true},
+	} {
+		t.Run(tc.code.String(), func(t *testing.T) {
+			raw := status.Error(tc.code, "operation failed")
+			typed := serviceerror.FromStatus(status.Convert(raw))
+			for name, err := range map[string]error{
+				"raw":     raw,
+				"typed":   typed,
+				"wrapped": fmt.Errorf("operation: %w", typed),
+			} {
+				t.Run(name, func(t *testing.T) {
+					require.Equal(t, tc.retry, IsRetryable(err, &atomic.Bool{}))
+				})
+			}
+		})
+	}
+	for _, err := range []error{nil, context.Canceled, context.DeadlineExceeded} {
+		require.False(t, IsRetryable(err, &atomic.Bool{}))
+	}
+	for _, exclude := range []bool{false, true} {
+		var flag atomic.Bool
+		flag.Store(exclude)
+		for _, err := range []error{status.Error(codes.Internal, "internal"), serviceerror.NewInternal("internal")} {
+			require.Equal(t, !exclude, IsRetryable(err, &flag))
+		}
+	}
 }
 
 func TestIsWorkflowTaskCompletionBufferLost(t *testing.T) {
