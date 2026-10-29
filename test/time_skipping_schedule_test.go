@@ -411,3 +411,66 @@ func (s *TimeSkippingScheduleTestSuite) TestSchedulePropagatesTimeSkippingToWork
 	s.Lessf(time.Since(wallStart), 60*time.Second,
 		"the schedule's 1h-sleeping action took %v wall time", time.Since(wallStart))
 }
+
+// TestScheduleWithPropagationDisabled is the schedule counterpart of
+// TestChildWorkflowWithPropagationDisabled: with DisablePropagation set, the
+// schedule still skips its own clock, but its actions start without time
+// skipping. The target returns immediately so the assertion is structural
+// rather than a race against wall time.
+func (s *TimeSkippingScheduleTestSuite) TestScheduleWithPropagationDisabled() {
+	ctx := context.Background()
+	tq := "tq-" + uuid.NewString()
+	w := s.startScheduleWorker(tq)
+	defer w.Stop()
+
+	prev := s.server.TimeSkipper.Config()
+	s.NoError(s.server.TimeSkipper.SetConfig(timeskipping.TimeSkippingConfig{
+		Enabled:            true,
+		DisablePropagation: true,
+	}))
+	defer func() { _ = s.server.TimeSkipper.SetConfig(prev) }()
+
+	handle := s.createHourlySchedule(ctx, tq, ScheduleTargetWorkflow)
+	defer func() { _ = handle.Delete(ctx) }()
+
+	ok, err := s.server.FastForwardSchedule(ctx, handle, timeskipping.ScheduleFastForwardOptions{Duration: 2 * time.Hour})
+	s.NoError(err)
+	s.True(ok, "the schedule's own clock should still fast-forward")
+
+	desc, err := handle.Describe(ctx)
+	s.NoError(err)
+	s.NotEmpty(desc.Info.RecentActions, "expected the schedule to have started a workflow")
+
+	started := desc.Info.RecentActions[0].StartWorkflowResult
+	s.NotNil(started)
+	run := s.server.Client().GetWorkflow(ctx, started.WorkflowID, started.FirstExecutionRunID)
+
+	iter := s.server.Client().GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), false,
+		enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+	var startedAttrs *historypb.WorkflowExecutionStartedEventAttributes
+	for iter.HasNext() {
+		e, err := iter.Next()
+		s.NoError(err)
+		if e.GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED {
+			startedAttrs = e.GetWorkflowExecutionStartedEventAttributes()
+			break
+		}
+	}
+	s.NotNil(startedAttrs)
+
+	// Virtual start time propagates regardless: the action is handed the
+	// schedule's accumulated skip so its clock starts where the schedule's is.
+	// What DisablePropagation suppresses is the enabled flag and the
+	// fast-forward, so the action does not go on skipping on its own.
+	prop := startedAttrs.GetTimeSkippingStatePropagation()
+	s.NotNil(prop, "virtual start time should still propagate")
+	s.Nilf(prop.GetFastForwardTargetTime(),
+		"DisablePropagation was set, but the action inherited a fast-forward target: %v", prop)
+
+	tsi, err := s.server.GetTimeSkippingInfo(ctx, run)
+	s.NoError(err)
+	if tsi != nil && tsi.EffectiveConfig != nil {
+		s.False(tsi.EffectiveConfig.Enabled,
+			"DisablePropagation was set, but the action has time skipping enabled")
+	}
+}
