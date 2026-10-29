@@ -33,8 +33,7 @@ type (
 		// If set, it takes precedence over the Versioning Behavior provided with code annotations.
 		VersioningOverride VersioningOverride
 
-		// Time-skipping (v2) configuration for this execution. Only meaningful
-		// against a server with workflow time skipping enabled.
+		// Time-skipping (v2) configuration for this execution.
 		//
 		// NOTE: Experimental
 		TimeSkippingConfig *TimeSkippingConfig

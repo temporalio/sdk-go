@@ -400,8 +400,7 @@ type (
 		// schedule. If set, it is applied via the schedule's initial patch, so the
 		// schedule's virtual clock advances to its next fire time while it is idle.
 		// A bounded FastForwardConfig is required; a schedule has no end to skip to,
-		// so unbounded skipping is rejected by the server. Only meaningful against a
-		// server with schedule time skipping enabled.
+		// so unbounded skipping is rejected by the server.
 		//
 		// NOTE: Experimental
 		TimeSkippingConfig *TimeSkippingConfig
@@ -644,17 +643,7 @@ type (
 		// Unpause the Schedule will also overwrite the Schedules current note with the new note.
 		Unpause(ctx context.Context, options ScheduleUnpauseOptions) error
 
-		// SetTimeSkippingConfig applies a time-skipping configuration to the Schedule,
-		// replacing any existing one. Its current state is reported by
-		// ScheduleInfo.TimeSkippingInfo from Describe.
-		//
-		// A schedule's virtual clock advances to its next fire time while it is idle, so the
-		// actions inside the configured window run back-to-back. A bounded FastForwardConfig
-		// is required: a Schedule has no terminal state to skip to, so the server rejects
-		// unbounded time skipping on one.
-		//
-		// Time skipping is a testing facility and is not intended for production workloads.
-		// It requires a server with schedule time skipping enabled.
+		// SetTimeSkippingConfig applies a time-skipping configuration to the Schedule.
 		//
 		// NOTE: Experimental
 		SetTimeSkippingConfig(ctx context.Context, options ScheduleSetTimeSkippingConfigOptions) error

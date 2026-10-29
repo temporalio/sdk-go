@@ -55,12 +55,9 @@ var (
 )
 
 const (
-	defaultGetHistoryTimeout    = 65 * time.Second
-	defaultGetSystemInfoTimeout = 5 * time.Second
-	pollUpdateTimeout           = 60 * time.Second
-	// pollTimeSkippingTimeout bounds a single PollWorkflowExecutionTimeSkipping
-	// call. The server normally answers with POLL_TIMEOUT first; this is the
-	// client-side ceiling, after which the poll is simply reissued.
+	defaultGetHistoryTimeout       = 65 * time.Second
+	defaultGetSystemInfoTimeout    = 5 * time.Second
+	pollUpdateTimeout              = 60 * time.Second
 	pollTimeSkippingTimeout        = 60 * time.Second
 	maxListArchivedWorkflowTimeout = 3 * time.Minute
 )

@@ -1307,8 +1307,7 @@ type (
 		// TimeSkippingConfig - Optional per-workflow time-skipping v2 configuration.
 		// If set, forwarded to the server on StartWorkflowExecution and enables the
 		// workflow's virtual clock behavior (fast-forward, propagation, session
-		// skip bounds). Only meaningful against a dev server with the
-		// WorkflowTimeSkipping feature enabled.
+		// skip bounds).
 		//
 		// NOTE: Experimental
 		TimeSkippingConfig *TimeSkippingConfig

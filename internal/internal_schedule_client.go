@@ -92,8 +92,7 @@ func (w *workflowClientInterceptor) CreateSchedule(ctx context.Context, in *Sche
 
 	backfillRequests := convertToPBBackfillList(in.Options.ScheduleBackfill)
 
-	// Only send an initial patch if we need to. Time skipping is configured
-	// through the patch too — there is no field for it on the Schedule message.
+	// Only send an initial patch if we need to.
 	var initialPatch *schedulepb.SchedulePatch
 	if in.Options.TriggerImmediately || len(in.Options.ScheduleBackfill) > 0 ||
 		in.Options.TimeSkippingConfig != nil {
@@ -357,9 +356,6 @@ func (scheduleHandle *scheduleHandleImpl) Trigger(ctx context.Context, options S
 }
 
 func (scheduleHandle *scheduleHandleImpl) SetTimeSkippingConfig(ctx context.Context, options ScheduleSetTimeSkippingConfigOptions) error {
-	// Time skipping is configured through SchedulePatch, as pause, unpause,
-	// trigger and backfill are. The Schedule message carries no field for it,
-	// so UpdateSchedule can neither set nor clear it.
 	request := &workflowservice.PatchScheduleRequest{
 		Namespace:  scheduleHandle.client.namespace,
 		ScheduleId: scheduleHandle.ID,

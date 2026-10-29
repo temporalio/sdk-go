@@ -122,9 +122,7 @@ type (
 	// FastForwardPollResult is the outcome of waiting for a fast-forward.
 	//
 	// A fast-forward that stops without completing is reported here rather than as
-	// an error: it is an outcome of the wait, not a failure of the call. Errors are
-	// reserved for the call itself failing — bad arguments, an RPC that could not be
-	// made, or the caller's context ending.
+	// an error: it is an outcome of the wait, not a failure of the call.
 	//
 	// Exposed as: [go.temporal.io/sdk/timeskipping.FastForwardPollResult]
 	//
