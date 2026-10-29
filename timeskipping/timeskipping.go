@@ -16,7 +16,7 @@
 //
 //	c, _ := client.Dial(client.Options{HostPort: "localhost:7233"})
 //	skipper, _ := timeskipping.NewTimeSkipper(c, "default",
-//		timeskipping.TimeSkippingConfig{Enabled: true})
+//		client.TimeSkippingConfig{Enabled: true})
 //	ok, _ := skipper.FastForward(ctx, run, timeskipping.FastForwardOptions{Duration: time.Hour})
 //
 // StartDevServer starts a dev server already configured for time skipping,
@@ -33,6 +33,10 @@ import (
 	"go.temporal.io/sdk/internal"
 )
 
+// The configuration and info types time skipping shares with the rest of the
+// client API — TimeSkippingConfig, FastForwardConfig, TimeSkippingInfo and
+// TimeSkippingFastForwardInfo — live in [go.temporal.io/sdk/client] and are
+// used from there rather than re-exported here.
 type (
 	// TimeSkipper wraps a client so that workflows started through it carry a
 	// time-skipping configuration, and drives fast-forwards on running
@@ -40,17 +44,6 @@ type (
 	//
 	// NOTE: Experimental
 	TimeSkipper = internal.TimeSkipper
-
-	// TimeSkippingConfig is the time-skipping (v2) configuration for an
-	// execution or a schedule.
-	//
-	// NOTE: Experimental
-	TimeSkippingConfig = internal.TimeSkippingConfig
-
-	// FastForwardConfig is a one-shot fast-forward inside a TimeSkippingConfig.
-	//
-	// NOTE: Experimental
-	FastForwardConfig = internal.FastForwardConfig
 
 	// FastForwardOptions configures a single fast-forward on a workflow.
 	//
@@ -62,18 +55,6 @@ type (
 	// NOTE: Experimental
 	ScheduleFastForwardOptions = internal.ScheduleFastForwardOptions
 
-	// TimeSkippingInfo is the server's view of time skipping on an execution or a
-	// schedule.
-	//
-	// NOTE: Experimental
-	TimeSkippingInfo = internal.TimeSkippingInfo
-
-	// TimeSkippingFastForwardInfo is the server's view of one fast-forward inside a
-	// TimeSkippingInfo.
-	//
-	// NOTE: Experimental
-	TimeSkippingFastForwardInfo = internal.TimeSkippingFastForwardInfo
-
 	// PollFastForwardOptions identifies the workflow fast-forward to wait for.
 	//
 	// NOTE: Experimental
@@ -83,7 +64,7 @@ type (
 	// for.
 	//
 	// NOTE: Experimental
-	PollScheduleFastForwardOptions = internal.PollScheduleFastForwardOptions
+	PollScheduleFastForwardOptions = internal.SchedulePollFastForwardOptions
 
 	// FastForwardPollResult is the outcome of waiting for a fast-forward. A
 	// fast-forward that stops without completing is reported in FailedReason
@@ -99,7 +80,7 @@ type (
 // service calls time skipping makes.
 //
 // NOTE: Experimental
-func NewTimeSkipper(c client.Client, namespace string, config TimeSkippingConfig) (*TimeSkipper, error) {
+func NewTimeSkipper(c client.Client, namespace string, config client.TimeSkippingConfig) (*TimeSkipper, error) {
 	return internal.NewTimeSkipper(c, namespace, config)
 }
 

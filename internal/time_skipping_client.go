@@ -11,7 +11,7 @@ type (
 	//
 	// Time skipping is a testing facility and is not intended for production workloads.
 	//
-	// Exposed as: [go.temporal.io/sdk/client.TimeSkippingConfig], [go.temporal.io/sdk/timeskipping.TimeSkippingConfig]
+	// Exposed as: [go.temporal.io/sdk/client.TimeSkippingConfig]
 	//
 	// NOTE: Experimental
 	TimeSkippingConfig struct {
@@ -38,7 +38,7 @@ type (
 	// FastForwardConfig is a one-shot fast-forward inside a [TimeSkippingConfig]. Both
 	// fields are required whenever a fast-forward is configured.
 	//
-	// Exposed as: [go.temporal.io/sdk/timeskipping.FastForwardConfig], [go.temporal.io/sdk/client.FastForwardConfig]
+	// Exposed as: [go.temporal.io/sdk/client.FastForwardConfig]
 	//
 	// NOTE: Experimental
 	FastForwardConfig struct {
@@ -53,7 +53,7 @@ type (
 	// TimeSkippingInfo is the server's view of time skipping on an execution or a
 	// schedule.
 	//
-	// Exposed as: [go.temporal.io/sdk/client.TimeSkippingInfo], [go.temporal.io/sdk/timeskipping.TimeSkippingInfo]
+	// Exposed as: [go.temporal.io/sdk/client.TimeSkippingInfo]
 	//
 	// NOTE: Experimental
 	TimeSkippingInfo struct {
@@ -79,7 +79,7 @@ type (
 
 	// TimeSkippingFastForwardInfo is the server's view of one fast-forward.
 	//
-	// Exposed as: [go.temporal.io/sdk/client.TimeSkippingFastForwardInfo], [go.temporal.io/sdk/timeskipping.TimeSkippingFastForwardInfo]
+	// Exposed as: [go.temporal.io/sdk/client.TimeSkippingFastForwardInfo]
 	//
 	// NOTE: Experimental
 	TimeSkippingFastForwardInfo struct {
@@ -160,13 +160,13 @@ type (
 		FastForwardID string
 	}
 
-	// PollScheduleFastForwardOptions identifies the schedule fast-forward to wait
+	// SchedulePollFastForwardOptions identifies the schedule fast-forward to wait
 	// for.
 	//
 	// Exposed as: [go.temporal.io/sdk/timeskipping.PollScheduleFastForwardOptions]
 	//
 	// NOTE: Experimental
-	PollScheduleFastForwardOptions struct {
+	SchedulePollFastForwardOptions struct {
 		// FastForwardID of the fast-forward to wait for, as set in
 		// FastForwardConfig.ID. Required.
 		FastForwardID string

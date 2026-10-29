@@ -55,7 +55,7 @@ func (s *TimeSkippingScheduleTestSuite) SetupSuite() {
 			ClientOptions:  &client.Options{Namespace: "default"},
 			LogLevel:       "warn",
 		},
-		Config: timeskipping.TimeSkippingConfig{Enabled: true},
+		Config: client.TimeSkippingConfig{Enabled: true},
 	})
 	s.NoError(err)
 	s.server = srv
@@ -424,7 +424,7 @@ func (s *TimeSkippingScheduleTestSuite) TestScheduleWithPropagationDisabled() {
 	defer w.Stop()
 
 	prev := s.server.TimeSkipper.Config()
-	s.NoError(s.server.TimeSkipper.SetConfig(timeskipping.TimeSkippingConfig{
+	s.NoError(s.server.TimeSkipper.SetConfig(client.TimeSkippingConfig{
 		Enabled:            true,
 		DisablePropagation: true,
 	}))

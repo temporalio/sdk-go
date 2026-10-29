@@ -75,7 +75,7 @@ func (s *TimeSkippingV2TestSuite) SetupSuite() {
 			ClientOptions:  &client.Options{Namespace: "default"},
 			LogLevel:       "warn",
 		},
-		Config: timeskipping.TimeSkippingConfig{Enabled: true},
+		Config: client.TimeSkippingConfig{Enabled: true},
 	})
 	s.NoError(err)
 	s.server = srv
@@ -636,7 +636,7 @@ func (s *TimeSkippingV2TestSuite) TestChildWorkflowWithPropagationDisabled() {
 	// Temporarily override the skipper's config to disable propagation for
 	// child workflows started via the parent.
 	prev := s.server.TimeSkipper.Config()
-	s.NoError(s.server.TimeSkipper.SetConfig(timeskipping.TimeSkippingConfig{
+	s.NoError(s.server.TimeSkipper.SetConfig(client.TimeSkippingConfig{
 		Enabled:            true,
 		DisablePropagation: true,
 	}))
@@ -668,7 +668,7 @@ func (s *TimeSkippingV2TestSuite) TestTimeSkipperWrappingLocalEnvClient() {
 	// which is what makes this the "wrap any client" path. No second server
 	// needed: nothing here varies at the *server* level.
 	skipper, err := timeskipping.NewTimeSkipper(s.server.DevServer.Client(), "default",
-		timeskipping.TimeSkippingConfig{Enabled: true})
+		client.TimeSkippingConfig{Enabled: true})
 	s.NoError(err)
 
 	tq := "tq-" + uuid.NewString()
@@ -1144,7 +1144,7 @@ func (s *TimeSkippingV2TestSuite) TestMaxSessionSkipCountStampedByEnv() {
 	// configuration, so this builds a second skipper against the suite's
 	// server rather than starting another one.
 	srv, err := timeskipping.NewTimeSkipper(s.server.DevServer.Client(), "default",
-		timeskipping.TimeSkippingConfig{Enabled: true, MaxSessionSkipCount: 5})
+		client.TimeSkippingConfig{Enabled: true, MaxSessionSkipCount: 5})
 	s.NoError(err)
 
 	tq := "tq-" + uuid.NewString()

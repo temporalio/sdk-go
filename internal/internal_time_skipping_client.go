@@ -125,6 +125,8 @@ func timeFromProto(t *timestamppb.Timestamp) time.Time {
 // because it isn't exposed on the Client interface but is needed for our
 // PollWorkflowExecutionTimeSkipping and UpdateWorkflowExecutionOptions calls.
 //
+// Exposed as: [go.temporal.io/sdk/timeskipping.NewTimeSkipper]
+//
 // NOTE: Experimental
 func NewTimeSkipper(c Client, namespace string, config TimeSkippingConfig) (*TimeSkipper, error) {
 	if err := config.Validate(); err != nil {
@@ -497,7 +499,7 @@ func (t *TimeSkipper) FastForwardSchedule(
 	if err := t.patchScheduleTimeSkippingConfig(ctx, handle.GetID(), tsc); err != nil {
 		return false, err
 	}
-	res, err := PollScheduleFastForward(ctx, handle, PollScheduleFastForwardOptions{FastForwardID: ffID})
+	res, err := PollScheduleFastForward(ctx, handle, SchedulePollFastForwardOptions{FastForwardID: ffID})
 	if err != nil {
 		return false, err
 	}
@@ -562,7 +564,7 @@ func (t *TimeSkipper) patchScheduleTimeSkippingConfig(
 //
 // NOTE: Experimental
 func PollScheduleFastForward(
-	ctx context.Context, handle ScheduleHandle, options PollScheduleFastForwardOptions,
+	ctx context.Context, handle ScheduleHandle, options SchedulePollFastForwardOptions,
 ) (FastForwardPollResult, error) {
 	ffID := options.FastForwardID
 	if ffID == "" {

@@ -18,7 +18,7 @@ type DevServerOptions struct {
 
 	// Config is stamped on every workflow started through DevServer.Client. The
 	// zero value means Enabled=true with no bounded fast-forward.
-	Config TimeSkippingConfig
+	Config client.TimeSkippingConfig
 }
 
 // DevServer is a dev-server process with time skipping enabled. It embeds the
