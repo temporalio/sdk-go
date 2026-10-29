@@ -3,7 +3,9 @@ package lambdaworker
 import (
 	"context"
 	"fmt"
+	"math/rand/v2"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/aws/aws-lambda-go/lambda"
@@ -24,6 +26,7 @@ type workerDeps struct {
 	setCacheSize     func(int)
 	exit             func(int)
 	extractLambdaCtx func(context.Context) (requestID string, functionARN string, ok bool)
+	jitter           func(n time.Duration) time.Duration
 }
 
 func defaultDeps() workerDeps {
@@ -48,6 +51,7 @@ func defaultDeps() workerDeps {
 			}
 			return lc.AwsRequestID, lc.InvokedFunctionArn, true
 		},
+		jitter: rand.N[time.Duration],
 	}
 }
 
@@ -108,6 +112,13 @@ func runWorkerInternal(
 	if tq := deps.getenv(envTaskQueue); tq != "" {
 		configCtx.TaskQueue = tq
 	}
+	if v := deps.getenv(envIdleTimeout); v != "" {
+		seconds, err := strconv.Atoi(v)
+		if err != nil {
+			return fmt.Errorf("parsing %s %q as a whole number of seconds: %w", envIdleTimeout, v, err)
+		}
+		configCtx.IdleTimeout = time.Duration(seconds) * time.Second
+	}
 
 	if err := configure(configCtx); err != nil {
 		return fmt.Errorf("configure callback failed: %w", err)
@@ -121,6 +132,32 @@ func runWorkerInternal(
 	}
 
 	logger := configCtx.ClientOptions.Logger
+
+	// The Lambda concurrency defaults are applied before the configure callback, so they would
+	// conflict with a tuner set by the callback.
+	if configCtx.WorkerOptions.Tuner != nil {
+		clearConcurrencyLimits(&configCtx.WorkerOptions)
+	}
+
+	idleTimeout := configCtx.IdleTimeout
+	if idleTimeout < 0 || (idleTimeout > 0 && idleTimeout < minIdleTimeout) {
+		return fmt.Errorf(
+			"invalid idle timeout %v: set Options.IdleTimeout or the %s environment variable "+
+				"to 0 to disable idle shutdown, or to at least %v",
+			idleTimeout, envIdleTimeout, minIdleTimeout,
+		)
+	}
+	if idleTimeout > 0 && configCtx.WorkerOptions.Tuner != nil &&
+		usesResourceBasedSupplier(configCtx.WorkerOptions.Tuner) {
+		if logger != nil {
+			logger.Warn(
+				"Idle shutdown is disabled because WorkerOptions.Tuner uses a resource-based "+
+					"slot supplier; the worker will run until the invocation deadline",
+				"idleTimeout", idleTimeout,
+			)
+		}
+		idleTimeout = 0
+	}
 
 	handler := func(invocationCtx context.Context) error {
 		deadline, ok := invocationCtx.Deadline()
@@ -163,15 +200,51 @@ func runWorkerInternal(
 		}
 		defer c.Close()
 
-		w := deps.newWorker(c, configCtx.TaskQueue, configCtx.WorkerOptions)
+		workerOpts := configCtx.WorkerOptions
+		var counter *taskCounter
+		if idleTimeout > 0 {
+			// Built per invocation so that each worker gets fresh slot suppliers and counts.
+			base := workerOpts.Tuner
+			if base == nil {
+				if base, err = fixedSizeTunerFromLimits(workerOpts); err != nil {
+					return fmt.Errorf("building worker tuner for idle shutdown: %w", err)
+				}
+			}
+			if workerOpts.Tuner, counter, err = newCountingTuner(base); err != nil {
+				return fmt.Errorf("building worker tuner for idle shutdown: %w", err)
+			}
+			clearConcurrencyLimits(&workerOpts)
+		}
+
+		w := deps.newWorker(c, configCtx.TaskQueue, workerOpts)
 		configCtx.replayRegistrations(w)
 
 		if err := w.Start(); err != nil {
 			return fmt.Errorf("starting worker: %w", err)
 		}
 
+		// Left nil, and so never ready, when idle shutdown is disabled.
+		var idle chan struct{}
+		var threshold time.Duration
+		if counter != nil {
+			idle = make(chan struct{})
+			threshold = idleThreshold(idleTimeout, deps.jitter)
+			monitorCtx, cancelMonitor := context.WithCancel(invocationCtx)
+			defer cancelMonitor()
+			go func() {
+				if waitForIdle(monitorCtx, counter, threshold) {
+					close(idle)
+				}
+			}()
+		}
+
+		idleShutdown := false
 		if !ok {
-			<-invocationCtx.Done()
+			select {
+			case <-invocationCtx.Done():
+			case <-idle:
+				idleShutdown = true
+			}
 		} else {
 			shutdownAt := deadline.Add(-configCtx.ShutdownDeadlineBuffer)
 			waitDuration := time.Until(shutdownAt)
@@ -181,7 +254,19 @@ func runWorkerInternal(
 				select {
 				case <-timer.C:
 				case <-invocationCtx.Done():
+				case <-idle:
+					idleShutdown = true
 				}
+			}
+		}
+		if idleShutdown && logger != nil {
+			if ok {
+				logger.Info("Shutting down idle worker before the invocation deadline",
+					"idleTimeout", idleTimeout, "idleThreshold", threshold,
+					"remainingBeforeDeadline", time.Until(deadline))
+			} else {
+				logger.Info("Shutting down idle worker",
+					"idleTimeout", idleTimeout, "idleThreshold", threshold)
 			}
 		}
 

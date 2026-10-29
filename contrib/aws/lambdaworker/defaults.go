@@ -23,8 +23,12 @@ const (
 	defaultWorkerStopTimeout                       = 5 * time.Second
 	defaultShutdownHookBuffer                      = 2 * time.Second
 	defaultStickyCacheSize                         = 100
+	minIdleTimeout                                 = 5 * time.Second
+	idleCheckInterval                              = time.Second
+	maxIdleTimeoutJitterFraction                   = 0.2
 
 	envTaskQueue      = "TEMPORAL_TASK_QUEUE"
+	envIdleTimeout    = "TEMPORAL_LAMBDA_IDLE_TIMEOUT"
 	envLambdaTaskRoot = "LAMBDA_TASK_ROOT"
 	envConfigFile     = "TEMPORAL_CONFIG_FILE"
 	defaultConfigFile = "temporal.toml"

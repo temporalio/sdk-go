@@ -66,7 +66,18 @@ are applied last, so they always win.
 ## Lambda-tuned worker defaults
 
 The package applies conservative concurrency limits suited to Lambda's resource constraints, see the
-docstrings for more. Eager activities are always disabled.
+docstrings for more. Eager activities are always disabled. If you set `WorkerOptions.Tuner`, the
+concurrency limits are ignored.
+
+## Idle shutdown (experimental)
+
+By default, each invocation polls until shortly before its deadline. Set `Options.IdleTimeout` (or
+the `TEMPORAL_LAMBDA_IDLE_TIMEOUT` environment variable, in whole seconds, e.g. `30`) to shut the worker down
+gracefully once it has had no task of any kind in hand for at least that long. The timeout must be
+at least 5s. It's a lower bound: each invocation adds up to 20% random jitter, plus about a second,
+so that workers that went idle together don't all shut down at once. Shutting down early discards the sticky workflow cache, so a short timeout can cause more
+workflow replays on later invocations. Idle shutdown is disabled if `WorkerOptions.Tuner` uses a
+resource-based slot supplier.
 
 ## Observability
 
