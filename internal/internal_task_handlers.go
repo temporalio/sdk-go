@@ -279,7 +279,11 @@ func (eh *history) GetWorkflowStartedEvent() (*historypb.HistoryEvent, error) {
 }
 
 func (eh *history) IsReplayEvent(event *historypb.HistoryEvent) bool {
-	return event.GetEventId() <= eh.workflowTask.task.GetPreviousStartedEventId() || isCommandEvent(event.GetEventType())
+	// Query history fetched after a cache miss can advance past the task's replay boundary.
+	// A standalone query never executes new commands, so all of its history is replay.
+	return eh.workflowTask.task.Query != nil ||
+		event.GetEventId() <= eh.workflowTask.task.GetPreviousStartedEventId() ||
+		isCommandEvent(event.GetEventType())
 }
 
 // isNextWorkflowTaskFailed checks if the workflow task failed or completed. If it did complete returns some information
@@ -1111,11 +1115,11 @@ ProcessEvents:
 		nextTaskBuildId := nextTask.buildID
 		admittedUpdates := nextTask.admittedMsgs
 
-		// Peak ahead to confirm there are no more events
+		// Queries and replayers must not execute an incomplete task whose commands and markers are not yet in history.
 		isLastWFTForPartialWFE := len(reorderedEvents) > 0 &&
 			reorderedEvents[len(reorderedEvents)-1].EventType == enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED &&
 			len(reorderedHistory.next) == 0 &&
-			isInReplayer
+			(isInReplayer || task.Query != nil)
 		if isLastWFTForPartialWFE {
 			partialHistory = true
 			break ProcessEvents

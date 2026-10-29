@@ -54,6 +54,8 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- Fixed standalone queries failing with an invalid state transition when a workflow cache miss
+  fetches history newer than the query task's replay boundary.
 - Fixed premature activity cancellation when a heartbeat RPC returns `DeadlineExceeded`.
   The SDK now preserves Temporal service error codes when deciding whether a heartbeat failure should cancel the activity.
 - Fixed concurrent dev-server CLI downloads failing on Windows when another process has already populated and started the cached executable.
