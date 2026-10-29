@@ -39,6 +39,36 @@ func TestGetWorkflowDefinition_DynamicWorkflowFactory(t *testing.T) {
 		"a factory-registered dynamic workflow must be executed via NewWorkflowDefinition()")
 }
 
+func TestDynamicWorkflowFactoryConcurrentLookup(t *testing.T) {
+	for _, implementation := range []string{"worker", "test environment"} {
+		t.Run(implementation, func(t *testing.T) {
+			var suite WorkflowTestSuite
+			env := suite.NewTestWorkflowEnvironment()
+			r := env.impl.registry
+			lookup := r.getWorkflowDefinition
+			if implementation == "test environment" {
+				lookup = env.impl.getWorkflowDefinition
+			}
+			r.RegisterDynamicWorkflow(sentinelDynamicFactory{}, DynamicRegisterWorkflowOptions{})
+
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				for range 10000 {
+					r.RegisterDynamicWorkflow(sentinelDynamicFactory{}, DynamicRegisterWorkflowOptions{})
+				}
+			}()
+			t.Cleanup(func() { <-done })
+
+			for range 10000 {
+				def, err := lookup(WorkflowType{Name: "unregistered-type"})
+				require.NoError(t, err)
+				require.NotNil(t, def)
+			}
+		})
+	}
+}
+
 // --- Site 2: test environment getWorkflowDefinition ---
 
 // echoDynamicDefinition is a minimal WorkflowDefinition that completes

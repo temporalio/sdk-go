@@ -54,6 +54,8 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- Fixed a data race between dynamic workflow factory re-registration and workflow definition lookup
+  in workers and `TestWorkflowEnvironment`.
 - Fixed premature activity cancellation when a heartbeat RPC returns `DeadlineExceeded`.
   The SDK now preserves Temporal service error codes when deciding whether a heartbeat failure should cancel the activity.
 - Fixed concurrent dev-server CLI downloads failing on Windows when another process has already populated and started the cached executable.
