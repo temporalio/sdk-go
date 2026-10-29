@@ -30,6 +30,9 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- Fixed premature activity cancellation on internal heartbeat errors when using a client created
+  with `client.NewClientFromExisting` and the server supports internal error differentiation.
+
 ### Security
 
 ## [1.50.0] - 2026-10-15
