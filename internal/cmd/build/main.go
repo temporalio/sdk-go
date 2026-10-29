@@ -95,6 +95,13 @@ func (b *builder) check() error {
 		return fmt.Errorf("failed finding modules to check: %w", err)
 	}
 
+	// Runs first because it takes seconds, so a go.temporal.io/api bump that adds an unclassified
+	// payload field is reported before the slower linters.
+	if err := b.runCmd(b.cmdFromRoot(
+		"go", "run", "./internal/cmd/payload-limit-gen", "-check", "-out", "internal/payloadlimits/validator_gen.go",
+	)); err != nil {
+		return fmt.Errorf("payload limit validator check failed: %w", err)
+	}
 	// Run go vet
 	if err := b.runCmdInDirs(moduleDirs, "go", "vet", "./..."); err != nil {
 		return fmt.Errorf("go vet failed: %w", err)
@@ -374,6 +381,8 @@ func (b *builder) integrationTest() error {
 				"--dynamic-config-value", "matching.useNewMatcher=true",
 				"--dynamic-config-value", "frontend.activityAPIsEnabled=true",
 				"--dynamic-config-value", "frontend.enableCancelWorkerPollsOnShutdown=true",
+				// Matching fan-out poll cancellation can drop a query dispatched while a stopped worker's polls are canceled
+				"--dynamic-config-value", "frontend.enableMatchingFanOutForPollCancellation=false",
 				"--http-port", "7243", // Nexus tests use the HTTP port directly
 				"--dynamic-config-value", `callback.allowedAddresses=[{"Pattern":"*","AllowInsecure":true}]`, // SDK tests use arbitrary callback URLs, permit that on the server
 				"--dynamic-config-value", `system.refreshNexusEndpointsMinWait="0s"`, // Make Nexus tests faster
@@ -382,6 +391,8 @@ func (b *builder) integrationTest() error {
 				"--dynamic-config-value", `component.nexusoperations.useSystemCallbackURL=false`,
 				"--dynamic-config-value", `component.nexusoperations.callback.endpoint.template="http://localhost:7243/namespaces/{{.NamespaceName}}/nexus/callback"`,
 				"--dynamic-config-value", "nexusoperation.enableStandalone=true",
+				"--dynamic-config-value", "history.enableChasm=true",
+				"--dynamic-config-value", "history.enableSignalWithStartFromWorkflow=true",
 				"--dynamic-config-value", "history.enableCHASMCallbacks=true",
 				"--dynamic-config-value", "frontend.ListWorkersEnabled=true",
 				"--dynamic-config-value", "activity.startDelayEnabled=true",

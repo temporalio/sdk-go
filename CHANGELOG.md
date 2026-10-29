@@ -37,6 +37,54 @@ to docs, or any other relevant information.
   required dynamic config already applied. Unlike the older Java test server, each
   workflow has its own virtual clock. Requires a Temporal Server with the workflow
   time-skipping feature enabled.
+- Added experimental `temporalnexus.ConvertLinkCallbackToNexusLink` and `temporalnexus.ConvertNexusLinkToLinkCallback`
+  for converting `Link_Callback` to and from Nexus links.
+- Nexus handlers now propagate `NexusSerializationContext` to the workflows, workflow updates, and
+  standalone activities they start. These use it only for their results and failures, which are
+  returned to the Nexus caller.
+
+### Changed
+
+- `WorkflowTaskPollerBehavior`, `ActivityTaskPollerBehavior`, and `NexusTaskPollerBehavior` worker
+  options are no longer marked experimental.
+- **Experimental**: `SignalWorkflow` and `SignalWithStartWorkflow` called through
+  `NexusClient.GetWorkflowClient()` in a Temporal operation handler now reuse the operation's request
+  ID, so a retried Nexus task no longer delivers the same signal twice. Signals sent through
+  `temporalnexus.GetClient` keep an independent request ID per call and are not deduplicated.
+
+### Deprecated
+
+### :boom: Breaking Changes
+
+- **Experimental**: A Temporal operation handler (`temporalnexus.NewTemporalOperation`) can now send only
+  one signal per operation invocation through `NexusClient.GetWorkflowClient()`. `SignalWorkflow` and
+  `SignalWithStartWorkflow` count toward the same limit. While the first signal is in flight, or after it
+  succeeds, a second signal to any workflow returns a `BAD_REQUEST` handler error. If the first signal
+  returns an error, the limit resets and the handler can signal again. Signals sent through
+  `temporalnexus.GetClient` are not limited.
+- **Experimental**: `SignalWithStartWorkflow` called through `NexusClient.GetWorkflowClient()` in a
+  Temporal operation handler now requires an explicit workflow ID and returns a `BAD_REQUEST` handler
+  error when it is empty. An empty ID is defaulted to a fresh UUID per call, so the server has no
+  record to deduplicate against and each retried Nexus task would start another workflow.
+
+### Fixed
+
+- Fixed premature activity cancellation when a heartbeat RPC returns `DeadlineExceeded`.
+  The SDK now preserves Temporal service error codes when deciding whether a heartbeat failure should cancel the activity.
+- Fixed concurrent dev-server CLI downloads failing on Windows when another process has already populated and started the cached executable.
+- `converter.NewRemotePayloadCodec` now handles endpoint URLs with trailing slashes.
+- Fixed race when using `log.With` without a `WithLogger` implementation, where logs could overwrite each others' buffers.
+- The default timeout for client and worker RPCs has been extended. Previously, the default timeout
+  was only half the caller's context deadline - now it uses the entire deadline, up to a maximum
+  of ten seconds. RPCs with timeout overrides, like long-poll RPCs, are unchanged.
+- Query tracing now always records inbound spans when serving queries, regardless of `IsReplaying` state.
+
+### Security
+
+## [1.50.0] - 2026-10-15
+
+### Added
+
 - Added `workflow.ChildWorkflowOptions.VersioningOverride` for explicitly pinning,
   auto-upgrading, or one-time routing a child workflow independently of its parent.
   This requires Temporal Server 1.32.0 or later.
@@ -71,8 +119,6 @@ to docs, or any other relevant information.
   with the `TEMPORAL_WORKFLOW_TASK_DURATION_WARN_SECONDS` environment variable and defaulting to 5
   seconds. It previously warned above a fixed 10 seconds, logged at info above a fixed 5 seconds,
   and logged at debug below that when trace logging was enabled.
-
-### Deprecated
 
 ### :boom: Breaking Changes
 
@@ -116,8 +162,6 @@ to docs, or any other relevant information.
   `OnRegisterActivity` but not `OnRegisterDynamicActivity`.
 - Stopped workers now release sticky workflow cache ownership immediately. When the final worker
   stops, cached workflow state is cleared without waiting for garbage collection.
-
-### Security
 
 ## [1.49.0] - 2026-09-14
 

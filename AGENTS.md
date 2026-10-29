@@ -45,6 +45,9 @@ quick reference for coding-agent work and pull requests.
   incomplete or misleading.
 - If dependencies change, tidy all modules from the repository root with:
   `find . -name go.mod -execdir go mod tidy \;`
+- Run `go generate ./internal/payloadlimits` right after changing the
+  `go.temporal.io/api` version, before any other work, so unclassified payload
+  fields surface early.
 - Treat generated files, mocks, and module metadata carefully. Regenerate with
   existing repo tooling when available, and avoid unrelated churn.
 - Do not hand-edit generated mocks or generated protocol artifacts unless the

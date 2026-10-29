@@ -126,7 +126,8 @@ type (
 		startedTime            time.Time
 		taskQueue              string
 		dataConverter          converter.DataConverter
-		attempt                int32 // starts from 1.
+		resultDataConverter    converter.DataConverter // nil means dataConverter, see resultDataConverterFromActivityCtx
+		attempt                int32                   // starts from 1.
 		heartbeatDetails       *commonpb.Payloads
 		workflowType           *WorkflowType
 		namespace              string

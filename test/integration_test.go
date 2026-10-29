@@ -39,6 +39,8 @@ import (
 	"go.temporal.io/sdk/temporalnexus"
 	"go.uber.org/goleak"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
 	"go.temporal.io/sdk/contrib/opentelemetry"
@@ -179,6 +181,9 @@ func (ts *IntegrationTestSuite) SetupTest() {
 	var err error
 	trafficController := test.NewSimpleTrafficController()
 	ts.client, err = ts.newDefaultClient(func(options *client.Options) {
+		if strings.Contains(ts.T().Name(), "TestNexusSerializationContextPropagation") {
+			options.DataConverter = converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), &nexusContextSigningCodec{})
+		}
 		options.WorkerHeartbeatInterval = -1
 		options.ContextPropagators = []workflow.ContextPropagator{
 			NewKeysPropagator([]string{testContextKey1}),
@@ -871,6 +876,43 @@ func (ts *IntegrationTestSuite) TestLongRunningActivityWithHBAndGrpcRetries() {
 	ts.assertReportedOperationCount("temporal_request_attempt", heartbeatOperation, int(totalHeartbeats)+retryCount)
 }
 
+func (ts *IntegrationTestSuite) TestLongRunningActivityWithHBAndRpcDeadline() {
+	ts.trafficController.AddError("RecordActivityTaskHeartbeat", status.Error(codes.DeadlineExceeded, "persistence timeout"), 0)
+	var expected []string
+	err := ts.executeWorkflow("test-heartbeat-rpc-deadline", ts.workflows.LongRunningActivityWithHB, &expected)
+	ts.NoError(err)
+	ts.EqualValues(expected, ts.activities.invoked())
+	ts.assertReportedOperationCount("temporal_request_failure", "RecordActivityTaskHeartbeat", 1)
+	ts.Greater(ts.getReportedOperationCount("temporal_request", "RecordActivityTaskHeartbeat"), int64(1))
+}
+
+func (ts *IntegrationTestSuite) TestLongRunningActivityWithHBAndBatchedRpcDeadline() {
+	ts.trafficController.AddError("RecordActivityTaskHeartbeat", status.Error(codes.DeadlineExceeded, "persistence timeout"), 1)
+	var expected []string
+	err := ts.executeWorkflow("test-batched-heartbeat-rpc-deadline", ts.workflows.LongRunningActivityWithHB, &expected)
+	ts.NoError(err)
+	ts.EqualValues(expected, ts.activities.invoked())
+	ts.assertReportedOperationCount("temporal_request_failure", "RecordActivityTaskHeartbeat", 1)
+}
+
+func (ts *IntegrationTestSuite) TestLongRunningActivityWithHBAndPersistentRpcDeadline() {
+	ts.trafficController.AddError("RecordActivityTaskHeartbeat", status.Error(codes.DeadlineExceeded, "persistence timeout"), test.FailAllAttempts)
+	const workflowID = "test-persistent-heartbeat-rpc-deadline"
+	var expected []string
+	err := ts.executeWorkflow(workflowID, ts.workflows.LongRunningActivityWithHB, &expected)
+	ts.Require().Error(err)
+	history := ts.client.GetWorkflowHistory(ts.T().Context(), workflowID, "", false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+	heartbeatTimedOut := false
+	for history.HasNext() {
+		event, err := history.Next()
+		ts.Require().NoError(err)
+		if timeout := event.GetActivityTaskTimedOutEventAttributes(); timeout != nil {
+			heartbeatTimedOut = heartbeatTimedOut || timeout.GetFailure().GetTimeoutFailureInfo().GetTimeoutType() == enumspb.TIMEOUT_TYPE_HEARTBEAT
+		}
+	}
+	ts.True(heartbeatTimedOut)
+}
+
 func (ts *IntegrationTestSuite) TestHeartbeatOnActivityFailure() {
 	var heartbeatCounts int
 	err := ts.executeWorkflow("test-heartbeat-on-activity-failure",
@@ -1325,13 +1367,14 @@ func (ts *IntegrationTestSuite) TestSignalWorkflowWithStubbornGrpcError() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
-	ts.trafficController.AddError("SignalWorkflowExecution", serviceerror.NewInternal("server failure"), test.FailAllAttempts)
+	ts.trafficController.AddError("SignalWorkflowExecution", status.Error(codes.Unavailable, "server failure"), test.FailAllAttempts)
 	wfOpts := ts.startWorkflowOptions("test-signal-workflow-grpc-error")
 	run, err := ts.client.ExecuteWorkflow(ctx, wfOpts, ts.workflows.SignalWorkflow)
-	ts.Nil(err)
+	ts.Require().NoError(err)
 	err = ts.client.SignalWorkflow(ctx, "test-signal-workflow-grpc-error", run.GetRunID(), "string-signal", "string-value")
-	ts.Error(err)
-	ts.Equal("context deadline exceeded", err.Error())
+	var deadline *serviceerror.DeadlineExceeded
+	ts.ErrorAs(err, &deadline)
+	ts.Greater(ts.getReportedOperationCount("temporal_request_failure_attempt", "SignalWorkflowExecution"), int64(1))
 }
 
 func (ts *IntegrationTestSuite) TestWorkflowIDReuseRejectDuplicateNoChildWorkflow() {
@@ -3719,6 +3762,68 @@ func (ts *IntegrationTestSuite) TestOpenTelemetryTracingWithoutMessages() {
 	ts.testOpenTelemetryTracing(false, false)
 }
 
+func (ts *IntegrationTestSuite) TestOpenTelemetryTracingSpanOrder() {
+	const rootName = "root"
+	const firstName = "first"
+	const secondName = "second"
+	const childName = "child"
+	ctx, rootSpan := ts.openTelemetryTracer.Start(context.Background(), rootName)
+	firstCtx, firstSpan := ts.openTelemetryTracer.Start(ctx, firstName)
+	_, childSpan := ts.openTelemetryTracer.Start(firstCtx, childName)
+	_, secondSpan := ts.openTelemetryTracer.Start(ctx, secondName)
+
+	// Sibling completion order does not change their parent-child relationships.
+	secondSpan.End()
+	childSpan.End()
+	firstSpan.End()
+	rootSpan.End()
+
+	actual := interceptortest.Span(rootName)
+	ts.addOpenTelemetryChildren(rootSpan.SpanContext().SpanID(), actual, ts.openTelemetrySpanRecorder.Ended())
+	ts.Equal(interceptortest.Span(rootName,
+		interceptortest.Span(firstName, interceptortest.Span(childName)),
+		interceptortest.Span(secondName),
+	), actual)
+}
+
+func (ts *IntegrationTestSuite) TestOpenTelemetryTracingQueryReplay() {
+	const workflowName = "query-after-replay"
+	const queryName = "is-replaying"
+	ts.worker.RegisterWorkflowWithOptions(func(ctx workflow.Context) error {
+		return workflow.SetQueryHandler(ctx, queryName, func() (bool, error) {
+			return workflow.IsReplaying(ctx), nil
+		})
+	}, workflow.RegisterOptions{Name: workflowName})
+
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+	run, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions(workflowName), workflowName)
+	ts.NoError(err)
+	ts.NoError(run.Get(ctx, nil))
+
+	// Completed workflows leave the cache, forcing this query to rebuild history.
+	value, err := ts.client.QueryWorkflow(ctx, run.GetID(), run.GetRunID(), queryName)
+	ts.NoError(err)
+	var replaying bool
+	ts.NoError(value.Get(&replaying))
+	ts.True(replaying)
+
+	var querySpan, handlerSpan sdktrace.ReadOnlySpan
+	for _, span := range ts.openTelemetrySpanRecorder.Ended() {
+		switch span.Name() {
+		case "QueryWorkflow:" + queryName:
+			querySpan = span
+		case "HandleQuery:" + queryName:
+			handlerSpan = span
+		}
+	}
+
+	ts.Require().NotNil(querySpan)
+	ts.Require().NotNil(handlerSpan, "queries served after replay must emit an inbound span")
+	ts.Equal(querySpan.SpanContext().SpanID(), handlerSpan.Parent().SpanID())
+	ts.Equal(querySpan.SpanContext().TraceID(), handlerSpan.SpanContext().TraceID())
+}
+
 func (ts *IntegrationTestSuite) testOpenTelemetryTracing(withMessages bool, updateWithStart bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -3796,6 +3901,9 @@ func (ts *IntegrationTestSuite) testOpenTelemetryTracing(withMessages bool, upda
 			}
 			children = children[:n]
 		}
+		slices.SortFunc(children, func(a, b *interceptortest.SpanInfo) int {
+			return strings.Compare(a.Name, b.Name)
+		})
 		return interceptortest.Span(name, children...)
 	}
 
@@ -3903,11 +4011,9 @@ func (ts *IntegrationTestSuite) testOpenTelemetryTracing(withMessages bool, upda
 			span("HandleSignal:finish-signal"),
 		),
 	)
-	ts.EventuallyWithT(func(c *assert.CollectT) {
-		actual := interceptortest.Span("root-span")
-		ts.addOpenTelemetryChildren(rootSpan.SpanContext().SpanID(), actual, ts.openTelemetrySpanRecorder.Ended())
-		assert.Equal(c, expected, actual)
-	}, time.Second, 10*time.Millisecond)
+	actual := interceptortest.Span("root-span")
+	ts.addOpenTelemetryChildren(rootSpan.SpanContext().SpanID(), actual, ts.openTelemetrySpanRecorder.Ended())
+	ts.Equal(expected, actual)
 }
 
 func (ts *IntegrationTestSuite) addOpenTelemetryChildren(
@@ -3940,6 +4046,11 @@ func (ts *IntegrationTestSuite) addOpenTelemetryChildren(
 		// Collect grandchildren
 		ts.addOpenTelemetryChildren(s.SpanContext().SpanID(), child, spans)
 	}
+
+	// Span completion order can vary without changing the trace tree.
+	slices.SortFunc(parentSpan.Children, func(a, b *interceptortest.SpanInfo) int {
+		return strings.Compare(a.Name, b.Name)
+	})
 }
 
 func (ts *IntegrationTestSuite) TestOpenTelemetryBaggageHandling() {
@@ -10690,6 +10801,8 @@ func (ts *IntegrationTestSuite) TestTemporalOperationSuite() {
 	typedInput := "typed-wf-" + uuid.NewString()
 	untypedInput := "untyped-wf-" + uuid.NewString()
 	signalInput := "signal-wf-" + uuid.NewString()
+	doubleSignalInput := "double-signal-wf-" + uuid.NewString()
+	signalRetryInput := "signal-retry-wf-" + uuid.NewString()
 	callerNexusStartedLinks := func(run client.WorkflowRun) []*commonpb.Link {
 		iter := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
 		for iter.HasNext() {
@@ -10736,6 +10849,27 @@ func (ts *IntegrationTestSuite) TestTemporalOperationSuite() {
 		}
 	}
 
+	// verifySignalDedupe asserts that a handler redelivered after signaling did not deliver the
+	// signal a second time: both attempts reuse the operation's request ID, so the server dedupes.
+	verifySignalDedupe := func(input string) func(client.WorkflowRun) {
+		return func(client.WorkflowRun) {
+			value, ok := temporalOpSignalHandlerRetryStates.Load(input)
+			ts.Require().True(ok, "expected signal handler retry state for %s", input)
+			state := value.(*temporalOpAsyncHandlerRetryState)
+			state.Lock()
+			requestIDs := append([]string(nil), state.requestIDs...)
+			state.Unlock()
+			ts.Require().Len(requestIDs, 2, "handler should fail once and then be redelivered once")
+			ts.NotEmpty(requestIDs[0])
+			ts.Equal(requestIDs[0], requestIDs[1], "Nexus request ID must remain stable across handler redelivery")
+
+			ts.NoError(ts.client.SignalWorkflow(ctx, input, "", "done", nil))
+			var count int
+			ts.NoError(ts.client.GetWorkflow(ctx, input, "").Get(ctx, &count))
+			ts.Equal(1, count, "signal must be deduped on the operation's request ID across handler redelivery")
+		}
+	}
+
 	for _, tc := range []struct {
 		name     string
 		wf       func(workflow.Context, string) (string, error)
@@ -10749,6 +10883,8 @@ func (ts *IntegrationTestSuite) TestTemporalOperationSuite() {
 		{"Cancel", ts.workflows.TemporalOpCancelCaller, "cancel-wf-" + uuid.NewString(), "", nil},
 		{"Custom cancel with GetWorkflowClient", ts.workflows.TemporalOpCustomCancelCaller, "custom-cancel-wf-" + uuid.NewString(), "", nil},
 		{"GetWorkflowClient in Start", ts.workflows.TemporalOpClientInStartCaller, signalInput, "signaled-" + signalInput, nil},
+		{"Second signal rejected", ts.workflows.TemporalOpDoubleSignalCaller, doubleSignalInput, "signaled-" + doubleSignalInput, nil},
+		{"Signal deduped across handler retry", ts.workflows.TemporalOpSignalHandlerRetryCaller, signalRetryInput, "signaled-" + signalRetryInput, verifySignalDedupe(signalRetryInput)},
 	} {
 		ts.Run(tc.name, func() {
 			run, err := ts.client.ExecuteWorkflow(ctx, startOpts, tc.wf, tc.input)

@@ -73,7 +73,7 @@ jobs:
       - name: Upload full test logs
         id: upload-test-logs
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ github.job }}-${{ matrix.os }}-${{ matrix.go-version }}
           path: .build/test-logs
@@ -124,7 +124,7 @@ jobs:
       - name: Upload full test logs
         id: upload-test-logs
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ github.job }}-${{ matrix.os }}-${{ matrix.go-version }}
           path: .build/test-logs
@@ -174,7 +174,7 @@ jobs:
       - name: Upload full test logs
         id: upload-test-logs
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ github.job }}-${{ matrix.os }}-${{ matrix.go-version }}
           path: .build/test-logs
@@ -222,11 +222,14 @@ jobs:
         run: go run . integration-test
         env:
           TEST_LOG_ARTIFACT_NAME: ${{ github.job }}
+          DISABLE_NEXUS_SERIALIZATION_CONTEXT_TESTS: "1"
           # TODO(antlai-temporal): Remove this flag once server 1.27 released.
           DISABLE_SERVER_1_27_TESTS: "1"
           DISABLE_STANDALONE_ACTIVITY_TESTS: "1"
           DISABLE_STANDALONE_NEXUS_TESTS: "1"
           DISABLE_NEXUS_SDK_ERGONOMICS_TESTS: "1"
+          # Remove when samples-server includes system Nexus signal-with-start support.
+          DISABLE_SYSTEM_NEXUS_TESTS: "1"
           DISABLE_ACTIVITY_BACKED_NEXUS_TESTS: "1"
           DISABLE_NEXUS_CALLER_TIMEOUT_TESTS: "1"
           DISABLE_NEW_NEXUS_ERROR_FORMAT_TESTS: "1"
@@ -242,7 +245,7 @@ jobs:
       - name: Upload full test logs
         id: upload-test-logs
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ github.job }}
           path: .build/test-logs
@@ -324,7 +327,7 @@ jobs:
       - name: Upload full test logs
         id: upload-test-logs
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ github.job }}-${{ matrix.go-version }}-fips-${{ matrix.fips }}
           path: .build/test-logs
@@ -344,3 +347,22 @@ jobs:
       go-repo-path: ${{github.event.pull_request.head.repo.full_name}}
       version: ${{github.event.pull_request.head.ref}}
       version-is-repo-ref: true
+
+  # The single required status check for merging: a PR can merge only if every job in
+  # `needs` passed.
+  required-pr-checks:
+    name: Required PR Checks
+    # Without always(), this job would be skipped when a dependency fails, and GitHub
+    # treats a skipped required check as passing.
+    if: always()
+    needs:
+      - check
+      - unit-test
+      - integ-test
+      - integ-test-cache
+      - features-test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if any check failed or was cancelled
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        run: exit 1
