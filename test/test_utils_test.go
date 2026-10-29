@@ -343,6 +343,11 @@ func (s *keysPropagator) ExtractToWorkflow(ctx workflow.Context, reader workflow
 
 func (ts *ConfigAndClientSuiteBase) InitConfigAndNamespace() error {
 	ts.initConfig()
+	return ts.InitNamespace()
+}
+
+// InitNamespace prepares the configured namespace, reusing ts.client if it is already initialized.
+func (ts *ConfigAndClientSuiteBase) InitNamespace() error {
 	var err error
 	err = WaitForTCP(time.Minute, ts.config.ServiceAddr)
 	if err != nil {
@@ -443,12 +448,17 @@ func (ts *ConfigAndClientSuiteBase) registerNamespace() error {
 	}
 	// below is used to guarantee namespace is ready
 	var dummyReturn string
-	err = ts.executeWorkflow("test-namespace-exist", SimplestWorkflow, &dummyReturn)
+	params := executeWorkflowParams{
+		ID:       "test-namespace-exist",
+		Workflow: SimplestWorkflow,
+		Result:   &dummyReturn,
+	}
+	err = ts.executeWorkflow(params)
 	numOfRetry := 20
 	for err != nil && numOfRetry >= 0 {
 		if _, ok := err.(*serviceerror.NamespaceNotFound); ok {
 			time.Sleep(namespaceCacheRefreshInterval)
-			err = ts.executeWorkflow("test-namespace-exist", SimplestWorkflow, &dummyReturn)
+			err = ts.executeWorkflow(params)
 		} else {
 			break
 		}
@@ -492,26 +502,23 @@ func (ts *ConfigAndClientSuiteBase) ensureSearchAttributes() error {
 	return nil
 }
 
-// executeWorkflow executes a given workflow and waits for the result
-func (ts *ConfigAndClientSuiteBase) executeWorkflow(
-	wfID string, wfFunc any, retValPtr any, args ...any) error {
-	return ts.executeWorkflowWithOption(ts.startWorkflowOptions(wfID), wfFunc, retValPtr, args...)
+type executeWorkflowParams struct {
+	ID       string
+	Workflow any
+	Result   any
+	Args     []any
 }
 
-func (ts *ConfigAndClientSuiteBase) executeWorkflowWithOption(
-	options client.StartWorkflowOptions, wfFunc any, retValPtr any, args ...any) error {
-	return ts.executeWorkflowWithContextAndOption(context.Background(), options, wfFunc, retValPtr, args...)
-}
-
-func (ts *ConfigAndClientSuiteBase) executeWorkflowWithContextAndOption(
-	ctx context.Context, options client.StartWorkflowOptions, wfFunc any, retValPtr any, args ...any) error {
-	ctx, cancel := context.WithTimeout(ctx, ctxTimeout)
+// executeWorkflow executes a given workflow and waits for the result.
+func (ts *ConfigAndClientSuiteBase) executeWorkflow(params executeWorkflowParams) error {
+	options := ts.startWorkflowOptions(params.ID)
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
-	run, err := ts.client.ExecuteWorkflow(ctx, options, wfFunc, args...)
+	run, err := ts.client.ExecuteWorkflow(ctx, options, params.Workflow, params.Args...)
 	if err != nil {
 		return err
 	}
-	err = run.Get(ctx, retValPtr)
+	err = run.Get(ctx, params.Result)
 	if ts.config.Debug {
 		iter := ts.client.GetWorkflowHistory(ctx, options.ID, run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
 		for iter.HasNext() {

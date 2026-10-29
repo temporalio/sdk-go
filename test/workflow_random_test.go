@@ -141,8 +141,16 @@ func workflowRandomContinueAsNewWorkflow(ctx workflow.Context, prev int) ([]int,
 
 func (ts *WorkflowRandomTestSuite) TestNoCollisionAcrossRuns() {
 	var a, b int
-	ts.NoError(ts.executeWorkflow(ts.T().Name(), workflowRandomSimpleWorkflow, &a))
-	ts.NoError(ts.executeWorkflow(ts.T().Name(), workflowRandomSimpleWorkflow, &b))
+	ts.NoError(ts.executeWorkflow(executeWorkflowParams{
+		ID:       ts.T().Name(),
+		Workflow: workflowRandomSimpleWorkflow,
+		Result:   &a,
+	}))
+	ts.NoError(ts.executeWorkflow(executeWorkflowParams{
+		ID:       ts.T().Name(),
+		Workflow: workflowRandomSimpleWorkflow,
+		Result:   &b,
+	}))
 	ts.NotEqual(a, b)
 }
 
@@ -243,7 +251,12 @@ func (ts *WorkflowRandomTestSuite) TestResetReseedsSourceCreatedAfterResetPoint(
 
 func (ts *WorkflowRandomTestSuite) TestContinueAsNewDrawsNewValues() {
 	var values []int
-	ts.NoError(ts.executeWorkflow(ts.T().Name(), workflowRandomContinueAsNewWorkflow, &values, 0))
+	ts.NoError(ts.executeWorkflow(executeWorkflowParams{
+		ID:       ts.T().Name(),
+		Workflow: workflowRandomContinueAsNewWorkflow,
+		Result:   &values,
+		Args:     []any{0},
+	}))
 
 	// Each continueAsNew run should draw new values
 	ts.Len(values, 2)
