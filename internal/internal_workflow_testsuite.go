@@ -39,12 +39,11 @@ import (
 )
 
 const (
-	defaultTestNamespace        = "default-test-namespace"
-	defaultTestTaskQueue        = "default-test-taskqueue"
-	defaultTestWorkflowID       = "default-test-workflow-id"
-	defaultTestRunID            = "default-test-run-id"
-	defaultTestWorkflowTypeName = "default-test-workflow-type-name"
-	workflowTypeNotSpecified    = "workflow-type-not-specified"
+	defaultTestNamespace     = "default-test-namespace"
+	defaultTestTaskQueue     = "default-test-taskqueue"
+	defaultTestWorkflowID    = "default-test-workflow-id"
+	defaultTestRunID         = "default-test-run-id"
+	workflowTypeNotSpecified = "workflow-type-not-specified"
 
 	// These are copied from service implementation
 	reservedTaskQueuePrefix = "/__temporal_sys/"
