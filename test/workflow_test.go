@@ -4729,65 +4729,7 @@ func (w *Workflows) WorkflowTaskCompletionPagination(ctx workflow.Context) error
 	return nil
 }
 
-func (w *Workflows) RepeatedlySignalAndStartWithOptions(
-	ctx workflow.Context, targetID, taskQueue string, count int,
-) ([]workflow.SignalWithStartWorkflowResponse, error) {
-	return w.RepeatedlySignalAndStart(ctx, workflow.SignalWithStartWorkflowOptions{
-		ID:                       targetID,
-		TaskQueue:                taskQueue,
-		WorkflowExecutionTimeout: 20 * time.Second,
-		WorkflowRunTimeout:       15 * time.Second,
-		WorkflowTaskTimeout:      5 * time.Second,
-		WorkflowIDReusePolicy:    enumspb.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE_FAILED_ONLY,
-		WorkflowIDConflictPolicy: enumspb.WORKFLOW_ID_CONFLICT_POLICY_USE_EXISTING,
-		RetryPolicy:              &temporal.RetryPolicy{InitialInterval: time.Second, MaximumAttempts: 1},
-		Memo:                     map[string]any{"memo": "memo value"},
-		TypedSearchAttributes: temporal.NewSearchAttributes(
-			temporal.NewSearchAttributeKeyKeyword("CustomKeywordField").ValueSet("keyword"),
-		),
-		Priority:      &temporal.Priority{PriorityKey: 2},
-		StartDelay:    time.Second,
-		StaticSummary: "summary",
-		StaticDetails: "details",
-	}, count)
-}
-
-func (w *Workflows) RepeatedlySignalAndStart(
-	ctx workflow.Context,
-	options workflow.SignalWithStartWorkflowOptions,
-	count int,
-) ([]workflow.SignalWithStartWorkflowResponse, error) {
-	var responses []workflow.SignalWithStartWorkflowResponse
-	for i := range count {
-		var response workflow.SignalWithStartWorkflowResponse
-		err := workflow.SignalWithStartWorkflow(
-			ctx, options, "signal", i, w.RepeatedlyReceiveSignal, count,
-		).Get(ctx, &response)
-		if err != nil {
-			return nil, err
-		}
-		responses = append(responses, response)
-	}
-	return responses, nil
-}
-
-func (w *Workflows) RepeatedlyReceiveSignal(ctx workflow.Context, count int) ([]int, error) {
-	var signals []int
-	ch := workflow.GetSignalChannel(ctx, "signal")
-	for range count {
-		var signal int
-		if !ch.Receive(ctx, &signal) {
-			return nil, ctx.Err()
-		}
-		signals = append(signals, signal)
-	}
-	return signals, nil
-}
-
 func (w *Workflows) register(worker worker.Worker) {
-	worker.RegisterWorkflow(w.RepeatedlySignalAndStartWithOptions)
-	worker.RegisterWorkflow(w.RepeatedlySignalAndStart)
-	worker.RegisterWorkflow(w.RepeatedlyReceiveSignal)
 	worker.RegisterWorkflow(w.TemporalOpEcho)
 	worker.RegisterWorkflow(w.TemporalOpContinueAsNewOnce)
 	worker.RegisterWorkflow(w.TemporalOpUpdateTarget)
