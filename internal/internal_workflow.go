@@ -1863,9 +1863,8 @@ func setUpdateHandler(ctx Context, updateName string, handler any, opts UpdateHa
 		return err
 	}
 	eo := getWorkflowEnvOptions(ctx)
-	// Data and Failure converter wrapped with WorkflowSerializationContext in newWorkflowExecutionEventHandler.
+	// Data converter wrapped with WorkflowSerializationContext in newWorkflowExecutionEventHandler.
 	uh.dataConverter = GetWorkflowEnvironment(ctx).GetDataConverter()
-	uh.failureConverter = GetWorkflowEnvironment(ctx).GetFailureConverter()
 	eo.updateHandlers[updateName] = uh
 	if GetWorkflowEnvironment(ctx).TryUse(SDKPriorityUpdateHandling) {
 		GetWorkflowEnvironment(ctx).HandleQueuedUpdates(updateName)
