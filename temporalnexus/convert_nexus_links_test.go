@@ -29,11 +29,13 @@ func TestConvertNexusLinks(t *testing.T) {
 	activityURL := "temporal:///namespaces/ns/activities/act-id/run-id/details"
 	nexusOperationURL := "temporal:///namespaces/ns/nexus-operations/op-id/run-id/details"
 	workflowURL := "temporal:///namespaces/ns/workflows/wf-id/run-id"
+	callbackURL := "temporal:///namespaces/ns/workflows/wf-id/run-id/callbacks/req-id?componentPath=a"
 
 	workflowEventType := string((&commonpb.Link_WorkflowEvent{}).ProtoReflect().Descriptor().FullName())
 	activityType := string((&commonpb.Link_Activity{}).ProtoReflect().Descriptor().FullName())
 	nexusOperationType := string((&commonpb.Link_NexusOperation{}).ProtoReflect().Descriptor().FullName())
 	workflowType := string((&commonpb.Link_Workflow{}).ProtoReflect().Descriptor().FullName())
+	callbackType := string((&commonpb.Link_Callback{}).ProtoReflect().Descriptor().FullName())
 
 	wantWorkflowEvent := &commonpb.Link{
 		Variant: &commonpb.Link_WorkflowEvent_{
@@ -66,6 +68,19 @@ func TestConvertNexusLinks(t *testing.T) {
 		},
 	}
 
+	wantCallback := &commonpb.Link{
+		Variant: &commonpb.Link_Callback_{
+			Callback: &commonpb.Link_Callback{
+				Namespace: "ns",
+				Execution: &commonpb.Execution{
+					Type: enumspb.EXECUTION_TYPE_WORKFLOW, BusinessId: "wf-id", RunId: "run-id",
+				},
+				RequestId:     "req-id",
+				ComponentPath: []string{"a"},
+			},
+		},
+	}
+
 	for _, tc := range []struct {
 		name      string
 		input     []nexus.Link
@@ -91,6 +106,11 @@ func TestConvertNexusLinks(t *testing.T) {
 			name:  "nexus operation",
 			input: []nexus.Link{nexusLinkFor(t, nexusOperationType, nexusOperationURL)},
 			want:  []*commonpb.Link{wantNexusOperation},
+		},
+		{
+			name:  "callback",
+			input: []nexus.Link{nexusLinkFor(t, callbackType, callbackURL)},
+			want:  []*commonpb.Link{wantCallback},
 		},
 		{
 			// Order is preserved, and each variant is wrapped in its matching oneof.

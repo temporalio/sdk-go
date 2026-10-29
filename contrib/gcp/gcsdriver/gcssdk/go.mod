@@ -6,8 +6,8 @@ require (
 	cloud.google.com/go/storage v1.57.2
 	github.com/fsouza/fake-gcs-server v1.50.2
 	github.com/stretchr/testify v1.11.1
-	go.temporal.io/api v1.63.5
-	go.temporal.io/sdk v1.49.0
+	go.temporal.io/api v1.64.0
+	go.temporal.io/sdk v1.50.0
 	go.temporal.io/sdk/contrib/gcp/gcsdriver v0.2.0
 )
 
@@ -30,7 +30,7 @@ require (
 	github.com/envoyproxy/go-control-plane/envoy v1.37.0 // indirect
 	github.com/envoyproxy/protoc-gen-validate v1.3.3 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
-	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
+	github.com/go-jose/go-jose/v4 v4.1.6 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect

@@ -1641,7 +1641,7 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 	if options.DataConverter == nil {
 		options.DataConverter = converter.GetDefaultDataConverter()
 	}
-	options.DataConverter = converter.MakeTransferAware(options.DataConverter)
+	options.DataConverter = MakeTransferAware(options.DataConverter)
 
 	if options.FailureConverter == nil {
 		options.FailureConverter = GetDefaultFailureConverter()

@@ -133,6 +133,14 @@ type NexusClient struct {
 
 // GetWorkflowClient returns the underlying Temporal client for advanced or fallback use cases.
 //
+// Signals sent through this client carry the operation's request ID so a retried Nexus task does
+// not deliver them twice. Because they share that ID, only one signal may be sent per operation
+// invocation; a second returns a BAD_REQUEST handler error rather than being silently dropped by
+// the server. For the same reason SignalWithStartWorkflow requires an explicit workflow ID.
+//
+// Signals sent through [GetClient] are not limited, but each carries its own request ID and is
+// delivered again when a Nexus task is retried.
+//
 // NOTE: Experimental
 func (nc NexusClient) GetWorkflowClient() client.Client {
 	return nc.client
@@ -598,7 +606,7 @@ func (o *temporalOperation[I, O]) Start(
 	nctx.RequestID = options.RequestID
 
 	nc := NexusClient{
-		client:                GetClient(ctx),
+		client:                internal.NewTemporalOperationClient(GetClient(ctx), options.RequestID),
 		startOperationOptions: options,
 		asyncStarted:          &atomic.Bool{},
 	}

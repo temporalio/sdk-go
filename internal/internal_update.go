@@ -74,6 +74,8 @@ type (
 	updateEnv interface {
 		GetFailureConverter() converter.FailureConverter
 		GetDataConverter() converter.DataConverter
+		GetRootFailureConverter() converter.FailureConverter
+		GetRootDataConverter() converter.DataConverter
 		Send(*protocolpb.Message, ...msgSendOpt)
 	}
 
@@ -81,16 +83,19 @@ type (
 	// implement the UpdateCallbacks abstraction. It handles callbacks by
 	// sending protocol messages.
 	updateProtocol struct {
-		protoInstanceID  string
-		clientIdentity   string
-		initialRequest   *updatepb.Request
-		requestMsgID     string
-		requestSeqID     int64
-		scheduleUpdate   func(name string, id string, args *commonpb.Payloads, header *commonpb.Header, callbacks UpdateCallbacks)
-		env              updateEnv
-		state            updateState
-		dataConverter    converter.DataConverter
-		failureConverter converter.FailureConverter
+		protoInstanceID string
+		clientIdentity  string
+		initialRequest  *updatepb.Request
+		requestMsgID    string
+		requestSeqID    int64
+		scheduleUpdate  func(name string, id string, args *commonpb.Payloads, header *commonpb.Header, callbacks UpdateCallbacks)
+		env             updateEnv
+		state           updateState
+		// outcomeDataConverter and outcomeFailureConverter encode the update's outcome. HandleMessage
+		// applies the propagated Nexus context when the update was sent by a Nexus handler, which
+		// returns the outcome to its caller. See serializationContextFor.
+		outcomeDataConverter    converter.DataConverter
+		outcomeFailureConverter converter.FailureConverter
 	}
 
 	// updateHandler is the underlying type that is registered into a workflow
@@ -104,7 +109,6 @@ type (
 		unfinishedPolicy HandlerUnfinishedPolicy
 		description      string
 		dataConverter    converter.DataConverter
-		failureConverter converter.FailureConverter
 	}
 )
 
@@ -116,12 +120,12 @@ func newUpdateProtocol(
 	env updateEnv,
 ) *updateProtocol {
 	return &updateProtocol{
-		protoInstanceID:  protoInstanceID,
-		env:              env,
-		scheduleUpdate:   scheduleUpdate,
-		state:            updateStateNew,
-		dataConverter:    env.GetDataConverter(),
-		failureConverter: env.GetFailureConverter(),
+		protoInstanceID:         protoInstanceID,
+		env:                     env,
+		scheduleUpdate:          scheduleUpdate,
+		state:                   updateStateNew,
+		outcomeDataConverter:    env.GetDataConverter(),
+		outcomeFailureConverter: env.GetFailureConverter(),
 	}
 }
 
@@ -138,6 +142,11 @@ func (up *updateProtocol) HandleMessage(msg *protocolpb.Message) error {
 		return err
 	}
 	up.initialRequest = &request
+	if propagated := request.GetPropagatedNexusSerializationContext(); propagated != nil {
+		nexusContext := nexusSerializationContextFromProto(propagated)
+		up.outcomeDataConverter = converter.WithDataConverterSerializationContext(up.env.GetRootDataConverter(), nexusContext)
+		up.outcomeFailureConverter = converter.WithFailureConverterSerializationContext(up.env.GetRootFailureConverter(), nexusContext)
+	}
 	up.requireState("update request", updateStateNew)
 	up.requestMsgID = msg.GetId()
 	up.requestSeqID = msg.GetEventId()
@@ -175,7 +184,7 @@ func (up *updateProtocol) Reject(err error) {
 			RejectedRequestMessageId:         up.requestMsgID,
 			RejectedRequestSequencingEventId: up.requestSeqID,
 			RejectedRequest:                  up.initialRequest,
-			Failure:                          up.failureConverter.ErrorToFailure(err),
+			Failure:                          up.outcomeFailureConverter.ErrorToFailure(err),
 		}),
 	})
 	up.state = updateStateCompleted
@@ -188,11 +197,10 @@ func (up *updateProtocol) Complete(success any, outcomeErr error) {
 	outcome := &updatepb.Outcome{}
 	if outcomeErr != nil {
 		outcome.Value = &updatepb.Outcome_Failure{
-			Failure: up.failureConverter.ErrorToFailure(outcomeErr),
+			Failure: up.outcomeFailureConverter.ErrorToFailure(outcomeErr),
 		}
 	} else {
-		dc := up.dataConverter
-		success, err := dc.ToPayloads(success)
+		success, err := up.outcomeDataConverter.ToPayloads(success)
 		if err != nil {
 			panic(err)
 		}
@@ -276,11 +284,6 @@ func defaultUpdateHandler(
 			}
 			callbacks.Reject(fmt.Errorf("unknown update %v. KnownUpdates=%v", name, keys))
 			return
-		}
-
-		if up, ok := callbacks.(*updateProtocol); ok {
-			up.dataConverter = handler.dataConverter
-			up.failureConverter = handler.failureConverter
 		}
 
 		args, err := decodeArgsToRawValues(
