@@ -3,6 +3,7 @@ package envconfig
 import (
 	"bytes"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -19,6 +20,7 @@ var knownProfileKeys = map[string]bool{
 	"codec":     true,
 	"grpc_meta": true,
 	"authority": true,
+	"ext":       true,
 }
 
 // ClientConfigToTOMLOptions are options for [ClientConfig.ToTOML].
@@ -98,7 +100,7 @@ func (c *ClientConfig) FromTOML(b []byte, options ClientConfigFromTOMLOptions) e
 		return err
 	}
 
-	undecoded := md.Undecoded()
+	undecoded := slices.DeleteFunc(md.Undecoded(), isExtKey)
 	if options.Strict && len(undecoded) > 0 {
 		keys := make([]string, len(undecoded))
 		for i, k := range undecoded {
@@ -137,6 +139,11 @@ func (c *ClientConfig) FromTOML(b []byte, options ClientConfigFromTOMLOptions) e
 	return nil
 }
 
+// whether the key is part of an extension's config
+func isExtKey(key toml.Key) bool {
+	return len(key) >= 3 && key[0] == "profile" && key[2] == "ext"
+}
+
 type tomlClientConfig struct {
 	Profiles map[string]tomlClientConfigProfile `toml:"profile"`
 }
@@ -165,6 +172,8 @@ type tomlClientConfigProfile struct {
 	Codec     *tomlClientConfigCodec `toml:"codec,omitempty"`
 	GRPCMeta  map[string]string      `toml:"grpc_meta,omitempty"`
 	Authority string                 `toml:"authority,omitempty"`
+	// Note: decoding into map[string]any does not mark nested keys as decoded, see isExtKey.
+	Ext map[string]map[string]any `toml:"ext,omitempty"`
 }
 
 func (c *tomlClientConfigProfile) toClientConfig() *ClientConfigProfile {
@@ -175,6 +184,7 @@ func (c *tomlClientConfigProfile) toClientConfig() *ClientConfigProfile {
 		TLS:       c.TLS.toClientConfig(),
 		Codec:     c.Codec.toClientConfig(),
 		Authority: c.Authority,
+		Ext:       c.Ext,
 	}
 	// gRPC meta keys have to be normalized
 	if len(c.GRPCMeta) > 0 {
@@ -191,6 +201,7 @@ func (c *tomlClientConfigProfile) fromClientConfig(conf *ClientConfigProfile) {
 	c.Namespace = conf.Namespace
 	c.APIKey = conf.APIKey
 	c.Authority = conf.Authority
+	c.Ext = conf.Ext
 	if conf.TLS != nil {
 		c.TLS = &tomlClientConfigTLS{}
 		c.TLS.fromClientConfig(conf.TLS)
