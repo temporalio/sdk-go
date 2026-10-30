@@ -1330,72 +1330,98 @@ type mockTask struct{}
 func (mockTask) scaleDecision() (pollerScaleDecision, bool) { return pollerScaleDecision{}, false }
 func (mockTask) isEmpty() bool                              { return false }
 
-func TestActivityTaskProcessedAfterStopForShutdownDrain(t *testing.T) {
-	stopC := make(chan struct{})
-	close(stopC)
-	graceful := &atomic.Bool{}
-	graceful.Store(true)
+func TestActivityScheduleToStartLatencyAcrossShutdown(t *testing.T) {
+	for _, delivery := range []string{"polled", "eager"} {
+		for _, shutdown := range []string{"running", "drain", "legacy"} {
+			t.Run(delivery+"/"+shutdown, func(t *testing.T) {
+				stopC := make(chan struct{})
+				graceful := &atomic.Bool{}
+				graceful.Store(shutdown == "drain")
+				captured := metrics.NewCapturingHandler()
+				metricsHandler := captured.WithTags(map[string]string{"namespace": "test-namespace"})
+				handler := &pendingActivityTaskHandler{executed: make(chan struct{})}
+				poller := newActivityTaskPoller(handler, nil, workerExecutionParameters{
+					TaskQueue:                    "test-task-queue",
+					WorkerStopChannel:            stopC,
+					MetricsHandler:               metricsHandler,
+					Logger:                       ilog.NewDefaultLogger(),
+					workerPollCompleteOnShutdown: graceful,
+					pollTimeTracker:              &pollTimeTracker{},
+				}, nil)
+				now := time.Now()
+				response := &workflowservice.PollActivityTaskQueueResponse{
+					TaskToken:                   []byte("task-token"),
+					WorkflowType:                &commonpb.WorkflowType{Name: "workflow"},
+					ActivityType:                &commonpb.ActivityType{Name: "activity"},
+					StartedTime:                 timestamppb.New(now.Add(250 * time.Millisecond)),
+					CurrentAttemptScheduledTime: timestamppb.New(now),
+					ScheduledTime:               timestamppb.New(now.Add(-10 * time.Second)),
+					Attempt:                     2,
+				}
+				// An in-flight request can deliver a task after shutdown begins.
+				if shutdown != "running" {
+					close(stopC)
+				}
+				var task any
+				if delivery == "eager" {
+					exec := newEagerActivityExecutor(eagerActivityExecutorOptions{
+						taskQueue:      "test-task-queue",
+						metricsHandler: metricsHandler,
+						maxPerTask:     defaultMaxEagerActivityReservationsPerWorkflowTask,
+					})
+					exec.activityWorker = &eagerWorkerMock{
+						processTaskAsyncCallback: func(eager eagerTask) { task = eager.task },
+					}
+					exec.handleResponse(&workflowservice.RespondWorkflowTaskCompletedResponse{}, nil)
+					for _, timer := range captured.Timers() {
+						if timer.Name == metrics.ActivityScheduleToStartLatency {
+							require.Zero(t, timer.Count())
+						}
+					}
+					exec.handleResponse(&workflowservice.RespondWorkflowTaskCompletedResponse{
+						ActivityTasks: []*workflowservice.PollActivityTaskQueueResponse{response},
+					}, []*SlotPermit{{}})
+				} else {
+					service := workflowservicemock.NewMockWorkflowServiceClient(gomock.NewController(t))
+					service.EXPECT().PollActivityTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).Return(response, nil)
+					poller.service = service
+					var err error
+					task, err = poller.poll(t.Context(), pollerGroupLease{})
+					require.NoError(t, err)
+				}
 
-	handler := &pendingActivityTaskHandler{executed: make(chan struct{})}
-	poller := &activityTaskPoller{
-		basePoller: basePoller{
-			stopC:                        stopC,
-			metricsHandler:               metrics.NopHandler,
-			workerPollCompleteOnShutdown: graceful,
-		},
-		taskHandler:   handler,
-		taskQueueName: "test-task-queue",
-	}
+				// Receipt counts even if shutdown prevents execution. Retry backoff is excluded.
+				var latency *metrics.CapturedTimer
+				for _, timer := range captured.Timers() {
+					if timer.Name == metrics.ActivityScheduleToStartLatency {
+						require.Nil(t, latency, "only one activity latency series should be recorded")
+						latency = timer
+					}
+				}
+				require.NotNil(t, latency)
+				require.Equal(t, 250*time.Millisecond, latency.Value())
+				require.Equal(t, int64(1), latency.Count())
+				require.Subset(t, latency.Tags, map[string]string{
+					"namespace": "test-namespace", "task_queue": "test-task-queue",
+					"workflow_type": "workflow", "activity_type": "activity",
+				})
 
-	now := timestamppb.Now()
-	err := poller.ProcessTask(&activityTask{task: &workflowservice.PollActivityTaskQueueResponse{
-		TaskToken:                   []byte("task-token"),
-		WorkflowType:                &commonpb.WorkflowType{Name: "workflow"},
-		ActivityType:                &commonpb.ActivityType{Name: "activity"},
-		StartedTime:                 now,
-		CurrentAttemptScheduledTime: now,
-		ScheduledTime:               now,
-	}})
-	require.NoError(t, err)
-
-	select {
-	case <-handler.executed:
-	case <-time.After(time.Second):
-		t.Fatal("activity task was not processed after shutdown started")
-	}
-}
-
-func TestActivityTaskNotProcessedAfterStopForLegacyShutdown(t *testing.T) {
-	stopC := make(chan struct{})
-	close(stopC)
-	graceful := &atomic.Bool{}
-
-	handler := &pendingActivityTaskHandler{executed: make(chan struct{})}
-	poller := &activityTaskPoller{
-		basePoller: basePoller{
-			stopC:                        stopC,
-			metricsHandler:               metrics.NopHandler,
-			workerPollCompleteOnShutdown: graceful,
-		},
-		taskHandler:   handler,
-		taskQueueName: "test-task-queue",
-	}
-
-	now := timestamppb.Now()
-	err := poller.ProcessTask(&activityTask{task: &workflowservice.PollActivityTaskQueueResponse{
-		TaskToken:                   []byte("task-token"),
-		WorkflowType:                &commonpb.WorkflowType{Name: "workflow"},
-		ActivityType:                &commonpb.ActivityType{Name: "activity"},
-		StartedTime:                 now,
-		CurrentAttemptScheduledTime: now,
-		ScheduledTime:               now,
-	}})
-	require.ErrorIs(t, err, errStop)
-
-	select {
-	case <-handler.executed:
-		t.Fatal("activity task was processed after shutdown without drain capability")
-	default:
+				err := poller.ProcessTask(task)
+				if shutdown == "legacy" {
+					require.ErrorIs(t, err, errStop)
+				} else {
+					require.NoError(t, err)
+				}
+				var executed bool
+				select {
+				case <-handler.executed:
+					executed = true
+				default:
+				}
+				require.Equal(t, shutdown != "legacy", executed)
+				require.Equal(t, int64(1), latency.Count(), "processing must not count the task again")
+			})
+		}
 	}
 }
 
