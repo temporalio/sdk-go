@@ -43,7 +43,12 @@ interface workflow-service {
     /// @nexus.doc "Unique identifier for the workflow execution. Must be nonempty."
     /// @nexus.proto-field "workflow_id"
     id: string,
-    /// @nexus.doc "Task queue to run the workflow on."
+    /// @nexus.doc "Task queue to run the workflow on. Defaults to the calling workflow's task queue."
+    /// @nexus.default
+    ///   python="_support.workflow_task_queue()"
+    ///   typescript="workflow.workflowInfo().taskQueue"
+    ///   go="GetInfo(ctx).TaskQueueName"
+    ///   dotnet="Temporalio.Workflows.Workflow.Info.TaskQueue"
     task-queue: task-queue,
     /// @nexus.doc
     ///   python="Signal name or callable to send with the start request."
@@ -70,7 +75,11 @@ interface workflow-service {
     request-id: placeholder,
     /// @nexus.doc "Behavior when a closed workflow with the same ID exists. Default is allow-duplicate."
     /// @nexus.proto-field "workflow_id_reuse_policy"
-    /// @nexus.default "allow-duplicate"
+    /// @nexus.default
+    ///   python="temporalio.common.WorkflowIDReusePolicy.ALLOW_DUPLICATE"
+    ///   typescript="common.WorkflowIdReusePolicy.ALLOW_DUPLICATE"
+    ///   go="enums.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE"
+    ///   dotnet="Temporalio.Api.Enums.V1.WorkflowIdReusePolicy.AllowDuplicate"
     /// @nexus.name go="WorkflowIDReusePolicy"
     id-reuse-policy: workflow-id-reuse-policy,
     /// @nexus.doc "Behavior when a workflow is currently running with the same ID. Set to use-existing for idempotent deduplication on workflow ID. Cannot be set if id-reuse-policy is terminate-if-running. Defaults to use-existing."
