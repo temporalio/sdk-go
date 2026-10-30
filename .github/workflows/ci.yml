@@ -225,6 +225,9 @@ jobs:
           DISABLE_NEXUS_SERIALIZATION_CONTEXT_TESTS: "1"
           # TODO(antlai-temporal): Remove this flag once server 1.27 released.
           DISABLE_SERVER_1_27_TESTS: "1"
+          # TODO: Remove this flag once samples-server's pinned Temporal server supports
+          # Event Groups (>= 1.32.0-162).
+          DISABLE_EVENT_GROUPS_TESTS: "1"
           DISABLE_STANDALONE_ACTIVITY_TESTS: "1"
           DISABLE_STANDALONE_NEXUS_TESTS: "1"
           DISABLE_NEXUS_SDK_ERGONOMICS_TESTS: "1"

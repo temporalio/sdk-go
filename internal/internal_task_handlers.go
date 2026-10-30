@@ -1932,6 +1932,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 			InheritBuildId:            useCompat,
 			InitialVersioningBehavior: continueAsNewVersioningBehaviorToProto(contErr.InitialVersioningBehavior),
 		}}
+		closeCommand.EventGroupMarkers = contErr.eventGroupMarkers
 	} else if workflowContext.err != nil {
 		// Workflow failures
 		if !isBenignApplicationError(workflowContext.err) {

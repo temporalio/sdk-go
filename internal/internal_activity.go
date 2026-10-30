@@ -12,6 +12,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	commonpb "go.temporal.io/api/common/v1"
+	sdk "go.temporal.io/api/sdk/v1"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
@@ -50,6 +51,7 @@ type (
 		DisableEagerExecution  bool
 		VersioningIntent       VersioningIntent
 		Summary                string
+		eventGroups            []EventGroup
 		Priority               *commonpb.Priority
 		// ScheduleID must be generated before serialization to give
 		// codecs/converters access to ActivityID, while maintaining
@@ -63,30 +65,33 @@ type (
 		StartToCloseTimeout    time.Duration
 		RetryPolicy            *RetryPolicy
 		Summary                string
+		eventGroups            []EventGroup
 	}
 
 	// ExecuteActivityParams parameters for executing an activity
 	ExecuteActivityParams struct {
 		ExecuteActivityOptions
-		ActivityType     ActivityType
-		Input            *commonpb.Payloads
-		DataConverter    converter.DataConverter    // context-aware DC from ExecuteActivity
-		FailureConverter converter.FailureConverter // context-aware FC from ExecuteActivity
-		Header           *commonpb.Header
+		ActivityType      ActivityType
+		Input             *commonpb.Payloads
+		DataConverter     converter.DataConverter    // context-aware DC from ExecuteActivity
+		FailureConverter  converter.FailureConverter // context-aware FC from ExecuteActivity
+		Header            *commonpb.Header
+		EventGroupMarkers []*sdk.EventGroupMarker
 	}
 
 	// ExecuteLocalActivityParams parameters for executing a local activity
 	ExecuteLocalActivityParams struct {
 		ExecuteLocalActivityOptions
-		ActivityFn       any    // local activity function pointer
-		ActivityType     string // local activity type
-		InputArgs        []any
-		WorkflowInfo     *WorkflowInfo
-		DataConverter    converter.DataConverter    // context-aware DC from ExecuteLocalActivity
-		FailureConverter converter.FailureConverter // context-aware FC from ExecuteLocalActivity
-		Attempt          int32
-		ScheduledTime    time.Time
-		Header           *commonpb.Header
+		ActivityFn        any    // local activity function pointer
+		ActivityType      string // local activity type
+		InputArgs         []any
+		WorkflowInfo      *WorkflowInfo
+		DataConverter     converter.DataConverter    // context-aware DC from ExecuteLocalActivity
+		FailureConverter  converter.FailureConverter // context-aware FC from ExecuteLocalActivity
+		Attempt           int32
+		ScheduledTime     time.Time
+		Header            *commonpb.Header
+		EventGroupMarkers []*sdk.EventGroupMarker
 	}
 
 	// AsyncActivityClient for requesting activity execution
