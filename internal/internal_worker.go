@@ -259,8 +259,7 @@ type (
 		sdkVersion string
 
 		activityCancellationCallbacks *activityCancellationCallbacks
-
-		workerPollCompleteOnShutdown *atomic.Bool
+		workerPollCompleteOnShutdown  *atomic.Bool
 
 		// Set to true during start() when the namespace has the poller_autoscaling capability.
 		serverSupportsAutoscaling *atomic.Bool
@@ -274,7 +273,8 @@ type (
 
 		storageParams extstore.StorageParameters
 
-		setErrorLimits func(*payloadLimits)
+		setErrorLimits                     func(*payloadLimits)
+		workflowTaskHeartbeatNotifications *workflowTaskHeartbeatNotifications
 	}
 
 	// HistoryJSONOptions are options for HistoryFromJSON.
@@ -404,6 +404,8 @@ func newWorkflowTaskWorkerInternal(
 			taskQueue:     params.TaskQueue,
 			taskQueueKind: enumspb.TASK_QUEUE_KIND_UNSPECIFIED,
 		},
+		workflowTaskHeartbeatNotifications: params.workflowTaskHeartbeatNotifications,
+		namespaceWorker:                    params.namespaceWorker,
 	}
 
 	worker := newBaseWorker(bwo)
@@ -2493,10 +2495,12 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	// should take a pointer to this struct and wait for it to be populated when the worker is run.
 	var capabilities workflowservice.GetSystemInfoResponse_Capabilities
 	var activityCancellationCallbacks *activityCancellationCallbacks
+	var workflowTaskHeartbeatNotifications *workflowTaskHeartbeatNotifications
 	var namespaceWorker *sharedNamespaceWorker
 	if client.heartbeatManager != nil {
 		namespaceWorker = client.heartbeatManager.sharedNamespaceWorkerFor(client.namespace)
 		activityCancellationCallbacks = namespaceWorker.activityCancellationCallbacks
+		workflowTaskHeartbeatNotifications = namespaceWorker.workflowTaskHeartbeatNotifications
 	}
 
 	baseMetricsHandler := client.metricsHandler.WithTags(metrics.TaskQueueTags(taskQueue))
@@ -2601,6 +2605,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 				setErrorLimits(limits)
 			}
 		},
+		workflowTaskHeartbeatNotifications: workflowTaskHeartbeatNotifications,
 	}
 
 	if options.MaxConcurrentWorkflowTaskPollers != 0 {

@@ -12,4 +12,5 @@ type eagerWorker interface {
 	pushEagerTask(task eagerTask)
 	// getDeploymentOptions returns the worker's deployment options
 	getDeploymentOptions() WorkerDeploymentOptions
+	getWorkerControlTaskQueue() string
 }

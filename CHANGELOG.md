@@ -32,6 +32,8 @@
   `Version() string` method on the plugin.
 - `client.WorkflowExecutionDescription` now includes `RawResponse`, the full
   `workflowservice.DescribeWorkflowExecutionResponse` returned by the server.
+- Workers support best-effort Workflow Task heartbeat notifications from supporting servers,
+  allowing pending inputs to reach workflows sooner while Local Activities are pending.
 - Added experimental `temporalnexus.ConvertLinkCallbackToNexusLink` and `temporalnexus.ConvertNexusLinkToLinkCallback`
   for converting `Link_Callback` to and from Nexus links.
 - Nexus handlers now propagate `NexusSerializationContext` to the workflows, workflow updates, and

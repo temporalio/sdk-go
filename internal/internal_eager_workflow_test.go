@@ -14,6 +14,7 @@ type eagerWorkerMock struct {
 	tryReserveSlotCallback   func() *SlotPermit
 	processTaskAsyncCallback func(eagerTask)
 	deploymentOptions        WorkerDeploymentOptions
+	workerControlTaskQueue   string
 }
 
 func (e *eagerWorkerMock) tryReserveSlot() *SlotPermit {
@@ -30,6 +31,10 @@ func (e *eagerWorkerMock) pushEagerTask(task eagerTask) {
 
 func (e *eagerWorkerMock) getDeploymentOptions() WorkerDeploymentOptions {
 	return e.deploymentOptions
+}
+
+func (e *eagerWorkerMock) getWorkerControlTaskQueue() string {
+	return e.workerControlTaskQueue
 }
 
 func TestEagerWorkflowDispatchNoWorkerOnTaskQueue(t *testing.T) {
@@ -55,6 +60,7 @@ func TestEagerWorkflowDispatchAvailableWorker(t *testing.T) {
 
 	availableWorker := &eagerWorkerMock{
 		tryReserveSlotCallback: func() *SlotPermit { return &SlotPermit{} },
+		workerControlTaskQueue: "worker-control",
 	}
 	dispatcher.workersByTaskQueue["task-queue"] = map[eagerWorker]struct{}{
 		&eagerWorkerMock{
@@ -72,6 +78,7 @@ func TestEagerWorkflowDispatchAvailableWorker(t *testing.T) {
 	exec := dispatcher.applyToRequest(request)
 	require.Equal(t, exec.worker, availableWorker)
 	require.True(t, request.GetRequestEagerExecution())
+	require.Equal(t, "worker-control", request.WorkerControlTaskQueue)
 }
 
 func TestEagerWorkflowDispatchWithDeploymentOptions(t *testing.T) {

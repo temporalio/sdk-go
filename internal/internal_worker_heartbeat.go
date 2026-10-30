@@ -74,21 +74,22 @@ func (m *heartbeatManager) sharedNamespaceWorkerForLocked(namespace string) *sha
 		metricsHandler = metrics.NopHandler
 	}
 	hw = &sharedNamespaceWorker{
-		client:                        m.client,
-		namespace:                     namespace,
-		interval:                      m.interval,
-		workerCtx:                     workerCtx,
-		workerCtxCancel:               workerCtxCancel,
-		callbacks:                     make(map[string]func() *workerpb.WorkerHeartbeat),
-		heartbeatSuccessCallbacks:     make(map[string]func()),
-		activityCancellationCallbacks: newActivityCancellationCallbacks(),
-		workerControlTaskQueue:        controlTaskQueue,
-		workerInstanceKey:             uuid.NewString(),
-		metricsHandler:                metricsHandler,
-		stopC:                         make(chan struct{}),
-		stoppedC:                      make(chan struct{}),
-		logger:                        m.logger,
-		pollerGroups:                  newPollerGroupManager(newPollerGroupSnapshotStore()),
+		client:                             m.client,
+		namespace:                          namespace,
+		interval:                           m.interval,
+		workerCtx:                          workerCtx,
+		workerCtxCancel:                    workerCtxCancel,
+		callbacks:                          make(map[string]func() *workerpb.WorkerHeartbeat),
+		heartbeatSuccessCallbacks:          make(map[string]func()),
+		activityCancellationCallbacks:      newActivityCancellationCallbacks(),
+		workerControlTaskQueue:             controlTaskQueue,
+		workerInstanceKey:                  uuid.NewString(),
+		metricsHandler:                     metricsHandler,
+		stopC:                              make(chan struct{}),
+		stoppedC:                           make(chan struct{}),
+		logger:                             m.logger,
+		pollerGroups:                       newPollerGroupManager(newPollerGroupSnapshotStore()),
+		workflowTaskHeartbeatNotifications: &workflowTaskHeartbeatNotifications{},
 	}
 	m.workers[namespace] = hw
 	return hw
@@ -124,6 +125,9 @@ func (m *heartbeatManager) registerWorker(
 	if hw.started.CompareAndSwap(false, true) {
 		hw.workerCommandsSupported = nsData.capabilities.GetWorkerCommands()
 		hw.workerPollCompleteOnShutdown = nsData.capabilities.GetWorkerPollCompleteOnShutdown()
+		if hw.workflowTaskHeartbeatNotifications != nil {
+			hw.workflowTaskHeartbeatNotifications.commandWorkerEnabled.Store(hw.workerCommandsSupported)
+		}
 		go hw.run()
 	}
 
@@ -186,8 +190,9 @@ type sharedNamespaceWorker struct {
 	stopC chan struct{}
 	// stoppedC is created with stopC and closed by sharedNamespaceWorker.run()
 	// after the heartbeat loop exits. stop() waits on it before returning.
-	stoppedC chan struct{}
-	started  atomic.Bool
+	stoppedC                           chan struct{}
+	started                            atomic.Bool
+	workflowTaskHeartbeatNotifications *workflowTaskHeartbeatNotifications
 }
 
 // Only advertise the queue while its command poller is running.
@@ -200,6 +205,10 @@ func (hw *sharedNamespaceWorker) controlTaskQueue() string {
 
 func (hw *sharedNamespaceWorker) run() {
 	defer close(hw.stoppedC)
+	if hw.workflowTaskHeartbeatNotifications != nil {
+		// Stop advertising WHN if this worker exits on Unimplemented while workflow workers keep polling.
+		defer hw.workflowTaskHeartbeatNotifications.commandWorkerEnabled.Store(false)
+	}
 
 	if hw.workerCommandsSupported {
 		// Use a separate poll context so the server can finish in-flight polls after heartbeats stop.
@@ -415,6 +424,13 @@ func (hw *sharedNamespaceWorker) handleWorkerCommandTask(task *workflowservice.P
 	results := make([]*workerpb.WorkerCommandResult, 0, len(execReq.GetCommands()))
 	for _, command := range execReq.GetCommands() {
 		switch cmd := command.GetType().(type) {
+		case *workerpb.WorkerCommand_WorkflowTaskHeartbeatNotification:
+			outcome := hw.workflowTaskHeartbeatNotifications.notify(cmd.WorkflowTaskHeartbeatNotification.GetTaskToken())
+			results = append(results, &workerpb.WorkerCommandResult{
+				Type: &workerpb.WorkerCommandResult_WorkflowTaskHeartbeatNotification{
+					WorkflowTaskHeartbeatNotification: &workerpb.WorkflowTaskHeartbeatNotificationResult{Outcome: outcome},
+				},
+			})
 		case *workerpb.WorkerCommand_CancelActivity:
 			if cmd.CancelActivity != nil && hw.activityCancellationCallbacks != nil {
 				hw.activityCancellationCallbacks.cancel(cmd.CancelActivity.GetTaskToken())

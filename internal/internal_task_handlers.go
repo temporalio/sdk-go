@@ -126,29 +126,30 @@ type (
 
 	// workflowTaskHandlerImpl is the implementation of WorkflowTaskHandler
 	workflowTaskHandlerImpl struct {
-		namespace                 string
-		metricsHandler            metrics.Handler
-		ppMgr                     pressurePointMgr
-		logger                    log.Logger
-		identity                  string
-		workerBuildID             string
-		useBuildIDForVersioning   bool
-		workerDeploymentVersion   WorkerDeploymentVersion
-		defaultVersioningBehavior VersioningBehavior
-		preferredVersionProvider  PreferredVersionProvider
-		enableLoggingInReplay     bool
-		registry                  *registry
-		laTunnel                  *localActivityTunnel
-		workflowPanicPolicy       WorkflowPanicPolicy
-		dataConverter             converter.DataConverter
-		failureConverter          converter.FailureConverter
-		contextPropagators        []ContextPropagator
-		cache                     *WorkerCache
-		deadlockDetectionTimeout  time.Duration
-		capabilities              *workflowservice.GetSystemInfoResponse_Capabilities
-		namespaceWorker           *sharedNamespaceWorker
-		sdkName                   string
-		sdkVersion                string
+		namespace                          string
+		metricsHandler                     metrics.Handler
+		ppMgr                              pressurePointMgr
+		logger                             log.Logger
+		identity                           string
+		workerBuildID                      string
+		useBuildIDForVersioning            bool
+		workerDeploymentVersion            WorkerDeploymentVersion
+		defaultVersioningBehavior          VersioningBehavior
+		preferredVersionProvider           PreferredVersionProvider
+		enableLoggingInReplay              bool
+		registry                           *registry
+		laTunnel                           *localActivityTunnel
+		workflowPanicPolicy                WorkflowPanicPolicy
+		dataConverter                      converter.DataConverter
+		failureConverter                   converter.FailureConverter
+		contextPropagators                 []ContextPropagator
+		cache                              *WorkerCache
+		deadlockDetectionTimeout           time.Duration
+		capabilities                       *workflowservice.GetSystemInfoResponse_Capabilities
+		namespaceWorker                    *sharedNamespaceWorker
+		sdkName                            string
+		sdkVersion                         string
+		workflowTaskHeartbeatNotifications *workflowTaskHeartbeatNotifications
 	}
 
 	activityCancellationCallbacks struct {
@@ -596,28 +597,29 @@ func inferMessageFromAcceptedEvent(attrs *historypb.WorkflowExecutionUpdateAccep
 func newWorkflowTaskHandler(params workerExecutionParameters, ppMgr pressurePointMgr, registry *registry) WorkflowTaskHandler {
 	ensureRequiredParams(&params)
 	return &workflowTaskHandlerImpl{
-		namespace:                 params.Namespace,
-		logger:                    params.Logger,
-		ppMgr:                     ppMgr,
-		metricsHandler:            params.MetricsHandler,
-		identity:                  params.Identity,
-		workerBuildID:             params.getBuildID(),
-		useBuildIDForVersioning:   params.UseBuildIDForVersioning,
-		workerDeploymentVersion:   params.DeploymentOptions.Version,
-		defaultVersioningBehavior: params.DeploymentOptions.DefaultVersioningBehavior,
-		preferredVersionProvider:  params.PreferredVersionProvider,
-		enableLoggingInReplay:     params.EnableLoggingInReplay,
-		registry:                  registry,
-		workflowPanicPolicy:       params.WorkflowPanicPolicy,
-		dataConverter:             params.DataConverter,
-		failureConverter:          params.FailureConverter,
-		contextPropagators:        params.ContextPropagators,
-		cache:                     params.cache,
-		deadlockDetectionTimeout:  params.DeadlockDetectionTimeout,
-		capabilities:              params.capabilities,
-		namespaceWorker:           params.namespaceWorker,
-		sdkName:                   cmp.Or(params.sdkName, SDKName),
-		sdkVersion:                cmp.Or(params.sdkVersion, SDKVersion),
+		namespace:                          params.Namespace,
+		logger:                             params.Logger,
+		ppMgr:                              ppMgr,
+		metricsHandler:                     params.MetricsHandler,
+		identity:                           params.Identity,
+		workerBuildID:                      params.getBuildID(),
+		useBuildIDForVersioning:            params.UseBuildIDForVersioning,
+		workerDeploymentVersion:            params.DeploymentOptions.Version,
+		defaultVersioningBehavior:          params.DeploymentOptions.DefaultVersioningBehavior,
+		preferredVersionProvider:           params.PreferredVersionProvider,
+		enableLoggingInReplay:              params.EnableLoggingInReplay,
+		registry:                           registry,
+		workflowPanicPolicy:                params.WorkflowPanicPolicy,
+		dataConverter:                      params.DataConverter,
+		failureConverter:                   params.FailureConverter,
+		contextPropagators:                 params.ContextPropagators,
+		cache:                              params.cache,
+		deadlockDetectionTimeout:           params.DeadlockDetectionTimeout,
+		capabilities:                       params.capabilities,
+		namespaceWorker:                    params.namespaceWorker,
+		sdkName:                            cmp.Or(params.sdkName, SDKName),
+		sdkVersion:                         cmp.Or(params.sdkVersion, SDKVersion),
+		workflowTaskHeartbeatNotifications: params.workflowTaskHeartbeatNotifications,
 	}
 }
 
@@ -974,12 +976,16 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(
 	})
 
 	var (
-		response       *workflowTaskCompletion
-		err            error
-		heartbeatTimer *time.Timer
+		response            *workflowTaskCompletion
+		err                 error
+		heartbeatTimer      *time.Timer
+		unregisterHeartbeat func()
 	)
 
 	defer func() {
+		if unregisterHeartbeat != nil {
+			unregisterHeartbeat()
+		}
 		if heartbeatTimer != nil {
 			heartbeatTimer.Stop()
 		}
@@ -988,6 +994,11 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(
 processWorkflowLoop:
 	for {
 		startTime := time.Now()
+		var heartbeatNotification <-chan struct{}
+		// Query marks a standalone query task, which cannot heartbeat; Queries can accompany a normal WFT.
+		if workflowTask.task.Query == nil {
+			heartbeatNotification, unregisterHeartbeat = wth.workflowTaskHeartbeatNotifications.register(workflowTask.task.TaskToken)
+		}
 		response, err = workflowContext.ProcessWorkflowTask(workflowTask)
 		if err == nil && response == nil {
 		waitLocalActivityLoop:
@@ -1012,6 +1023,7 @@ processWorkflowLoop:
 							// no need for LA heartbeat
 							return
 						default:
+							unregisterHeartbeat()
 							// force complete, call the workflow task heartbeat function
 							workflowTask, err = heartbeatFunc(
 								workflowContext.CompleteWorkflowTask(workflowTask, false),
@@ -1034,6 +1046,11 @@ processWorkflowLoop:
 					}
 
 					select {
+					case <-heartbeatNotification:
+						// Reuse the timed heartbeat path for completion and shutdown handling.
+						delayDuration = 0
+						continue heartbeatLoop
+
 					case <-heartbeatTimer.C:
 						delayDuration = 0
 						continue heartbeatLoop
