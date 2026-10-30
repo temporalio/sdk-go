@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 	enumspb "go.temporal.io/api/enums/v1"
+	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/converter"
@@ -32,6 +33,11 @@ type SystemNexusTestSuite struct {
 	ConfigAndClientSuiteBase
 	worker      worker.Worker
 	interceptor *systemNexusTestInterceptor
+	// workflowIDs is a list of workflow IDs created during the test.
+	// We store them so we can terminate the workflows in TearDownTest.
+	workflowIDs []string
+	// uuid is a unique ID for each test.
+	uuid string
 }
 
 func TestSystemNexusSuite(t *testing.T) {
@@ -60,6 +66,8 @@ func (ts *SystemNexusTestSuite) SetupSuite() {
 
 func (ts *SystemNexusTestSuite) SetupTest() {
 	ts.Assertions = require.New(ts.T())
+	ts.workflowIDs = nil
+	ts.uuid = uuid.NewString()
 	worker.SetStickyWorkflowCacheSize(ts.config.maxWorkflowCacheSize)
 	ts.taskQueueName = taskQueuePrefix + "-" + ts.T().Name()
 	ts.interceptor = &systemNexusTestInterceptor{}
@@ -78,7 +86,22 @@ func (ts *SystemNexusTestSuite) SetupTest() {
 	ts.NoError(ts.worker.Start())
 }
 
+func (ts *SystemNexusTestSuite) workflowID(role string) string {
+	id := ts.T().Name() + "-" + role + "-" + ts.uuid
+	ts.workflowIDs = append(ts.workflowIDs, id)
+	return id
+}
+
 func (ts *SystemNexusTestSuite) TearDownTest() {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ts.T().Context()), ctxTimeout)
+	defer cancel()
+	for _, id := range ts.workflowIDs {
+		err := ts.client.TerminateWorkflow(ctx, id, "", "test cleanup")
+		var notFound *serviceerror.NotFound
+		if err != nil && !errors.As(err, &notFound) {
+			ts.T().Errorf("terminate workflow %q during test cleanup: %v", id, err)
+		}
+	}
 	if ts.worker != nil {
 		ts.worker.Stop()
 		ts.worker = nil
@@ -360,9 +383,8 @@ func (ts *SystemNexusTestSuite) TestWorkflowSignalWithStart() {
 	ctx, cancel := context.WithTimeout(ts.T().Context(), 30*time.Second)
 	defer cancel()
 
-	id := uuid.NewString()
-	callerID := ts.T().Name() + "-caller-" + id
-	calleeID := ts.T().Name() + "-callee-" + id
+	callerID := ts.workflowID("caller")
+	calleeID := ts.workflowID("callee")
 	numCalls := 5
 
 	// The responses from each call are written into the responses array.
@@ -402,9 +424,8 @@ func (ts *SystemNexusTestSuite) TestWorkflowSignalWithStartEncodingFailure() {
 			ctx, cancel := context.WithTimeout(ts.T().Context(), 30*time.Second)
 			defer cancel()
 
-			id := uuid.NewString()
-			callerID := ts.T().Name() + "-caller-" + id
-			calleeID := ts.T().Name() + "-callee-" + id
+			callerID := ts.workflowID("caller")
+			calleeID := ts.workflowID("callee")
 			err := ts.executeWorkflow(executeWorkflowParams{
 				ID:       callerID,
 				Workflow: SignalAndStartWithEncodingFailure,
@@ -422,9 +443,8 @@ func (ts *SystemNexusTestSuite) TestWorkflowSignalWithStartContextPropagation() 
 	ctx, cancel := context.WithTimeout(ts.T().Context(), 30*time.Second)
 	defer cancel()
 
-	id := uuid.NewString()
-	callerID := ts.T().Name() + "-caller-" + id
-	calleeID := ts.T().Name() + "-callee-" + id
+	callerID := ts.workflowID("caller")
+	calleeID := ts.workflowID("callee")
 	value := "from caller"
 	var calleeRunID string
 	ts.NoError(ts.executeWorkflow(executeWorkflowParams{
@@ -452,20 +472,13 @@ func (ts *SystemNexusTestSuite) TestWorkflowSignalWithStartPropagatorError() {
 	ctx, cancel := context.WithTimeout(ts.T().Context(), 30*time.Second)
 	defer cancel()
 
-	id := uuid.NewString()
-	callerID := ts.T().Name() + "-caller-" + id
-	calleeID := ts.T().Name() + "-callee-" + id
-	var calleeRunID string
+	callerID := ts.workflowID("caller")
+	calleeID := ts.workflowID("callee")
 	err := ts.executeWorkflow(executeWorkflowParams{
 		ID:       callerID,
 		Workflow: SignalAndStartWithPropagationFailure,
 		Args:     []any{calleeID},
-		Result:   &calleeRunID,
 	})
-	if err == nil {
-		// Clean up the callee even when missing propagation makes the call succeed.
-		ts.NoError(ts.client.GetWorkflow(ctx, calleeID, calleeRunID).Get(ctx, nil))
-	}
 	ts.ErrorContains(err, "context injection failed")
 	ts.assertNoScheduledNexusOperation(ctx, callerID)
 }
@@ -477,9 +490,8 @@ func (ts *SystemNexusTestSuite) TestWorkflowSignalWithStartInterceptors() {
 	ctx, cancel := context.WithTimeout(ts.T().Context(), 30*time.Second)
 	defer cancel()
 
-	id := uuid.NewString()
-	callerID := ts.T().Name() + "-caller-" + id
-	calleeID := ts.T().Name() + "-callee-" + id
+	callerID := ts.workflowID("caller")
+	calleeID := ts.workflowID("callee")
 	var calleeRunID string
 	ts.NoError(ts.executeWorkflow(executeWorkflowParams{
 		ID:       callerID,
@@ -501,9 +513,8 @@ func (ts *SystemNexusTestSuite) TestWorkflowSignalWithStartWithLotsOfOptions() {
 	ctx, cancel := context.WithTimeout(ts.T().Context(), 30*time.Second)
 	defer cancel()
 
-	id := uuid.NewString()
-	callerID := ts.T().Name() + "-caller-" + id
-	calleeID := ts.T().Name() + "-callee-" + id
+	callerID := ts.workflowID("caller")
+	calleeID := ts.workflowID("callee")
 	options := LotsOfOptions{
 		ID:                       calleeID,
 		TaskQueue:                ts.taskQueueName,
@@ -580,18 +591,14 @@ func (ts *SystemNexusTestSuite) TestWorkflowSignalWithStartWithCron() {
 	ctx, cancel := context.WithTimeout(ts.T().Context(), 30*time.Second)
 	defer cancel()
 
-	id := uuid.NewString()
-	callerID := ts.T().Name() + "-caller-" + id
-	calleeID := ts.T().Name() + "-callee-" + id
+	callerID := ts.workflowID("caller")
+	calleeID := ts.workflowID("callee")
 
 	ts.NoError(ts.executeWorkflow(executeWorkflowParams{
 		ID:       callerID,
 		Workflow: SignalAndStartWithCron,
 		Args:     []any{calleeID},
 	}))
-	defer func() {
-		ts.NoError(ts.client.TerminateWorkflow(ctx, calleeID, "", "test cleanup"))
-	}()
 
 	request := ts.signalWithStartRequestFromHistory(ctx, callerID)
 	ts.Equal("@every 1s", request.GetCronSchedule())
