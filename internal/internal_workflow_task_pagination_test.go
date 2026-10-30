@@ -103,10 +103,12 @@ func TestPaginateWorkflowTaskCompletion_NoCommandsIsNotSplit(t *testing.T) {
 	require.Same(t, request, final)
 }
 
+// paginationTestCommandCount is the fewest 1 MiB commands that split into two intermediate pages:
+// three fit under maxWorkflowTaskCompletionPageBytes (3.5 MiB) and the fourth starts a second page.
+// Two pages are needed so one page can fail while another is still in flight.
 const paginationTestCommandCount = 4
 
-// oversizedPaginationTestRequest returns a completion over maxWorkflowTaskCompletionPageBytes, so it
-// is split into at least two intermediate pages.
+// oversizedPaginationTestRequest returns a completion that is split into two intermediate pages.
 func oversizedPaginationTestRequest() *workflowservice.RespondWorkflowTaskCompletedRequest {
 	var commands []*commandpb.Command
 	for range paginationTestCommandCount {
