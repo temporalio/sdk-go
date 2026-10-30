@@ -1280,7 +1280,7 @@ func (ae *activityExecutor) Execute(ctx context.Context, input *commonpb.Payload
 }
 
 func (ae *activityExecutor) ExecuteWithActualArgs(ctx context.Context, args []any) (*commonpb.Payloads, error) {
-	dataConverter := resultDataConverterFromActivityCtx(ctx)
+	dataConverter := callerFacingDataConverterFromActivityCtx(ctx)
 
 	envInterceptor := getActivityEnvironmentInterceptor(ctx)
 	envInterceptor.fn = ae.fn
@@ -1317,11 +1317,12 @@ func getDataConverterFromActivityCtx(ctx context.Context) converter.DataConverte
 	return WithContext(ctx, dataConverter)
 }
 
-// resultDataConverterFromActivityCtx returns the data converter for the activity's result, which is
-// forwarded to the Nexus caller when the activity was started by a Nexus handler. See serializationContextFor.
-func resultDataConverterFromActivityCtx(ctx context.Context) converter.DataConverter {
-	if env := getActivityEnvironmentFromCtx(ctx); env != nil && env.resultDataConverter != nil {
-		return WithContext(ctx, env.resultDataConverter)
+// callerFacingDataConverterFromActivityCtx returns the data converter for payloads that may reach the Nexus
+// caller when the activity was started by a Nexus handler. This includes heartbeat details, since the server
+// includes the last ones in timeout failures. See serializationContextFor.
+func callerFacingDataConverterFromActivityCtx(ctx context.Context) converter.DataConverter {
+	if env := getActivityEnvironmentFromCtx(ctx); env != nil && env.callerFacingDataConverter != nil {
+		return WithContext(ctx, env.callerFacingDataConverter)
 	}
 	return getDataConverterFromActivityCtx(ctx)
 }
