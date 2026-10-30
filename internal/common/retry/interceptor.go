@@ -12,6 +12,7 @@ import (
 	"github.com/grpc-ecosystem/go-grpc-middleware/v2/util/backoffutils"
 	errordetailspb "go.temporal.io/api/errordetails/v1"
 	"go.temporal.io/api/serviceerror"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -63,7 +64,7 @@ func (g *GrpcRetryConfig) SetBackoffCoefficient(backoffCoefficient float64) {
 	g.backoffCoefficient = backoffCoefficient
 }
 
-// SetMaximumInterval defines maximum amount of time between attempts.
+// SetMaximumInterval caps the client backoff. A server RetryInfo delay can exceed this interval.
 func (g *GrpcRetryConfig) SetMaximumInterval(maximumInterval time.Duration) {
 	g.maximumInterval = maximumInterval
 }
@@ -114,9 +115,11 @@ var (
 // NewRetryOptionsInterceptor creates a new gRPC interceptor that populates retry options for each call based on values
 // provided in the context. The atomic bool is checked each call to determine whether internals are included in retry.
 // If not present or false, internals are assumed to be included.
+// A positive google.rpc.RetryInfo delay on ResourceExhausted errors floors the next backoff.
 func NewRetryOptionsInterceptor(excludeInternal *atomic.Bool) grpc.UnaryClientInterceptor {
 	return func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		if rc, ok := ctx.Value(ConfigKey).(*GrpcRetryConfig); ok {
+			var retryDelayFloor time.Duration
 			if _, ok := ctx.Deadline(); !ok {
 				deadlineCtx, cancel := context.WithDeadline(ctx, time.Now().Add(rc.expirationInterval))
 				defer cancel()
@@ -128,7 +131,9 @@ func NewRetryOptionsInterceptor(excludeInternal *atomic.Bool) grpc.UnaryClientIn
 				if rc.maximumInterval != UnlimitedInterval {
 					next = math.Min(next, float64(rc.maximumInterval))
 				}
-				return backoffutils.JitterUp(time.Duration(next), rc.jitter)
+				delay := max(backoffutils.JitterUp(time.Duration(next), rc.jitter), retryDelayFloor)
+				retryDelayFloor = 0
+				return delay
 			}))
 			// Max attempts is a required parameter in grpc retry interceptor,
 			// if it's set to zero then no retries will be made.
@@ -138,6 +143,7 @@ func NewRetryOptionsInterceptor(excludeInternal *atomic.Bool) grpc.UnaryClientIn
 				opts = append(opts, grpc_retry.WithMax(math.MaxUint32))
 			}
 			opts = append(opts, grpc_retry.WithRetriable(func(err error) bool {
+				retryDelayFloor = resourceExhaustedRetryDelayFloor(err)
 				return IsRetryable(err, excludeInternal)
 			}))
 		} else {
@@ -146,6 +152,25 @@ func NewRetryOptionsInterceptor(excludeInternal *atomic.Bool) grpc.UnaryClientIn
 		}
 		return invoker(ctx, method, req, reply, cc, opts...)
 	}
+}
+
+func resourceExhaustedRetryDelayFloor(err error) time.Duration {
+	grpcStatus := status.Convert(err)
+	if grpcStatus == nil || grpcStatus.Code() != codes.ResourceExhausted {
+		return 0
+	}
+
+	var floor time.Duration
+	for _, detail := range grpcStatus.Details() {
+		retryInfo, ok := detail.(*errdetails.RetryInfo)
+		if !ok || retryInfo.GetRetryDelay() == nil || retryInfo.GetRetryDelay().CheckValid() != nil {
+			continue
+		}
+		if delay := retryInfo.GetRetryDelay().AsDuration(); delay > floor {
+			floor = delay
+		}
+	}
+	return floor
 }
 
 func IsRetryable(err error, excludeInternalFromRetry *atomic.Bool) bool {
