@@ -11,6 +11,11 @@ or Security.
 
 ## [Unreleased]
 
+### Added
+
+- `tracing.TracerOptions.EncodeHeaders` opts tracing headers into processing using the configured
+  client's payload codec. Defaults to false; application-supplied headers are unchanged.
+
 ### Fixed
 
 - `DisableUpdateTracing` now disables Datadog update spans.

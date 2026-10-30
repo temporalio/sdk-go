@@ -12,6 +12,7 @@ import (
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/interceptor"
+	"go.temporal.io/sdk/internal"
 	"go.temporal.io/sdk/log"
 	"go.temporal.io/sdk/workflow"
 )
@@ -102,6 +103,12 @@ type TracerOptions struct {
 	// HeaderKey is the key name on the Temporal header to serialize the span to.
 	// This should never be empty.
 	HeaderKey string
+
+	// EncodeHeaders uses the configured client's payload codec for this
+	// integration's tracing headers. Defaults to false. Standard tracing
+	// serialization is unchanged; other producers' headers are not encoded.
+	// Configure the same setting on receiving workers.
+	EncodeHeaders bool
 
 	// AddTemporalSpans is whether to create Temporal-specific spans for
 	// operations such as StartWorkflow, RunWorkflow, and RunActivity. When
@@ -503,7 +510,7 @@ func (t *tracingWorkflowInboundInterceptor) ExecuteWorkflow(
 		Operation: "RunWorkflow",
 		Name:      info.WorkflowType.Name,
 		Tags:      workflowTags(info),
-	}, t.root.workflowHeaderReader(t.root.workflowTracer, ctx))
+	}, t.root.headerReader(t.root.workflowTracer, ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -523,7 +530,7 @@ func (t *tracingWorkflowInboundInterceptor) HandleSignal(ctx workflow.Context, i
 		Operation: "HandleSignal",
 		Name:      in.SignalName,
 		Tags:      workflowTags(info),
-	}, t.root.workflowHeaderReader(t.root.workflowTracer, ctx))
+	}, t.root.headerReader(t.root.workflowTracer, ctx))
 	if err != nil {
 		return err
 	}
@@ -541,7 +548,7 @@ func (t *tracingWorkflowInboundInterceptor) HandleQuery(
 		Operation: "HandleQuery",
 		Name:      in.QueryType,
 		Tags:      workflowTags(info),
-	}, t.root.workflowHeaderReader(t.root.workflowTracer, ctx))
+	}, t.root.headerReader(t.root.workflowTracer, ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -560,7 +567,7 @@ func (t *tracingWorkflowInboundInterceptor) ValidateUpdate(
 		Operation: "ValidateUpdate",
 		Name:      in.Name,
 		Tags:      workflowTagsWithUpdate(info, currentUpdateInfo.ID),
-	}, t.root.workflowHeaderReader(t.root.workflowTracer, ctx))
+	}, t.root.headerReader(t.root.workflowTracer, ctx))
 	if err != nil {
 		return err
 	}
@@ -579,7 +586,7 @@ func (t *tracingWorkflowInboundInterceptor) ExecuteUpdate(
 		Operation: "HandleUpdate",
 		Name:      in.Name,
 		Tags:      workflowTagsWithUpdate(info, currentUpdateInfo.ID),
-	}, t.root.workflowHeaderReader(t.root.workflowTracer, ctx))
+	}, t.root.headerReader(t.root.workflowTracer, ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -604,7 +611,7 @@ func (t *tracingWorkflowOutboundInterceptor) ExecuteActivity(
 		Name:       activityType,
 		Tags:       workflowTags(info),
 		DependedOn: true,
-	}, t.root.workflowHeaderWriter(t.root.workflowTracer, ctx))
+	}, t.root.headerWriter(t.root.workflowTracer, ctx))
 	if err != nil {
 		return workflowFutureFromErr(ctx, err)
 	}
@@ -624,7 +631,7 @@ func (t *tracingWorkflowOutboundInterceptor) ExecuteLocalActivity(
 		Name:       activityType,
 		Tags:       workflowTags(info),
 		DependedOn: true,
-	}, t.root.workflowHeaderWriter(t.root.workflowTracer, ctx))
+	}, t.root.headerWriter(t.root.workflowTracer, ctx))
 	if err != nil {
 		return workflowFutureFromErr(ctx, err)
 	}
@@ -650,7 +657,7 @@ func (t *tracingWorkflowOutboundInterceptor) ExecuteChildWorkflow(
 		Operation: "StartChildWorkflow",
 		Name:      childWorkflowType,
 		Tags:      workflowTags(info),
-	}, t.root.workflowHeaderWriter(t.root.workflowTracer, ctx))
+	}, t.root.headerWriter(t.root.workflowTracer, ctx))
 	if err != nil {
 		return childWorkflowFuture{workflowFutureFromErr(ctx, err)}
 	}
@@ -671,7 +678,7 @@ func (t *tracingWorkflowOutboundInterceptor) SignalExternalWorkflow(
 		Operation: "SignalExternalWorkflow",
 		Name:      signalName,
 		Tags:      workflowTags(info),
-	}, t.root.workflowHeaderWriter(t.root.workflowTracer, ctx))
+	}, t.root.headerWriter(t.root.workflowTracer, ctx))
 	if err != nil {
 		return workflowFutureFromErr(ctx, err)
 	}
@@ -691,7 +698,7 @@ func (t *tracingWorkflowOutboundInterceptor) SignalChildWorkflow(
 		Operation: "SignalChildWorkflow",
 		Name:      signalName,
 		Tags:      workflowTags(info),
-	}, t.root.workflowHeaderWriter(t.root.workflowTracer, ctx))
+	}, t.root.headerWriter(t.root.workflowTracer, ctx))
 	if err != nil {
 		return workflowFutureFromErr(ctx, err)
 	}
@@ -733,7 +740,7 @@ func (t *tracingWorkflowOutboundInterceptor) NewContinueAsNewError(
 		Operation: "ContinueAsNew",
 		Name:      info.WorkflowType.Name,
 		Tags:      workflowTags(info),
-	}, t.root.workflowHeaderWriter(t.root.workflowTracer, ctx))
+	}, t.root.headerWriter(t.root.workflowTracer, ctx))
 	if err != nil {
 		return err
 	}
@@ -805,31 +812,30 @@ func (t *tracingNexusOperationInboundInterceptor) StartOperation(ctx context.Con
 	return t.Next.StartOperation(ctx, input)
 }
 
-func (t *tracingInterceptor) headerReader(tracer Tracer, ctx context.Context) func() (TracerSpanRef, error) {
-	header := interceptor.Header(ctx)
+func (t *tracingInterceptor) headerReader(tracer tracerCommon, ctx interface{ Value(any) any }) func() (TracerSpanRef, error) {
+	header := internal.Header(ctx)
 	return func() (TracerSpanRef, error) {
+		if tracer.Options().EncodeHeaders {
+			var err error
+			header, err = internal.DecodedHeader(ctx)
+			if err != nil {
+				return nil, err
+			}
+		}
 		return t.readSpanFromHeader(tracer, header)
 	}
 }
 
-func (t *tracingInterceptor) headerWriter(tracer Tracer, ctx context.Context) func(TracerSpanRef) error {
-	header := interceptor.Header(ctx)
+func (t *tracingInterceptor) headerWriter(tracer tracerCommon, ctx interface{ Value(any) any }) func(TracerSpanRef) error {
+	header := internal.Header(ctx)
 	return func(span TracerSpanRef) error {
-		return t.writeSpanToHeader(tracer, span, header)
-	}
-}
-
-func (t *tracingInterceptor) workflowHeaderReader(tracer WorkflowTracer, ctx workflow.Context) func() (TracerSpanRef, error) {
-	header := interceptor.WorkflowHeader(ctx)
-	return func() (TracerSpanRef, error) {
-		return t.readSpanFromHeader(tracer, header)
-	}
-}
-
-func (t *tracingInterceptor) workflowHeaderWriter(tracer WorkflowTracer, ctx workflow.Context) func(TracerSpanRef) error {
-	header := interceptor.WorkflowHeader(ctx)
-	return func(span TracerSpanRef) error {
-		return t.writeSpanToHeader(tracer, span, header)
+		if err := t.writeSpanToHeader(tracer, span, header); err != nil {
+			return err
+		}
+		if tracer.Options().EncodeHeaders {
+			internal.EncodeHeader(ctx, tracer.Options().HeaderKey)
+		}
+		return nil
 	}
 }
 

@@ -22,6 +22,10 @@ to docs, or any other relevant information.
 
 ### Added
 
+- Added opt-in `EncodeHeaders` tracing options and `workflow.CodecContextPropagator` for header
+  codec processing using the configured client's codec. Only opted-in producers' output is encoded;
+  user-supplied wire-ready headers are unchanged. Receiving consumers use private decoded views.
+  Custom converter wrappers can expose codec stages through `converter.PayloadCodecProvider`.
 - Added experimental `temporalnexus.ConvertLinkCallbackToNexusLink` and `temporalnexus.ConvertNexusLinkToLinkCallback`
   for converting `Link_Callback` to and from Nexus links.
 - Nexus handlers now propagate `NexusSerializationContext` to the workflows, workflow updates, and
@@ -62,6 +66,8 @@ to docs, or any other relevant information.
 - Fixed premature activity cancellation when a heartbeat RPC returns `DeadlineExceeded`.
   The SDK now preserves Temporal service error codes when deciding whether a heartbeat failure should cancel the activity.
 - Fixed concurrent dev-server CLI downloads failing on Windows when another process has already populated and started the cached executable.
+- Fixed a deadlock between data converter deadlock-detector pausing and workflow coroutine cleanup.
+- `workflow.DataConverterWithoutDeadlockDetection` now also exempts automatic header codec calls and their serialization-context binding from workflow deadlock detection.
 - `converter.NewRemotePayloadCodec` now handles endpoint URLs with trailing slashes.
 - Fixed race when using `log.With` without a `WithLogger` implementation, where logs could overwrite each others' buffers.
 - The default timeout for client and worker RPCs has been extended. Previously, the default timeout

@@ -196,6 +196,7 @@ type (
 		OnConflictOptions        *OnConflictOptions
 		DataConverter            converter.DataConverter
 		RootDataConverter        converter.DataConverter
+		headerCodec              converter.PayloadCodec
 		RetryPolicy              *commonpb.RetryPolicy
 		Priority                 *commonpb.Priority
 		CronSchedule             string
@@ -512,6 +513,7 @@ func newWorkflowContext(
 	ctx = WithTaskQueue(ctx, info.TaskQueueName)
 	ctx = WithDataConverter(ctx, env.GetDataConverter())
 	getWorkflowEnvOptions(ctx).RootDataConverter = rootDataConverterFromEnvironment(env)
+	getWorkflowEnvOptions(ctx).headerCodec = headerCodecFromDataConverter(getWorkflowEnvOptions(ctx).RootDataConverter)
 	ctx = withContextPropagators(ctx, env.GetContextPropagators())
 	getActivityOptions(ctx).OriginalTaskQueueName = info.TaskQueueName
 

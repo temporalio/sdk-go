@@ -2,6 +2,7 @@ package internal
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -40,6 +41,24 @@ func TestDeadlockDetector(t *testing.T) {
 			t.Fatal("deadlock timeout was not reached after resume")
 		}
 	})
+}
+
+func TestDeadlockDetectorConcurrentLifecycle(t *testing.T) {
+	d := newDeadlockDetector()
+	var wg sync.WaitGroup
+	for range 4 {
+		wg.Go(func() {
+			for range 1000 {
+				ticker := d.begin(time.Hour)
+				d.pause()
+				d.resume()
+				ticker.end()
+			}
+		})
+	}
+	wg.Wait()
+	require.Empty(t, d.tickers)
+	require.False(t, d.paused)
 }
 
 func TestDataConverterWithoutDeadlockDetection(t *testing.T) {
