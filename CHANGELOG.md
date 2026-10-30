@@ -55,6 +55,8 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- Fixed premature activity cancellation on internal heartbeat errors when using a client created
+  with `client.NewClientFromExisting` and the server supports internal error differentiation.
 - Fixed a data race between dynamic workflow factory re-registration and workflow definition lookup
   in workers and `TestWorkflowEnvironment`.
 - Fixed premature activity cancellation when a heartbeat RPC returns `DeadlineExceeded`.
