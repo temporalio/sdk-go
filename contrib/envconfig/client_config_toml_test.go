@@ -1,11 +1,12 @@
-package envconfig
+package envconfig_test
 
 import (
-	"reflect"
-	"strings"
+	"bytes"
 	"testing"
 
+	"github.com/BurntSushi/toml"
 	"github.com/stretchr/testify/require"
+	"go.temporal.io/sdk/contrib/envconfig"
 )
 
 func TestClientConfigTOMLFull(t *testing.T) {
@@ -30,8 +31,8 @@ server_ca_cert_data = "my-server-ca-cert-data"
 server_name = "my-server-name"
 disable_host_verification = true`
 
-	var conf ClientConfig
-	require.NoError(t, conf.FromTOML([]byte(data), ClientConfigFromTOMLOptions{}))
+	var conf envconfig.ClientConfig
+	require.NoError(t, conf.FromTOML([]byte(data), envconfig.ClientConfigFromTOMLOptions{}))
 	prof := conf.Profiles["foo"]
 	require.Equal(t, "my-address", prof.Address)
 	require.Equal(t, "my-namespace", prof.Namespace)
@@ -51,10 +52,10 @@ disable_host_verification = true`
 	require.Equal(t, map[string]string{"some-header-key": "some-value"}, prof.GRPCMeta)
 
 	// Back to toml and back to structure again, then deep equality check
-	b, err := conf.ToTOML(ClientConfigToTOMLOptions{})
+	b, err := conf.ToTOML(envconfig.ClientConfigToTOMLOptions{})
 	require.NoError(t, err)
-	var newConf ClientConfig
-	require.NoError(t, newConf.FromTOML(b, ClientConfigFromTOMLOptions{}))
+	var newConf envconfig.ClientConfig
+	require.NoError(t, newConf.FromTOML(b, envconfig.ClientConfigFromTOMLOptions{}))
 	require.Equal(t, conf, newConf)
 	// Sanity check that require.Equal actually does deep-equality
 	newConf.Profiles["foo"].Codec.Auth += "-dirty"
@@ -70,8 +71,8 @@ stuff = "does not matter"
 address = "my-address"
 some_future_key = "some value"`
 
-	var conf ClientConfig
-	err := conf.FromTOML([]byte(data), ClientConfigFromTOMLOptions{Strict: true})
+	var conf envconfig.ClientConfig
+	err := conf.FromTOML([]byte(data), envconfig.ClientConfigFromTOMLOptions{Strict: true})
 	require.ErrorContains(t, err, "unimportant.stuff")
 	require.ErrorContains(t, err, "profile.foo.some_future_key")
 }
@@ -85,8 +86,8 @@ api_key = "my-api-key"
 [profile.foo.tls]
 `
 
-	var conf ClientConfig
-	require.NoError(t, conf.FromTOML([]byte(data), ClientConfigFromTOMLOptions{}))
+	var conf envconfig.ClientConfig
+	require.NoError(t, conf.FromTOML([]byte(data), envconfig.ClientConfigFromTOMLOptions{}))
 	prof := conf.Profiles["foo"]
 	require.Empty(t, prof.Address)
 	require.Empty(t, prof.Namespace)
@@ -96,23 +97,23 @@ api_key = "my-api-key"
 	require.Zero(t, *prof.TLS)
 
 	// Back to toml and back to structure again, then deep equality check
-	b, err := conf.ToTOML(ClientConfigToTOMLOptions{})
+	b, err := conf.ToTOML(envconfig.ClientConfigToTOMLOptions{})
 	require.NoError(t, err)
-	var newConf ClientConfig
-	require.NoError(t, newConf.FromTOML(b, ClientConfigFromTOMLOptions{}))
+	var newConf envconfig.ClientConfig
+	require.NoError(t, newConf.FromTOML(b, envconfig.ClientConfigFromTOMLOptions{}))
 	require.Equal(t, conf, newConf)
 }
 
 func TestClientConfigTOMLEmpty(t *testing.T) {
-	var conf ClientConfig
-	require.NoError(t, conf.FromTOML(nil, ClientConfigFromTOMLOptions{}))
+	var conf envconfig.ClientConfig
+	require.NoError(t, conf.FromTOML(nil, envconfig.ClientConfigFromTOMLOptions{}))
 	require.Empty(t, conf.Profiles)
 
 	// Back to toml and back to structure again, then deep equality check
-	b, err := conf.ToTOML(ClientConfigToTOMLOptions{})
+	b, err := conf.ToTOML(envconfig.ClientConfigToTOMLOptions{})
 	require.NoError(t, err)
-	var newConf ClientConfig
-	require.NoError(t, newConf.FromTOML(b, ClientConfigFromTOMLOptions{}))
+	var newConf envconfig.ClientConfig
+	require.NoError(t, newConf.FromTOML(b, envconfig.ClientConfigFromTOMLOptions{}))
 	require.Equal(t, conf, newConf)
 }
 
@@ -135,11 +136,28 @@ key3 = "value3"
 
 [profile.bar]
 address = "bar-address"
-custom_field = true`
+custom_field = true
+primitive_list = []
 
-	var conf ClientConfig
+[profile.bar.tls]
+disabled = false
+custom_field = "preserved"
+
+[profile.bar.tls.custom_nested]
+key1 = "value1"
+
+[[profile.baz.list]]
+# Empty
+
+[[profile.baz.list]]
+key1 = "value1"
+
+[[profile.baz.list]]
+key2 = "value2"`
+
+	var conf envconfig.ClientConfig
 	additional := make(map[string]map[string]any)
-	require.NoError(t, conf.FromTOML([]byte(data), ClientConfigFromTOMLOptions{
+	require.NoError(t, conf.FromTOML([]byte(data), envconfig.ClientConfigFromTOMLOptions{
 		AdditionalProfileFields: additional,
 	}))
 
@@ -152,6 +170,7 @@ custom_field = true`
 	require.Equal(t, "custom-value", additional["foo"]["custom_field"])
 	require.Equal(t, int64(42), additional["foo"]["custom_field2"])
 	require.Equal(t, true, additional["bar"]["custom_field"])
+	require.Equal(t, []any{}, additional["bar"]["primitive_list"])
 
 	// Verify deeply nested additional fields are preserved
 	customNested, ok := additional["foo"]["custom_nested"].(map[string]any)
@@ -166,14 +185,31 @@ custom_field = true`
 	require.True(t, ok, "custom_nested.deep.deeper should be a map")
 	require.Equal(t, "value3", deeper["key3"])
 
+	// verify additional fields can be nested in known structures
+	customizedTLS, ok := additional["bar"]["tls"].(map[string]any)
+	require.True(t, ok, "customized tls config should be a map")
+	require.Equal(t, "preserved", customizedTLS["custom_field"])
+
+	tlsNested, ok := customizedTLS["custom_nested"].(map[string]any)
+	require.True(t, ok, "custom sections under a known section should be a map")
+	require.Equal(t, "value1", tlsNested["key1"])
+
+	require.Equal(t, false, conf.Profiles["bar"].TLS.Disabled)
+	_, ok = customizedTLS["disabled"]
+	require.False(t, ok, "customized sections should not include recognized fields")
+
+	customList, ok := additional["baz"]["list"].([]map[string]any)
+	require.True(t, ok, "custom lists should be a list of maps")
+	require.Equal(t, []map[string]any{{}, {"key1": "value1"}, {"key2": "value2"}}, customList)
+
 	// Back to TOML and back to structure again, then deep equality check
-	b, err := conf.ToTOML(ClientConfigToTOMLOptions{
+	b, err := conf.ToTOML(envconfig.ClientConfigToTOMLOptions{
 		AdditionalProfileFields: additional,
 	})
 	require.NoError(t, err)
-	var newConf ClientConfig
+	var newConf envconfig.ClientConfig
 	newAdditional := make(map[string]map[string]any)
-	require.NoError(t, newConf.FromTOML(b, ClientConfigFromTOMLOptions{
+	require.NoError(t, newConf.FromTOML(b, envconfig.ClientConfigFromTOMLOptions{
 		AdditionalProfileFields: newAdditional,
 	}))
 	require.Equal(t, conf, newConf)
@@ -181,32 +217,34 @@ custom_field = true`
 }
 
 func TestClientConfigTOMLAdditionalProfileFieldsConflict(t *testing.T) {
-	conf := ClientConfig{
-		Profiles: map[string]*ClientConfigProfile{
+	conf := envconfig.ClientConfig{
+		Profiles: map[string]*envconfig.ClientConfigProfile{
 			"foo": {Address: "my-address"},
 		},
 	}
 
 	// Attempt to write with an additional field that conflicts with a known field
-	_, err := conf.ToTOML(ClientConfigToTOMLOptions{
+	_, err := conf.ToTOML(envconfig.ClientConfigToTOMLOptions{
 		AdditionalProfileFields: map[string]map[string]any{
 			"foo": {"address": "conflict"},
 		},
 	})
-	require.ErrorContains(t, err, "additional field \"address\" in profile \"foo\" conflicts with known profile field")
+	require.ErrorContains(t, err, "additional field(s) profile.foo.address conflict with known profile fields")
 }
 
-func TestKnownProfileKeysInSync(t *testing.T) {
-	// Extract keys from tomlClientConfigProfile's TOML tags using reflection
-	expected := make(map[string]bool)
-	typ := reflect.TypeFor[tomlClientConfigProfile]()
-	for field := range typ.Fields() {
-		tag := field.Tag.Get("toml")
-		if key, _, _ := strings.Cut(tag, ","); key != "" {
-			expected[key] = true
-		}
-	}
+func TestClientConfigTOMLAdditionalProfileFieldsMarshalLikeRaw(t *testing.T) {
+	var blankConfig envconfig.ClientConfig
+	additional := map[string]map[string]any{"foo": {
+		"empty_ints":     []int{},
+		"empty_maps":     []map[string]any{},
+		"populated_ints": []int{1, 2, 3},
+		"populated_maps": []map[string]any{{}, {"a": "A"}},
+	}}
 
-	require.Equal(t, expected, knownProfileKeys,
-		"knownProfileKeys must match tomlClientConfigProfile's TOML tags")
+	tomlFromConfig, err := blankConfig.ToTOML(envconfig.ClientConfigToTOMLOptions{AdditionalProfileFields: additional})
+	require.NoError(t, err)
+	var buf bytes.Buffer
+	err = toml.NewEncoder(&buf).Encode(map[string]any{"profile": additional})
+	require.NoError(t, err)
+	require.Equal(t, buf.Bytes(), tomlFromConfig)
 }
