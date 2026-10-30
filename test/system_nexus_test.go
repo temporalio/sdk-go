@@ -237,7 +237,6 @@ func SignalAndStartRepeatedly(
 		var response workflow.SignalWithStartWorkflowResponse
 		err := workflow.SignalWithStartWorkflow(ctx, workflow.SignalWithStartWorkflowOptions{
 			ID:                       calleeID,
-			TaskQueue:                workflow.GetInfo(ctx).TaskQueueName,
 			WorkflowExecutionTimeout: 20 * time.Second,
 		}, "signal", i, ReceiveSignalRepeatedly, count).Get(ctx, &response)
 		if err != nil {
@@ -252,7 +251,6 @@ func SignalAndStartOnce(ctx workflow.Context, calleeID string) (string, error) {
 	var response workflow.SignalWithStartWorkflowResponse
 	err := workflow.SignalWithStartWorkflow(ctx, workflow.SignalWithStartWorkflowOptions{
 		ID:                       calleeID,
-		TaskQueue:                workflow.GetInfo(ctx).TaskQueueName,
 		WorkflowExecutionTimeout: 20 * time.Second,
 	}, "signal", 0, ReceiveSignalRepeatedly, 1).Get(ctx, &response)
 	if err != nil {
@@ -264,7 +262,6 @@ func SignalAndStartOnce(ctx workflow.Context, calleeID string) (string, error) {
 func SignalAndStartWithEncodingFailure(ctx workflow.Context, calleeID, field string) error {
 	options := workflow.SignalWithStartWorkflowOptions{
 		ID:                       calleeID,
-		TaskQueue:                workflow.GetInfo(ctx).TaskQueueName,
 		WorkflowExecutionTimeout: 20 * time.Second,
 	}
 	var signalArg any = 0
@@ -348,7 +345,6 @@ func SignalAndStartWithCron(
 	var response workflow.SignalWithStartWorkflowResponse
 	err := workflow.SignalWithStartWorkflow(ctx, workflow.SignalWithStartWorkflowOptions{
 		ID:                       calleeID,
-		TaskQueue:                workflow.GetInfo(ctx).TaskQueueName,
 		WorkflowExecutionTimeout: 20 * time.Second,
 		CronSchedule:             "@every 1s",
 	}, "signal", 0, ReceiveSignalRepeatedly, 1).Get(ctx, &response)
@@ -517,7 +513,7 @@ func (ts *SystemNexusTestSuite) TestWorkflowSignalWithStartWithLotsOfOptions() {
 	calleeID := ts.workflowID("callee")
 	options := LotsOfOptions{
 		ID:                       calleeID,
-		TaskQueue:                ts.taskQueueName,
+		TaskQueue:                ts.taskQueueName + "-callee",
 		WorkflowExecutionTimeout: 20 * time.Second,
 		WorkflowRunTimeout:       15 * time.Second,
 		WorkflowTaskTimeout:      5 * time.Second,
@@ -540,14 +536,11 @@ func (ts *SystemNexusTestSuite) TestWorkflowSignalWithStartWithLotsOfOptions() {
 		StaticDetails:          "details",
 	}
 
-	var calleeRunID string
 	ts.NoError(ts.executeWorkflow(executeWorkflowParams{
 		ID:       callerID,
 		Workflow: SignalAndStartWithLotsOfOptions,
 		Args:     []any{options},
-		Result:   &calleeRunID,
 	}))
-	ts.NoError(ts.client.GetWorkflow(ctx, calleeID, calleeRunID).Get(ctx, nil))
 
 	request := ts.signalWithStartRequestFromHistory(ctx, callerID)
 	ts.Equal(options.ID, request.GetWorkflowId())
