@@ -1310,9 +1310,18 @@ func (w *workflowExecutionContextImpl) applyWorkflowPanicPolicy(workflowTask *wo
 	task := workflowTask.task
 
 	if workflowError == nil && w.err != nil {
+		// Checked before the panic policy so both policies fail the task.
+		if codecErr, ok := codecWorkflowTaskFailureFrom(w.err); ok {
+			return nil, codecErr
+		}
 		if panicErr, ok := w.err.(*workflowPanicError); ok {
 			workflowError = panicErr
 		}
+	}
+
+	// Local activity result processing errors arrive as workflowError.
+	if codecErr, ok := codecWorkflowTaskFailureFrom(workflowError); ok {
+		return nil, codecErr
 	}
 
 	if workflowError != nil {
@@ -1349,6 +1358,11 @@ func (w *workflowExecutionContextImpl) applyWorkflowPanicPolicy(workflowTask *wo
 		}
 	}
 
+	return w.completeWorkflowTaskOrCodecFailure(workflowTask)
+}
+
+func (w *workflowExecutionContextImpl) completeWorkflowTaskOrCodecFailure(workflowTask *workflowTask) (completion *workflowTaskCompletion, err error) {
+	defer recoverCodecWorkflowTaskFailure(&err)
 	return w.CompleteWorkflowTask(workflowTask, true), nil
 }
 
