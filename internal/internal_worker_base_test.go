@@ -295,6 +295,44 @@ func (t *emptyTask) scaleDecision() (pollerScaleDecision, bool) {
 	return pollerScaleDecision{}, false
 }
 
+func (s *PollerAutoscalerSuite) TestScalingDecision() {
+	tests := []struct {
+		name           string
+		initial        int
+		delta          int
+		scaleUpAllowed bool
+		expected       int64
+	}{
+		{"scale_up_one", 5, 1, true, 6},
+		{"scale_up_multiple", 5, 3, true, 8},
+		{"scale_down_one", 5, -1, true, 4},
+		{"scale_down_multiple", 6, -3, true, 3},
+		{"scale_up_one_blocked", 5, 1, false, 5},
+		{"scale_up_multiple_blocked", 5, 3, false, 5},
+		{"scale_down_one_when_scale_up_blocked", 5, -1, false, 4},
+		{"scale_down_multiple_when_scale_up_blocked", 6, -3, false, 3},
+		{"clamp_to_maximum", 5, 20, true, 10},
+		{"clamp_to_minimum", 5, -20, true, 2},
+		{"at_maximum", 10, 1, true, 10},
+		{"at_minimum", 2, -1, true, 2},
+		{"zero", 5, 0, true, 5},
+	}
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			ps := newPollerAutoscaler(pollerAutoscalerOptions{
+				initialPollerCount: tt.initial,
+				minPollerCount:     2,
+				maxPollerCount:     10,
+			})
+			ps.scaleUpAllowed.Store(tt.scaleUpAllowed)
+
+			ps.handleTask(newTestTask(tt.delta))
+
+			s.Equal(tt.expected, ps.target.Load())
+		})
+	}
+}
+
 func (s *PollerAutoscalerSuite) TestErrorScaleDown() {
 	ps := newPollerAutoscaler(pollerAutoscalerOptions{
 		initialPollerCount: 8,
