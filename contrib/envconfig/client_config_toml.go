@@ -114,7 +114,6 @@ type ClientConfigFromTOMLOptions struct {
 // merging.
 func (c *ClientConfig) FromTOML(b []byte, options ClientConfigFromTOMLOptions) error {
 	var conf tomlClientConfig
-	clear(options.AdditionalProfileFields)
 	md, err := toml.Decode(string(b), &conf)
 	if err != nil {
 		return err
@@ -128,6 +127,8 @@ func (c *ClientConfig) FromTOML(b []byte, options ClientConfigFromTOMLOptions) e
 		}
 		return fmt.Errorf("key(s) unrecognized: %v", strings.Join(keys, ", "))
 	}
+
+	clear(options.AdditionalProfileFields)
 
 	// If AdditionalProfileFields is requested, extract unknown profile fields.
 	if options.AdditionalProfileFields != nil && len(undecoded) > 0 {
