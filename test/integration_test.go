@@ -232,6 +232,13 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		options.LocalActivityWorkerOnly = true
 	}
 
+	if strings.Contains(ts.T().Name(), "TestNumPollersCounter") {
+		// Explicit poller counts opt out of poller autoscaling auto-enrollment, which namespaces
+		// with the PollerAutoscalingAutoEnroll capability apply to pollers left at their defaults.
+		options.MaxConcurrentWorkflowTaskPollers = 2
+		options.MaxConcurrentActivityTaskPollers = 2
+	}
+
 	if strings.Contains(ts.T().Name(), "WorkflowTaskCompletionPagination") {
 		// This workflow serializes a large (~5 MiB) completion in a single workflow task; on slow CI
 		// hardware that can exceed the default 1s deadlock-detection window.
@@ -341,6 +348,84 @@ func (ts *IntegrationTestSuite) TestBasic() {
 	// We cannot check PollActivityTaskQueue metric because eager activities
 	// affect poll count
 	ts.assertMetricCountAtLeast("temporal_long_request", 3, "operation", "PollWorkflowTaskQueue")
+}
+
+func (ts *IntegrationTestSuite) TestActivityScheduleToStartLatency() {
+	ts.worker.Stop()
+	ts.workerStopped = true
+
+	for _, delivery := range []string{"polled", "eager"} {
+		ts.T().Run(delivery, func(t *testing.T) {
+			captured := metrics.NewCapturingHandler()
+			var eagerAttempts atomic.Int32
+			c, err := ts.newDefaultClient(func(options *client.Options) {
+				options.MetricsHandler = captured
+				options.ConnectionOptions.DialOptions = []grpc.DialOption{
+					grpc.WithUnaryInterceptor(func(
+						ctx context.Context, method string, req, reply any, cc *grpc.ClientConn,
+						invoker grpc.UnaryInvoker, opts ...grpc.CallOption,
+					) error {
+						err := invoker(ctx, method, req, reply, cc, opts...)
+						if response, ok := reply.(*workflowservice.RespondWorkflowTaskCompletedResponse); ok && err == nil {
+							eagerAttempts.Add(int32(len(response.GetActivityTasks())))
+						}
+						return err
+					}),
+				}
+			})
+			require.NoError(t, err)
+			defer c.Close()
+
+			taskQueue := ts.taskQueueName + "-" + delivery
+			w := worker.New(c, taskQueue, worker.Options{DisableEagerActivities: delivery == "polled"})
+			w.RegisterActivityWithOptions(func(ctx context.Context) (int, error) {
+				if activity.GetInfo(ctx).Attempt == 1 {
+					return 0, errors.New("retry once")
+				}
+				return 7, nil
+			}, activity.RegisterOptions{Name: "latencyActivity"})
+			w.RegisterWorkflowWithOptions(func(ctx workflow.Context) (int, error) {
+				ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+					StartToCloseTimeout: 5 * time.Second,
+					RetryPolicy: &temporal.RetryPolicy{
+						InitialInterval: 100 * time.Millisecond,
+						MaximumAttempts: 2,
+					},
+				})
+				var result int
+				err := workflow.ExecuteActivity(ctx, "latencyActivity").Get(ctx, &result)
+				return result, err
+			}, workflow.RegisterOptions{Name: "latencyWorkflow"})
+			require.NoError(t, w.Start())
+			defer w.Stop()
+
+			run, err := c.ExecuteWorkflow(t.Context(), client.StartWorkflowOptions{
+				ID: uuid.NewString(), TaskQueue: taskQueue, WorkflowExecutionTimeout: 30 * time.Second,
+			}, "latencyWorkflow")
+			require.NoError(t, err)
+			var result int
+			require.NoError(t, run.Get(t.Context(), &result))
+			require.Equal(t, 7, result)
+
+			// Eager execution is optional on the server; ensure this test actually exercises it.
+			if delivery == "eager" {
+				require.Equal(t, int32(1), eagerAttempts.Load())
+			} else {
+				require.Zero(t, eagerAttempts.Load())
+			}
+			var samples int64
+			for _, timer := range captured.Timers() {
+				if timer.Name == metrics.ActivityScheduleToStartLatency {
+					require.Equal(t, ts.config.Namespace, timer.Tags["namespace"])
+					require.Equal(t, taskQueue, timer.Tags["task_queue"])
+					require.Equal(t, "latencyWorkflow", timer.Tags["workflow_type"])
+					require.Equal(t, "latencyActivity", timer.Tags["activity_type"])
+					samples += timer.Count()
+				}
+			}
+			require.Equal(t, int64(2), samples, "both attempts must be counted exactly once, including the polled retry")
+		})
+	}
 }
 
 func (ts *IntegrationTestSuite) TestPreferredVersionProvider() {

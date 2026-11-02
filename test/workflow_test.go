@@ -3960,6 +3960,16 @@ var temporalOpAsyncActivityOp = temporalnexus.MustNewTemporalOperation(temporaln
 	},
 })
 
+var temporalOpAsyncCompletionActivityOp = temporalnexus.MustNewTemporalOperation(temporalnexus.TemporalOperationOptions[string, string]{
+	Name: "async-completion-activity-op",
+	Start: func(ctx context.Context, nc temporalnexus.NexusClient, input string, _ temporalnexus.StartTemporalOperationOptions) (temporalnexus.TemporalOperationResult[string], error) {
+		return temporalnexus.StartActivity(ctx, nc, client.StartActivityOptions{
+			ID:                  "act-" + input,
+			StartToCloseTimeout: 30 * time.Second,
+		}, (*Activities)(nil).NexusAsyncComplete, input)
+	},
+})
+
 var temporalOpAsyncUntypedActivityOp = temporalnexus.MustNewTemporalOperation(temporalnexus.TemporalOperationOptions[string, string]{
 	Name: "async-untyped-activity-op",
 	Start: func(ctx context.Context, nc temporalnexus.NexusClient, input string, _ temporalnexus.StartTemporalOperationOptions) (temporalnexus.TemporalOperationResult[string], error) {
@@ -4422,6 +4432,7 @@ var temporalOpService = func() *nexus.Service {
 		temporalOpCustomCancelOp,
 		temporalOpClientInStartOp,
 		temporalOpAsyncActivityOp,
+		temporalOpAsyncCompletionActivityOp,
 		temporalOpAsyncUntypedActivityOp,
 		temporalOpDoubleStartActivityOp,
 		temporalOpDoubleSignalOp,
@@ -4508,6 +4519,12 @@ func (w *Workflows) TemporalOpAsyncActivityCaller(ctx workflow.Context, input st
 	c := workflow.NewNexusClient(temporalOpEndpoint, temporalOpServiceName)
 	var result string
 	return result, c.ExecuteOperation(ctx, temporalOpAsyncActivityOp, input, workflow.NexusOperationOptions{}).Get(ctx, &result)
+}
+
+func (w *Workflows) TemporalOpAsyncCompletionActivityCaller(ctx workflow.Context, input string) (string, error) {
+	c := workflow.NewNexusClient(temporalOpEndpoint, temporalOpServiceName)
+	var result string
+	return result, c.ExecuteOperation(ctx, temporalOpAsyncCompletionActivityOp, input, workflow.NexusOperationOptions{}).Get(ctx, &result)
 }
 
 func (w *Workflows) TemporalOpAsyncUntypedActivityCaller(ctx workflow.Context, input string) (string, error) {
@@ -4744,6 +4761,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.TemporalOpCustomCancelCaller)
 	worker.RegisterWorkflow(w.TemporalOpClientInStartCaller)
 	worker.RegisterWorkflow(w.TemporalOpAsyncActivityCaller)
+	worker.RegisterWorkflow(w.TemporalOpAsyncCompletionActivityCaller)
 	worker.RegisterWorkflow(w.TemporalOpAsyncUntypedActivityCaller)
 	worker.RegisterWorkflow(w.TemporalOpDoubleStartActivityCaller)
 	worker.RegisterWorkflow(w.TemporalOpDoubleSignalCaller)

@@ -547,8 +547,12 @@ func (wc *WorkflowClient) CompleteActivityWithOptions(ctx context.Context, opts 
 		TaskQueue:    opts.TaskQueue,
 		IsLocal:      false, // async completion is only for non-local activities
 	}
-	dataConverter := converter.WithDataConverterSerializationContext(WithContext(ctx, wc.dataConverter), actCtx)
-	failureConverter := converter.WithFailureConverterSerializationContext(wc.failureConverter, actCtx)
+	var serializationContext converter.SerializationContext = actCtx
+	if opts.NexusSerializationContext != nil {
+		serializationContext = *opts.NexusSerializationContext
+	}
+	dataConverter := converter.WithDataConverterSerializationContext(WithContext(ctx, wc.dataConverter), serializationContext)
+	failureConverter := converter.WithFailureConverterSerializationContext(wc.failureConverter, serializationContext)
 	var data *commonpb.Payloads
 	if opts.Result != nil {
 		var err0 error
@@ -665,8 +669,12 @@ func (wc *WorkflowClient) CompleteActivityByActivityIDWithOptions(ctx context.Co
 		TaskQueue:    opts.TaskQueue,
 		IsLocal:      false, // async completion is only for non-local activities
 	}
-	dataConverter := converter.WithDataConverterSerializationContext(WithContext(ctx, wc.dataConverter), actCtx)
-	failureConverter := converter.WithFailureConverterSerializationContext(wc.failureConverter, actCtx)
+	var serializationContext converter.SerializationContext = actCtx
+	if opts.NexusSerializationContext != nil {
+		serializationContext = *opts.NexusSerializationContext
+	}
+	dataConverter := converter.WithDataConverterSerializationContext(WithContext(ctx, wc.dataConverter), serializationContext)
+	failureConverter := converter.WithFailureConverterSerializationContext(wc.failureConverter, serializationContext)
 	var data *commonpb.Payloads
 	if opts.Result != nil {
 		var err0 error
@@ -716,7 +724,11 @@ func (wc *WorkflowClient) RecordActivityHeartbeatWithOptions(ctx context.Context
 		TaskQueue:    opts.TaskQueue,
 		IsLocal:      false, // async heartbeat is only for non-local activities
 	}
-	dataConverter := converter.WithDataConverterSerializationContext(WithContext(ctx, wc.dataConverter), actCtx)
+	var serializationContext converter.SerializationContext = actCtx
+	if opts.NexusSerializationContext != nil {
+		serializationContext = *opts.NexusSerializationContext
+	}
+	dataConverter := converter.WithDataConverterSerializationContext(WithContext(ctx, wc.dataConverter), serializationContext)
 	data, err := encodeArgs(dataConverter, opts.Details)
 	if err != nil {
 		return err
