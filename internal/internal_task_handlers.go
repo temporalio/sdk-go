@@ -1019,6 +1019,14 @@ processWorkflowLoop:
 						continue processWorkflowLoop
 					}
 
+					// Prefer an already queued WHN over ready Local Activity results.
+					select {
+					case <-heartbeatNotification:
+						delayDuration = 0
+						continue heartbeatLoop
+					default:
+					}
+
 					if heartbeatTimer == nil {
 						heartbeatTimer = time.NewTimer(delayDuration)
 					}

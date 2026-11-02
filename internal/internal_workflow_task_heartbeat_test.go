@@ -290,6 +290,7 @@ func (s *TaskHandlersTestSuite) TestWorkflowTaskHeartbeatNotificationSafeYield()
 	for _, scenario := range []struct {
 		name           string
 		localActivity  bool
+		readyResult    bool
 		heartbeatError error
 		timedHeartbeat bool
 		stopWorker     bool
@@ -297,6 +298,7 @@ func (s *TaskHandlersTestSuite) TestWorkflowTaskHeartbeatNotificationSafeYield()
 	}{
 		{name: "normal completion"},
 		{name: "pending local activity", localActivity: true},
+		{name: "WHN before ready local activity result", localActivity: true, readyResult: true},
 		{name: "heartbeat failure", localActivity: true, heartbeatError: errors.New("heartbeat failed")},
 		{name: "timed fallback", localActivity: true, timedHeartbeat: true},
 		{name: "worker shutdown", localActivity: true, stopWorker: true},
@@ -307,6 +309,15 @@ func (s *TaskHandlersTestSuite) TestWorkflowTaskHeartbeatNotificationSafeYield()
 				r := &workflowTaskHeartbeatNotifications{}
 				started, yield := make(chan struct{}), make(chan struct{})
 				s.registry.RegisterWorkflowWithOptions(func(ctx Context) error {
+					if scenario.readyResult {
+						ctx = WithLocalActivityOptions(ctx, LocalActivityOptions{ScheduleToCloseTimeout: time.Minute})
+						future := ExecuteLocalActivity(ctx, func() error { return nil })
+						Go(ctx, func(Context) {
+							close(started)
+							<-yield
+						})
+						return future.Get(ctx, nil)
+					}
 					close(started)
 					<-yield
 					if scenario.panicWorkflow {
@@ -332,7 +343,7 @@ func (s *TaskHandlersTestSuite) TestWorkflowTaskHeartbeatNotificationSafeYield()
 						WorkflowTaskTimeout: durationpb.New(10 * time.Second),
 						TaskQueue:           &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue},
 					}),
-				}, 0, "WHNSafeYield")}
+				}, 0, "WHNSafeYield"), laResultCh: make(chan *localActivityResult)}
 				task.task.TaskToken = []byte("executing")
 				wfctx, err := handler.GetOrCreateWorkflowContext(task.task, nil)
 				require.NoError(t, err)
@@ -355,6 +366,16 @@ func (s *TaskHandlersTestSuite) TestWorkflowTaskHeartbeatNotificationSafeYield()
 					wfctx.Unlock(taskErr)
 				}()
 				<-started
+				if scenario.readyResult {
+					for _, activity := range wfctx.getEventHandler().pendingLaTasks {
+						go func() {
+							select {
+							case task.laResultCh <- &localActivityResult{task: activity}:
+							case <-done:
+							}
+						}()
+					}
+				}
 				if !scenario.timedHeartbeat {
 					require.Equal(t, workerpb.WorkflowTaskHeartbeatNotificationResult_OUTCOME_HANDLED, r.notify(task.task.TaskToken))
 					require.Equal(t, workerpb.WorkflowTaskHeartbeatNotificationResult_OUTCOME_ALREADY_RECEIVED, r.notify(task.task.TaskToken))
