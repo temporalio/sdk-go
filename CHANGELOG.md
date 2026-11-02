@@ -22,6 +22,13 @@ to docs, or any other relevant information.
 
 ### Added
 
+- Added client interceptor hooks for `Client.GetWorkflow` (`GetWorkflowRun`),
+  `WorkflowRun.Get`/`GetWithOptions` (`GetWorkflowResult`), and
+  `Client.GetWorkflowHistory`. Handle interception runs before lazy target
+  resolution, allowing workflow IDs to be rewritten before any lookup.
+  Result interception also runs before lazy target resolution, wraps the complete
+  wait including followed runs, and returns the encoded result or workflow error
+  before result decoding; history interception can wrap the lazily fetched iterator.
 - Added experimental `temporalnexus.ConvertLinkCallbackToNexusLink` and `temporalnexus.ConvertNexusLinkToLinkCallback`
   for converting `Link_Callback` to and from Nexus links.
 - Nexus handlers now propagate `NexusSerializationContext` to the workflows, workflow updates, and

@@ -156,6 +156,7 @@ func (s *historyEventIteratorSuite) SetupTest() {
 		excludeInternalFromRetry: &atomic.Bool{},
 		getSystemInfoTimeout:     defaultGetSystemInfoTimeout,
 	}
+	s.wfClient.interceptor = &workflowClientInterceptor{client: s.wfClient}
 }
 
 func (s *historyEventIteratorSuite) TearDownTest() {
