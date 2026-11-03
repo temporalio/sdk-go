@@ -472,8 +472,6 @@ type (
 		// namespace is configured to auto-enroll workers into poller autoscaling, the worker
 		// will automatically use poller autoscaling for workflow tasks instead of a fixed
 		// number of pollers.
-		//
-		// NOTE: Experimental
 		WorkflowTaskPollerBehavior PollerBehavior
 
 		// Optional: If set, the worker will use the provided poller behavior when polling for activity tasks.
@@ -485,8 +483,6 @@ type (
 		// namespace is configured to auto-enroll workers into poller autoscaling, the worker
 		// will automatically use poller autoscaling for activity tasks instead of a fixed
 		// number of pollers.
-		//
-		// NOTE: Experimental
 		ActivityTaskPollerBehavior PollerBehavior
 
 		// Optional: If set, the worker will use the provided poller behavior when polling for nexus tasks.
@@ -498,8 +494,6 @@ type (
 		// namespace is configured to auto-enroll workers into poller autoscaling, the worker
 		// will automatically use poller autoscaling for nexus tasks instead of a fixed
 		// number of pollers.
-		//
-		// NOTE: Experimental
 		NexusTaskPollerBehavior PollerBehavior
 
 		// Plugins that can configure options and intercept start/stop worker.

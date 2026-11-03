@@ -365,31 +365,32 @@ type (
 	ClientActivityExecutionDescription struct {
 		ClientActivityExecutionInfo
 		// Raw server response this struct was built from.
-		RawResponse             *workflowservice.DescribeActivityExecutionResponse
-		ScheduleToCloseTimeout  time.Duration
-		ScheduleToStartTimeout  time.Duration
-		StartToCloseTimeout     time.Duration
-		HeartbeatTimeout        time.Duration
-		StartDelay              time.Duration
-		RunState                enumspb.PendingActivityState
-		LastHeartbeatTime       time.Time
-		LastStartedTime         time.Time
-		Attempt                 int32
-		TotalHeartbeatCount     int64
-		RetryPolicy             *RetryPolicy
-		ExpirationTime          time.Time
-		LastWorkerIdentity      string
-		CurrentRetryInterval    time.Duration
-		LastAttemptCompleteTime time.Time
-		NextAttemptScheduleTime time.Time
-		LastDeploymentVersion   *WorkerDeploymentVersion
-		Priority                Priority
-		CanceledReason          string
-		dataConverter           converter.DataConverter
-		failureConverter        converter.FailureConverter
-		inboundPayloadVisitor   PayloadVisitor
-		summary                 string
-		staticDetails           string
+		RawResponse               *workflowservice.DescribeActivityExecutionResponse
+		ScheduleToCloseTimeout    time.Duration
+		ScheduleToStartTimeout    time.Duration
+		StartToCloseTimeout       time.Duration
+		HeartbeatTimeout          time.Duration
+		StartDelay                time.Duration
+		RunState                  enumspb.PendingActivityState
+		LastHeartbeatTime         time.Time
+		LastStartedTime           time.Time
+		Attempt                   int32
+		TotalHeartbeatCount       int64
+		RetryPolicy               *RetryPolicy
+		ExpirationTime            time.Time
+		LastWorkerIdentity        string
+		CurrentRetryInterval      time.Duration
+		LastAttemptCompleteTime   time.Time
+		NextAttemptScheduleTime   time.Time
+		LastDeploymentVersion     *WorkerDeploymentVersion
+		Priority                  Priority
+		CanceledReason            string
+		dataConverter             converter.DataConverter
+		callerFacingDataConverter converter.DataConverter // result and heartbeat details; uses the propagated Nexus context, if any
+		failureConverter          converter.FailureConverter
+		inboundPayloadVisitor     PayloadVisitor
+		summary                   string
+		staticDetails             string
 	}
 
 	// clientActivityHandleImpl is the default implementation of ClientActivityHandle.
@@ -419,7 +420,7 @@ func (d *ClientActivityExecutionDescription) GetHeartbeatDetails(valuePtrs ...an
 	if err := visitProtoPayloads(context.Background(), d.inboundPayloadVisitor, details, 0); err != nil {
 		return err
 	}
-	return d.dataConverter.FromPayloads(details, valuePtrs...)
+	return d.callerFacingDataConverter.FromPayloads(details, valuePtrs...)
 }
 
 // HasInput returns whether the activity's input is present. Use GetInput to retrieve it.
@@ -464,7 +465,7 @@ func (d *ClientActivityExecutionDescription) GetResult(valuePtr any) error {
 	if err := visitProtoPayloads(context.Background(), d.inboundPayloadVisitor, outcome.Result, 0); err != nil {
 		return err
 	}
-	return d.dataConverter.FromPayloads(outcome.Result, valuePtr)
+	return d.callerFacingDataConverter.FromPayloads(outcome.Result, valuePtr)
 }
 
 // HasOutcomeFailure returns whether the activity closed with a failure and that failure is
@@ -824,18 +825,21 @@ func (w *workflowClientInterceptor) ExecuteActivity(
 	if dataConverter == nil {
 		dataConverter = converter.GetDefaultDataConverter()
 	}
-	dataConverter = converter.WithDataConverterSerializationContext(dataConverter,
-		converter.ActivitySerializationContext{
-			Namespace:    w.client.namespace,
-			ActivityType: in.ActivityType,
-			TaskQueue:    in.Options.TaskQueue,
-		})
+	// Input and metadata use the activity context even when started by a Nexus handler. The propagated
+	// context is sent to the server and only applies to the result and failure.
+	propagatedNexusSerializationContext := propagatedNexusSerializationContextFromGoContext(ctx)
+	dataConverter = converter.WithDataConverterSerializationContext(dataConverter, converter.ActivitySerializationContext{
+		Namespace:    w.client.namespace,
+		ActivityType: in.ActivityType,
+		TaskQueue:    in.Options.TaskQueue,
+	})
 
 	request := &workflowservice.StartActivityExecutionRequest{
-		Namespace:    w.client.namespace,
-		Identity:     w.client.identity,
-		RequestId:    uuid.NewString(),
-		ActivityType: &commonpb.ActivityType{Name: in.ActivityType},
+		Namespace:                           w.client.namespace,
+		Identity:                            w.client.identity,
+		RequestId:                           uuid.NewString(),
+		ActivityType:                        &commonpb.ActivityType{Name: in.ActivityType},
+		PropagatedNexusSerializationContext: propagatedNexusSerializationContext,
 	}
 	// Activity starts from a Nexus handler inherit its normalized request ID. Other
 	// Activity starts keep the fresh request ID initialized above.
@@ -984,11 +988,12 @@ func (w *workflowClientInterceptor) PollActivityResult(
 		return nil, err
 	}
 
-	actCtx := converter.ActivitySerializationContext{Namespace: w.client.namespace}
+	serializationContext := serializationContextFor(converter.ActivitySerializationContext{Namespace: w.client.namespace},
+		resp.GetPropagatedNexusSerializationContext())
 	dataConverter := converter.WithDataConverterSerializationContext(
-		WithContext(ctx, w.client.dataConverter), actCtx)
+		WithContext(ctx, w.client.dataConverter), serializationContext)
 	failureConverter := converter.WithFailureConverterSerializationContext(
-		w.client.failureConverter, actCtx)
+		w.client.failureConverter, serializationContext)
 
 	switch v := resp.GetOutcome().GetValue().(type) {
 	case *activitypb.ActivityExecutionOutcome_Result:
@@ -1031,11 +1036,13 @@ func (w *workflowClientInterceptor) DescribeActivity(
 		lastDeploymentVersion = &v
 	}
 
-	actCtx := converter.ActivitySerializationContext{
+	activityContext := converter.ActivitySerializationContext{
 		Namespace:    w.client.namespace,
 		ActivityType: info.ActivityType.GetName(),
 		TaskQueue:    info.TaskQueue,
 	}
+	// The result, failures, and heartbeat details are returned to a Nexus caller and use its propagated context.
+	resultContext := serializationContextFor(activityContext, info.GetPropagatedNexusSerializationContext())
 
 	return &ClientDescribeActivityOutput{
 		Description: &ClientActivityExecutionDescription{
@@ -1073,9 +1080,11 @@ func (w *workflowClientInterceptor) DescribeActivity(
 			Priority:                convertFromPBPriority(info.Priority),
 			CanceledReason:          info.CanceledReason,
 			dataConverter: converter.WithDataConverterSerializationContext(
-				WithContext(ctx, w.client.dataConverter), actCtx),
+				WithContext(ctx, w.client.dataConverter), activityContext),
+			callerFacingDataConverter: converter.WithDataConverterSerializationContext(
+				WithContext(ctx, w.client.dataConverter), resultContext),
 			failureConverter: converter.WithFailureConverterSerializationContext(
-				w.client.failureConverter, actCtx),
+				w.client.failureConverter, resultContext),
 			inboundPayloadVisitor: w.inboundPayloadVisitor,
 		},
 	}, nil

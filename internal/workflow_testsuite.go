@@ -238,7 +238,7 @@ func (t *TestActivityEnvironment) SetWorkerOptions(options WorkerOptions) *TestA
 
 // SetDataConverter sets data converter.
 func (t *TestActivityEnvironment) SetDataConverter(dataConverter converter.DataConverter) *TestActivityEnvironment {
-	t.impl.setDataConverter(converter.MakeTransferAware(dataConverter))
+	t.impl.setDataConverter(MakeTransferAware(dataConverter))
 	return t
 }
 
@@ -937,7 +937,7 @@ func (e *TestWorkflowEnvironment) SetStartWorkflowOptions(options StartWorkflowO
 
 // SetDataConverter sets data converter.
 func (e *TestWorkflowEnvironment) SetDataConverter(dataConverter converter.DataConverter) *TestWorkflowEnvironment {
-	e.impl.setDataConverter(converter.MakeTransferAware(dataConverter))
+	e.impl.setDataConverter(MakeTransferAware(dataConverter))
 	return e
 }
 
