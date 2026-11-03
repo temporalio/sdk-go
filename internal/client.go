@@ -776,6 +776,15 @@ type (
 		// TaskQueue is the optional Task Queue to include in the Activity
 		// serialization context when encoding Result or Err.
 		TaskQueue string
+
+		// NexusSerializationContext is the Nexus serialization context to encode Result and Err with,
+		// in place of the Activity serialization context. When completing a standalone Activity started by a
+		// Nexus operation handler, set it to the value of activity.GetInfo(ctx).NexusSerializationContext
+		// captured in the Activity, because the Nexus caller decodes the result with that context.
+		// Leave nil otherwise.
+		//
+		// NOTE: Experimental
+		NexusSerializationContext *converter.NexusSerializationContext
 	}
 
 	// CompleteActivityByActivityIDOptions provides options for CompleteActivityByActivityIDWithOptions.
@@ -828,6 +837,15 @@ type (
 		// TaskQueue is the optional Task Queue to include in the Activity
 		// serialization context when encoding Result or Err.
 		TaskQueue string
+
+		// NexusSerializationContext is the Nexus serialization context to encode Result and Err with,
+		// in place of the Activity serialization context. When completing a standalone Activity started by a
+		// Nexus operation handler, set it to the value of activity.GetInfo(ctx).NexusSerializationContext
+		// captured in the Activity, because the Nexus caller decodes the result with that context.
+		// Leave nil otherwise.
+		//
+		// NOTE: Experimental
+		NexusSerializationContext *converter.NexusSerializationContext
 	}
 
 	// RecordActivityHeartbeatOptions provides options for RecordActivityHeartbeatWithOptions.
@@ -872,6 +890,15 @@ type (
 		// TaskQueue is the optional Task Queue to include in the Activity
 		// serialization context when encoding Details.
 		TaskQueue string
+
+		// NexusSerializationContext is the Nexus serialization context to encode Details with, in
+		// place of the Activity serialization context. When heartbeating a standalone Activity started
+		// by a Nexus operation handler, set it to the value of activity.GetInfo(ctx).NexusSerializationContext
+		// captured in the Activity, because the worker and the Nexus caller decode the details with that
+		// context. Leave nil otherwise.
+		//
+		// NOTE: Experimental
+		NexusSerializationContext *converter.NexusSerializationContext
 	}
 
 	// ClientOptions are optional parameters for Client creation.
@@ -1588,6 +1615,7 @@ func newClientPluginRoot(ctx context.Context, options ClientPluginNewClientOptio
 		}
 	} else if existing, _ = options.FromExisting.(*WorkflowClient); existing != nil {
 		connection = existing.conn
+		options.ClientOptions.ConnectionOptions.excludeInternalFromRetry = existing.excludeInternalFromRetry
 	} else if options.FromExisting != nil {
 		return nil, fmt.Errorf("existing client must have been created directly from a client package call")
 	}
