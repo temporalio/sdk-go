@@ -45,7 +45,7 @@ interface model {
   type workflow-result = placeholder;
 
   /// Receiver/context argument for workflow callable method forms.
-  /// @nexus.type python="typing.Any" typescript="any" go="go.temporal.io/sdk/workflow:workflow.Context" dotnet="object"
+  /// @nexus.type python="typing.Any" typescript="any" go="go.temporal.io/sdk/internal:internal.Context" dotnet="object"
   type callable-prefix = placeholder;
 
   /// @nexus.function-args
@@ -106,7 +106,7 @@ interface model {
   /// @nexus.type
   ///   python="temporalio.common.RetryPolicy"
   ///   typescript="common.RetryPolicy"
-  ///   go="go.temporal.io/sdk/temporal.RetryPolicy"
+  ///   go="go.temporal.io/sdk/internal.RetryPolicy"
   ///   dotnet="Temporalio.Common.RetryPolicy"
   ///   dotnet-from="ProtoExtensions.FromRetryPolicyProto"
   ///   typescript-import="@temporalio/common"
@@ -146,7 +146,7 @@ interface model {
   /// @nexus.type
   ///   python="temporalio.common.TypedSearchAttributes"
   ///   typescript="common.TypedSearchAttributes"
-  ///   go="go.temporal.io/sdk/temporal.SearchAttributes"
+  ///   go="go.temporal.io/sdk/internal.SearchAttributes"
   ///   dotnet="Temporalio.Common.SearchAttributeCollection"
   ///   dotnet-from="ProtoExtensions.FromSearchAttributesProto"
   ///   typescript-import="@temporalio/common"
@@ -156,7 +156,7 @@ interface model {
   /// @nexus.type
   ///   python="temporalio.common.Priority"
   ///   typescript="common.Priority"
-  ///   go="go.temporal.io/sdk/temporal.Priority"
+  ///   go="go.temporal.io/sdk/internal.Priority"
   ///   dotnet="Temporalio.Common.Priority"
   ///   dotnet-from="ProtoExtensions.FromPriorityProto"
   ///   typescript-import="@temporalio/common"
@@ -166,7 +166,9 @@ interface model {
   /// @nexus.type
   ///   python="temporalio.common.VersioningOverride"
   ///   typescript="common.VersioningOverride"
-  ///   go="go.temporal.io/sdk/client.VersioningOverride"
+  ///   go="go.temporal.io/sdk/internal.VersioningOverride"
+  ///   go-from="systemNexusVersioningOverrideFromProto"
+  ///   go-to="systemNexusVersioningOverrideToProto"
   ///   dotnet="Temporalio.Common.VersioningOverride"
   ///   dotnet-from="ProtoExtensions.FromVersioningOverrideProto"
   ///   typescript-import="@temporalio/common"
