@@ -18,11 +18,10 @@ type internalEntry struct {
 }
 
 // WorkflowStream is the workflow-side stream object: an append-only log served
-// to external publishers (via signal), subscribers (via update), and offset
-// queries (via query).
+// to external publishers (via signal) and subscribers (via update or query).
 //
 // Construct it once at the start of your workflow function with NewWorkflowStream. The
-// constructor registers all three handlers on the current workflow.
+// constructor registers its signal, update, and query handlers on the current workflow.
 type WorkflowStream struct {
 	ctx workflow.Context
 	dc  converter.DataConverter
@@ -49,7 +48,7 @@ type workflowStreamConfig struct {
 // should be a catch-all such as converter.NewJSONPayloadConverter.
 //
 // As on the client side, only payload conversion happens here — never a payload
-// codec. The worker's codec chain runs once on the poll-update response that
+// codec. The worker's codec chain runs once on the poll response that
 // carries each batch to subscribers, so encoding items here too would
 // double-encode them; the []PayloadConverter type makes that impossible.
 //
@@ -122,6 +121,10 @@ func NewWorkflowStream(ctx workflow.Context, priorState *WorkflowStreamState, op
 		return nil, err
 	}
 
+	if err := workflow.SetQueryHandler(ctx, PollQueryName, s.collectBatch); err != nil {
+		return nil, err
+	}
+
 	if err := workflow.SetQueryHandler(ctx, OffsetQueryName, func() (int64, error) {
 		return s.baseOffset + int64(len(s.log)), nil
 	}); err != nil {
@@ -142,7 +145,7 @@ func (s *WorkflowStream) Topic(name string) *WorkflowTopicHandle {
 	return h
 }
 
-// DetachPollers unblocks all waiting poll handlers and rejects new polls. Used
+// DetachPollers unblocks all waiting poll updates and rejects new updates. Used
 // before continue-as-new.
 func (s *WorkflowStream) DetachPollers() {
 	s.draining = true
@@ -211,7 +214,7 @@ func (s *WorkflowStream) NewContinueAsNewError(ctx workflow.Context, wfn any, bu
 }
 
 // Truncate discards log entries before upToOffset and advances the base offset.
-// After truncation, polls requesting an offset before the new base receive a
+// After truncation, poll updates requesting an offset before the new base receive a
 // TruncatedOffset error. Truncate returns a non-retryable TruncateOutOfRange
 // ApplicationError if upToOffset is past the end of the log.
 func (s *WorkflowStream) Truncate(upToOffset int64) error {
@@ -277,7 +280,12 @@ func (s *WorkflowStream) onPoll(ctx workflow.Context, input PollInput) (PollResu
 			ErrTypeTruncatedOffset, nil)
 	}
 
-	// max clamps "From the beginning" to whatever is available.
+	return s.collectBatch(input)
+}
+
+func (s *WorkflowStream) collectBatch(input PollInput) (PollResult, error) {
+	// Queries also clamp stale offsets because closed runs cannot accept retries.
+	// The update handler checks for truncation before calling this helper.
 	logOffset := max(input.FromOffset-s.baseOffset, 0)
 
 	var topicSet map[string]struct{}

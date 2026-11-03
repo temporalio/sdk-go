@@ -30,8 +30,7 @@ type pollStep struct {
 }
 
 // errStepsExhausted is returned once a fake runs out of scripted poll steps. The
-// default describe status (COMPLETED) makes the loop treat it as a clean,
-// terminal end, so a test that forgets to break can't spin forever.
+// default describe status (COMPLETED) and empty query result end the stream.
 var errStepsExhausted = errors.New("fake: poll steps exhausted")
 
 // fakeSubClient scripts UpdateWorkflow/DescribeWorkflowExecution responses so the
@@ -48,9 +47,13 @@ type fakeSubClient struct {
 
 	// describeByRun maps a run id to the status DescribeWorkflowExecution reports
 	// for it. A run not present defaults to COMPLETED, so loops terminate cleanly.
-	describeByRun map[string]enumspb.WorkflowExecutionStatus
-	describeRuns  []string // run ids passed to DescribeWorkflowExecution, in order
-	describeErr   error
+	describeByRun  map[string]enumspb.WorkflowExecutionStatus
+	describeRuns   []string // run ids passed to DescribeWorkflowExecution, in order
+	describeErr    error
+	describedRunID string
+	querySteps     []pollStep
+	queries        []PollInput
+	queryRuns      []string
 }
 
 func (f *fakeSubClient) UpdateWorkflow(_ context.Context, options client.UpdateWorkflowOptions) (client.WorkflowUpdateHandle, error) {
@@ -79,9 +82,48 @@ func (f *fakeSubClient) DescribeWorkflowExecution(_ context.Context, _, runID st
 	if !ok {
 		status = enumspb.WORKFLOW_EXECUTION_STATUS_COMPLETED
 	}
+	if f.describedRunID == "" {
+		f.describedRunID = "terminal-run"
+	}
 	return &workflowservice.DescribeWorkflowExecutionResponse{
-		WorkflowExecutionInfo: &workflowpb.WorkflowExecutionInfo{Status: status},
+		WorkflowExecutionInfo: &workflowpb.WorkflowExecutionInfo{Status: status, Execution: &commonpb.WorkflowExecution{RunId: f.describedRunID}},
 	}, nil
+}
+
+func (f *fakeSubClient) QueryWorkflow(_ context.Context, _, runID, queryType string, args ...any) (converter.EncodedValue, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if queryType != PollQueryName {
+		return nil, errors.New("unexpected query type: " + queryType)
+	}
+	f.queries = append(f.queries, args[0].(PollInput))
+	f.queryRuns = append(f.queryRuns, runID)
+	var step pollStep
+	if len(f.querySteps) > 0 {
+		step = f.querySteps[0]
+		f.querySteps = f.querySteps[1:]
+	}
+	if step.updateErr != nil {
+		return nil, step.updateErr
+	}
+	return &fakeQueryValue{result: step.result, err: step.getErr}, nil
+}
+
+type fakeQueryValue struct {
+	result PollResult
+	err    error
+}
+
+func (v *fakeQueryValue) HasValue() bool { return true }
+func (v *fakeQueryValue) Get(valuePtr any) error {
+	if v.err != nil {
+		return v.err
+	}
+	payload, err := converter.GetDefaultDataConverter().ToPayload(v.result)
+	if err != nil {
+		return err
+	}
+	return converter.GetDefaultDataConverter().FromPayload(payload, valuePtr)
 }
 
 func (f *fakeSubClient) recordedPolls() []PollInput {
@@ -352,4 +394,113 @@ func TestSubscribeCooldownAppliedWhenNotMoreReady(t *testing.T) {
 		}
 		require.Equal(t, cooldown, time.Since(start))
 	})
+}
+
+func TestSubscribeDrainsTerminalPages(t *testing.T) {
+	for _, status := range []enumspb.WorkflowExecutionStatus{
+		enumspb.WORKFLOW_EXECUTION_STATUS_COMPLETED,
+		enumspb.WORKFLOW_EXECUTION_STATUS_FAILED,
+		enumspb.WORKFLOW_EXECUTION_STATUS_CANCELED,
+		enumspb.WORKFLOW_EXECUTION_STATUS_TERMINATED,
+		enumspb.WORKFLOW_EXECUTION_STATUS_TIMED_OUT,
+	} {
+		t.Run(status.String(), func(t *testing.T) {
+			fc := &fakeSubClient{
+				steps:          []pollStep{{updateErr: errors.New("closed")}},
+				describeByRun:  map[string]enumspb.WorkflowExecutionStatus{"": status},
+				describedRunID: "confirmed-run",
+				querySteps: []pollStep{
+					{result: PollResult{Items: []WireItem{wireItem(t, "events", "a", 5)}, NextOffset: 6, MoreReady: true}},
+					{result: PollResult{Items: []WireItem{wireItem(t, "events", "b", 8)}, NextOffset: 9}},
+				},
+			}
+			var got []string
+			for item, err := range newSubClient(fc).Subscribe(t.Context(), SubscribeOptions{Topics: []string{"events"}, FromOffset: 4}) {
+				require.NoError(t, err)
+				got = append(got, decodeItem(t, item.Data))
+			}
+			require.Equal(t, []string{"a", "b"}, got)
+			require.Equal(t, []string{"confirmed-run", "confirmed-run"}, fc.queryRuns)
+			require.Equal(t, []PollInput{{Topics: []string{"events"}, FromOffset: 4}, {Topics: []string{"events"}, FromOffset: 6}}, fc.queries)
+			require.Len(t, fc.polls, 1)
+			require.Equal(t, []string{""}, fc.describeRuns)
+		})
+	}
+}
+
+func TestSubscribeDrainsUnreadTailAfterAcceptedPoll(t *testing.T) {
+	fc := &fakeSubClient{
+		steps: []pollStep{
+			{runID: "R1", result: PollResult{Items: []WireItem{wireItem(t, "events", "head", 0)}, NextOffset: 1, MoreReady: true}},
+			{runID: "R1", getErr: errors.New("closed during poll")},
+		},
+		describedRunID: "R1",
+		querySteps:     []pollStep{{result: PollResult{Items: []WireItem{wireItem(t, "events", "tail", 1)}, NextOffset: 2}}},
+	}
+	var got []string
+	for item, err := range newSubClient(fc).Subscribe(t.Context(), SubscribeOptions{}) {
+		require.NoError(t, err)
+		got = append(got, decodeItem(t, item.Data))
+	}
+	require.Equal(t, []string{"head", "tail"}, got)
+	require.Equal(t, []string{"R1"}, fc.describeRuns)
+	require.EqualValues(t, 1, fc.queries[0].FromOffset)
+}
+
+func TestSubscribeFailedAdmissionDoesNotReusePriorRun(t *testing.T) {
+	fc := &fakeSubClient{
+		steps:          []pollStep{{runID: "R1", getErr: errors.New("continued")}, {updateErr: errors.New("successor closed")}},
+		describeByRun:  map[string]enumspb.WorkflowExecutionStatus{"R1": enumspb.WORKFLOW_EXECUTION_STATUS_CONTINUED_AS_NEW},
+		describedRunID: "R2",
+		querySteps:     []pollStep{{result: PollResult{Items: []WireItem{wireItem(t, "events", "tail", 0)}, NextOffset: 1}}},
+	}
+	var got []string
+	for item, err := range newSubClient(fc).Subscribe(t.Context(), SubscribeOptions{}) {
+		require.NoError(t, err)
+		got = append(got, decodeItem(t, item.Data))
+	}
+	require.Equal(t, []string{"tail"}, got)
+	require.Equal(t, []string{"R1", ""}, fc.describeRuns)
+	require.Equal(t, []string{"R2"}, fc.queryRuns)
+}
+
+func TestSubscribeTerminalFailuresSurface(t *testing.T) {
+	boom := errors.New("unavailable")
+	for _, tc := range []struct {
+		name      string
+		configure func(*fakeSubClient)
+	}{
+		{"describe", func(f *fakeSubClient) { f.describeErr = boom }},
+		{"missing-query", func(f *fakeSubClient) { f.querySteps = []pollStep{{updateErr: boom}} }},
+		{"query-decode", func(f *fakeSubClient) { f.querySteps = []pollStep{{getErr: boom}} }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fc := &fakeSubClient{steps: []pollStep{{updateErr: errors.New("closed")}}}
+			tc.configure(fc)
+			var got error
+			for _, err := range newSubClient(fc).Subscribe(t.Context(), SubscribeOptions{}) {
+				got = err
+			}
+			require.ErrorIs(t, got, boom)
+		})
+	}
+}
+
+func TestSubscribeReusableIteratorHasIndependentState(t *testing.T) {
+	fc := &fakeSubClient{querySteps: []pollStep{
+		{result: PollResult{Items: []WireItem{wireItem(t, "events", "a", 2)}, NextOffset: 3}},
+		{result: PollResult{Items: []WireItem{wireItem(t, "events", "a", 2)}, NextOffset: 3}},
+	}}
+	seq := newSubClient(fc).Subscribe(t.Context(), SubscribeOptions{FromOffset: 2})
+	for range 2 {
+		var got []string
+		for item, err := range seq {
+			require.NoError(t, err)
+			got = append(got, decodeItem(t, item.Data))
+		}
+		require.Equal(t, []string{"a"}, got)
+	}
+	require.Len(t, fc.polls, 2)
+	require.EqualValues(t, 2, fc.queries[0].FromOffset)
+	require.EqualValues(t, 2, fc.queries[1].FromOffset)
 }

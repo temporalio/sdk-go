@@ -3,7 +3,7 @@
 //
 // External code (activities, starters, other workflows) publishes messages to
 // named topics via signals; subscribers long-poll for new items via updates;
-// a query exposes the current offset. The stream is backed by Temporal's
+// queries read retained items after closure and expose the current offset. The stream is backed by Temporal's
 // durable execution, giving exactly-once, ordered, cross-language delivery with
 // client-side batching, publisher dedup, continue-as-new survival, truncation,
 // and response paging.
@@ -11,7 +11,7 @@
 // # Workflow side
 //
 // Construct a [WorkflowStream] once at the start of your workflow function. The
-// constructor registers the publish signal, poll update, and offset query
+// constructor registers the publish signal, poll update, poll query, and offset query
 // handlers on the current workflow:
 //
 //	type MyInput struct {
@@ -65,13 +65,18 @@
 //
 // # Cross-language protocol
 //
-// The handler names (see PublishSignalName, PollUpdateName, OffsetQueryName),
+// Subscriptions query the remaining retained items of completed, failed, canceled,
+// terminated, and timed-out runs before finishing. Closed reads require retained
+// history and an available compatible worker; query errors propagate to subscribers.
+// Upgrade workers before clients so the poll query handler is available.
+//
+// The handler names (see PublishSignalName, PollUpdateName, PollQueryName, OffsetQueryName),
 // the JSON envelope field names, and the per-item payload encoding (base64 of
 // the marshaled temporal.api.common.v1.Payload) match workflow streams
 // packages in other languages for interoperability.
 //
 // The data converter codec chain (encryption, compression) runs once on the
-// signal/update envelope that carries each batch — not per item — so payloads
+// signal/update/query envelope that carries each batch — not per item — so payloads
 // are never double-encoded. Each per-item Payload still carries its encoding
 // metadata so consumers can decode it with a payload converter.
 package workflowstreams

@@ -16,6 +16,9 @@ const (
 	PublishSignalName = "__temporal_workflow_stream_publish"
 	// PollUpdateName is the update subscribers send to long-poll for new items.
 	PollUpdateName = "__temporal_workflow_stream_poll"
+	// PollQueryName reads retained items immediately, including after closure.
+	// Unlike updates, queries bypass draining and clamp offsets to the retained base.
+	PollQueryName = "__temporal_workflow_stream_poll"
 	// OffsetQueryName is the query that returns the current global offset.
 	OffsetQueryName = "__temporal_workflow_stream_offset"
 )
@@ -64,7 +67,7 @@ type PublishInput struct {
 	Sequence    int64          `json:"sequence"`
 }
 
-// PollInput is the update payload: a request to poll for new items.
+// PollInput is the update or query payload requesting items from a global offset.
 type PollInput struct {
 	Topics     []string `json:"topics"`
 	FromOffset int64    `json:"from_offset"`
@@ -78,7 +81,7 @@ type WireItem struct {
 	Offset int64  `json:"offset"`
 }
 
-// PollResult is the update response: items matching the poll request. When
+// PollResult is the update or query response: items matching the poll request. When
 // MoreReady is true the response was truncated to stay within size limits and
 // the subscriber should poll again immediately rather than applying a cooldown.
 type PollResult struct {

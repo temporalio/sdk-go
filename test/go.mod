@@ -20,6 +20,7 @@ require (
 	go.temporal.io/sdk/contrib/opentracing v0.0.0-00010101000000-000000000000
 	go.temporal.io/sdk/contrib/sysinfo v0.0.0-00010101000000-000000000000
 	go.temporal.io/sdk/contrib/tally v0.0.0-00010101000000-000000000000
+	go.temporal.io/sdk/contrib/workflowstreams v0.0.0-00010101000000-000000000000
 	go.uber.org/goleak v1.3.0
 	google.golang.org/grpc v1.83.2
 	google.golang.org/protobuf v1.36.11
@@ -74,4 +75,5 @@ replace (
 	go.temporal.io/sdk/contrib/opentracing => ../contrib/opentracing
 	go.temporal.io/sdk/contrib/sysinfo => ../contrib/sysinfo
 	go.temporal.io/sdk/contrib/tally => ../contrib/tally
+	go.temporal.io/sdk/contrib/workflowstreams => ../contrib/workflowstreams
 )
