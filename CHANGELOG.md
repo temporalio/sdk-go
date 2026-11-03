@@ -22,6 +22,8 @@ to docs, or any other relevant information.
 
 ### Added
 
+- Plugins can report a version in worker heartbeats, with `SimplePluginOptions.Version` or a
+  `Version() string` method on the plugin.
 - `client.WorkflowExecutionDescription` now includes `RawResponse`, the full
   `workflowservice.DescribeWorkflowExecutionResponse` returned by the server.
 - Added experimental `temporalnexus.ConvertLinkCallbackToNexusLink` and `temporalnexus.ConvertNexusLinkToLinkCallback`
