@@ -22,6 +22,8 @@ to docs, or any other relevant information.
 
 ### Added
 
+- Plugins can report a version in worker heartbeats, with `SimplePluginOptions.Version` or a
+  `Version() string` method on the plugin.
 - Added experimental `temporalnexus.ConvertLinkCallbackToNexusLink` and `temporalnexus.ConvertNexusLinkToLinkCallback`
   for converting `Link_Callback` to and from Nexus links.
 - Nexus handlers now propagate `NexusSerializationContext` to the workflows, workflow updates, and
