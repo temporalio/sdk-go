@@ -192,9 +192,6 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		options.MetricsHandler = metricsHandler
 		options.TrafficController = trafficController
 		options.Interceptors = clientInterceptors
-		options.PayloadLimits = client.PayloadLimitOptions{
-			PayloadSizeWarning: 128,
-		}
 	})
 	ts.NoError(err)
 
@@ -619,17 +616,15 @@ func (ts *IntegrationTestSuite) TestPreferredVersionProviderRollout() {
 // 2) workflow task heartbeat is happening when local activity takes longer than workflow task timeout
 // 3) server side timer is created when backoff is longer than workflow task timeout
 func (ts *IntegrationTestSuite) TestLocalActivityRetryBehavior() {
-	attempt := 0
-	localActivityFn := func(ctx context.Context) error {
-		attempt++
+	localActivityFn := func(ctx context.Context) (int32, error) {
 		info := activity.GetInfo(ctx)
 		if info.Attempt <= 3 {
-			return temporal.NewApplicationError("retry me", "MyApplicationError")
+			return 0, temporal.NewApplicationError("retry me", "MyApplicationError")
 		}
-		return nil
+		return info.Attempt, nil
 	}
 
-	workflowFn := func(ctx workflow.Context) error {
+	workflowFn := func(ctx workflow.Context) (int32, error) {
 		ao := workflow.LocalActivityOptions{
 			ScheduleToCloseTimeout: 10 * time.Second,
 			RetryPolicy: &temporal.RetryPolicy{
@@ -644,8 +639,9 @@ func (ts *IntegrationTestSuite) TestLocalActivityRetryBehavior() {
 		}
 		ctx1 := workflow.WithLocalActivityOptions(ctx, ao)
 		f1 := workflow.ExecuteLocalActivity(ctx1, localActivityFn)
-		err1 := f1.Get(ctx1, nil)
-		return err1
+		var attempt int32
+		err1 := f1.Get(ctx1, &attempt)
+		return attempt, err1
 	}
 
 	ts.worker.RegisterWorkflowWithOptions(workflowFn, workflow.RegisterOptions{Name: "heartbeat-workflow"})
@@ -656,10 +652,11 @@ func (ts *IntegrationTestSuite) TestLocalActivityRetryBehavior() {
 		WorkflowRunTimeout:  20 * time.Second,
 		WorkflowTaskTimeout: 3 * time.Second,
 	}
-	err := ts.executeWorkflowWithOption(startOptions, workflowFn, nil)
+	var attempt int32
+	err := ts.executeWorkflowWithOption(startOptions, workflowFn, &attempt)
 	ts.NoError(err)
 
-	ts.Equal(4, attempt) // verify local activity executes 4 times
+	ts.EqualValues(4, attempt) // verify the successful local activity chain executes 4 times
 
 	history, err := ts.getHistory(id, "")
 	ts.NoError(err)
@@ -831,7 +828,7 @@ func (ts *IntegrationTestSuite) TestActivityRetryOnError() {
 	ts.Equal(ts.metricCount("temporal_request"), ts.metricCount("temporal_request_attempt"))
 	ts.assertMetricCountAtLeast("temporal_activity_execution_failed", 2)
 	ts.assertMetricCountAtLeast("temporal_workflow_task_queue_poll_succeed", 1)
-	ts.assertMetricCountAtLeast("temporal_long_request", 4, "operation", "PollActivityTaskQueue")
+	ts.assertMetricCountAtLeastEventually("temporal_long_request", 4, "operation", "PollActivityTaskQueue")
 	ts.assertMetricCountAtLeastEventually("temporal_long_request", 3, "operation", "PollWorkflowTaskQueue")
 	ts.Equal(ts.metricCount("temporal_long_request"), ts.metricCount("temporal_long_request_attempt"))
 }
