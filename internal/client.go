@@ -436,9 +436,12 @@ type (
 		//  - serviceerror.Internal
 		//  - serviceerror.Unavailable
 		//  - serviceerror.NotFound
+		//
+		// Deprecated: Use DescribeWorkflow and its response's RawResponse field instead.
 		DescribeWorkflowExecution(ctx context.Context, workflowID, runID string) (*workflowservice.DescribeWorkflowExecutionResponse, error)
 
 		// DescribeWorkflow returns information about the specified workflow execution.
+		// The response's RawResponse field contains the full server response.
 		// The errors it can return:
 		//  - serviceerror.InvalidArgument
 		//  - serviceerror.Internal
@@ -1843,8 +1846,8 @@ func newNamespaceServiceClient(workflowServiceClient workflowservice.WorkflowSer
 }
 
 // NewValue creates a new converter.EncodedValue which can be used to decode binary data returned by Temporal.  For example:
-// User had Activity.RecordHeartbeat(ctx, "my-heartbeat") and then got response from calling Client.DescribeWorkflowExecution.
-// The response contains binary field PendingActivityInfo.HeartbeatDetails,
+// User had Activity.RecordHeartbeat(ctx, "my-heartbeat") and then got a response from calling Client.DescribeWorkflow.
+// The response's RawResponse contains the binary field PendingActivityInfo.HeartbeatDetails,
 // which can be decoded by using:
 //
 //	var result string // This need to be same type as the one passed to RecordHeartbeat
@@ -1856,8 +1859,8 @@ func NewValue(data *commonpb.Payloads) converter.EncodedValue {
 }
 
 // NewValues creates a new converter.EncodedValues which can be used to decode binary data returned by Temporal. For example:
-// User had Activity.RecordHeartbeat(ctx, "my-heartbeat", 123) and then got response from calling Client.DescribeWorkflowExecution.
-// The response contains binary field PendingActivityInfo.HeartbeatDetails,
+// User had Activity.RecordHeartbeat(ctx, "my-heartbeat", 123) and then got a response from calling Client.DescribeWorkflow.
+// The response's RawResponse contains the binary field PendingActivityInfo.HeartbeatDetails,
 // which can be decoded by using:
 //
 //	var result1 string

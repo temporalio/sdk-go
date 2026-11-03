@@ -7954,6 +7954,10 @@ func (ts *IntegrationTestSuite) TestUserMetadata() {
 	// Confirm the workflow description has the expected details
 	desc, err := ts.client.DescribeWorkflow(ctx, run.GetID(), run.GetRunID())
 	ts.NoError(err)
+	ts.NotNil(desc.RawResponse)
+	ts.Equal(run.GetID(), desc.RawResponse.GetWorkflowExecutionInfo().GetExecution().GetWorkflowId())
+	ts.Equal(run.GetRunID(), desc.RawResponse.GetWorkflowExecutionInfo().GetExecution().GetRunId())
+	ts.Equal(opts.TaskQueue, desc.RawResponse.GetExecutionConfig().GetTaskQueue().GetName())
 	summary, err := desc.GetStaticSummary()
 	ts.NoError(err)
 	ts.Equal("my-wf-summary", summary)

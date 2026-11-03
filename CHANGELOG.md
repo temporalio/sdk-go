@@ -24,6 +24,8 @@ to docs, or any other relevant information.
 
 - Plugins can report a version in worker heartbeats, with `SimplePluginOptions.Version` or a
   `Version() string` method on the plugin.
+- `client.WorkflowExecutionDescription` now includes `RawResponse`, the full
+  `workflowservice.DescribeWorkflowExecutionResponse` returned by the server.
 - Added experimental `temporalnexus.ConvertLinkCallbackToNexusLink` and `temporalnexus.ConvertNexusLinkToLinkCallback`
   for converting `Link_Callback` to and from Nexus links.
 - Nexus handlers now propagate `NexusSerializationContext` to the workflows, workflow updates, and
@@ -41,6 +43,9 @@ to docs, or any other relevant information.
   `temporalnexus.GetClient` keep an independent request ID per call and are not deduplicated.
 
 ### Deprecated
+
+- `client.Client.DescribeWorkflowExecution` is deprecated. Use `DescribeWorkflow` and
+  access its response's `RawResponse` field for the full server response instead.
 
 ### :boom: Breaking Changes
 

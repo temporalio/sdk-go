@@ -947,6 +947,8 @@ func (wc *WorkflowClient) GetSearchAttributes(ctx context.Context) (*workflowser
 //   - serviceerror.Internal
 //   - serviceerror.Unavailable
 //   - serviceerror.NotFound
+//
+// Deprecated: Use DescribeWorkflow and its response's RawResponse field instead.
 func (wc *WorkflowClient) DescribeWorkflowExecution(ctx context.Context, workflowID, runID string) (*workflowservice.DescribeWorkflowExecutionResponse, error) {
 	if err := wc.ensureInitialized(ctx); err != nil {
 		return nil, err
@@ -1229,6 +1231,8 @@ type WorkflowExecutionMetadata struct {
 // WorkflowExecutionDescription defines the response to DescribeWorkflow.
 type WorkflowExecutionDescription struct {
 	WorkflowExecutionMetadata
+	// Raw server response this struct was built from.
+	RawResponse           *workflowservice.DescribeWorkflowExecutionResponse
 	dc                    converter.DataConverter
 	inboundPayloadVisitor PayloadVisitor
 	staticSummaryPayload  *commonpb.Payload
@@ -2849,6 +2853,7 @@ func (w *workflowClientInterceptor) DescribeWorkflow(
 	}
 	o := &WorkflowExecutionDescription{
 		WorkflowExecutionMetadata: m,
+		RawResponse:               resp,
 		dc: converter.WithDataConverterSerializationContext(w.client.dataConverter, converter.WorkflowSerializationContext{
 			Namespace:  w.client.namespace,
 			WorkflowID: in.WorkflowID,
