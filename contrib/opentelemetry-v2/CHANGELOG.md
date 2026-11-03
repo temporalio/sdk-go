@@ -15,6 +15,11 @@ or Security.
 
 - Raised the minimum supported Go version from 1.25.4 to 1.26.0.
 
+### Fixed
+
+- Workflow spans no longer end with an error status (or a recorded exception event) when the
+  workflow returns `ContinueAsNewError`. Continue-as-new is normal control flow, not a failure.
+
 ## [0.1.0]
 
 ### Added

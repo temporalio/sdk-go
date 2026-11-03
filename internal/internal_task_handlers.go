@@ -42,9 +42,8 @@ const (
 
 	noRetryBackoff = time.Duration(-1)
 
-	defaultDefaultHeartbeatThrottleInterval               = 30 * time.Second
-	defaultMaxHeartbeatThrottleInterval                   = 60 * time.Second
-	defaultMaxConcurrentWorkflowTaskExternalStorageVisits = 3
+	defaultDefaultHeartbeatThrottleInterval = 30 * time.Second
+	defaultMaxHeartbeatThrottleInterval     = 60 * time.Second
 )
 
 var (
@@ -178,7 +177,7 @@ type (
 		workerDeploymentOptions          *deploymentpb.WorkerDeploymentOptions
 		inboundPayloadVisitor            PayloadVisitor
 		outboundPayloadVisitor           PayloadVisitor
-		payloadVisitorConcurrency        int
+		storageParams                    extstore.StorageParameters
 		activityCancellationCallbacks    *activityCancellationCallbacks
 	}
 
@@ -630,10 +629,8 @@ func (w *workflowExecutionContextImpl) Unlock(err error) {
 		// TODO: in case of closed, it assumes the close command always succeed. need server side change to return
 		// error to indicate the close failure case. This should be a rare case. For now, always remove the cache, and
 		// if the close command failed, the next command will have to rebuild the state.
-		if w.wth.cache.getWorkflowCache().Exist(w.workflowInfo.WorkflowExecution.RunID) {
-			w.wth.cache.removeWorkflowContext(w.workflowInfo.WorkflowExecution.RunID)
-			w.cached = false
-		}
+		w.wth.cache.removeWorkflowContext(w.workflowInfo.WorkflowExecution.RunID, w)
+		w.cached = false
 		// Clear the state so other tasks waiting on the context know it should be discarded.
 		w.clearState()
 	} else if !w.cached {
@@ -656,14 +653,12 @@ func (w *workflowExecutionContextImpl) completeWorkflow(result *commonpb.Payload
 	w.err = err
 }
 
-func (w *workflowExecutionContextImpl) onEviction() {
+func (w *workflowExecutionContextImpl) onEviction(reason workflowCacheRemovalReason) {
 	// onEviction is run by LRU cache's removeFunc in separate goroutinue
 	w.mutex.Lock()
 
-	// Emit force eviction metrics.
-	// This metrics indicates too many concurrent running workflows to fit in sticky cache.
-	// Eviction on error or on workflow complete is normal and expected.
-	if w.err == nil && !w.isWorkflowCompleted {
+	// Bulk cache cleanup is not an individual forced eviction.
+	if reason != workflowCacheRemovalReasonBulk && w.err == nil && !w.isWorkflowCompleted {
 		w.wth.metricsHandler.Counter(metrics.StickyCacheTotalForcedEviction).Inc(1)
 	}
 
@@ -784,8 +779,9 @@ func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *workflowservice.
 		// Use the original execution run ID from the start event as the initial seed.
 		// Original execution run ID stays the same for the entire chain of workflow resets.
 		// This helps us keep child workflow IDs consistent up until a reset-point is encountered.
-		currentRunID: attributes.GetOriginalExecutionRunId(),
-		Priority:     convertFromPBPriority(attributes.Priority),
+		currentRunID:                        attributes.GetOriginalExecutionRunId(),
+		Priority:                            convertFromPBPriority(attributes.Priority),
+		propagatedNexusSerializationContext: attributes.GetPropagatedNexusSerializationContext(),
 	}
 
 	return newWorkflowExecutionContext(workflowInfo, wth), nil
@@ -838,7 +834,7 @@ func (wth *workflowTaskHandlerImpl) GetOrCreateWorkflowContext(
 				} else {
 					wth.logger.Debug("Cached state started on different worker, creating new context")
 				}
-				wth.cache.removeWorkflowContext(runID)
+				wth.cache.removeWorkflowContext(runID, workflowContext)
 				workflowContext.clearState()
 			}
 			workflowContext.Unlock(err)
@@ -861,9 +857,17 @@ func (wth *workflowTaskHandlerImpl) GetOrCreateWorkflowContext(
 		}
 
 		if wth.cache.MaxWorkflowCacheSize() > 0 && task.Query == nil {
-			workflowContext, _ = wth.cache.putWorkflowContext(runID, workflowContext)
+			workflowContext, err = wth.cache.putWorkflowContext(runID, workflowContext)
+			cacheReleased := errors.Is(err, errWorkerCacheReleased)
+			if cacheReleased {
+				err = nil
+			} else if err != nil {
+				return
+			}
 			workflowContext.Lock()
-			workflowContext.cached = true
+			// A size-1 cache has zero LRU capacity and may evict the new context immediately.
+			workflowContext.cached = !cacheReleased &&
+				wth.cache.getWorkflowContext(runID) == workflowContext
 		} else {
 			workflowContext.Lock()
 		}
@@ -1854,8 +1858,9 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 	// for query task
 	if task.Query != nil {
 		queryCompletedRequest := &workflowservice.RespondQueryTaskCompletedRequest{
-			TaskToken: task.TaskToken,
-			Namespace: wth.namespace,
+			TaskToken:     task.TaskToken,
+			Namespace:     wth.namespace,
+			PollerGroupId: task.GetPollerGroupId(),
 		}
 		var panicErr *PanicError
 		if errors.As(workflowContext.err, &panicErr) {
@@ -1934,11 +1939,11 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		}
 		closeCommand = createNewCommand(enumspb.COMMAND_TYPE_FAIL_WORKFLOW_EXECUTION)
 		wfInfo := eventHandler.workflowInfo
-		wfCtx := converter.WorkflowSerializationContext{
+		serializationContext := serializationContextFor(converter.WorkflowSerializationContext{
 			Namespace:  wfInfo.Namespace,
 			WorkflowID: wfInfo.WorkflowExecution.ID,
-		}
-		fc := converter.WithFailureConverterSerializationContext(wth.failureConverter, wfCtx)
+		}, wfInfo.propagatedNexusSerializationContext)
+		fc := converter.WithFailureConverterSerializationContext(wth.failureConverter, serializationContext)
 		failure := fc.ErrorToFailure(workflowContext.err)
 		closeCommand.Attributes = &commandpb.Command_FailWorkflowExecutionCommandAttributes{FailWorkflowExecutionCommandAttributes: &commandpb.FailWorkflowExecutionCommandAttributes{
 			Failure: failure,
@@ -1999,6 +2004,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		BinaryChecksum:   wth.workerBuildID,
 		QueryResults:     queryResults,
 		Namespace:        wth.namespace,
+		ResourceId:       getWorkflowResourceId(task.WorkflowExecution.GetWorkflowId()),
 		MeteringMetadata: &commonpb.MeteringMetadata{NonfirstLocalActivityExecutionAttempts: nonfirstLAAttempts},
 		SdkMetadata: &sdk.WorkflowTaskCompletedMetadata{
 			LangUsedFlags: langUsedFlags,
@@ -2118,7 +2124,7 @@ func newActivityTaskHandlerWithCustomProvider(
 		),
 		inboundPayloadVisitor:         params.inboundPayloadVisitor,
 		outboundPayloadVisitor:        params.outboundPayloadVisitor,
-		payloadVisitorConcurrency:     params.payloadVisitorConcurrency,
+		storageParams:                 params.storageParams,
 		activityCancellationCallbacks: params.activityCancellationCallbacks,
 	}
 }
@@ -2249,10 +2255,11 @@ func (i *temporalInvoker) internalHeartBeat(ctx context.Context, details *common
 	defer cancel()
 
 	request := &workflowservice.RecordActivityTaskHeartbeatRequest{
-		TaskToken: i.taskToken,
-		Details:   details,
-		Identity:  i.identity,
-		Namespace: i.namespace,
+		TaskToken:  i.taskToken,
+		Details:    details,
+		Identity:   i.identity,
+		Namespace:  i.namespace,
+		ResourceId: getActivityResourceIdFromCtx(ctx),
 	}
 	var err error
 	if visitErr := visitProtoPayloads(ctx, i.outboundPayloadVisitor, request, 0); visitErr != nil {
@@ -2260,10 +2267,11 @@ func (i *temporalInvoker) internalHeartBeat(ctx context.Context, details *common
 		// waiting for the heartbeat timeout. Errors are ignored — if the RPC fails the
 		// activity will still be timed out by the server.
 		failReq := &workflowservice.RespondActivityTaskFailedRequest{
-			TaskToken: i.taskToken,
-			Failure:   i.failureConverter.ErrorToFailure(visitErr),
-			Identity:  i.identity,
-			Namespace: i.namespace,
+			TaskToken:  i.taskToken,
+			Failure:    i.failureConverter.ErrorToFailure(visitErr),
+			Identity:   i.identity,
+			Namespace:  i.namespace,
+			ResourceId: getActivityResourceIdFromCtx(ctx),
 		}
 		failCtx, failCancel := context.WithTimeout(context.Background(), recordTimeout)
 		defer failCancel()
@@ -2376,15 +2384,17 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 			)
 		}
 	})
-	actCtx := converter.ActivitySerializationContext{
+	// The result and failure use the propagated Nexus context, because they are returned to the Nexus
+	// caller. WithActivityTask applies the same choice to heartbeat details and the activity context to input.
+	serializationContext := serializationContextFor(converter.ActivitySerializationContext{
 		Namespace:    ath.namespace,
 		WorkflowID:   t.WorkflowExecution.GetWorkflowId(),
 		WorkflowType: t.WorkflowType.GetName(),
 		ActivityType: t.ActivityType.GetName(),
 		TaskQueue:    taskQueue,
-	}
-	dataConverter := converter.WithDataConverterSerializationContext(ath.dataConverter, actCtx)
-	failureConverter := converter.WithFailureConverterSerializationContext(ath.failureConverter, actCtx)
+	}, t.GetPropagatedNexusSerializationContext())
+	dataConverter := converter.WithDataConverterSerializationContext(ath.dataConverter, serializationContext)
+	failureConverter := converter.WithFailureConverterSerializationContext(ath.failureConverter, serializationContext)
 
 	// The root context is only cancelled when the worker is finished shutting down.
 	rootCtx := ath.backgroundContext
@@ -2398,7 +2408,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 		defer unregister()
 	}
 
-	if err := visitProtoPayloads(canCtx, ath.inboundPayloadVisitor, t, ath.payloadVisitorConcurrency); err != nil {
+	if err := visitProtoPayloads(canCtx, ath.inboundPayloadVisitor, t, ath.storageParams.MaxOperationsPerMessage()); err != nil {
 		return activityTaskResult{
 			response:   ath.visitorErrorToActivityFailure("Activity task preprocess error: ", t, err),
 			failureErr: err,
@@ -2433,7 +2443,8 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 		metricsHandler.Counter(metrics.UnregisteredActivityInvocationCounter).Inc(1)
 		return activityTaskResult{response: convertActivityResultToRespondRequest(ath.identity, t.TaskToken, nil,
 			NewActivityNotRegisteredError(activityType, ath.getRegisteredActivityNames()),
-			dataConverter, failureConverter, ath.namespace, false, ath.versionStamp, ath.deployment, ath.workerDeploymentOptions)}, nil
+			dataConverter, failureConverter, ath.namespace, false, ath.versionStamp, ath.deployment, ath.workerDeploymentOptions,
+			t.WorkflowExecution.GetWorkflowId(), t.ActivityId)}, nil
 	}
 
 	// panic handler
@@ -2452,7 +2463,8 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 			panicErr := newPanicError(p, st)
 			result = activityTaskResult{
 				response: convertActivityResultToRespondRequest(ath.identity, t.TaskToken, nil, panicErr,
-					dataConverter, failureConverter, ath.namespace, false, ath.versionStamp, ath.deployment, ath.workerDeploymentOptions),
+					dataConverter, failureConverter, ath.namespace, false, ath.versionStamp, ath.deployment, ath.workerDeploymentOptions,
+					t.WorkflowExecution.GetWorkflowId(), t.ActivityId),
 			}
 		}
 	}()
@@ -2506,9 +2518,9 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 			tagError, err,
 		)
 	}
-
 	response := convertActivityResultToRespondRequest(ath.identity, t.TaskToken, output, err,
-		dataConverter, failureConverter, ath.namespace, isActivityCanceled, ath.versionStamp, ath.deployment, ath.workerDeploymentOptions)
+		dataConverter, failureConverter, ath.namespace, isActivityCanceled, ath.versionStamp, ath.deployment, ath.workerDeploymentOptions,
+		t.WorkflowExecution.GetWorkflowId(), t.ActivityId)
 
 	if msg, ok := response.(proto.Message); ok {
 		var storageTarget converter.StorageDriverTargetInfo
@@ -2534,7 +2546,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 			outboundBase = context.Background()
 		}
 		outboundCtx := extstore.WithStorageTarget(outboundBase, storageTarget)
-		if err := visitProtoPayloads(outboundCtx, ath.outboundPayloadVisitor, msg, ath.payloadVisitorConcurrency); err != nil {
+		if err := visitProtoPayloads(outboundCtx, ath.outboundPayloadVisitor, msg, ath.storageParams.MaxOperationsPerMessage()); err != nil {
 			return activityTaskResult{
 				response:   ath.visitorErrorToActivityFailure("Activity task postprocess error: ", t, err),
 				failureErr: err,
@@ -2572,6 +2584,7 @@ func (ath *activityTaskHandlerImpl) visitorErrorToActivityFailure(msgPrefix stri
 		//lint:ignore SA1019 support legacy worker deployment APIs
 		Deployment:        ath.deployment,
 		DeploymentOptions: ath.workerDeploymentOptions,
+		ResourceId:        getActivityResourceId(t.WorkflowExecution.GetWorkflowId(), t.ActivityId),
 	}
 }
 
@@ -2630,6 +2643,14 @@ func createNewCommandWithMetadata(commandType enumspb.CommandType, metadata *sdk
 		CommandType:  commandType,
 		UserMetadata: metadata,
 	}
+}
+
+func getActivityResourceIdFromCtx(ctx context.Context) string {
+	env := getActivityEnvironmentFromCtx(ctx)
+	if env == nil {
+		return ""
+	}
+	return getActivityResourceId(env.workflowExecution.ID, env.activityID)
 }
 
 func recordActivityHeartbeat(ctx context.Context, service workflowservice.WorkflowServiceClient, metricsHandler metrics.Handler,

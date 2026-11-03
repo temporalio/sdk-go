@@ -842,7 +842,9 @@ func (env *testWorkflowEnvironmentImpl) getWorkflowDefinition(wt WorkflowType) (
 	}
 	var dynamic bool
 	if d, ok := wf.(string); ok && d == "dynamic" {
+		env.registry.Lock()
 		wf = env.registry.dynamicWorkflow
+		env.registry.Unlock()
 		dynamic = true
 	}
 	// A dynamic workflow may itself be a WorkflowDefinitionFactory (e.g. the
@@ -1485,7 +1487,8 @@ func (env *testWorkflowEnvironmentImpl) CompleteActivity(taskToken []byte, resul
 		// We do allow canceled error to be passed here
 		cancelAllowed := true
 		request := convertActivityResultToRespondRequest("test-identity", taskToken, data, err,
-			activityHandle.dataConverter, activityHandle.failureConverter, defaultTestNamespace, cancelAllowed, nil, nil, nil)
+			activityHandle.dataConverter, activityHandle.failureConverter, defaultTestNamespace, cancelAllowed, nil, nil, nil,
+			activityHandle.task.WorkflowExecution.GetWorkflowId(), activityHandle.task.ActivityId)
 		env.handleActivityResult(activityHandle, request, activityHandle.dataConverter)
 	}, false /* do not auto schedule workflow task, because activity might be still pending */)
 
@@ -2005,11 +2008,7 @@ func ensureDefaultRetryPolicy(parameters *ExecuteActivityParams) {
 
 func (env *testWorkflowEnvironmentImpl) ExecuteLocalActivity(params ExecuteLocalActivityParams, callback LocalActivityResultHandler) LocalActivityID {
 	activityID := getStringID(env.nextID())
-	ae := &activityExecutor{name: getActivityFunctionName(env.registry, params.ActivityFn), fn: params.ActivityFn}
-	if at, _ := getValidatedActivityFunction(params.ActivityFn, params.InputArgs, env.registry); at != nil {
-		// local activity could be registered, if so use the registered name. This name is only used to find a mock.
-		ae.name = at.Name
-	}
+	ae := &activityExecutor{name: params.ActivityType, fn: params.ActivityFn}
 	// We have to skip the interceptors on the first call because
 	// ExecuteWithActualArgs is actually invoked twice to support a mock activity
 	// function result
@@ -3047,6 +3046,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteNexusOperation(
 				nexus.NewHandlerErrorf(nexus.HandlerErrorTypeInternal, "%s", err.Error()),
 				false,
 				taskHandler.failureConverter,
+				task.GetPollerGroupId(),
 			)
 		}
 		if failure != nil {
@@ -4097,13 +4097,19 @@ func (r *testNexusHandler) StartOperation(
 	}
 
 	// rebuild the input as *nexus.LazyValue
-	payload, err := r.env.dataConverter.ToPayload(inputPtr.Elem().Interface())
+	var dataConverter converter.DataConverter
+	if r.opHandle.params.client.Endpoint() == systemNexusEndpoint {
+		dataConverter = converter.NewCompositeDataConverter(converter.NewProtoPayloadConverter())
+	} else {
+		dataConverter = r.env.dataConverter
+	}
+	payload, err := dataConverter.ToPayload(inputPtr.Elem().Interface())
 	if err != nil {
 		// this should not be possible
 		panic("mock of ExecuteNexusOperation failed to convert input to payload")
 	}
 	serializer := &payloadSerializer{
-		converter: r.env.dataConverter,
+		converter: dataConverter,
 		payload:   payload,
 	}
 	input = nexus.NewLazyValue(
@@ -4121,7 +4127,7 @@ func (r *testNexusHandler) StartOperation(
 				operation,
 				newEncodedValue(
 					&commonpb.Payloads{Payloads: []*commonpb.Payload{payload}},
-					r.env.GetDataConverter(),
+					dataConverter,
 				),
 			)
 			close(waitCh)

@@ -17,10 +17,13 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	failurepb "go.temporal.io/api/failure/v1"
+	nexuspb "go.temporal.io/api/nexus/v1"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
+	"go.temporal.io/sdk/internal/common/workflowcontext"
 	"go.temporal.io/sdk/log"
+	commonconverter "go.temporal.io/sdk/internal/common/converter"
 )
 
 // HandlerUnfinishedPolicy actions taken if a workflow completes with running handlers.
@@ -180,88 +183,18 @@ type (
 	// SendChannel is a write only view of the Channel
 	//
 	// Exposed as: [go.temporal.io/sdk/workflow.SendChannel]
-	SendChannel interface {
-		// Name returns the name of the Channel.
-		// If the Channel was retrieved from a GetSignalChannel call, Name returns the signal name.
-		//
-		// A Channel created without an explicit name will use a generated name by the SDK and
-		// is not deterministic.
-		Name() string
-
-		// Send blocks until the data is sent.
-		Send(ctx Context, v any)
-
-		// SendAsync try to send without blocking. It returns true if the data was sent, otherwise it returns false.
-		SendAsync(v any) (ok bool)
-
-		// Close close the Channel, and prohibit subsequent sends.
-		Close()
-	}
+	SendChannel = workflowcontext.SendChannel
 
 	// ReceiveChannel is a read only view of the Channel
 	//
 	// Exposed as: [go.temporal.io/sdk/workflow.ReceiveChannel]
-	ReceiveChannel interface {
-		// Name returns the name of the Channel.
-		// If the Channel was retrieved from a GetSignalChannel call, Name returns the signal name.
-		//
-		// A Channel created without an explicit name will use a generated name by the SDK and
-		// is not deterministic.
-		Name() string
-
-		// Receive blocks until it receives a value, and then assigns the received value to the provided pointer.
-		// Returns false when Channel is closed.
-		// Parameter valuePtr is a pointer to the expected data structure to be received. For example:
-		//  var v string
-		//  c.Receive(ctx, &v)
-		//
-		// Note, values should not be reused for extraction here because merging on
-		// top of existing values may result in unexpected behavior similar to
-		// json.Unmarshal.
-		Receive(ctx Context, valuePtr any) (more bool)
-
-		// ReceiveWithTimeout blocks up to timeout until it receives a value, and then assigns the received value to the
-		// provided pointer.
-		// Returns more value of false when Channel is closed.
-		// Returns ok value of false when no value was found in the channel for the duration of timeout or
-		// the ctx was canceled.
-		// The valuePtr is not modified if ok is false.
-		// Parameter valuePtr is a pointer to the expected data structure to be received. For example:
-		//  var v string
-		//  c.ReceiveWithTimeout(ctx, time.Minute, &v)
-		//
-		// Note, values should not be reused for extraction here because merging on
-		// top of existing values may result in unexpected behavior similar to
-		// json.Unmarshal.
-		ReceiveWithTimeout(ctx Context, timeout time.Duration, valuePtr any) (ok, more bool)
-
-		// ReceiveAsync tries to receive from a Channel without blocking. If there is data available, it
-		// assigns the data to valuePtr and returns true. Otherwise, it returns false immediately.
-		//
-		// Note, values should not be reused for extraction here because merging on
-		// top of existing values may result in unexpected behavior similar to
-		// json.Unmarshal.
-		ReceiveAsync(valuePtr any) (ok bool)
-
-		// ReceiveAsyncWithMoreFlag is the same as ReceiveAsync but with an extra return value more that indicates
-		// whether the channel contains more data. more is false when the channel is closed.
-		//
-		// Note, values should not be reused for extraction here because merging on top of existing values may result in
-		// unexpected behavior similar to json.Unmarshal.
-		ReceiveAsyncWithMoreFlag(valuePtr any) (ok bool, more bool)
-
-		// Len returns the number of buffered messages plus the number of blocked Send calls.
-		Len() int
-	}
+	ReceiveChannel = workflowcontext.ReceiveChannel
 
 	// Channel must be used by workflow code instead of native go channels.
 	// Use workflow.NewChannel(ctx) method to create Channel instance.
 	//
 	// Exposed as: [go.temporal.io/sdk/workflow.Channel]
-	Channel interface {
-		SendChannel
-		ReceiveChannel
-	}
+	Channel = workflowcontext.Channel
 
 	// Selector must be used by workflow code instead of native go select.
 	// Use workflow.NewSelector(ctx) to create a selector.
@@ -548,6 +481,16 @@ type (
 		// WARNING: Worker versioning is currently experimental
 		VersioningIntent VersioningIntent
 
+		// VersioningOverride sets an explicit versioning configuration for the child workflow.
+		// When set, this takes precedence over versioning inherited from the parent workflow.
+		//
+		// Optional: defaults to no override.
+		//
+		// This option requires Temporal Server 1.32.0 or later.
+		//
+		// NOTE: Experimental
+		VersioningOverride VersioningOverride
+
 		// StaticSummary is a single-line fixed summary for this child workflow execution that will appear in UI/CLI. This can be
 		// in single-line Temporal Markdown format.
 		//
@@ -563,8 +506,6 @@ type (
 
 		// Priority - Optional priority settings that control relative ordering of
 		// task processing when tasks are backed up in a queue.
-		//
-		// WARNING: Task queue priority is currently experimental.
 		Priority Priority
 	}
 
@@ -1104,7 +1045,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteActivity(ctx Context, typeName 
 		ActivityType:           *activityType,
 		Input:                  input,
 		DataConverter:          dataConverter,
-		FailureConverter:       converter.WithFailureConverterSerializationContext(getRootFailureConverterFromWorkflowContext(ctx), actCtx),
+		FailureConverter:       withRootFailureConverterSerializationContext(ctx, actCtx),
 		Header:                 header,
 	}
 	params.ActivityID = activityID
@@ -1279,7 +1220,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteLocalActivity(ctx Context, type
 		InputArgs:                   args,
 		WorkflowInfo:                wfInfo,
 		DataConverter:               withRootDataConverterSerializationContext(ctx, actCtx),
-		FailureConverter:            converter.WithFailureConverterSerializationContext(getRootFailureConverterFromWorkflowContext(ctx), actCtx),
+		FailureConverter:            withRootFailureConverterSerializationContext(ctx, actCtx),
 		ScheduledTime:               Now(ctx), // initial scheduled time
 		Header:                      header,
 		Attempt:                     1, // Attempts always start at one
@@ -1458,10 +1399,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 		return result
 	}
 
-	failureConverter := converter.WithFailureConverterSerializationContext(
-		getRootFailureConverterFromWorkflowContext(ctx),
-		childWfCtx,
-	)
+	failureConverter := withRootFailureConverterSerializationContext(ctx, childWfCtx)
 
 	params := ExecuteWorkflowParams{
 		WorkflowOptions:  *options,
@@ -1558,8 +1496,6 @@ type WorkflowInfo struct {
 	RetryPolicy *RetryPolicy
 	// Priority settings that control relative ordering of task processing when workflow tasks are backed up in a queue.
 	// If no priority is set, the default value is the zero value.
-	//
-	// WARNING: Task queue priority is currently experimental.
 	Priority Priority
 	// BinaryChecksum represents the value persisted by the last worker to complete a task in this workflow. It may be
 	// an explicitly set or implicitly derived binary checksum of the worker binary, or, if this worker has opted into
@@ -1579,7 +1515,8 @@ type WorkflowInfo struct {
 	currentHistorySize   int
 	currentHistoryLength int
 	// currentRunID is the current run ID of the workflow task, deterministic over reset
-	currentRunID string
+	currentRunID                        string
+	propagatedNexusSerializationContext *nexuspb.PropagatedSerializationContext
 }
 
 // UpdateInfo information about a currently running update
@@ -2066,6 +2003,7 @@ func WithChildWorkflowOptions(ctx Context, cwo ChildWorkflowOptions) Context {
 	wfOptions.TypedSearchAttributes = cwo.TypedSearchAttributes
 	wfOptions.ParentClosePolicy = cwo.ParentClosePolicy
 	wfOptions.VersioningIntent = cwo.VersioningIntent
+	wfOptions.VersioningOverride = cwo.VersioningOverride
 	wfOptions.StaticSummary = cwo.StaticSummary
 	wfOptions.StaticDetails = cwo.StaticDetails
 	wfOptions.Priority = ConvertToPBPriority(cwo.Priority)
@@ -2098,6 +2036,7 @@ func GetChildWorkflowOptions(ctx Context) ChildWorkflowOptions {
 		TypedSearchAttributes:    opts.TypedSearchAttributes,
 		ParentClosePolicy:        opts.ParentClosePolicy,
 		VersioningIntent:         opts.VersioningIntent,
+		VersioningOverride:       opts.VersioningOverride,
 		StaticSummary:            opts.StaticSummary,
 		StaticDetails:            opts.StaticDetails,
 	}
@@ -2172,8 +2111,8 @@ func WithDataConverter(ctx Context, dc converter.DataConverter) Context {
 		panic("data converter is nil for WithDataConverter")
 	}
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
-	getWorkflowEnvOptions(ctx1).DataConverter = dc
-	getWorkflowEnvOptions(ctx1).RootDataConverter = dc
+	getWorkflowEnvOptions(ctx1).DataConverter = MakeTransferAware(dc)
+	getWorkflowEnvOptions(ctx1).RootDataConverter = MakeTransferAware(dc)
 	return ctx1
 }
 
@@ -2752,8 +2691,13 @@ func WithLocalActivityOptions(ctx Context, options LocalActivityOptions) Context
 }
 
 func applyRetryPolicyDefaultsForLocalActivity(policy *RetryPolicy) *RetryPolicy {
+	// Copy the policy so the defaults do not modify the value the caller owns.
+	// The caller can share one policy between workflows that run concurrently.
 	if policy == nil {
 		policy = &RetryPolicy{}
+	} else {
+		policyCopy := *policy
+		policy = &policyCopy
 	}
 	if policy.BackoffCoefficient == 0 {
 		policy.BackoffCoefficient = 2
@@ -3118,6 +3062,9 @@ func (c nexusClient) ExecuteOperation(ctx Context, operation any, input any, opt
 }
 
 func (wc *workflowEnvironmentInterceptor) prepareNexusOperationParams(ctx Context, input ExecuteNexusOperationInput) (ExecuteNexusOperationParams, error) {
+	endpoint := input.Client.Endpoint()
+	service := input.Client.Service()
+
 	var ok bool
 	var operationName string
 	if operationName, ok = input.Operation.(string); ok {
@@ -3134,14 +3081,36 @@ func (wc *workflowEnvironmentInterceptor) prepareNexusOperationParams(ctx Contex
 		return ExecuteNexusOperationParams{}, fmt.Errorf("invalid 'operation' parameter, must be an OperationReference or a string")
 	}
 
-	// Nexus context and data converters.
-	nsc := converter.NexusSerializationContext{
-		Endpoint:  input.Client.Endpoint(),
-		Service:   input.Client.Service(),
-		Operation: operationName,
+	// Compute the serialization context, if any.
+	// - In System Nexus, the payload we construct is a proto handled by the
+	//   temporal service itself, e.g. SignalWithStartWorkflowExecutionRequest.
+	//   We use the serialization context to encode payloads *within* the payload,
+	//   e.g. SignalWithStartWorkflowExecutionRequest.Input.
+	// - For ordinary nexus operations, the serialization context is used to
+	//   encode the top-level payload - the input to the nexus operation.
+	var sc converter.SerializationContext
+	if endpoint == systemNexusEndpoint {
+		if info, ok := systemNexusRegistry[SystemNexusRegistryKey{
+			Service:   service,
+			Operation: operationName,
+		}]; ok {
+			sc = info.SerializationContext(input.Input)
+		}
+	} else {
+		sc = converter.NexusSerializationContext{
+			Endpoint:  endpoint,
+			Service:   service,
+			Operation: operationName,
+		}
 	}
-	dc := withRootDataConverterSerializationContext(ctx, nsc)
-	fc := converter.WithFailureConverterSerializationContext(getRootFailureConverterFromWorkflowContext(ctx), nsc)
+
+	dc := withRootDataConverterSerializationContext(ctx, sc)
+	fc := withRootFailureConverterSerializationContext(ctx, sc)
+	if endpoint == systemNexusEndpoint {
+		// System nexus operations use a special converter because they're
+		// meant for the server.
+		dc = commonconverter.WithDataConverterSystemNexusContext(systemNexusDataConverter, dc)
+	}
 
 	payload, err := dc.ToPayload(input.Input)
 	if err != nil {

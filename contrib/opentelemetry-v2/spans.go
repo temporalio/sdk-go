@@ -23,7 +23,7 @@ func (t *tracerSpan) Finish(opts *tracing.TracerFinishSpanOptions) {
 		return
 	}
 
-	if opts.Error != nil {
+	if opts.Error != nil && !workflow.IsContinueAsNewError(opts.Error) {
 		t.RecordError(opts.Error)
 
 		// Benign application errors do not mark spans as failed.

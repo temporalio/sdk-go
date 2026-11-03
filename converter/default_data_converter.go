@@ -1,7 +1,9 @@
 package converter
 
+import commonconverter "go.temporal.io/sdk/internal/common/converter"
+
 var (
-	defaultDataConverter = NewCompositeDataConverter(
+	defaultDataConverter = commonconverter.MakeTransferAware(NewCompositeDataConverter(
 		NewNilPayloadConverter(),
 		NewByteSlicePayloadConverter(),
 
@@ -13,10 +15,12 @@ var (
 		NewProtoPayloadConverter(),
 
 		NewJSONPayloadConverter(),
-	)
+	))
 )
 
 // GetDefaultDataConverter returns default data converter used by Temporal worker.
+// It supports transfer type conversion for top-level values implementing
+// [ValueWithTransferTypeConverter].
 func GetDefaultDataConverter() DataConverter {
 	return defaultDataConverter
 }

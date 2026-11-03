@@ -776,6 +776,15 @@ type (
 		// TaskQueue is the optional Task Queue to include in the Activity
 		// serialization context when encoding Result or Err.
 		TaskQueue string
+
+		// NexusSerializationContext is the Nexus serialization context to encode Result and Err with,
+		// in place of the Activity serialization context. When completing a standalone Activity started by a
+		// Nexus operation handler, set it to the value of activity.GetInfo(ctx).NexusSerializationContext
+		// captured in the Activity, because the Nexus caller decodes the result with that context.
+		// Leave nil otherwise.
+		//
+		// NOTE: Experimental
+		NexusSerializationContext *converter.NexusSerializationContext
 	}
 
 	// CompleteActivityByActivityIDOptions provides options for CompleteActivityByActivityIDWithOptions.
@@ -828,6 +837,15 @@ type (
 		// TaskQueue is the optional Task Queue to include in the Activity
 		// serialization context when encoding Result or Err.
 		TaskQueue string
+
+		// NexusSerializationContext is the Nexus serialization context to encode Result and Err with,
+		// in place of the Activity serialization context. When completing a standalone Activity started by a
+		// Nexus operation handler, set it to the value of activity.GetInfo(ctx).NexusSerializationContext
+		// captured in the Activity, because the Nexus caller decodes the result with that context.
+		// Leave nil otherwise.
+		//
+		// NOTE: Experimental
+		NexusSerializationContext *converter.NexusSerializationContext
 	}
 
 	// RecordActivityHeartbeatOptions provides options for RecordActivityHeartbeatWithOptions.
@@ -872,6 +890,15 @@ type (
 		// TaskQueue is the optional Task Queue to include in the Activity
 		// serialization context when encoding Details.
 		TaskQueue string
+
+		// NexusSerializationContext is the Nexus serialization context to encode Details with, in
+		// place of the Activity serialization context. When heartbeating a standalone Activity started
+		// by a Nexus operation handler, set it to the value of activity.GetInfo(ctx).NexusSerializationContext
+		// captured in the Activity, because the worker and the Nexus caller decode the details with that
+		// context. Leave nil otherwise.
+		//
+		// NOTE: Experimental
+		NexusSerializationContext *converter.NexusSerializationContext
 	}
 
 	// ClientOptions are optional parameters for Client creation.
@@ -970,8 +997,6 @@ type (
 		//
 		// Plugins themselves should never mutate this field, the behavior is
 		// undefined.
-		//
-		// NOTE: Experimental
 		Plugins []ClientPlugin
 
 		// WorkerHeartbeatInterval is the interval at which the worker will send heartbeats to the server.
@@ -1304,8 +1329,6 @@ type (
 
 		// Priority - Optional priority settings that control relative ordering of
 		// task processing when tasks are backed up in a queue.
-		//
-		// WARNING: Task queue priority is currently experimental.
 		Priority Priority
 
 		// responseInfo - Optional pointer to store information of StartWorkflowExecution response.
@@ -1400,8 +1423,6 @@ type (
 	// For all fields, the field not present or equal to zero/empty string means to
 	// inherit the value from the calling workflow, or if there is no calling
 	// workflow, then use the default value.
-	//
-	// WARNING: Task queue priority is currently experimental.
 	//
 	// Exposed as: [go.temporal.io/sdk/temporal.Priority]
 	Priority struct {
@@ -1646,6 +1667,7 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 	if options.DataConverter == nil {
 		options.DataConverter = converter.GetDefaultDataConverter()
 	}
+	options.DataConverter = MakeTransferAware(options.DataConverter)
 
 	if options.FailureConverter == nil {
 		options.FailureConverter = GetDefaultFailureConverter()
@@ -1748,7 +1770,7 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 	// Create outbound interceptor by wrapping backwards through chain
 	client.interceptor = &workflowClientInterceptor{
 		client:                 client,
-		inboundPayloadVisitor:  extstore.NewExternalRetrievalVisitor(storageParams),
+		inboundPayloadVisitor:  extstore.NewExternalRetrievalVisitor(storageParams.WithLogger(client.logger)),
 		outboundPayloadVisitor: client.newOutboundPayloadVisitor(),
 	}
 	for i := len(options.Interceptors) - 1; i >= 0; i-- {
@@ -1898,8 +1920,12 @@ func (m mTLSCredentials) applyToOptions(opts *ConnectionOptions) error {
 		opts.TLS = &tls.Config{}
 	} else if len(opts.TLS.Certificates) != 0 {
 		return fmt.Errorf("cannot apply mTLS credentials, certificates already exist on TLS options")
+	} else {
+		opts.TLS = opts.TLS.Clone()
 	}
-	opts.TLS.Certificates = append(opts.TLS.Certificates, tls.Certificate(m))
+
+	// Use a new slice because Clone shares the certificate backing array.
+	opts.TLS.Certificates = []tls.Certificate{tls.Certificate(m)}
 	return nil
 }
 

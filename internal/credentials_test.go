@@ -7,6 +7,26 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestMTLSConfigReuse(t *testing.T) {
+	certificate := tls.Certificate{Certificate: [][]byte{[]byte("client-certificate")}}
+	backing := []tls.Certificate{{Certificate: [][]byte{[]byte("unused-certificate")}}}
+	tlsConfig := &tls.Config{
+		ServerName:   "test-domain",
+		Certificates: backing[:0],
+	}
+	creds := NewMTLSCredentials(certificate)
+
+	// Reusing options must neither change the config nor its certificate backing array.
+	for range 2 {
+		opts := ConnectionOptions{TLS: tlsConfig}
+		require.NoError(t, creds.applyToOptions(&opts))
+		require.Equal(t, tlsConfig.ServerName, opts.TLS.ServerName)
+		require.Equal(t, []tls.Certificate{certificate}, opts.TLS.Certificates)
+		require.Empty(t, tlsConfig.Certificates)
+		require.Equal(t, "unused-certificate", string(backing[0].Certificate[0]))
+	}
+}
+
 func TestAPIKeyCredentials_TLSEnabledByDefaultWhenAPIKeyProvided(t *testing.T) {
 	creds := NewAPIKeyStaticCredentials("test-api-key")
 	opts := &ConnectionOptions{}

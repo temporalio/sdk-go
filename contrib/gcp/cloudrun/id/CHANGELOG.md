@@ -2,6 +2,20 @@
 
 ### Added
 
+### Changed
+
+### Deprecated
+
+### :boom: Breaking Changes
+
+### Fixed
+
+### Security
+
+## [0.1.0] - 2026-09-29
+
+### Added
+
 - Initial (experimental) release of the Cloud Run integration. `CloudRunIDPlugin` is a client
   plugin: register it once on `client.Options.Plugins` and, when the client connects, it
   reads the current Cloud Run instance's metadata and sets the client identity (unless one
@@ -10,3 +24,4 @@
   services (`K_SERVICE`, `K_REVISION`), reading the unique instance ID from the GCP
   metadata server, and returns an error when the process is not running on
   Cloud Run.
+

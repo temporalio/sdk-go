@@ -26,11 +26,11 @@ const (
 	// limit on the recombined completion size.
 	//
 	// Pages are packed by summing command body sizes only; the 512 KiB of headroom below 4 MiB
-	// absorbs everything that sum omits: the per-request overhead (task token, identity, namespace)
-	// and the per-command wire framing (a field tag plus a length varint, up to 6 bytes each). At the
-	// server's default per-workflow history-count limit (~51,200 events), worst-case framing is
-	// ~300 KiB, so this headroom covers even a page of many tiny commands and lets us skip
-	// per-command accounting.
+	// absorbs everything that sum omits: per-request fields (task token, identity, namespace,
+	// resource ID) and per-command wire framing (a field tag plus a length varint, up to 6 bytes
+	// each). At the server's default per-workflow history-count limit (~51,200 events),
+	// worst-case framing is ~300 KiB, so this headroom covers even a page of many tiny
+	// commands and lets us skip per-command accounting.
 	maxWorkflowTaskCompletionPageBytes = 4*1024*1024 - 512*1024
 	// Conservative heuristic, not a tuned value: caps the client-side burst (concurrent request
 	// bodies and streams); the cost is only extra serial rounds for completions over this many pages.
@@ -61,6 +61,7 @@ func paginateWorkflowTaskCompletion(
 			TaskToken:        request.TaskToken,
 			Identity:         request.Identity,
 			Namespace:        request.Namespace,
+			ResourceId:       request.ResourceId,
 			IntermediatePage: true,
 			PageNumber:       int32(pageNumber),
 			Commands:         commands,

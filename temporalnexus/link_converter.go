@@ -41,11 +41,17 @@ func ConvertWorkflowLinkToNexusLink(workflowLink *commonpb.Link_Workflow) nexus.
 	return apinexus.ConvertLinkWorkflowToNexusLink(workflowLink)
 }
 
-// ConvertCommonLinkToNexusLink converts a Common Link to a Nexus Link. Will be used
-// to safely point to non-workflow event links for cases where Nexus operations fail.
-// Eg. UpdateWorkflow fails validation -> point to Workflow instead of WorkflowEvent
-// as there will not be a history event. Returns an empty link if commonLink is neither
-// a WorkflowEventLink nor a WorkflowLink
+// ConvertNexusLinkToLinkWorkflow converts a Nexus Link back to a Link_Workflow.
+//
+// NOTE: Experimental
+func ConvertNexusLinkToLinkWorkflow(link nexus.Link) (*commonpb.Link_Workflow, error) {
+	return apinexus.ConvertNexusLinkToLinkWorkflow(link)
+}
+
+// ConvertCommonLinkToNexusLink converts a Common Link to a Nexus Link, dispatching on the
+// populated variant. A Workflow link is how a Nexus operation points at an execution when there
+// is no history event to reference, such as an UpdateWorkflow that fails validation. Returns the
+// zero Link if no variant is set, or if the variant has no Nexus link form.
 //
 // NOTE: Experimental
 func ConvertCommonLinkToNexusLink(commonLink *commonpb.Link) nexus.Link {
@@ -54,6 +60,16 @@ func ConvertCommonLinkToNexusLink(commonLink *commonpb.Link) nexus.Link {
 		return ConvertLinkWorkflowEventToNexusLink(commonLink.GetWorkflowEvent())
 	case *commonpb.Link_Workflow_:
 		return ConvertWorkflowLinkToNexusLink(commonLink.GetWorkflow())
+	case *commonpb.Link_NexusOperation_:
+		return ConvertLinkNexusOperationToNexusLink(commonLink.GetNexusOperation())
+	case *commonpb.Link_Activity_:
+		return ConvertLinkActivityToNexusLink(commonLink.GetActivity())
+	case *commonpb.Link_Callback_:
+		link, err := ConvertLinkCallbackToNexusLink(commonLink.GetCallback())
+		if err != nil {
+			return nexus.Link{}
+		}
+		return link
 	default:
 		return nexus.Link{}
 	}
@@ -71,4 +87,18 @@ func ConvertLinkActivityToNexusLink(a *commonpb.Link_Activity) nexus.Link {
 // NOTE: Experimental
 func ConvertNexusLinkToLinkActivity(link nexus.Link) (*commonpb.Link_Activity, error) {
 	return apinexus.ConvertNexusLinkToLinkActivity(link)
+}
+
+// ConvertLinkCallbackToNexusLink converts a Link_Callback type to a Nexus Link.
+//
+// NOTE: Experimental
+func ConvertLinkCallbackToNexusLink(cb *commonpb.Link_Callback) (nexus.Link, error) {
+	return apinexus.ConvertLinkCallbackToNexusLink(cb)
+}
+
+// ConvertNexusLinkToLinkCallback converts a Nexus Link back to a Link_Callback.
+//
+// NOTE: Experimental
+func ConvertNexusLinkToLinkCallback(link nexus.Link) (*commonpb.Link_Callback, error) {
+	return apinexus.ConvertNexusLinkToLinkCallback(link)
 }

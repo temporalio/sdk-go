@@ -48,6 +48,17 @@ type StorageDriverRetrieveContext = extstore.StorageDriverRetrieveContext
 // NOTE: Experimental
 type StorageDriverClaim = extstore.StorageDriverClaim
 
+// StorageDriverLimiter limits the concurrent operations a driver performs.
+//
+// NOTE: Experimental
+type StorageDriverLimiter[T any] = extstore.StorageDriverLimiter[T]
+
+// ExternalStorageConcurrency holds limits on the external storage operations
+// drivers perform.
+//
+// NOTE: Experimental
+type ExternalStorageConcurrency = extstore.ExternalStorageConcurrency
+
 // StorageDriver is the interface that must be implemented to back external
 // payload storage. When a payload exceeds the configured size threshold the SDK
 // calls Store instead of embedding it in the Temporal history event. On the

@@ -334,6 +334,13 @@ type (
 	// Exposed as: [go.temporal.io/sdk/temporal.NamespaceNotFoundError]
 	NamespaceNotFoundError struct{}
 
+	// InvalidVersioningOverrideError is set as the cause of
+	// ChildWorkflowExecutionError when the child could not start because its
+	// versioning override was invalid.
+	//
+	// Exposed as: [go.temporal.io/sdk/temporal.InvalidVersioningOverrideError]
+	InvalidVersioningOverrideError struct{}
+
 	// WorkflowExecutionError is returned from workflow.
 	// Unwrap this error to get actual cause.
 	//
@@ -1044,6 +1051,10 @@ func (e *NexusOperationError) Unwrap() error {
 // Error from error interface
 func (*NamespaceNotFoundError) Error() string {
 	return "namespace not found"
+}
+
+func (*InvalidVersioningOverrideError) Error() string {
+	return "invalid versioning override"
 }
 
 // Error from error interface

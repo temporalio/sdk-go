@@ -22,8 +22,6 @@ import (
 // automatically configured on workers made from the client.
 //
 // Exposed as: [go.temporal.io/sdk/client.Plugin]
-//
-// NOTE: Experimental
 type ClientPlugin interface {
 	// Name returns the name for this plugin.
 	Name() string
@@ -53,8 +51,6 @@ type ClientPlugin interface {
 // client plugin.
 //
 // Exposed as: [go.temporal.io/sdk/client.PluginConfigureClientOptions]
-//
-// NOTE: Experimental
 type ClientPluginConfigureClientOptions struct {
 	// ClientOptions are the set of mutable options that can be adjusted by
 	// plugins.
@@ -64,8 +60,6 @@ type ClientPluginConfigureClientOptions struct {
 // ClientPluginNewClientOptions are options for NewClient on a client plugin.
 //
 // Exposed as: [go.temporal.io/sdk/client.PluginNewClientOptions]
-//
-// NOTE: Experimental
 type ClientPluginNewClientOptions struct {
 	// ClientOptions are the set of options used for the client. These should
 	// not be mutated, that should be done via the ConfigureClient method.
@@ -82,8 +76,6 @@ type ClientPluginNewClientOptions struct {
 // ClientPluginBase must be embedded into client plugin implementations.
 //
 // Exposed as: [go.temporal.io/sdk/client.PluginBase]
-//
-// NOTE: Experimental
 type ClientPluginBase struct{}
 
 var _ ClientPlugin = struct {
@@ -99,8 +91,6 @@ var _ ClientPlugin = struct {
 // plugins must implement Name().
 //
 // Exposed as: [go.temporal.io/sdk/worker.Plugin]
-//
-// NOTE: Experimental
 type WorkerPlugin interface {
 	// Name returns the name for this plugin.
 	Name() string
@@ -123,11 +113,11 @@ type WorkerPlugin interface {
 		next func(context.Context, WorkerPluginStartWorkerOptions) error,
 	) error
 
-	// StopWorker is called to stop a worker. This is called on Worker.Stop or
-	// if Worker.Run is interrupted via its interrupt channel. However, if a
-	// fatal worker error occurs during Worker.Run, this may not be called.
-	// Implementers can account for this situation by setting OnFatalError in
-	// the worker options. Implementers should invoke next.
+	// StopWorker is called once when worker cleanup runs, including explicit
+	// Stop, interrupted Run, and fatal worker errors. Implementers must invoke
+	// the supplied next function to stop the worker's polling and task work.
+	// Calling Worker.Stop from this function would wait for its own cleanup;
+	// use next instead.
 	StopWorker(
 		ctx context.Context,
 		options WorkerPluginStopWorkerOptions,
@@ -154,8 +144,6 @@ type WorkerPlugin interface {
 // WorkerPluginBase must be embedded into worker plugin implementations.
 //
 // Exposed as: [go.temporal.io/sdk/worker.PluginBase]
-//
-// NOTE: Experimental
 type WorkerPluginBase struct{}
 
 var _ WorkerPlugin = struct {
@@ -167,8 +155,6 @@ var _ WorkerPlugin = struct {
 // worker plugin.
 //
 // Exposed as: [go.temporal.io/sdk/worker.PluginConfigureWorkerOptions]
-//
-// NOTE: Experimental
 type WorkerPluginConfigureWorkerOptions struct {
 	// WorkerInstanceKey is the unique, immutable instance key for this worker.
 	WorkerInstanceKey string
@@ -192,8 +178,6 @@ type WorkerPluginConfigureWorkerOptions struct {
 // callback inside their own.
 //
 // Exposed as: [go.temporal.io/sdk/worker.PluginConfigureWorkerRegistryOptions]
-//
-// NOTE: Experimental
 type WorkerPluginConfigureWorkerRegistryOptions struct {
 	// Called when a workflow is registered. The first parameter will be the workflow.
 	OnRegisterWorkflow func(any, RegisterWorkflowOptions)
@@ -211,8 +195,6 @@ type WorkerPluginConfigureWorkerRegistryOptions struct {
 // plugin.
 //
 // Exposed as: [go.temporal.io/sdk/worker.PluginStartWorkerOptions]
-//
-// NOTE: Experimental
 type WorkerPluginStartWorkerOptions struct {
 	// WorkerInstanceKey is the unique, immutable instance key for this worker.
 	WorkerInstanceKey string
@@ -234,8 +216,6 @@ type WorkerPluginStartWorkerOptions struct {
 // WorkerPluginStopWorkerOptions are options for StopWorker on a worker plugin.
 //
 // Exposed as: [go.temporal.io/sdk/worker.PluginStopWorkerOptions]
-//
-// NOTE: Experimental
 type WorkerPluginStopWorkerOptions struct {
 	// WorkerInstanceKey is the unique, immutable instance key for this worker.
 	WorkerInstanceKey string
@@ -245,8 +225,6 @@ type WorkerPluginStopWorkerOptions struct {
 // ConfigureWorkflowReplayer on a worker plugin.
 //
 // Exposed as: [go.temporal.io/sdk/worker.PluginConfigureWorkflowReplayerOptions]
-//
-// NOTE: Experimental
 type WorkerPluginConfigureWorkflowReplayerOptions struct {
 	// WorkflowReplayerInstanceKey is the unique, immutable instance key for
 	// this workflow replayer.
@@ -269,8 +247,6 @@ type WorkerPluginConfigureWorkflowReplayerOptions struct {
 // to invoke the existing callback inside their own.
 //
 // Exposed as: [go.temporal.io/sdk/worker.PluginConfigureWorkflowReplayerRegistryOptions]
-//
-// NOTE: Experimental
 type WorkerPluginConfigureWorkflowReplayerRegistryOptions struct {
 	// Called when a workflow is registered. The first parameter will be the workflow.
 	OnRegisterWorkflow func(any, RegisterWorkflowOptions)
@@ -282,8 +258,6 @@ type WorkerPluginConfigureWorkflowReplayerRegistryOptions struct {
 // plugin.
 //
 // Exposed as: [go.temporal.io/sdk/worker.PluginReplayWorkflowOptions]
-//
-// NOTE: Experimental
 type WorkerPluginReplayWorkflowOptions struct {
 	// WorkflowReplayerInstanceKey is the unique, immutable instance key for
 	// this workflow replayer.
@@ -322,8 +296,6 @@ func (pluginNamePanicForTypeChecking) Name() string { panic("unreachable") }
 // [go.temporal.io/sdk/temporal.NewSimplePlugin] to instantiate this.
 //
 // Exposed as: [go.temporal.io/sdk/temporal.SimplePlugin]
-//
-// NOTE: Experimental
 type SimplePlugin struct {
 	options SimplePluginOptions
 }
@@ -334,8 +306,6 @@ var _ WorkerPlugin = (*SimplePlugin)(nil)
 // SimplePluginOptions are options for NewSimplePlugin.
 //
 // Exposed as: [go.temporal.io/sdk/temporal.SimplePluginOptions]
-//
-// NOTE: Experimental
 type SimplePluginOptions struct {
 	// Name is the required name of the plugin.
 	Name string
@@ -390,8 +360,11 @@ type SimplePluginOptions struct {
 	// of a replayer. Implementers can use this to close something started
 	// before.
 	//
-	// See the note on [WorkerPlugin.StopWorker] about rare situations in which
-	// this may not run on worker completion.
+	// During worker stop, this callback runs before SimplePlugin calls the
+	// StopWorker next function to stop polling and task work. Stop callers wait
+	// for both this callback and the remaining worker cleanup to finish.
+	// This callback receives no next function and must not synchronously call
+	// the same worker's Stop: that call waits for this callback and deadlocks.
 	RunContextAfter func(context.Context, SimplePluginRunContextAfterOptions)
 }
 
@@ -399,8 +372,6 @@ type SimplePluginOptions struct {
 // simple plugin.
 //
 // Exposed as: [go.temporal.io/sdk/temporal.SimplePluginRunContextBeforeOptions]
-//
-// NOTE: Experimental
 type SimplePluginRunContextBeforeOptions struct {
 	// InstanceKey is the unique, immutable instance key for the worker or
 	// workflow replayer.
@@ -426,8 +397,6 @@ type SimplePluginRunContextBeforeOptions struct {
 // simple plugin.
 //
 // Exposed as: [go.temporal.io/sdk/temporal.SimplePluginRunContextAfterOptions]
-//
-// NOTE: Experimental
 type SimplePluginRunContextAfterOptions struct {
 	// InstanceKey is the unique, immutable instance key for the worker or
 	// workflow replayer.

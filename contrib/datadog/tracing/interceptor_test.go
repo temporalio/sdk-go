@@ -67,6 +67,53 @@ func TestSpanName(t *testing.T) {
 	require.Equal(t, "temporal.RunWorkflow", testTracer.FinishedSpans()[2].Name)
 
 }
+
+func TestDisabledTracing(t *testing.T) {
+	tests := []struct {
+		name    string
+		options TracerOptions
+	}{
+		{name: "default"},
+		{name: "signals", options: TracerOptions{DisableSignalTracing: true}},
+		{name: "queries", options: TracerOptions{DisableQueryTracing: true}},
+		{name: "updates", options: TracerOptions{DisableUpdateTracing: true}},
+		{name: "signals and queries", options: TracerOptions{DisableSignalTracing: true, DisableQueryTracing: true}},
+		{name: "signals and updates", options: TracerOptions{DisableSignalTracing: true, DisableUpdateTracing: true}},
+		{name: "queries and updates", options: TracerOptions{DisableQueryTracing: true, DisableUpdateTracing: true}},
+		{name: "all", options: TracerOptions{DisableSignalTracing: true, DisableQueryTracing: true, DisableUpdateTracing: true}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			t.Cleanup(mt.Stop)
+			interceptortest.RunTestWorkflow(t, NewTracer(tt.options))
+
+			spanCounts := map[string]int{}
+			for _, span := range mt.FinishedSpans() {
+				spanCounts[span.OperationName()]++
+			}
+			for _, operation := range []struct {
+				name     string
+				disabled bool
+			}{
+				{name: "temporal.ValidateUpdate", disabled: tt.options.DisableUpdateTracing},
+				{name: "temporal.HandleUpdate", disabled: tt.options.DisableUpdateTracing},
+				{name: "temporal.HandleQuery", disabled: tt.options.DisableQueryTracing},
+				{name: "temporal.SignalChildWorkflow", disabled: tt.options.DisableSignalTracing},
+				{name: "temporal.HandleSignal", disabled: tt.options.DisableSignalTracing},
+			} {
+				expected := 1
+				if operation.disabled {
+					expected = 0
+				}
+				require.Equal(t, expected, spanCounts[operation.name], operation.name)
+			}
+			require.Positive(t, spanCounts["temporal.RunWorkflow"])
+			require.Positive(t, spanCounts["temporal.RunActivity"])
+		})
+	}
+}
+
 func Test_tracerImpl_genSpanID(t1 *testing.T) {
 	tests := []struct {
 		name  string

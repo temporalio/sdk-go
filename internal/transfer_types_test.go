@@ -1,0 +1,810 @@
+package internal
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"math/rand/v2"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/golang/mock/gomock"
+	"github.com/nexus-rpc/sdk-go/nexus"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
+	commonpb "go.temporal.io/api/common/v1"
+	enumspb "go.temporal.io/api/enums/v1"
+	historypb "go.temporal.io/api/history/v1"
+	"go.temporal.io/api/proxy"
+	"go.temporal.io/api/workflowservice/v1"
+	"go.temporal.io/api/workflowservicemock/v1"
+	"go.temporal.io/sdk/converter"
+	commonconverter "go.temporal.io/sdk/internal/common/converter"
+	"google.golang.org/grpc"
+	"google.golang.org/protobuf/proto"
+	"github.com/google/uuid"
+)
+
+// -- BASIC TESTS ----------------------------------------------------
+
+// -- DATA --
+
+// temperature is a struct with no exported fields and its transfer type is a float64.
+type temperature struct{ kelvin float64 }
+
+func (temperature) TransferTypeConverter() (converter.TransferTypeConverter, error) {
+	return converter.NewTransferTypeConverter(
+		func(t *temperature) (*float64, error) {
+			return &t.kelvin, nil
+		},
+		func(kelvin *float64, t *temperature) error {
+			t.kelvin = *kelvin
+			return nil
+		},
+	)
+}
+
+// unencodable always returns an error during transfer-type-encoding.
+type unencodable struct{}
+
+var errNoEncoding = errors.New("cannot encode")
+
+func (unencodable) TransferTypeConverter() (converter.TransferTypeConverter, error) {
+	return converter.NewTransferTypeConverter(
+		func(*unencodable) (*string, error) { return nil, errNoEncoding },
+		func(*string, *unencodable) error { return nil },
+	)
+}
+
+// undecodable always returns an error during transfer-type-decoding.
+type undecodable struct{}
+
+var errNoDecoding = errors.New("cannot decode")
+
+func (undecodable) TransferTypeConverter() (converter.TransferTypeConverter, error) {
+	return converter.NewTransferTypeConverter(
+		func(*undecodable) (*string, error) {
+			encoded := "encoded"
+			return &encoded, nil
+		},
+		func(*string, *undecodable) error { return errNoDecoding },
+	)
+}
+
+// invalidTransferConverter returns an error when creating the converter.
+type invalidTransferConverter struct{}
+
+func (invalidTransferConverter) TransferTypeConverter() (converter.TransferTypeConverter, error) {
+	return nil, errNoEncoding
+}
+
+// mismatchedTransferModel returns a converter for a different model type.
+type mismatchedTransferModel struct{}
+
+func (mismatchedTransferModel) TransferTypeConverter() (converter.TransferTypeConverter, error) {
+	return (temperature{}).TransferTypeConverter()
+}
+
+type transferString string
+
+func (transferString) TransferTypeConverter() (converter.TransferTypeConverter, error) {
+	return converter.NewTransferTypeConverter(
+		func(value *transferString) (*string, error) {
+			transferType := "transfer:" + string(*value)
+			return &transferType, nil
+		},
+		func(transferType *string, value *transferString) error {
+			*value = transferString(strings.TrimPrefix(*transferType, "transfer:"))
+			return nil
+		},
+	)
+}
+
+// transferEnvelope is a struct that contains a transfer-convertible field,
+// but the struct itself has no transfer type converter.
+type transferEnvelope struct{ Value transferString }
+
+// -- TESTS --
+
+func TestTransferAwareDataConverter_PayloadRoundTrip(t *testing.T) {
+	t.Parallel()
+	dc := converter.GetDefaultDataConverter()
+
+	t.Run("scalar transfer values", func(t *testing.T) {
+		values := make([]temperature, 10)
+		for i := range values {
+			values[i] = temperature{kelvin: rand.Float64() * 1_000}
+		}
+
+		for _, value := range values {
+			payload, err := dc.ToPayload(value)
+			require.NoError(t, err)
+
+			var got temperature
+			require.NoError(t, dc.FromPayload(payload, &got))
+			require.Equal(t, value, got)
+		}
+	})
+
+	t.Run("values without a transfer type converter", func(t *testing.T) {
+		values := make([]string, 10)
+		for i := range values {
+			values[i] = "plain-" + strconv.FormatUint(rand.Uint64(), 10)
+		}
+
+		for _, value := range values {
+			payload, err := dc.ToPayload(value)
+			require.NoError(t, err)
+
+			want, err := converter.GetDefaultDataConverter().ToPayload(value)
+			require.NoError(t, err)
+			require.Equal(t, want.GetData(), payload.GetData())
+
+			var got string
+			require.NoError(t, dc.FromPayload(payload, &got))
+			require.Equal(t, value, got)
+		}
+	})
+}
+
+func TestTransferAwareDataConverter_PointerValueRoundTrip(t *testing.T) {
+	t.Parallel()
+	for _, compressed := range []bool{false, true} {
+		parent := converter.GetDefaultDataConverter()
+		if compressed {
+			parent = converter.NewCodecDataConverter(parent, converter.NewZlibCodec(converter.ZlibCodecOptions{AlwaysEncode: true}))
+		}
+		for _, batch := range []bool{false, true} {
+			t.Run(fmt.Sprintf("compressed=%v/batch=%v", compressed, batch), func(t *testing.T) {
+				dc := MakeTransferAware(parent)
+				want := &temperature{kelvin: 300}
+				got := temperature{kelvin: 99}
+				if batch {
+					payloads, err := dc.ToPayloads(want)
+					require.NoError(t, err)
+					// While we're here, check that we don't add SystemPayloadMetadataKey
+					// for non-system-nexus payloads.
+					for _, payload := range payloads.Payloads {
+						require.NotContains(t, payload.Metadata, proxy.SystemPayloadMetadataKey)
+					}
+					require.NoError(t, dc.FromPayloads(payloads, &got))
+				} else {
+					payload, err := dc.ToPayload(want)
+					require.NoError(t, err)
+					require.NotContains(t, payload.Metadata, proxy.SystemPayloadMetadataKey)
+					require.NoError(t, dc.FromPayload(payload, &got))
+				}
+				require.Equal(t, *want, got)
+			})
+		}
+	}
+}
+
+func TestTransferAwareDataConverter_PayloadsRoundTrip(t *testing.T) {
+	t.Parallel()
+	dc := converter.GetDefaultDataConverter()
+
+	t.Run("scalar transfer values", func(t *testing.T) {
+		values := make([]temperature, 10)
+		valuePtrs := make([]any, len(values))
+		got := make([]temperature, len(values))
+		for i := range values {
+			values[i] = temperature{kelvin: rand.Float64() * 1_000}
+			valuePtrs[i] = &got[i]
+		}
+
+		payloads, err := dc.ToPayloads(sliceToAny(values)...)
+		require.NoError(t, err)
+		require.NoError(t, dc.FromPayloads(payloads, valuePtrs...))
+		require.Equal(t, values, got)
+	})
+
+	t.Run("values without a transfer type converter", func(t *testing.T) {
+		values := make([]string, 10)
+		valuePtrs := make([]any, len(values))
+		got := make([]string, len(values))
+		for i := range values {
+			values[i] = "plain-" + strconv.FormatUint(rand.Uint64(), 10)
+			valuePtrs[i] = &got[i]
+		}
+
+		payloads, err := dc.ToPayloads(sliceToAny(values)...)
+		require.NoError(t, err)
+		require.NoError(t, dc.FromPayloads(payloads, valuePtrs...))
+		require.Equal(t, values, got)
+	})
+}
+
+func sliceToAny[T any](values []T) []any {
+	result := make([]any, len(values))
+	for i := range values {
+		result[i] = values[i]
+	}
+	return result
+}
+
+func TestTransferAwareDataConverter_MatchesParentForPlainValues(t *testing.T) {
+	t.Parallel()
+	parent := converter.NewCompositeDataConverter(converter.NewJSONPayloadConverter())
+	dc := MakeTransferAware(parent)
+
+	requireSamePayloads := func(t *testing.T, want, got *commonpb.Payloads) {
+		t.Helper()
+		require.Len(t, got.GetPayloads(), len(want.GetPayloads()))
+		for i, wantPayload := range want.GetPayloads() {
+			require.Equal(t, wantPayload.GetData(), got.GetPayloads()[i].GetData(), "payload %d data", i)
+			require.Equal(t, wantPayload.GetMetadata(), got.GetPayloads()[i].GetMetadata(), "payload %d metadata", i)
+		}
+	}
+
+	t.Run("no values", func(t *testing.T) {
+		got, err := dc.ToPayloads()
+		require.NoError(t, err)
+		want, err := parent.ToPayloads()
+		require.NoError(t, err)
+		require.Equal(t, want, got)
+	})
+
+	t.Run("only plain values", func(t *testing.T) {
+		values := []any{"plain", 42, []string{"a", "b"}, nil}
+		got, err := dc.ToPayloads(values...)
+		require.NoError(t, err)
+		want, err := parent.ToPayloads(values...)
+		require.NoError(t, err)
+		requireSamePayloads(t, want, got)
+	})
+
+	// Plain values keep their place and their encoding even when a transfer
+	// value sits next to them.
+	t.Run("plain values mixed with transfer values", func(t *testing.T) {
+		got, err := dc.ToPayloads("plain", temperature{kelvin: 300}, 42, temperature{kelvin: 275}, nil)
+		require.NoError(t, err)
+		want, err := parent.ToPayloads("plain", 300.0, 42, 275.0, nil)
+		require.NoError(t, err)
+		requireSamePayloads(t, want, got)
+	})
+
+	t.Run("decoding only plain values", func(t *testing.T) {
+		payloads, err := dc.ToPayloads("plain", 42)
+		require.NoError(t, err)
+
+		var (
+			gotString string
+			gotInt    int
+		)
+		require.NoError(t, dc.FromPayloads(payloads, &gotString, &gotInt))
+		require.Equal(t, "plain", gotString)
+		require.Equal(t, 42, gotInt)
+	})
+}
+
+func TestTransferAwareDataConverter_ConversionErrors(t *testing.T) {
+	t.Parallel()
+	dc := converter.GetDefaultDataConverter()
+
+	t.Run("encoding one value", func(t *testing.T) {
+		_, err := dc.ToPayload(unencodable{})
+		require.ErrorIs(t, err, errNoEncoding)
+	})
+
+	t.Run("encoding a list", func(t *testing.T) {
+		_, err := dc.ToPayloads("plain", unencodable{})
+		require.ErrorIs(t, err, errNoEncoding)
+	})
+
+	t.Run("decoding one value", func(t *testing.T) {
+		payload, err := dc.ToPayload(undecodable{})
+		require.NoError(t, err)
+		require.ErrorIs(t, dc.FromPayload(payload, &undecodable{}), errNoDecoding)
+	})
+
+	t.Run("decoding a list", func(t *testing.T) {
+		payloads, err := dc.ToPayloads("plain", undecodable{})
+		require.NoError(t, err)
+
+		var got string
+		err = dc.FromPayloads(payloads, &got, &undecodable{})
+		require.ErrorIs(t, err, errNoDecoding)
+	})
+}
+
+func TestTransferAwareDataConverter_AbsentBatchPayload(t *testing.T) {
+	t.Parallel()
+	dc := converter.GetDefaultDataConverter()
+	payload, err := dc.ToPayload(temperature{kelvin: 300})
+	require.NoError(t, err)
+	single, batch := temperature{kelvin: 99}, temperature{kelvin: 99}
+	var converted temperature
+	require.NoError(t, dc.FromPayload(nil, &single))
+	require.NoError(t, dc.FromPayloads(&commonpb.Payloads{Payloads: []*commonpb.Payload{nil, payload}}, &batch, &converted))
+	require.Equal(t, single, batch)
+	require.Equal(t, temperature{kelvin: 300}, converted)
+}
+
+func TestTransferAwareDataConverter_PlainNilPointerInput(t *testing.T) {
+	t.Parallel()
+	parent := converter.GetDefaultDataConverter()
+	var input *string
+	want, err := parent.ToPayload(input)
+	require.NoError(t, err)
+
+	got, err := MakeTransferAware(parent).ToPayload(input)
+	require.NoError(t, err)
+	require.True(t, proto.Equal(want, got))
+
+	wantBatch, err := parent.ToPayloads(input, 300.0, input)
+	require.NoError(t, err)
+	gotBatch, err := MakeTransferAware(parent).ToPayloads(input, temperature{kelvin: 300}, input)
+	require.NoError(t, err)
+	require.True(t, proto.Equal(wantBatch, gotBatch))
+}
+
+func TestTransferAwareDataConverter_ContextDelegation(t *testing.T) {
+	t.Parallel()
+
+	t.Run("context-aware parent", func(t *testing.T) {
+		dc := MakeTransferAware(NewContextAwareDataConverter(converter.GetDefaultDataConverter()))
+
+		ctx := context.WithValue(t.Context(), ContextAwareDataConverterContextKey, "300")
+		masked := WithContext(ctx, dc)
+		require.NotSame(t, dc, masked)
+
+		payload, err := masked.ToPayload(temperature{kelvin: 300})
+		require.NoError(t, err)
+		require.Equal(t, "?", string(payload.GetData()))
+	})
+
+	t.Run("parent that is not context aware", func(t *testing.T) {
+		dc := converter.GetDefaultDataConverter()
+		require.Same(t, dc, MakeTransferAware(dc))
+		require.Same(t, dc, MakeTransferAware(nil))
+		require.Same(t, dc, WithContext(t.Context(), dc))
+		require.Same(t, dc, WithWorkflowContext(Background(), dc))
+		// Serialization contexts are only forwarded, so there is nothing to keep.
+		require.Same(t, dc, converter.WithDataConverterSerializationContext(dc, converter.WorkflowSerializationContext{}))
+	})
+}
+
+// -- SDK INTEGRATION TESTS -----------------------------------------------------------
+
+func newTransferTestClient(t *testing.T, dc converter.DataConverter) (*workflowservicemock.MockWorkflowServiceClient, *WorkflowClient) {
+	t.Helper()
+	service := workflowservicemock.NewMockWorkflowServiceClient(gomock.NewController(t))
+	service.EXPECT().GetSystemInfo(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.GetSystemInfoResponse{}, nil).AnyTimes()
+	client := NewServiceClient(service, nil, ClientOptions{
+		Namespace: "transfer-test", DataConverter: dc,
+	})
+	return service, client
+}
+
+func TestTransferTypesMockClientWorkflowInput(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name     string
+		workflow any
+		args     []any
+		wireArgs []any
+	}{
+		{
+			name:     "workflow args use transfer type converters when available",
+			workflow: func(Context, string, temperature, temperature, transferEnvelope) error { return nil },
+			args:     []any{"plain", temperature{kelvin: 300}, temperature{kelvin: 275}, transferEnvelope{Value: "value"}},
+			wireArgs: []any{"plain", 300.0, 275.0, map[string]string{"Value": "value"}},
+		},
+		{
+			name:     "nested values are not transfer-converted",
+			workflow: func(Context, transferEnvelope, []transferString, map[string]transferString) error { return nil },
+			args:     []any{transferEnvelope{Value: "value"}, []transferString{"value"}, map[string]transferString{"key": "value"}},
+			wireArgs: []any{map[string]string{"Value": "value"}, []string{"value"}, map[string]string{"key": "value"}},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			dc := converter.GetDefaultDataConverter()
+			service, client := newTransferTestClient(t, dc)
+			want, err := dc.ToPayloads(tt.wireArgs...)
+			require.NoError(t, err)
+			service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).
+				DoAndReturn(func(_ context.Context, req *workflowservice.StartWorkflowExecutionRequest, _ ...grpc.CallOption) (*workflowservice.StartWorkflowExecutionResponse, error) {
+					require.True(t, proto.Equal(want, req.Input), "got input %v, want %v", req.Input, want)
+					return &workflowservice.StartWorkflowExecutionResponse{RunId: "run-1"}, nil
+				})
+
+			_, err = client.ExecuteWorkflow(t.Context(), StartWorkflowOptions{
+				ID: "workflow-1", TaskQueue: "transfer-test",
+			}, tt.workflow, tt.args...)
+			require.NoError(t, err)
+		})
+	}
+}
+
+func TestTransferTypesMockClientWorkflowResult(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name      string
+		wireValue any
+		resultPtr any
+		want      any
+	}{
+		{"requested model type", 300.0, new(temperature), &temperature{kelvin: 300}},
+		{"plain destination", "value", new(string), new("value")},
+		{"any destination", 300.0, new(any), new(any(300.0))},
+		{"nested values", map[string]string{"Value": "value"}, new(transferEnvelope), &transferEnvelope{Value: "value"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			dc := converter.GetDefaultDataConverter()
+			service, client := newTransferTestClient(t, dc)
+			payloads, err := dc.ToPayloads(tt.wireValue)
+			require.NoError(t, err)
+			service.EXPECT().GetWorkflowExecutionHistory(gomock.Any(), gomock.Any(), gomock.Any()).
+				Return(&workflowservice.GetWorkflowExecutionHistoryResponse{
+					History: &historypb.History{Events: []*historypb.HistoryEvent{{
+						EventType: enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED,
+						Attributes: &historypb.HistoryEvent_WorkflowExecutionCompletedEventAttributes{
+							WorkflowExecutionCompletedEventAttributes: &historypb.WorkflowExecutionCompletedEventAttributes{Result: payloads},
+						},
+					}}},
+				}, nil)
+
+			ctx := t.Context()
+			err = client.GetWorkflow(ctx, "workflow-1", "run-1").Get(ctx, tt.resultPtr)
+			require.NoError(t, err)
+			require.Equal(t, tt.want, tt.resultPtr)
+		})
+	}
+}
+
+// transferExecution's transfer type includes its unexported fields. When encoded with a data
+// converter that isn't transfer-aware, the fields disappear.
+type transferExecution struct{ workflowID, runID string }
+
+func (transferExecution) TransferTypeConverter() (converter.TransferTypeConverter, error) {
+	return converter.NewTransferTypeConverter(
+		func(value *transferExecution) (*commonpb.WorkflowExecution, error) {
+			return &commonpb.WorkflowExecution{WorkflowId: value.workflowID, RunId: value.runID}, nil
+		},
+		func(value *commonpb.WorkflowExecution, result *transferExecution) error {
+			*result = transferExecution{workflowID: value.GetWorkflowId(), runID: value.GetRunId()}
+			return nil
+		},
+	)
+}
+
+func TestTransferTypesWorkflowTestEnvironmentRoundTrip(t *testing.T) {
+	t.Parallel()
+	dc := converter.GetDefaultDataConverter()
+	model := transferExecution{workflowID: "workflow-1", runID: "run-1"}
+
+	t.Run("round trip through test workflow environment", func(t *testing.T) {
+		var suite WorkflowTestSuite
+		env := suite.NewTestWorkflowEnvironment()
+		env.SetDataConverter(dc)
+		env.ExecuteWorkflow(func(_ Context, input transferExecution) (transferExecution, error) {
+			input.runID += ":completed"
+			return input, nil
+		}, model)
+		require.True(t, env.IsWorkflowCompleted())
+		require.NoError(t, env.GetWorkflowError())
+		var got transferExecution
+		require.NoError(t, env.GetWorkflowResult(&got))
+		require.Equal(t, transferExecution{workflowID: model.workflowID, runID: model.runID + ":completed"}, got)
+	})
+}
+
+func TestTransferTypesWorkflowTestEnvironmentWorkflowRoundTrip(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name      string
+		workflow  any
+		input     any
+		resultPtr any
+		want      any
+	}{
+		{
+			name: "model input and result",
+			workflow: func(_ Context, input temperature) (temperature, error) {
+				return temperature{kelvin: input.kelvin + 10}, nil
+			},
+			input: temperature{kelvin: 300}, resultPtr: new(temperature), want: &temperature{kelvin: 310},
+		},
+		{
+			name: "nested field is not transfer converted",
+			workflow: func(_ Context, input transferEnvelope) (transferEnvelope, error) {
+				return input, nil
+			},
+			input: transferEnvelope{Value: "value"}, resultPtr: new(transferEnvelope), want: &transferEnvelope{Value: "value"},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var suite WorkflowTestSuite
+			env := suite.NewTestWorkflowEnvironment()
+			env.ExecuteWorkflow(tt.workflow, tt.input)
+			require.True(t, env.IsWorkflowCompleted())
+			require.NoError(t, env.GetWorkflowError())
+			require.NoError(t, env.GetWorkflowResult(tt.resultPtr))
+			require.Equal(t, tt.want, tt.resultPtr)
+		})
+	}
+}
+
+func TestTransferTypesWorkflowTestEnvironmentActivityRoundTrip(t *testing.T) {
+	t.Parallel()
+	activity := func(_ context.Context, input temperature, increment float64) (temperature, error) {
+		return temperature{kelvin: input.kelvin + increment}, nil
+	}
+	for _, local := range []bool{false, true} {
+		t.Run(fmt.Sprintf("local=%t", local), func(t *testing.T) {
+			var suite WorkflowTestSuite
+			env := suite.NewTestWorkflowEnvironment()
+			env.RegisterActivity(activity)
+			env.ExecuteWorkflow(func(ctx Context) (float64, error) {
+				ctx = WithActivityOptions(ctx, ActivityOptions{
+					StartToCloseTimeout: time.Minute, RetryPolicy: &RetryPolicy{MaximumAttempts: 1},
+				})
+				ctx = WithLocalActivityOptions(ctx, LocalActivityOptions{
+					StartToCloseTimeout: time.Minute, RetryPolicy: &RetryPolicy{MaximumAttempts: 1},
+				})
+				var future Future
+				if local {
+					future = ExecuteLocalActivity(ctx, activity, temperature{kelvin: 300}, 42.0)
+				} else {
+					future = ExecuteActivity(ctx, activity, temperature{kelvin: 300}, 42.0)
+				}
+				var got temperature
+				if err := future.Get(ctx, &got); err != nil {
+					return 0, err
+				}
+				return got.kelvin, nil
+			})
+			require.True(t, env.IsWorkflowCompleted())
+			require.NoError(t, env.GetWorkflowError())
+			var got float64
+			require.NoError(t, env.GetWorkflowResult(&got))
+			require.Equal(t, 342.0, got)
+		})
+	}
+}
+
+func TestTransferTypes_DataConverterWrapping(t *testing.T) {
+	t.Parallel()
+	value := temperature{kelvin: 300}
+	payloads, err := converter.GetDefaultDataConverter().ToPayloads(value)
+	require.NoError(t, err)
+
+	t.Run("workflow replayer", func(t *testing.T) {
+		replayer, err := NewWorkflowReplayer(WorkflowReplayerOptions{
+			DataConverter: converter.GetDefaultDataConverter(),
+		})
+		require.NoError(t, err)
+		replayer.workflowExecutionResults["workflow-1"] = payloads
+
+		var got temperature
+		require.NoError(t, replayer.GetWorkflowResult("workflow-1", &got))
+		require.Equal(t, value, got)
+	})
+
+	t.Run("workflow context", func(t *testing.T) {
+		ctx := WithDataConverter(Background(), converter.GetDefaultDataConverter())
+		dc := GetDataConverterFromWorkflowContext(ctx)
+
+		var got temperature
+		require.NoError(t, dc.FromPayloads(payloads, &got))
+		require.Equal(t, value, got)
+	})
+}
+
+func TestTransferTypes_DefaultFailureConverterRoundTrip(t *testing.T) {
+	t.Parallel()
+	value := temperature{kelvin: 300}
+	fc := GetDefaultFailureConverter()
+	failure := fc.ErrorToFailure(NewApplicationError("message", "customType", false, nil, value))
+	var applicationErr *ApplicationError
+	require.ErrorAs(t, fc.FailureToError(failure), &applicationErr)
+	var got temperature
+	require.NoError(t, applicationErr.Details(&got))
+	require.Equal(t, value, got)
+}
+
+func TestTransferTypes_CustomFailureConverterRoundTrip(t *testing.T) {
+	t.Parallel()
+	value := temperature{kelvin: 300}
+	fc := NewDefaultFailureConverter(DefaultFailureConverterOptions{
+		DataConverter: converter.NewCompositeDataConverter(converter.NewJSONPayloadConverter()),
+	})
+	failure := fc.ErrorToFailure(NewApplicationError("message", "customType", false, nil, value))
+	var applicationErr *ApplicationError
+	require.ErrorAs(t, fc.FailureToError(failure), &applicationErr)
+	var got temperature
+	require.NoError(t, applicationErr.Details(&got))
+	require.Equal(t, value, got)
+}
+
+// -- VALIDATION TESTS --
+
+func TestNewTransferTypeConverter_RejectsPointerTypes(t *testing.T) {
+	t.Parallel()
+	tc, err := converter.NewTransferTypeConverter[*temperature, float64](nil, nil)
+	require.Nil(t, tc)
+	require.EqualError(t, err, "transfer type converter: model type must not be a pointer, got *internal.temperature")
+	tc, err = converter.NewTransferTypeConverter[temperature, *float64](nil, nil)
+	require.Nil(t, tc)
+	require.EqualError(t, err, "transfer type converter: transfer type must not be a pointer, got *float64")
+}
+
+func TestTransferTypeConverter_InvalidTypes(t *testing.T) {
+	t.Parallel()
+	dc := converter.GetDefaultDataConverter()
+	payload, err := converter.GetDefaultDataConverter().ToPayload(300.0)
+	require.NoError(t, err)
+	payloads := &commonpb.Payloads{Payloads: []*commonpb.Payload{payload}}
+
+	for _, tt := range []struct {
+		name string
+		dc   converter.DataConverter
+	}{
+		{name: "Go context", dc: WithContext(t.Context(), dc)},
+		{name: "workflow context", dc: WithWorkflowContext(Background(), dc)},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			value := mismatchedTransferModel{}
+			_, err := tt.dc.ToPayload(value)
+			require.ErrorContains(t, err, "want value of type internal.temperature or *internal.temperature, got internal.mismatchedTransferModel")
+			_, err = tt.dc.ToPayloads(value)
+			require.ErrorContains(t, err, "want value of type internal.temperature or *internal.temperature, got internal.mismatchedTransferModel")
+			require.ErrorContains(t, tt.dc.FromPayload(payload, &value), "want value of type *internal.temperature, got *internal.mismatchedTransferModel")
+			require.ErrorContains(t, tt.dc.FromPayloads(payloads, &value), "want value of type *internal.temperature, got *internal.mismatchedTransferModel")
+		})
+	}
+}
+
+func TestTransferAwareDataConverter_DiscoveryError(t *testing.T) {
+	t.Parallel()
+	dc := converter.GetDefaultDataConverter()
+	_, err := dc.ToPayload(invalidTransferConverter{})
+	require.ErrorIs(t, err, errNoEncoding)
+	_, err = dc.ToPayloads(invalidTransferConverter{})
+	require.ErrorIs(t, err, errNoEncoding)
+	payload, err := converter.GetDefaultDataConverter().ToPayload("value")
+	require.NoError(t, err)
+	var value invalidTransferConverter
+	require.ErrorIs(t, dc.FromPayload(payload, &value), errNoEncoding)
+	require.ErrorIs(t, dc.FromPayloads(&commonpb.Payloads{Payloads: []*commonpb.Payload{payload}}, &value), errNoEncoding)
+}
+
+// -- SYSTEM NEXUS TESTS --
+
+type systemEnvelopeRejectingCodec struct {
+	converter.PayloadCodec
+}
+
+func newSystemEnvelopeRejectingCodec() *systemEnvelopeRejectingCodec {
+	return &systemEnvelopeRejectingCodec{
+		PayloadCodec: converter.NewZlibCodec(converter.ZlibCodecOptions{AlwaysEncode: true}),
+	}
+}
+
+func (c *systemEnvelopeRejectingCodec) Encode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	for _, payload := range payloads {
+		if string(payload.Metadata[proxy.SystemPayloadMetadataKey]) == "true" {
+			return nil, fmt.Errorf("user codec received a system envelope")
+		}
+	}
+	return c.PayloadCodec.Encode(payloads)
+}
+
+func (c *systemEnvelopeRejectingCodec) Decode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	for _, payload := range payloads {
+		if string(payload.Metadata[proxy.SystemPayloadMetadataKey]) == "true" {
+			return nil, fmt.Errorf("user codec received a system envelope")
+		}
+	}
+	return c.PayloadCodec.Decode(payloads)
+}
+
+type systemNexusModel struct{ Value string }
+
+func (systemNexusModel) TransferTypeConverter() (converter.TransferTypeConverter, error) {
+	return commonconverter.NewSystemNexusTransferTypeConverter(
+		func(cfg *commonconverter.SystemNexusContext, value *systemNexusModel) (*commonpb.Payload, error) {
+			return cfg.DataConverter.ToPayload(value.Value)
+		},
+		func(cfg *commonconverter.SystemNexusContext, payload *commonpb.Payload, value *systemNexusModel) error {
+			return cfg.DataConverter.FromPayload(payload, &value.Value)
+		},
+	)
+}
+
+func TestTransferAwareDataConverter_SystemNexusRoundTrip(t *testing.T) {
+	for _, batch := range []bool{false, true} {
+		t.Run(fmt.Sprintf("batch=%v", batch), func(t *testing.T) {
+			dc := commonconverter.WithDataConverterSystemNexusContext(
+				systemNexusDataConverter,
+				MakeTransferAware(
+					converter.NewCodecDataConverter(
+						converter.NewCompositeDataConverter(converter.NewJSONPayloadConverter()),
+						newSystemEnvelopeRejectingCodec(),
+					)))
+			var payload *commonpb.Payload
+			if batch {
+				payloads, err := dc.ToPayloads(systemNexusModel{Value: "value"})
+				require.NoError(t, err)
+				require.Len(t, payloads.Payloads, 1)
+				payload = payloads.Payloads[0]
+			} else {
+				var err error
+				payload, err = dc.ToPayload(systemNexusModel{Value: "value"})
+				require.NoError(t, err)
+			}
+			require.Equal(t, []byte("true"), payload.Metadata[proxy.SystemPayloadMetadataKey])
+			var nested commonpb.Payload
+			require.NoError(t, proto.Unmarshal(payload.Data, &nested))
+			require.NotContains(t, nested.Metadata, proxy.SystemPayloadMetadataKey)
+			require.Equal(t, []byte("binary/zlib"), nested.Metadata[converter.MetadataEncoding])
+			var result systemNexusModel
+			if batch {
+				require.NoError(t, dc.FromPayloads(&commonpb.Payloads{Payloads: []*commonpb.Payload{payload}}, &result))
+			} else {
+				require.NoError(t, dc.FromPayload(payload, &result))
+			}
+			require.Equal(t, systemNexusModel{Value: "value"}, result)
+		})
+	}
+}
+
+func TestSystemNexusMock(t *testing.T) {
+	// generate id
+	id := uuid.NewString()
+	service := "service" + id
+	operation := "operation" + id
+	namespace := "namespace" + id
+	workflowID := "workflow" + id
+
+	env := new(WorkflowUnitTest).NewTestWorkflowEnvironment()
+	dc := converter.NewCodecDataConverter(
+		converter.GetDefaultDataConverter(),
+		&serCtxSigningCodec{},
+		newSystemEnvelopeRejectingCodec(),
+	)
+	env.SetDataConverter(dc)
+	wsc := converter.WorkflowSerializationContext{Namespace: namespace, WorkflowID: workflowID}
+	dcsc := converter.WithDataConverterSerializationContext(dc, wsc)
+
+	input := systemNexusModel{Value: "input"}
+	result := systemNexusModel{Value: "result"}
+	expectedInput, err := dcsc.ToPayload(input.Value)
+	require.NoError(t, err)
+	response, err := dcsc.ToPayload(result.Value)
+	require.NoError(t, err)
+
+	UpdateSystemNexusRegistry(map[SystemNexusRegistryKey]SystemNexusRegistryEntry{
+		{Service: service, Operation: operation}: {
+			SerializationContext: func(value any) converter.SerializationContext {
+				require.Equal(t, input, value)
+				return wsc
+			},
+		},
+	})
+
+	env.OnNexusOperation(service, nexus.NewOperationReference[*commonpb.Payload, *commonpb.Payload](operation), mock.Anything, mock.Anything).
+		Run(func(args mock.Arguments) {
+			request := args.Get(1).(*commonpb.Payload)
+			require.True(t, proto.Equal(expectedInput, request))
+		}).
+		Return(&nexus.HandlerStartOperationResultSync[*commonpb.Payload]{Value: response}, nil).Once()
+
+	env.ExecuteWorkflow(func(ctx Context) (string, error) {
+		var output systemNexusModel
+		err := NewSystemNexusClient(service).
+			ExecuteOperation(ctx, operation, input, NexusOperationOptions{}).
+			Get(ctx, &output)
+		return output.Value, err
+	})
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	var output string
+	require.NoError(t, env.GetWorkflowResult(&output))
+	require.Equal(t, result.Value, output)
+	env.AssertExpectations(t)
+}

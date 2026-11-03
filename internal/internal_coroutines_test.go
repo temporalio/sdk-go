@@ -2066,13 +2066,12 @@ func TestChildListRemoveRepeatedly(t *testing.T) {
 	assertChildList(t, &list, children[1:2])
 }
 
-func TestContextCancelOrderWithFlag(t *testing.T) {
+func TestContextCancelOrderByDefault(t *testing.T) {
 	const childCount = 10
 
 	for range childCount {
 		var suite WorkflowTestSuite
 		env := suite.NewTestWorkflowEnvironment()
-		env.impl.sdkFlags.set(SDKFlagOrderedChildCancel)
 		wf := func(ctx Context) ([]int, error) {
 			ctx, cancel := WithCancel(ctx)
 			order := make([]int, 0, childCount)
@@ -2100,8 +2099,6 @@ func TestContextCancelOrderAfterRemoval(t *testing.T) {
 
 	var suite WorkflowTestSuite
 	env := suite.NewTestWorkflowEnvironment()
-	env.impl.sdkFlags.set(SDKFlagOrderedChildCancel)
-
 	var cancelOrder []int
 	wf := func(ctx Context) error {
 		ctx, cancel := WithCancel(ctx)
