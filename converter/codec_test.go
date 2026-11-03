@@ -2,9 +2,12 @@ package converter
 
 import (
 	"bytes"
+	"compress/flate"
 	"compress/zlib"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"hash/adler32"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -483,5 +486,37 @@ func BenchmarkZlibCodecEncode(b *testing.B) {
 		if _, err := codec.Encode(payloads); err != nil {
 			b.Fatal(err)
 		}
+	}
+}
+
+func TestZlibCodecDecodeCannotReadPreviousPayload(t *testing.T) {
+	codec := NewZlibCodec(ZlibCodecOptions{AlwaysEncode: true})
+	secret := &commonpb.Payload{Data: []byte("previous payload secret 0123456789 previous payload secret")}
+	encoded, err := codec.Encode([]*commonpb.Payload{secret})
+	require.NoError(t, err)
+	secretBytes, err := proto.Marshal(secret)
+	require.NoError(t, err)
+
+	// A zlib stream whose deflate data back-references bytes from before its
+	// own start, i.e. from whatever history a reused reader might still hold.
+	var deflated bytes.Buffer
+	fw, err := flate.NewWriterDict(&deflated, flate.BestCompression, secretBytes)
+	require.NoError(t, err)
+	_, err = fw.Write(secretBytes)
+	require.NoError(t, err)
+	require.NoError(t, fw.Close())
+	crafted := append([]byte{0x78, 0x9c}, deflated.Bytes()...)
+	crafted = binary.BigEndian.AppendUint32(crafted, adler32.Checksum(secretBytes))
+	attack := []*commonpb.Payload{{Metadata: map[string][]byte{MetadataEncoding: []byte("binary/zlib")}, Data: crafted}}
+	_, err = NewZlibCodec(ZlibCodecOptions{}).Decode(attack)
+	require.Error(t, err, "crafted stream must depend on prior history")
+
+	for range 3 {
+		decoded, err := codec.Decode(encoded)
+		require.NoError(t, err)
+		require.True(t, proto.Equal(secret, decoded[0]))
+
+		_, err = codec.Decode(attack)
+		require.Error(t, err)
 	}
 }
