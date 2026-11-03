@@ -31,7 +31,7 @@ func newOptions(args []string) (options, error) {
 	var options options
 
 	flags := flag.NewFlagSet("system-nexus-gen", flag.ContinueOnError)
-	flags.BoolVar(&options.check, "check", false, "check bindings without modifying the output file")
+	flags.BoolVar(&options.check, "check", false, "check bindings without modifying the output files")
 	flags.BoolVar(&options.preserveBuildDir, "preserve-build-dir", false, "preserve the build directory, even if the command succeeds")
 	if err := flags.Parse(args); err != nil {
 		return options, err
@@ -56,10 +56,6 @@ func newSDKDir() (sdkDir, error) {
 
 func (d sdkDir) witOverridesDir() string {
 	return filepath.Join(string(d), filepath.FromSlash("internal/cmd/system-nexus-gen/wit-overrides"))
-}
-
-func (d sdkDir) generatedFile() string {
-	return filepath.Join(string(d), filepath.FromSlash("workflow/workflowservice.go"))
 }
 
 // apiDir is a path to the go.temporal.io/api module directory
@@ -116,12 +112,12 @@ func (d buildDir) descriptorsFile() string {
 	return filepath.Join(d.descriptorsDir(), "descriptors.bin")
 }
 
-func (d buildDir) workflowDir() string {
-	return filepath.Join(string(d), "workflow")
+func (d buildDir) internalDir() string {
+	return filepath.Join(string(d), "internal")
 }
 
-func (d buildDir) generatedFile() string {
-	return filepath.Join(d.workflowDir(), "workflowservice.go")
+func (d buildDir) workflowDir() string {
+	return filepath.Join(string(d), "workflow")
 }
 
 // app represents the state of the system-nexus-gen command
@@ -204,8 +200,10 @@ func (a app) run() (err error) {
 		language:       "go",
 		inputs:         []string{a.tmp.witFile(), a.tmp.witDepsDir()},
 		descriptors:    []string{a.tmp.descriptorsFile()},
-		supportPackage: "go.temporal.io/sdk/internal/systemnexus",
-		output:         a.tmp.workflowDir(),
+		supportPackage: "go.temporal.io/sdk/internal",
+		output:         a.tmp.internalDir(),
+		facadeOutput:   a.tmp.workflowDir(),
+		facadeImport:   "go.temporal.io/sdk/internal",
 		systemNexus:    true,
 		nativeAPI:      true,
 		format:         true,
@@ -213,21 +211,25 @@ func (a app) run() (err error) {
 		return fmt.Errorf("nexgen: %w", err)
 	}
 
-	if a.options.check {
-		generated, err := os.ReadFile(a.tmp.generatedFile())
-		if err != nil {
-			return err
-		}
-		checkedIn, err := os.ReadFile(a.sdk.generatedFile())
-		if err != nil {
-			return err
-		}
-		if !checkEqual(generated, checkedIn) {
-			return fmt.Errorf("%s is out of date", a.sdk.generatedFile())
-		}
-	} else {
-		if err := os.Rename(a.tmp.generatedFile(), a.sdk.generatedFile()); err != nil {
-			return err
+	for _, dir := range []string{"internal", "workflow"} {
+		generatedFile := filepath.Join(string(a.tmp), dir, "workflowservice.go")
+		checkedInFile := filepath.Join(string(a.sdk), dir, "workflowservice.go")
+		if a.options.check {
+			generated, err := os.ReadFile(generatedFile)
+			if err != nil {
+				return err
+			}
+			checkedIn, err := os.ReadFile(checkedInFile)
+			if err != nil {
+				return err
+			}
+			if !checkEqual(generated, checkedIn) {
+				return fmt.Errorf("%s is out of date", checkedInFile)
+			}
+		} else {
+			if err := os.Rename(generatedFile, checkedInFile); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -308,6 +310,8 @@ type nexgenOptions struct {
 	descriptors    []string
 	supportPackage string
 	output         string
+	facadeOutput   string
+	facadeImport   string
 	systemNexus    bool
 	nativeAPI      bool
 	format         bool
@@ -328,6 +332,12 @@ func nexgen(options nexgenOptions) error {
 	}
 	if options.output != "" {
 		args = append(args, "--output", options.output)
+	}
+	if options.facadeOutput != "" {
+		args = append(args, "--facade-output", options.facadeOutput)
+	}
+	if options.facadeImport != "" {
+		args = append(args, "--facade-import", options.facadeImport)
 	}
 	if options.systemNexus {
 		args = append(args, "--system-nexus")

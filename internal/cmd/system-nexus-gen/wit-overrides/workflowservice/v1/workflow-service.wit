@@ -6,7 +6,7 @@ world system {
 
 /// @nexus.endpoint "__temporal_system"
 /// @nexus.service-name "temporal.api.workflowservice.v1.WorkflowService"
-/// @nexus.namespace dotnet="Temporalio.Workflows" go="go.temporal.io/sdk/workflow"
+/// @nexus.namespace dotnet="Temporalio.Workflows" go="go.temporal.io/sdk/internal"
 /// @nexus.operations-class dotnet="Workflow"
 /// @nexus.delay-load-temporalio-workflow
 /// @nexus.experimental
@@ -47,7 +47,7 @@ interface workflow-service {
     /// @nexus.default
     ///   python="_support.workflow_task_queue()"
     ///   typescript="workflow.workflowInfo().taskQueue"
-    ///   go="GetInfo(ctx).TaskQueueName"
+    ///   go="internal.GetWorkflowInfo(ctx).TaskQueueName"
     ///   dotnet="Temporalio.Workflows.Workflow.Info.TaskQueue"
     task-queue: task-queue,
     /// @nexus.doc
