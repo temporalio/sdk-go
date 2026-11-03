@@ -1320,6 +1320,14 @@ func (env *testWorkflowEnvironmentImpl) Complete(result *commonpb.Payloads, err 
 		}
 
 		if !env.isChildWorkflow() {
+			// CancelWorkflowExecution only carries cancellation details. The client
+			// rebuilds that as a plain CanceledError, so a returned child-workflow
+			// (or other) wrapper is not part of the workflow result.
+			// https://github.com/temporalio/sdk-go/issues/1496
+			var canceledForResult *CanceledError
+			if errors.As(env.testError, &canceledForResult) {
+				env.testError = NewCanceledError(canceledForResult.details)
+			}
 			env.testError = NewWorkflowExecutionError(
 				env.WorkflowInfo().WorkflowExecution.ID,
 				env.WorkflowInfo().WorkflowExecution.RunID,

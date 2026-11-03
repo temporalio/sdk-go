@@ -2910,6 +2910,38 @@ func (s *WorkflowTestSuiteUnitTest) Test_CancelChildWorkflow() {
 	s.NoError(env.GetWorkflowError())
 }
 
+func (s *WorkflowTestSuiteUnitTest) Test_ReturnedChildCancelMatchesServerResult() {
+	waitForCancelWorkflow := func(ctx Context) error {
+		return Await(ctx, func() bool { return false })
+	}
+	workflowFn := func(ctx Context) error {
+		childCtx, cancel := WithCancel(ctx)
+		defer cancel()
+		fut := ExecuteChildWorkflow(childCtx, waitForCancelWorkflow)
+		if err := fut.GetChildWorkflowExecution().Get(ctx, nil); err != nil {
+			return err
+		}
+		cancel()
+		return fut.Get(ctx, nil)
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(waitForCancelWorkflow)
+	env.ExecuteWorkflow(workflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	err := env.GetWorkflowError()
+	s.Error(err)
+	var execErr *WorkflowExecutionError
+	s.True(errors.As(err, &execErr))
+	var childErr *ChildWorkflowExecutionError
+	s.False(errors.As(err, &childErr), "workflow result kept the child execution error: %v", err)
+	var canceledErr *CanceledError
+	s.True(errors.As(err, &canceledErr))
+	s.Equal("canceled", canceledErr.Error())
+	s.Nil(canceledErr.Unwrap())
+}
+
 func (s *WorkflowTestSuiteUnitTest) Test_CancelExternalWorkflow() {
 	workflowFn := func(ctx Context) error {
 		// set namespace to be more specific
@@ -4764,7 +4796,9 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityHeartbeatCancel() {
 	env.ExecuteWorkflow(workflowFn)
 	s.True(env.IsWorkflowCompleted())
 	s.Error(env.GetWorkflowError())
-	s.Contains(env.GetWorkflowError().Error(), "activity error: canceled")
+	var heartbeatCanceled *CanceledError
+	s.True(errors.As(env.GetWorkflowError(), &heartbeatCanceled))
+	s.Equal("canceled", heartbeatCanceled.Error())
 	s.Equal(1, int(atomic.LoadUint32(&activityCallCount)))
 }
 
@@ -4794,7 +4828,9 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityOnCancelledContext() {
 	env.ExecuteWorkflow(workflowFn)
 	s.True(env.IsWorkflowCompleted())
 	s.Error(env.GetWorkflowError())
-	s.Contains(env.GetWorkflowError().Error(), "activity error: canceled")
+	var contextCanceled *CanceledError
+	s.True(errors.As(env.GetWorkflowError(), &contextCanceled))
+	s.Equal("canceled", contextCanceled.Error())
 	s.Equal(0, int(atomic.LoadUint32(&activityCallCount)))
 }
 

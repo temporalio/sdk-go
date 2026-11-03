@@ -55,6 +55,7 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- `TestWorkflowEnvironment` now reports a canceled workflow result the same way a real server does. When a workflow returns an error that contains a cancellation, `GetWorkflowError` is a `WorkflowExecutionError` wrapping a plain `CanceledError`, including when that cancellation came from a child workflow.
 - Fixed premature activity cancellation on internal heartbeat errors when using a client created
   with `client.NewClientFromExisting` and the server supports internal error differentiation.
 - Fixed missing `temporal_activity_schedule_to_start_latency` samples for eagerly dispatched activities.
