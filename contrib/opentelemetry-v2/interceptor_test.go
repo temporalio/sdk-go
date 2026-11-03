@@ -11,7 +11,11 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 
+	"go.temporal.io/sdk/converter"
+	"go.temporal.io/sdk/interceptor/tracing"
 	"go.temporal.io/sdk/temporal"
+	"go.temporal.io/sdk/testsuite"
+	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
 )
 
@@ -37,6 +41,37 @@ type interceptorTestSuite struct {
 
 func TestInterceptorTestSuite(t *testing.T) {
 	suite.Run(t, new(interceptorTestSuite))
+}
+
+func (s *interceptorTestSuite) TestTracingDataConverterSpanPropagation() {
+	for _, enabled := range []bool{false, true} {
+		name := "default"
+		if enabled {
+			name = "codec"
+		}
+		s.Run(name, func() {
+			recorder := s.newSpanRecorder()
+			dc := converter.NewCodecDataConverter(converter.GetDefaultDataConverter(),
+				converter.NewZlibCodec(converter.ZlibCodecOptions{AlwaysEncode: true}))
+			plugin, err := NewPlugin(PluginOptions{
+				TracerOptions: tracing.TracerOptions{AddTemporalSpans: true, UseDataConverter: enabled},
+			})
+			s.Require().NoError(err)
+			var testSuite testsuite.WorkflowTestSuite
+			env := testSuite.NewTestWorkflowEnvironment()
+			env.SetDataConverter(dc)
+			env.SetWorkerOptions(worker.Options{Plugins: []worker.Plugin{plugin}})
+			env.RegisterActivity(nopActivity)
+			env.ExecuteWorkflow(spanKindWorkflow)
+			s.Require().NoError(env.GetWorkflowError())
+			spans := recorder.Ended()
+			runWorkflow := s.requireSpanNamed(spans, "RunWorkflow:spanKindWorkflow")
+			startActivity := s.requireSpanNamed(spans, "StartActivity:nopActivity")
+			runActivity := s.requireSpanNamed(spans, "RunActivity:nopActivity")
+			s.Require().Equal(runWorkflow.SpanContext().SpanID(), startActivity.Parent().SpanID())
+			s.Require().Equal(startActivity.SpanContext().SpanID(), runActivity.Parent().SpanID())
+		})
+	}
 }
 
 func (s *interceptorTestSuite) TestSpanKind() {

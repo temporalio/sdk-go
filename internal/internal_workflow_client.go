@@ -1314,7 +1314,11 @@ func (wc *WorkflowClient) QueryWorkflowWithOptions(ctx context.Context, request 
 	}
 
 	// Set header before interceptor run
-	ctx, err := contextWithHeaderPropagated(ctx, request.Header, wc.contextPropagators)
+	dc := converter.WithDataConverterSerializationContext(wc.dataConverter, converter.WorkflowSerializationContext{
+		Namespace:  wc.namespace,
+		WorkflowID: request.WorkflowID,
+	})
+	ctx, err := contextWithHeaderPropagated(ctx, request.Header, wc.contextPropagators, dc)
 	if err != nil {
 		return nil, err
 	}
@@ -2177,7 +2181,7 @@ func (w *workflowClientInterceptor) createStartWorkflowRequest(
 	}
 
 	// get workflow headers from the context
-	header, err := headerPropagated(ctx, w.client.contextPropagators)
+	header, err := headerPropagated(ctx, w.client.contextPropagators, dataConverter)
 	if err != nil {
 		return nil, err
 	}
@@ -2532,7 +2536,7 @@ func (w *workflowClientInterceptor) SignalWorkflow(ctx context.Context, in *Clie
 	}
 
 	// get workflow headers from the context
-	header, err := headerPropagated(ctx, w.client.contextPropagators)
+	header, err := headerPropagated(ctx, w.client.contextPropagators, dataConverter)
 	if err != nil {
 		return err
 	}
@@ -2619,7 +2623,7 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 	}
 
 	// get workflow headers from the context
-	header, err := headerPropagated(ctx, w.client.contextPropagators)
+	header, err := headerPropagated(ctx, w.client.contextPropagators, dataConverter)
 	if err != nil {
 		return nil, err
 	}
@@ -2873,7 +2877,7 @@ func (w *workflowClientInterceptor) QueryWorkflow(
 	})
 
 	// get workflow headers from the context
-	header, err := headerPropagated(ctx, w.client.contextPropagators)
+	header, err := headerPropagated(ctx, w.client.contextPropagators, WithContext(ctx, dc))
 	if err != nil {
 		return nil, err
 	}
@@ -3039,7 +3043,7 @@ func (w *workflowClientInterceptor) createUpdateWorkflowRequest(
 		return nil, err
 	}
 
-	header, err := headerPropagated(ctx, w.client.contextPropagators)
+	header, err := headerPropagated(ctx, w.client.contextPropagators, dataConverter)
 	if err != nil {
 		return nil, err
 	}

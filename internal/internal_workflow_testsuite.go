@@ -582,7 +582,7 @@ func (env *testWorkflowEnvironmentImpl) setWorkerOptions(options WorkerOptions) 
 	env.plugins = plugins
 	env.pluginRegistryOptions = pluginRegistryOptions
 	env.workerOptions = options
-	env.registry.interceptors = options.Interceptors
+	env.registry.interceptors = bindWorkerInterceptorsDataConverter(options.Interceptors, env.dataConverter)
 	if env.workerOptions.EnableSessionWorker && env.sessionEnvironment == nil {
 		env.registry.RegisterActivityWithOptions(sessionCreationActivity, RegisterActivityOptions{
 			Name:                          sessionCreationActivityName,
@@ -702,6 +702,7 @@ func (env *testWorkflowEnvironmentImpl) setIdentity(identity string) {
 
 func (env *testWorkflowEnvironmentImpl) setDataConverter(dataConverter converter.DataConverter) {
 	env.dataConverter = dataConverter
+	env.registry.interceptors = bindWorkerInterceptorsDataConverter(env.workerOptions.Interceptors, dataConverter)
 }
 
 func (env *testWorkflowEnvironmentImpl) setFailureConverter(failureConverter converter.FailureConverter) {
@@ -1073,7 +1074,7 @@ func (env *testWorkflowEnvironmentImpl) executeLocalActivity(
 		backgroundContext:  env.workerOptions.BackgroundActivityContext,
 		metricsHandler:     env.metricsHandler,
 		logger:             env.logger,
-		dataConverter:      env.dataConverter,
+		dataConverter:      env.GetRootDataConverter(),
 		interceptors:       env.registry.interceptors,
 		contextPropagators: env.contextPropagators,
 		workerStopChannel:  env.workerStopChannel,
@@ -2025,7 +2026,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteLocalActivity(params ExecuteLocal
 		backgroundContext:  env.workerOptions.BackgroundActivityContext,
 		metricsHandler:     env.metricsHandler,
 		logger:             env.logger,
-		dataConverter:      env.dataConverter,
+		dataConverter:      env.GetRootDataConverter(),
 		contextPropagators: env.contextPropagators,
 		interceptors:       env.registry.interceptors,
 		workerStopChannel:  env.workerStopChannel,
@@ -2626,6 +2627,8 @@ func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskQueue str
 	client := WorkflowClient{workflowService: env.service}
 
 	taskHandler := newActivityTaskHandlerWithCustomProvider(&client, params, registry, getActivity)
+	// Arguments and results retain the scheduled converter; headers bind from the root.
+	taskHandler.(*activityTaskHandlerImpl).rootDataConverter = env.GetRootDataConverter()
 	return taskHandler
 }
 

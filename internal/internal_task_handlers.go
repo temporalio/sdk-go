@@ -166,6 +166,7 @@ type (
 		registry                         *registry
 		activityProvider                 activityProvider
 		dataConverter                    converter.DataConverter
+		rootDataConverter                converter.DataConverter
 		failureConverter                 converter.FailureConverter
 		workerStopCh                     <-chan struct{}
 		contextPropagators               []ContextPropagator
@@ -2470,7 +2471,17 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 	}()
 
 	// propagate context information into the activity context from the headers
-	ctx, err = contextWithHeaderPropagated(ctx, t.Header, ath.contextPropagators)
+	headerDataConverter := getActivityEnv(ctx).dataConverter
+	if ath.rootDataConverter != nil {
+		headerDataConverter = converter.WithDataConverterSerializationContext(ath.rootDataConverter, converter.ActivitySerializationContext{
+			Namespace:    t.WorkflowNamespace,
+			WorkflowID:   t.WorkflowExecution.GetWorkflowId(),
+			WorkflowType: workflowType,
+			ActivityType: activityType,
+			TaskQueue:    taskQueue,
+		})
+	}
+	ctx, err = contextWithHeaderPropagated(ctx, t.Header, ath.contextPropagators, headerDataConverter)
 	if err != nil {
 		return activityTaskResult{}, err
 	}

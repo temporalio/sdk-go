@@ -7,18 +7,28 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.temporal.io/sdk/contrib/opentracing"
+	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/interceptor"
 	"go.temporal.io/sdk/internal/interceptortest"
 )
 
 func TestSpanPropagation(t *testing.T) {
-	mock := mocktracer.New()
-	tracer, err := opentracing.NewTracer(opentracing.TracerOptions{Tracer: mock})
-	require.NoError(t, err)
-
-	testTracer := &testTracer{Tracer: tracer, mock: mock}
-	interceptortest.RunTestWorkflow(t, testTracer)
-	interceptortest.AssertSpanPropagation(t, testTracer)
+	for _, custom := range []bool{false, true} {
+		name := "default"
+		dc := converter.NewCodecDataConverter(converter.GetDefaultDataConverter(),
+			converter.NewZlibCodec(converter.ZlibCodecOptions{AlwaysEncode: true}))
+		if custom {
+			name = "codec"
+		}
+		t.Run(name, func(t *testing.T) {
+			mock := mocktracer.New()
+			tracer, err := opentracing.NewTracer(opentracing.TracerOptions{Tracer: mock, UseDataConverter: custom})
+			require.NoError(t, err)
+			testTracer := &testTracer{Tracer: tracer, mock: mock}
+			interceptortest.RunTestWorkflowWithDataConverter(t, testTracer, dc)
+			interceptortest.AssertSpanPropagation(t, testTracer)
+		})
+	}
 }
 
 type testTracer struct {

@@ -22,6 +22,14 @@ to docs, or any other relevant information.
 
 ### Added
 
+- Tracing can opt into using the configured client data converter, including its payload
+  codecs, for Temporal trace headers with `UseDataConverter`. The default remains the
+  standard converter. Custom converters must support `map[string]string` and decode
+  trace headers in existing workflow histories. Nexus text headers are unchanged.
+- Context propagators can implement `workflow.DataConverterContextPropagator` to receive
+  the configured converter before each propagation call. The propagator controls whether
+  to use it. Existing propagators and headers supplied directly by application
+  interceptors remain unchanged.
 - Added experimental `temporalnexus.ConvertLinkCallbackToNexusLink` and `temporalnexus.ConvertNexusLinkToLinkCallback`
   for converting `Link_Callback` to and from Nexus links.
 - Nexus handlers now propagate `NexusSerializationContext` to the workflows, workflow updates, and

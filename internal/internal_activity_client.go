@@ -870,7 +870,7 @@ func (w *workflowClientInterceptor) ExecuteActivity(
 	if request.Input, err = encodeArgs(dataConverter, in.Args); err != nil {
 		return nil, err
 	}
-	if request.Header, err = headerPropagated(ctx, w.client.contextPropagators); err != nil {
+	if request.Header, err = headerPropagated(ctx, w.client.contextPropagators, dataConverter); err != nil {
 		return nil, err
 	}
 

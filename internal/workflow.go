@@ -20,10 +20,10 @@ import (
 	nexuspb "go.temporal.io/api/nexus/v1"
 
 	"go.temporal.io/sdk/converter"
+	commonconverter "go.temporal.io/sdk/internal/common/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/common/workflowcontext"
 	"go.temporal.io/sdk/log"
-	commonconverter "go.temporal.io/sdk/internal/common/converter"
 )
 
 // HandlerUnfinishedPolicy actions taken if a workflow completes with running handlers.
@@ -1008,21 +1008,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteActivity(ctx Context, typeName 
 
 	// Retrieve headers from context to pass them on
 	envOptions := getWorkflowEnvOptions(ctx)
-	header, err := workflowHeaderPropagated(ctx, envOptions.ContextPropagators)
-	if err != nil {
-		settable.Set(nil, err)
-		return future
-	}
-
 	env := GetWorkflowEnvironment(ctx)
-	// Generate activity ID before serialization so it's available to context-aware data converters
-	scheduleID := env.GenerateSequence()
-	var activityID string
-	if options.ActivityID != "" {
-		activityID = options.ActivityID
-	} else {
-		activityID = getStringID(scheduleID)
-	}
 	wfInfo := env.WorkflowInfo()
 	actCtx := converter.ActivitySerializationContext{
 		Namespace:    wfInfo.Namespace,
@@ -1033,6 +1019,20 @@ func (wc *workflowEnvironmentInterceptor) ExecuteActivity(ctx Context, typeName 
 		IsLocal:      false,
 	}
 	dataConverter := withRootDataConverterSerializationContext(ctx, actCtx)
+	header, err := workflowHeaderPropagated(ctx, envOptions.ContextPropagators, dataConverter)
+	if err != nil {
+		settable.Set(nil, err)
+		return future
+	}
+
+	// Generate activity ID before serialization so it's available to context-aware data converters
+	scheduleID := env.GenerateSequence()
+	var activityID string
+	if options.ActivityID != "" {
+		activityID = options.ActivityID
+	} else {
+		activityID = getStringID(scheduleID)
+	}
 	future.(*decodeFutureImpl).dataConverter = dataConverter
 
 	input, err := encodeArgs(dataConverter, args)
@@ -1142,7 +1142,18 @@ func (wc *workflowEnvironmentInterceptor) ExecuteLocalActivity(ctx Context, type
 	future, settable := newDecodeFuture(ctx, typeName)
 
 	envOptions := getWorkflowEnvOptions(ctx)
-	header, err := workflowHeaderPropagated(ctx, envOptions.ContextPropagators)
+	env := GetWorkflowEnvironment(ctx)
+	wfInfo := env.WorkflowInfo()
+	actCtx := converter.ActivitySerializationContext{
+		Namespace:    wfInfo.Namespace,
+		WorkflowID:   wfInfo.WorkflowExecution.ID,
+		WorkflowType: wfInfo.WorkflowType.Name,
+		ActivityType: typeName,
+		TaskQueue:    wfInfo.TaskQueueName,
+		IsLocal:      true,
+	}
+	dataConverter := withRootDataConverterSerializationContext(ctx, actCtx)
+	header, err := workflowHeaderPropagated(ctx, envOptions.ContextPropagators, dataConverter)
 	if err != nil {
 		settable.Set(nil, err)
 		return future
@@ -1202,24 +1213,13 @@ func (wc *workflowEnvironmentInterceptor) ExecuteLocalActivity(ctx Context, type
 		return future
 	}
 
-	env := GetWorkflowEnvironment(ctx)
-	wfInfo := env.WorkflowInfo()
-	actCtx := converter.ActivitySerializationContext{
-		Namespace:    wfInfo.Namespace,
-		WorkflowID:   wfInfo.WorkflowExecution.ID,
-		WorkflowType: wfInfo.WorkflowType.Name,
-		ActivityType: typeName,
-		TaskQueue:    wfInfo.TaskQueueName,
-		IsLocal:      true,
-	}
-
 	params := &ExecuteLocalActivityParams{
 		ExecuteLocalActivityOptions: *options,
 		ActivityFn:                  activityFn,
 		ActivityType:                typeName,
 		InputArgs:                   args,
 		WorkflowInfo:                wfInfo,
-		DataConverter:               withRootDataConverterSerializationContext(ctx, actCtx),
+		DataConverter:               dataConverter,
 		FailureConverter:            withRootFailureConverterSerializationContext(ctx, actCtx),
 		ScheduledTime:               Now(ctx), // initial scheduled time
 		Header:                      header,
@@ -1392,7 +1392,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 	options.StaticDetails = workflowOptionsFromCtx.StaticDetails
 	options.StaticSummary = workflowOptionsFromCtx.StaticSummary
 	options.WorkflowID = childWorkflowID
-	header, err := workflowHeaderPropagated(ctx, options.ContextPropagators)
+	header, err := workflowHeaderPropagated(ctx, options.ContextPropagators, dc)
 	if err != nil {
 		executionSettable.Set(nil, err)
 		mainSettable.Set(nil, err)
@@ -1849,7 +1849,7 @@ func signalExternalWorkflow(ctx Context, workflowID, runID, signalName string, a
 	}
 
 	// Get header
-	header, err := workflowHeaderPropagated(ctx, options.ContextPropagators)
+	header, err := workflowHeaderPropagated(ctx, options.ContextPropagators, dataConverter)
 	if err != nil {
 		settable.Set(nil, err)
 		return future

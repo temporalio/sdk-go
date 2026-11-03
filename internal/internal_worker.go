@@ -1980,10 +1980,11 @@ func NewWorkflowReplayer(options WorkflowReplayerOptions) (*WorkflowReplayer, er
 	}
 
 	registry := newRegistryWithOptions(registryOptions{disableAliasing: options.DisableRegistrationAliasing})
-	registry.interceptors = options.Interceptors
+	dataConverter := MakeTransferAware(options.DataConverter)
+	registry.interceptors = bindWorkerInterceptorsDataConverter(options.Interceptors, dataConverter)
 	return &WorkflowReplayer{
 		registry:                    registry,
-		dataConverter:               MakeTransferAware(options.DataConverter),
+		dataConverter:               dataConverter,
 		failureConverter:            options.FailureConverter,
 		contextPropagators:          options.ContextPropagators,
 		enableLoggingInReplay:       options.EnableLoggingInReplay,
@@ -2614,6 +2615,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	// careful not to append to the existing slice)
 	registry.interceptors = make([]WorkerInterceptor, 0, len(client.workerInterceptors)+len(options.Interceptors))
 	registry.interceptors = append(append(registry.interceptors, client.workerInterceptors...), options.Interceptors...)
+	registry.interceptors = bindWorkerInterceptorsDataConverter(registry.interceptors, workerParams.DataConverter)
 
 	// workflow factory.
 	var workflowWorker *workflowWorker

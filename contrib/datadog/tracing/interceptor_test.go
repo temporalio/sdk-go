@@ -9,6 +9,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/stretchr/testify/require"
 
+	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/interceptor"
 	"go.temporal.io/sdk/internal/interceptortest"
 	"go.temporal.io/sdk/testsuite"
@@ -40,16 +41,22 @@ func spanChildren(spans []*mocktracer.Span, parentId uint64) (ret []*interceptor
 }
 
 func TestSpanPropagation(t *testing.T) {
-	// Start the mock tracer.
-	mt := mocktracer.Start()
-	defer mt.Stop()
-	impl := NewTracer(TracerOptions{})
-	testTracer := testTracer{
-		Tracer: impl,
-		mt:     mt,
+	for _, custom := range []bool{false, true} {
+		name := "default"
+		dc := converter.NewCodecDataConverter(converter.GetDefaultDataConverter(),
+			converter.NewZlibCodec(converter.ZlibCodecOptions{AlwaysEncode: true}))
+		if custom {
+			name = "codec"
+		}
+		t.Run(name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+			impl := NewTracer(TracerOptions{UseDataConverter: custom})
+			testTracer := testTracer{Tracer: impl, mt: mt}
+			interceptortest.RunTestWorkflowWithDataConverter(t, testTracer, dc)
+			interceptortest.AssertSpanPropagation(t, testTracer)
+		})
 	}
-	interceptortest.RunTestWorkflow(t, testTracer)
-	interceptortest.AssertSpanPropagation(t, testTracer)
 }
 func TestSpanName(t *testing.T) {
 	// Start the mock tracer.

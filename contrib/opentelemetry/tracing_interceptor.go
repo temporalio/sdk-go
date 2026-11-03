@@ -27,6 +27,11 @@ var DefaultTextMapPropagator = propagation.NewCompositeTextMapPropagator(
 
 // TracerOptions are options provided to NewTracingInterceptor or NewTracer.
 type TracerOptions struct {
+	// UseDataConverter opts into using the configured data converter for Temporal
+	// trace headers. By default, the SDK's default converter is used.
+	// All participants, including replay, must use compatible converters.
+	UseDataConverter bool
+
 	// Tracer is the tracer to use. If not set, one is obtained from the global
 	// tracer provider using the name "temporal-sdk-go".
 	Tracer trace.Tracer
@@ -120,6 +125,7 @@ func (t *tracer) Options() interceptor.TracerOptions {
 	return interceptor.TracerOptions{
 		SpanContextKey:          t.options.SpanContextKey,
 		HeaderKey:               t.options.HeaderKey,
+		UseDataConverter:        t.options.UseDataConverter,
 		DisableSignalTracing:    t.options.DisableSignalTracing,
 		DisableQueryTracing:     t.options.DisableQueryTracing,
 		DisableUpdateTracing:    t.options.DisableUpdateTracing,

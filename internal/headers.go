@@ -44,6 +44,23 @@ type (
 		ExtractToWorkflow(Context, HeaderReader) (Context, error)
 	}
 
+	// DataConverterContextPropagator is an optional ContextPropagator interface
+	// that receives the configured data converter before each propagation call.
+	// The propagator remains responsible for converting its own header values;
+	// the SDK does not otherwise convert or encode headers.
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.DataConverterContextPropagator]
+	DataConverterContextPropagator interface {
+		ContextPropagator
+
+		// WithDataConverter returns a propagator using dc for the upcoming call.
+		// dc is bound to the operation's context and serialization context.
+		// Implementations must not modify the receiver: a propagator may be shared
+		// concurrently by multiple clients with different converters. Neither dc
+		// nor the returned propagator should be retained beyond that call.
+		WithDataConverter(dc converter.DataConverter) ContextPropagator
+	}
+
 	// ContextAware is an optional interface that can be implemented alongside
 	// DataConverter. This interface allows Temporal to pass Workflow/Activity
 	// contexts to the DataConverter so that it may tailor its behavior.

@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/interceptor"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/temporalnexus"
@@ -60,8 +61,16 @@ func Span(name string, children ...*SpanInfo) *SpanInfo {
 
 // RunTestWorkflow executes a test workflow with a tracing interceptor.
 func RunTestWorkflow(t *testing.T, tracer interceptor.Tracer) {
+	RunTestWorkflowWithDataConverter(t, tracer, nil)
+}
+
+// RunTestWorkflowWithDataConverter also configures the workflow's data converter.
+func RunTestWorkflowWithDataConverter(t *testing.T, tracer interceptor.Tracer, dc converter.DataConverter) {
 	var suite testsuite.WorkflowTestSuite
 	env := suite.NewTestWorkflowEnvironment()
+	if dc != nil {
+		env.SetDataConverter(dc)
+	}
 	env.RegisterActivity(testActivity)
 	env.RegisterActivity(testActivityLocal)
 	env.RegisterWorkflow(testWorkflow)

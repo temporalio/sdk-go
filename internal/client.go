@@ -1775,7 +1775,7 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 		outboundPayloadVisitor: client.newOutboundPayloadVisitor(),
 	}
 	for i := len(options.Interceptors) - 1; i >= 0; i-- {
-		client.interceptor = options.Interceptors[i].InterceptClient(client.interceptor)
+		client.interceptor = bindClientInterceptorDataConverter(options.Interceptors[i], client.dataConverter).InterceptClient(client.interceptor)
 	}
 
 	return client

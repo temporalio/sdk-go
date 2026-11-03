@@ -13,6 +13,11 @@ import (
 
 // TracerOptions are options provided to NewInterceptor or NewTracer.
 type TracerOptions struct {
+	// UseDataConverter opts into using the configured data converter for Temporal
+	// trace headers. By default, the SDK's default converter is used.
+	// All participants, including replay, must use compatible converters.
+	UseDataConverter bool
+
 	// Tracer is the tracer to use. If not set, the global one is used.
 	Tracer opentracing.Tracer
 
@@ -83,6 +88,7 @@ func (t *tracer) Options() interceptor.TracerOptions {
 	return interceptor.TracerOptions{
 		SpanContextKey:       t.options.SpanContextKey,
 		HeaderKey:            t.options.HeaderKey,
+		UseDataConverter:     t.options.UseDataConverter,
 		DisableSignalTracing: t.options.DisableSignalTracing,
 		DisableQueryTracing:  t.options.DisableQueryTracing,
 	}

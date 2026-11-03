@@ -594,6 +594,8 @@ func TestNexusBackedActivityWorkerSerializationContext(t *testing.T) {
 			dataConverter := converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), &serCtxSigningCodec{})
 			input, err := converter.WithDataConverterSerializationContext(dataConverter, activityContext).ToPayloads("input")
 			require.NoError(t, err)
+			header, err := converter.WithDataConverterSerializationContext(dataConverter, activityContext).ToPayload("propagated")
+			require.NoError(t, err)
 			// Details recorded by the previous attempt must decode on retry.
 			previousHeartbeatDetails, err := converter.WithDataConverterSerializationContext(dataConverter,
 				tc.resultAndHeartbeatContext).ToPayloads("previous progress")
@@ -601,6 +603,7 @@ func TestNexusBackedActivityWorkerSerializationContext(t *testing.T) {
 			registry := newRegistry()
 			registry.RegisterActivityWithOptions(func(ctx context.Context, value string) (string, error) {
 				require.Equal(t, "input", value)
+				require.Equal(t, "propagated", ctx.Value(contextKey("tenant")))
 				var progress string
 				require.NoError(t, GetHeartbeatDetails(ctx, &progress))
 				require.Equal(t, "previous progress", progress)
@@ -622,6 +625,9 @@ func TestNexusBackedActivityWorkerSerializationContext(t *testing.T) {
 				registry:         registry,
 				dataConverter:    dataConverter,
 				failureConverter: GetDefaultFailureConverter(),
+				contextPropagators: []ContextPropagator{
+					&dataConverterKeysPropagator{keysPropagator: keysPropagator{keys: []string{"tenant"}}, useDataConverter: true},
+				},
 			}
 			now := timestamppb.Now()
 			completion, err := ath.Execute("task-queue", &workflowservice.PollActivityTaskQueueResponse{
@@ -631,6 +637,7 @@ func TestNexusBackedActivityWorkerSerializationContext(t *testing.T) {
 				ActivityRunId:                       "run-id",
 				ActivityType:                        &commonpb.ActivityType{Name: "activity"},
 				Input:                               input,
+				Header:                              &commonpb.Header{Fields: map[string]*commonpb.Payload{"tenant": header}},
 				HeartbeatDetails:                    previousHeartbeatDetails,
 				ScheduledTime:                       now,
 				StartedTime:                         now,

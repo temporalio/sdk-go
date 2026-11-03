@@ -15,6 +15,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"go.temporal.io/sdk/contrib/opentelemetry"
+	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/interceptor"
 	"go.temporal.io/sdk/internal/interceptortest"
 	"go.temporal.io/sdk/temporal"
@@ -24,15 +25,25 @@ import (
 )
 
 func TestSpanPropagation(t *testing.T) {
-	var rec tracetest.SpanRecorder
-	tracer, err := opentelemetry.NewTracer(opentelemetry.TracerOptions{
-		Tracer: sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(&rec)).Tracer(""),
-	})
-	require.NoError(t, err)
-
-	testTracer := &testTracer{Tracer: tracer, rec: &rec}
-	interceptortest.RunTestWorkflow(t, testTracer)
-	interceptortest.AssertSpanPropagation(t, testTracer)
+	for _, custom := range []bool{false, true} {
+		name := "default"
+		dc := converter.NewCodecDataConverter(converter.GetDefaultDataConverter(),
+			converter.NewZlibCodec(converter.ZlibCodecOptions{AlwaysEncode: true}))
+		if custom {
+			name = "codec"
+		}
+		t.Run(name, func(t *testing.T) {
+			var rec tracetest.SpanRecorder
+			tracer, err := opentelemetry.NewTracer(opentelemetry.TracerOptions{
+				Tracer:           sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(&rec)).Tracer(""),
+				UseDataConverter: custom,
+			})
+			require.NoError(t, err)
+			testTracer := &testTracer{Tracer: tracer, rec: &rec}
+			interceptortest.RunTestWorkflowWithDataConverter(t, testTracer, dc)
+			interceptortest.AssertSpanPropagation(t, testTracer)
+		})
+	}
 }
 
 type testTracer struct {

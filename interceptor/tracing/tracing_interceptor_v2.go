@@ -12,6 +12,7 @@ import (
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/interceptor"
+	"go.temporal.io/sdk/internal"
 	"go.temporal.io/sdk/log"
 	"go.temporal.io/sdk/workflow"
 )
@@ -103,6 +104,12 @@ type TracerOptions struct {
 	// This should never be empty.
 	HeaderKey string
 
+	// UseDataConverter opts into using the configured data converter for Temporal
+	// trace headers. The default is false, which uses the SDK's default converter.
+	// All participants, including replay, must use compatible converters.
+	// Nexus text headers are unaffected.
+	UseDataConverter bool
+
 	// AddTemporalSpans is whether to create Temporal-specific spans for
 	// operations such as StartWorkflow, RunWorkflow, and RunActivity. When
 	// false, trace context is still propagated through Temporal headers, so
@@ -165,16 +172,23 @@ type TracerFinishSpanOptions struct {
 type tracingInterceptor struct {
 	tracer         Tracer
 	workflowTracer WorkflowTracer
+	dataConverter  converter.DataConverter
 }
 
 // NewTracingInterceptor creates client and worker tracing interceptors.
 // They are returned separately so the client interceptor is not inherited onto
 // workers when set on client options.
+//
+// Temporal trace headers encode map[string]string using the SDK's default data
+// converter unless the relevant tracer's TracerOptions.UseDataConverter is enabled.
+// When enabled, the configured converter is used and ContextAware converters
+// receive the current Go or workflow context. All participants, including replay,
+// must use compatible converters. Nexus text headers are unaffected.
 func NewTracingInterceptor(
 	tracer Tracer,
 	workflowTracer WorkflowTracer,
 ) (interceptor.ClientInterceptor, interceptor.WorkerInterceptor) {
-	root := &tracingInterceptor{tracer: tracer, workflowTracer: workflowTracer}
+	root := &tracingInterceptor{tracer: tracer, workflowTracer: workflowTracer, dataConverter: converter.GetDefaultDataConverter()}
 	clientInterceptor := &tracingClientInterceptor{root: root}
 	workerInterceptor := &tracingWorkerInterceptor{root: root}
 
@@ -184,6 +198,14 @@ func NewTracingInterceptor(
 type tracingClientInterceptor struct {
 	interceptor.ClientInterceptorBase
 	root *tracingInterceptor
+}
+
+func (t *tracingClientInterceptor) WithClientDataConverter(dc converter.DataConverter) interceptor.ClientInterceptor {
+	bound := *t
+	root := *t.root
+	root.dataConverter = dc
+	bound.root = &root
+	return &bound
 }
 
 func (t *tracingClientInterceptor) InterceptClient(
@@ -197,6 +219,14 @@ func (t *tracingClientInterceptor) InterceptClient(
 type tracingWorkerInterceptor struct {
 	interceptor.WorkerInterceptorBase
 	root *tracingInterceptor
+}
+
+func (t *tracingWorkerInterceptor) WithWorkerDataConverter(dc converter.DataConverter) interceptor.WorkerInterceptor {
+	bound := *t
+	root := *t.root
+	root.dataConverter = dc
+	bound.root = &root
+	return &bound
 }
 
 func (t *tracingWorkerInterceptor) InterceptActivity(
@@ -808,28 +838,28 @@ func (t *tracingNexusOperationInboundInterceptor) StartOperation(ctx context.Con
 func (t *tracingInterceptor) headerReader(tracer Tracer, ctx context.Context) func() (TracerSpanRef, error) {
 	header := interceptor.Header(ctx)
 	return func() (TracerSpanRef, error) {
-		return t.readSpanFromHeader(tracer, header)
+		return t.readSpanFromHeader(tracer, internal.WithContext(ctx, t.dataConverterOrDefault(tracer)), header)
 	}
 }
 
 func (t *tracingInterceptor) headerWriter(tracer Tracer, ctx context.Context) func(TracerSpanRef) error {
 	header := interceptor.Header(ctx)
 	return func(span TracerSpanRef) error {
-		return t.writeSpanToHeader(tracer, span, header)
+		return t.writeSpanToHeader(tracer, internal.WithContext(ctx, t.dataConverterOrDefault(tracer)), span, header)
 	}
 }
 
 func (t *tracingInterceptor) workflowHeaderReader(tracer WorkflowTracer, ctx workflow.Context) func() (TracerSpanRef, error) {
 	header := interceptor.WorkflowHeader(ctx)
 	return func() (TracerSpanRef, error) {
-		return t.readSpanFromHeader(tracer, header)
+		return t.readSpanFromHeader(tracer, internal.WithWorkflowContext(ctx, t.dataConverterOrDefault(tracer)), header)
 	}
 }
 
 func (t *tracingInterceptor) workflowHeaderWriter(tracer WorkflowTracer, ctx workflow.Context) func(TracerSpanRef) error {
 	header := interceptor.WorkflowHeader(ctx)
 	return func(span TracerSpanRef) error {
-		return t.writeSpanToHeader(tracer, span, header)
+		return t.writeSpanToHeader(tracer, internal.WithWorkflowContext(ctx, t.dataConverterOrDefault(tracer)), span, header)
 	}
 }
 
@@ -845,24 +875,31 @@ func (t *tracingInterceptor) nexusHeaderWriter(tracer tracerCommon, header nexus
 	}
 }
 
-func (t *tracingInterceptor) readSpanFromHeader(tracer tracerCommon, header map[string]*commonpb.Payload) (TracerSpanRef, error) {
+func (t *tracingInterceptor) dataConverterOrDefault(tracer tracerCommon) converter.DataConverter {
+	if tracer.Options().UseDataConverter && t.dataConverter != nil {
+		return t.dataConverter
+	}
+	return converter.GetDefaultDataConverter()
+}
+
+func (t *tracingInterceptor) readSpanFromHeader(tracer tracerCommon, dc converter.DataConverter, header map[string]*commonpb.Payload) (TracerSpanRef, error) {
 	payload := header[tracer.Options().HeaderKey]
 	if payload == nil {
 		return nil, nil
 	}
 	var data map[string]string
-	if err := converter.GetDefaultDataConverter().FromPayload(payload, &data); err != nil {
+	if err := dc.FromPayload(payload, &data); err != nil {
 		return nil, err
 	}
 	return tracer.UnmarshalSpan(data)
 }
 
-func (t *tracingInterceptor) writeSpanToHeader(tracer tracerCommon, span TracerSpanRef, header map[string]*commonpb.Payload) error {
+func (t *tracingInterceptor) writeSpanToHeader(tracer tracerCommon, dc converter.DataConverter, span TracerSpanRef, header map[string]*commonpb.Payload) error {
 	data, err := tracer.MarshalSpan(span)
 	if err != nil || len(data) == 0 {
 		return err
 	}
-	payload, err := converter.GetDefaultDataConverter().ToPayload(data)
+	payload, err := dc.ToPayload(data)
 	if err != nil {
 		return err
 	}

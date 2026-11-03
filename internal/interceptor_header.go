@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	commonpb "go.temporal.io/api/common/v1"
+	"go.temporal.io/sdk/converter"
 )
 
 type headerKey struct{}
@@ -31,6 +32,7 @@ func contextWithHeaderPropagated(
 	ctx context.Context,
 	header *commonpb.Header,
 	ctxProps []ContextPropagator,
+	dc converter.DataConverter,
 ) (context.Context, error) {
 	if header == nil {
 		header = &commonpb.Header{}
@@ -40,6 +42,9 @@ func contextWithHeaderPropagated(
 	}
 	reader := NewHeaderReader(header)
 	for _, ctxProp := range ctxProps {
+		if p, ok := ctxProp.(DataConverterContextPropagator); ok {
+			ctxProp = p.WithDataConverter(WithContext(ctx, dc))
+		}
 		var err error
 		if ctx, err = ctxProp.Extract(ctx, reader); err != nil {
 			return nil, fmt.Errorf("failed propagating header: %w", err)
@@ -48,13 +53,16 @@ func contextWithHeaderPropagated(
 	return context.WithValue(ctx, headerKey{}, header.Fields), nil
 }
 
-func headerPropagated(ctx context.Context, ctxProps []ContextPropagator) (*commonpb.Header, error) {
+func headerPropagated(ctx context.Context, ctxProps []ContextPropagator, dc converter.DataConverter) (*commonpb.Header, error) {
 	header := &commonpb.Header{Fields: Header(ctx)}
 	if header.Fields == nil {
 		return nil, fmt.Errorf("context missing header")
 	}
 	writer := NewHeaderWriter(header)
 	for _, ctxProp := range ctxProps {
+		if p, ok := ctxProp.(DataConverterContextPropagator); ok {
+			ctxProp = p.WithDataConverter(dc)
+		}
 		if err := ctxProp.Inject(ctx, writer); err != nil {
 			return nil, fmt.Errorf("failed propagating header: %w", err)
 		}
@@ -93,6 +101,20 @@ func workflowContextWithHeaderPropagated(
 	}
 	reader := NewHeaderReader(header)
 	for _, ctxProp := range ctxProps {
+		if p, ok := ctxProp.(DataConverterContextPropagator); ok {
+			var dc converter.DataConverter
+			if options := getWorkflowEnvOptions(ctx); options != nil && options.RootDataConverter != nil {
+				var sc converter.SerializationContext
+				if env, ok := ctx.Value(workflowEnvironmentContextKey).(WorkflowEnvironment); ok {
+					info := env.WorkflowInfo()
+					sc = converter.WorkflowSerializationContext{Namespace: info.Namespace, WorkflowID: info.WorkflowExecution.ID}
+				}
+				dc = withRootDataConverterSerializationContext(ctx, sc)
+			} else {
+				dc = GetDataConverterFromWorkflowContext(ctx)
+			}
+			ctxProp = p.WithDataConverter(dc)
+		}
 		var err error
 		if ctx, err = ctxProp.ExtractToWorkflow(ctx, reader); err != nil {
 			return nil, fmt.Errorf("failed propagating header: %w", err)
@@ -101,13 +123,16 @@ func workflowContextWithHeaderPropagated(
 	return WithValue(ctx, headerKey{}, header.Fields), nil
 }
 
-func workflowHeaderPropagated(ctx Context, ctxProps []ContextPropagator) (*commonpb.Header, error) {
+func workflowHeaderPropagated(ctx Context, ctxProps []ContextPropagator, dc converter.DataConverter) (*commonpb.Header, error) {
 	header := &commonpb.Header{Fields: WorkflowHeader(ctx)}
 	if header.Fields == nil {
 		return nil, fmt.Errorf("context missing workflow header")
 	}
 	writer := NewHeaderWriter(header)
 	for _, ctxProp := range ctxProps {
+		if p, ok := ctxProp.(DataConverterContextPropagator); ok {
+			ctxProp = p.WithDataConverter(dc)
+		}
 		if err := ctxProp.InjectFromWorkflow(ctx, writer); err != nil {
 			return nil, fmt.Errorf("failed propagating header: %w", err)
 		}
