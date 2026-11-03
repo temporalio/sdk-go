@@ -72,6 +72,13 @@ type (
 		// when scheduling the activity. If the value is nil, it means the server didn't send information about
 		// retry policy (e.g. due to old server version), but it may still be defined server-side.
 		RetryPolicy *RetryPolicy
+		// NexusSerializationContext is the context of the Nexus operation handler that started this standalone
+		// activity, or nil if it wasn't started by one. The activity's result, failure, and heartbeat details are encoded
+		// with it. Pass it to CompleteActivityOptions, CompleteActivityByActivityIDOptions, or
+		// RecordActivityHeartbeatOptions when completing or heartbeating this activity outside the worker.
+		//
+		// NOTE: Experimental
+		NexusSerializationContext *converter.NexusSerializationContext
 	}
 
 	// RegisterActivityOptions consists of options for registering an activity.
@@ -329,7 +336,10 @@ func WithActivityTask(
 	heartbeatTimeout := task.GetHeartbeatTimeout().AsDuration()
 	deadline := calculateActivityDeadline(scheduled, scheduleToCloseTimeout, startToCloseTimeout)
 
-	actCtx := converter.ActivitySerializationContext{
+	// The result and heartbeat details go back to a Nexus caller (the server includes the last heartbeat
+	// details in timeout failures), so they use the propagated Nexus context. Input stays within the
+	// activity and uses the activity context.
+	activityContext := converter.ActivitySerializationContext{
 		Namespace:    task.WorkflowNamespace,
 		WorkflowID:   task.WorkflowExecution.GetWorkflowId(),
 		WorkflowType: task.WorkflowType.GetName(),
@@ -337,30 +347,37 @@ func WithActivityTask(
 		TaskQueue:    taskQueue,
 		IsLocal:      false,
 	}
-	dataConverter = converter.WithDataConverterSerializationContext(dataConverter, actCtx)
+	callerFacingDataConverter := converter.WithDataConverterSerializationContext(dataConverter,
+		serializationContextFor(activityContext, task.GetPropagatedNexusSerializationContext()))
+	dataConverter = converter.WithDataConverterSerializationContext(dataConverter, activityContext)
 
 	env := &activityEnvironment{
-		taskToken:              task.TaskToken,
-		serviceInvoker:         invoker,
-		activityType:           ActivityType{Name: task.ActivityType.GetName()},
-		activityID:             task.ActivityId,
-		metricsHandler:         metricsHandler,
-		deadline:               deadline,
-		heartbeatTimeout:       heartbeatTimeout,
-		scheduleToCloseTimeout: scheduleToCloseTimeout,
-		startToCloseTimeout:    startToCloseTimeout,
-		scheduledTime:          scheduled,
-		startedTime:            started,
-		taskQueue:              taskQueue,
-		dataConverter:          dataConverter,
-		attempt:                task.GetAttempt(),
-		priority:               task.GetPriority(),
-		heartbeatDetails:       task.HeartbeatDetails,
-		namespace:              task.WorkflowNamespace,
-		retryPolicy:            convertFromPBRetryPolicy(task.RetryPolicy),
-		workerStopChannel:      workerStopChannel,
-		contextPropagators:     contextPropagators,
-		client:                 client,
+		taskToken:                 task.TaskToken,
+		serviceInvoker:            invoker,
+		activityType:              ActivityType{Name: task.ActivityType.GetName()},
+		activityID:                task.ActivityId,
+		metricsHandler:            metricsHandler,
+		deadline:                  deadline,
+		heartbeatTimeout:          heartbeatTimeout,
+		scheduleToCloseTimeout:    scheduleToCloseTimeout,
+		startToCloseTimeout:       startToCloseTimeout,
+		scheduledTime:             scheduled,
+		startedTime:               started,
+		taskQueue:                 taskQueue,
+		dataConverter:             dataConverter,
+		callerFacingDataConverter: callerFacingDataConverter,
+		attempt:                   task.GetAttempt(),
+		priority:                  task.GetPriority(),
+		heartbeatDetails:          task.HeartbeatDetails,
+		namespace:                 task.WorkflowNamespace,
+		retryPolicy:               convertFromPBRetryPolicy(task.RetryPolicy),
+		workerStopChannel:         workerStopChannel,
+		contextPropagators:        contextPropagators,
+		client:                    client,
+	}
+	if propagated := task.GetPropagatedNexusSerializationContext(); propagated != nil {
+		nexusContext := nexusSerializationContextFromProto(propagated)
+		env.nexusSerializationContext = &nexusContext
 	}
 
 	if task.WorkflowExecution.GetWorkflowId() == "" {

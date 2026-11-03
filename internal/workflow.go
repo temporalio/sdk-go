@@ -17,11 +17,13 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	failurepb "go.temporal.io/api/failure/v1"
+	nexuspb "go.temporal.io/api/nexus/v1"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/common/workflowcontext"
 	"go.temporal.io/sdk/log"
+	commonconverter "go.temporal.io/sdk/internal/common/converter"
 )
 
 // HandlerUnfinishedPolicy actions taken if a workflow completes with running handlers.
@@ -1043,7 +1045,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteActivity(ctx Context, typeName 
 		ActivityType:           *activityType,
 		Input:                  input,
 		DataConverter:          dataConverter,
-		FailureConverter:       converter.WithFailureConverterSerializationContext(getRootFailureConverterFromWorkflowContext(ctx), actCtx),
+		FailureConverter:       withRootFailureConverterSerializationContext(ctx, actCtx),
 		Header:                 header,
 	}
 	params.ActivityID = activityID
@@ -1218,7 +1220,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteLocalActivity(ctx Context, type
 		InputArgs:                   args,
 		WorkflowInfo:                wfInfo,
 		DataConverter:               withRootDataConverterSerializationContext(ctx, actCtx),
-		FailureConverter:            converter.WithFailureConverterSerializationContext(getRootFailureConverterFromWorkflowContext(ctx), actCtx),
+		FailureConverter:            withRootFailureConverterSerializationContext(ctx, actCtx),
 		ScheduledTime:               Now(ctx), // initial scheduled time
 		Header:                      header,
 		Attempt:                     1, // Attempts always start at one
@@ -1397,10 +1399,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 		return result
 	}
 
-	failureConverter := converter.WithFailureConverterSerializationContext(
-		getRootFailureConverterFromWorkflowContext(ctx),
-		childWfCtx,
-	)
+	failureConverter := withRootFailureConverterSerializationContext(ctx, childWfCtx)
 
 	params := ExecuteWorkflowParams{
 		WorkflowOptions:  *options,
@@ -1516,7 +1515,8 @@ type WorkflowInfo struct {
 	currentHistorySize   int
 	currentHistoryLength int
 	// currentRunID is the current run ID of the workflow task, deterministic over reset
-	currentRunID string
+	currentRunID                        string
+	propagatedNexusSerializationContext *nexuspb.PropagatedSerializationContext
 }
 
 // UpdateInfo information about a currently running update
@@ -2111,8 +2111,8 @@ func WithDataConverter(ctx Context, dc converter.DataConverter) Context {
 		panic("data converter is nil for WithDataConverter")
 	}
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
-	getWorkflowEnvOptions(ctx1).DataConverter = converter.MakeTransferAware(dc)
-	getWorkflowEnvOptions(ctx1).RootDataConverter = converter.MakeTransferAware(dc)
+	getWorkflowEnvOptions(ctx1).DataConverter = MakeTransferAware(dc)
+	getWorkflowEnvOptions(ctx1).RootDataConverter = MakeTransferAware(dc)
 	return ctx1
 }
 
@@ -3062,6 +3062,9 @@ func (c nexusClient) ExecuteOperation(ctx Context, operation any, input any, opt
 }
 
 func (wc *workflowEnvironmentInterceptor) prepareNexusOperationParams(ctx Context, input ExecuteNexusOperationInput) (ExecuteNexusOperationParams, error) {
+	endpoint := input.Client.Endpoint()
+	service := input.Client.Service()
+
 	var ok bool
 	var operationName string
 	if operationName, ok = input.Operation.(string); ok {
@@ -3078,14 +3081,36 @@ func (wc *workflowEnvironmentInterceptor) prepareNexusOperationParams(ctx Contex
 		return ExecuteNexusOperationParams{}, fmt.Errorf("invalid 'operation' parameter, must be an OperationReference or a string")
 	}
 
-	// Nexus context and data converters.
-	nsc := converter.NexusSerializationContext{
-		Endpoint:  input.Client.Endpoint(),
-		Service:   input.Client.Service(),
-		Operation: operationName,
+	// Compute the serialization context, if any.
+	// - In System Nexus, the payload we construct is a proto handled by the
+	//   temporal service itself, e.g. SignalWithStartWorkflowExecutionRequest.
+	//   We use the serialization context to encode payloads *within* the payload,
+	//   e.g. SignalWithStartWorkflowExecutionRequest.Input.
+	// - For ordinary nexus operations, the serialization context is used to
+	//   encode the top-level payload - the input to the nexus operation.
+	var sc converter.SerializationContext
+	if endpoint == systemNexusEndpoint {
+		if info, ok := systemNexusRegistry[SystemNexusRegistryKey{
+			Service:   service,
+			Operation: operationName,
+		}]; ok {
+			sc = info.SerializationContext(input.Input)
+		}
+	} else {
+		sc = converter.NexusSerializationContext{
+			Endpoint:  endpoint,
+			Service:   service,
+			Operation: operationName,
+		}
 	}
-	dc := withRootDataConverterSerializationContext(ctx, nsc)
-	fc := converter.WithFailureConverterSerializationContext(getRootFailureConverterFromWorkflowContext(ctx), nsc)
+
+	dc := withRootDataConverterSerializationContext(ctx, sc)
+	fc := withRootFailureConverterSerializationContext(ctx, sc)
+	if endpoint == systemNexusEndpoint {
+		// System nexus operations use a special converter because they're
+		// meant for the server.
+		dc = commonconverter.WithDataConverterSystemNexusContext(systemNexusDataConverter, dc)
+	}
 
 	payload, err := dc.ToPayload(input.Input)
 	if err != nil {

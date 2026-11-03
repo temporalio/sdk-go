@@ -92,6 +92,11 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatBasic() {
 		MaxConcurrentWorkflowTaskExecutionSize: 5,
 		MaxConcurrentActivityExecutionSize:     5,
 		DisableEagerActivities:                 true,
+		// Explicit poller counts opt out of poller autoscaling auto-enrollment, so the
+		// non-autoscaling poller info asserted below holds on namespaces that enable it.
+		MaxConcurrentWorkflowTaskPollers: 2,
+		MaxConcurrentActivityTaskPollers: 2,
+		MaxConcurrentNexusTaskPollers:    2,
 	})
 	ts.worker.RegisterWorkflow(workflowWithBlockingActivity)
 	ts.worker.RegisterActivity(blockingActivity)

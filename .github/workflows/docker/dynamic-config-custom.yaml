@@ -46,6 +46,8 @@ activity.enableStandalone:
   - value: true
 history.enableChasm:
   - value: true
+history.enableSignalWithStartFromWorkflow:
+  - value: true
 history.enableTransitionHistory:
   - value: true
 history.enableUpdateCallbacks:

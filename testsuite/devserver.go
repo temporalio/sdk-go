@@ -243,6 +243,11 @@ func downloadIfNeeded(ctx context.Context, options *DevServerOptions, logger log
 	if err != nil {
 		return "", fmt.Errorf("failed creating temp file: %w", err)
 	}
+	defer func() {
+		if err := os.Remove(f.Name()); err != nil && !os.IsNotExist(err) {
+			logger.Warn("Failed to remove temporary CLI download", "Error", err)
+		}
+	}()
 	if strings.HasSuffix(info.ArchiveURL, ".tar.gz") {
 		err = extractTarball(resp.Body, info.FileToExtract, f)
 	} else if strings.HasSuffix(info.ArchiveURL, ".zip") {
@@ -262,10 +267,21 @@ func downloadIfNeeded(ctx context.Context, options *DevServerOptions, logger log
 			return "", fmt.Errorf("failed chmod'ing file: %w", err)
 		}
 	}
-	if err = os.Rename(f.Name(), exePath); err != nil {
-		return "", fmt.Errorf("failed moving file: %w", err)
+	if err := moveDownloadedCLI(f.Name(), exePath); err != nil {
+		return "", err
 	}
 	return exePath, nil
+}
+
+func moveDownloadedCLI(tempPath, exePath string) error {
+	if renameErr := os.Rename(tempPath, exePath); renameErr != nil {
+		// Another process may have populated and started the cached executable on Windows.
+		info, statErr := os.Stat(exePath)
+		if statErr != nil || !info.Mode().IsRegular() {
+			return fmt.Errorf("failed moving file: %w", renameErr)
+		}
+	}
+	return nil
 }
 
 func (opts *DevServerOptions) clientOptionsOrDefault() client.Options {

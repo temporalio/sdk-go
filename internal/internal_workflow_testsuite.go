@@ -842,7 +842,9 @@ func (env *testWorkflowEnvironmentImpl) getWorkflowDefinition(wt WorkflowType) (
 	}
 	var dynamic bool
 	if d, ok := wf.(string); ok && d == "dynamic" {
+		env.registry.Lock()
 		wf = env.registry.dynamicWorkflow
+		env.registry.Unlock()
 		dynamic = true
 	}
 	// A dynamic workflow may itself be a WorkflowDefinitionFactory (e.g. the
@@ -4095,13 +4097,19 @@ func (r *testNexusHandler) StartOperation(
 	}
 
 	// rebuild the input as *nexus.LazyValue
-	payload, err := r.env.dataConverter.ToPayload(inputPtr.Elem().Interface())
+	var dataConverter converter.DataConverter
+	if r.opHandle.params.client.Endpoint() == systemNexusEndpoint {
+		dataConverter = converter.NewCompositeDataConverter(converter.NewProtoPayloadConverter())
+	} else {
+		dataConverter = r.env.dataConverter
+	}
+	payload, err := dataConverter.ToPayload(inputPtr.Elem().Interface())
 	if err != nil {
 		// this should not be possible
 		panic("mock of ExecuteNexusOperation failed to convert input to payload")
 	}
 	serializer := &payloadSerializer{
-		converter: r.env.dataConverter,
+		converter: dataConverter,
 		payload:   payload,
 	}
 	input = nexus.NewLazyValue(
@@ -4119,7 +4127,7 @@ func (r *testNexusHandler) StartOperation(
 				operation,
 				newEncodedValue(
 					&commonpb.Payloads{Payloads: []*commonpb.Payload{payload}},
-					r.env.GetDataConverter(),
+					dataConverter,
 				),
 			)
 			close(waitCh)

@@ -1078,7 +1078,9 @@ func (r *registry) getWorkflowDefinition(wt WorkflowType) (WorkflowDefinition, e
 	}
 	var dynamic bool
 	if d, ok := wf.(string); ok && d == "dynamic" {
+		r.Lock()
 		wf = r.dynamicWorkflow
+		r.Unlock()
 		dynamic = true
 	}
 	// A dynamic workflow may itself be a WorkflowDefinitionFactory (e.g. the
@@ -1235,7 +1237,7 @@ func (we *workflowExecutor) Execute(ctx Context, input *commonpb.Payloads) (*com
 	result, err := envInterceptor.inboundInterceptor.ExecuteWorkflow(ctx, &ExecuteWorkflowInput{Args: args})
 	var serializedResult *commonpb.Payloads
 	if err == nil && result != nil {
-		serializedResult, err = encodeArg(dataConverter, result)
+		serializedResult, err = encodeArg(resultDataConverter(ctx), result)
 	}
 	return serializedResult, err
 }
@@ -1278,7 +1280,7 @@ func (ae *activityExecutor) Execute(ctx context.Context, input *commonpb.Payload
 }
 
 func (ae *activityExecutor) ExecuteWithActualArgs(ctx context.Context, args []any) (*commonpb.Payloads, error) {
-	dataConverter := getDataConverterFromActivityCtx(ctx)
+	dataConverter := callerFacingDataConverterFromActivityCtx(ctx)
 
 	envInterceptor := getActivityEnvironmentInterceptor(ctx)
 	envInterceptor.fn = ae.fn
@@ -1313,6 +1315,16 @@ func getDataConverterFromActivityCtx(ctx context.Context) converter.DataConverte
 		dataConverter = converter.GetDefaultDataConverter()
 	}
 	return WithContext(ctx, dataConverter)
+}
+
+// callerFacingDataConverterFromActivityCtx returns the data converter for payloads that may reach the Nexus
+// caller when the activity was started by a Nexus handler. This includes heartbeat details, since the server
+// includes the last ones in timeout failures. See serializationContextFor.
+func callerFacingDataConverterFromActivityCtx(ctx context.Context) converter.DataConverter {
+	if env := getActivityEnvironmentFromCtx(ctx); env != nil && env.callerFacingDataConverter != nil {
+		return WithContext(ctx, env.callerFacingDataConverter)
+	}
+	return getDataConverterFromActivityCtx(ctx)
 }
 
 func getActivityEnvironmentFromCtx(ctx context.Context) *activityEnvironment {
@@ -1971,7 +1983,7 @@ func NewWorkflowReplayer(options WorkflowReplayerOptions) (*WorkflowReplayer, er
 	registry.interceptors = options.Interceptors
 	return &WorkflowReplayer{
 		registry:                    registry,
-		dataConverter:               converter.MakeTransferAware(options.DataConverter),
+		dataConverter:               MakeTransferAware(options.DataConverter),
 		failureConverter:            options.FailureConverter,
 		contextPropagators:          options.ContextPropagators,
 		enableLoggingInReplay:       options.EnableLoggingInReplay,
@@ -2529,10 +2541,11 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		MaxHeartbeatThrottleInterval:     options.MaxHeartbeatThrottleInterval,
 		cache:                            cache,
 		eagerActivityExecutor: newEagerActivityExecutor(eagerActivityExecutorOptions{
-			disabled:      options.DisableEagerActivities,
-			taskQueue:     taskQueue,
-			maxConcurrent: options.MaxConcurrentEagerActivityExecutionSize,
-			maxPerTask:    *options.MaxEagerActivityReservationsPerWorkflowTask,
+			disabled:       options.DisableEagerActivities,
+			taskQueue:      taskQueue,
+			metricsHandler: metricsHandler,
+			maxConcurrent:  options.MaxConcurrentEagerActivityExecutionSize,
+			maxPerTask:     *options.MaxEagerActivityReservationsPerWorkflowTask,
 		}),
 		capabilities:                     &capabilities,
 		pollTimeTracker:                  &pollTimeTracker{},
