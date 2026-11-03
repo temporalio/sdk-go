@@ -824,8 +824,9 @@ func (b *blockingClient) GetObject(ctx context.Context, bucket, key string) ([]b
 	}
 }
 
-func TestStore_ConcurrencyLimitedTo10(t *testing.T) {
-	// Create 20 payloads — more than the concurrency limit of 10.
+// The configured limiter decides concurrency. A no-op limiter runs every
+// request at once.
+func TestStore_ConcurrencyGovernedByLimiter(t *testing.T) {
 	bc := newBlockingClient(false)
 	d, err := NewDriver(Options{
 		Client: bc,
@@ -844,21 +845,16 @@ func TestStore_ConcurrencyLimitedTo10(t *testing.T) {
 		done <- err
 	}()
 
-	// Give goroutines time to start and block.
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		if bc.peakInflight.Load() >= 10 {
+		if bc.peakInflight.Load() >= 20 {
 			break
 		}
 		time.Sleep(time.Millisecond)
 	}
+	require.Equal(t, int64(20), bc.peakInflight.Load(),
+		"a no-op limiter must not bound the driver")
 
-	// Peak should be exactly 10 (the errgroup limit).
-	peak := bc.peakInflight.Load()
-	assert.LessOrEqual(t, peak, int64(10), "peak inflight should not exceed errgroup limit of 10")
-	assert.GreaterOrEqual(t, peak, int64(1), "at least one goroutine should have started")
-
-	// Release all goroutines and let Store complete.
 	close(bc.gate)
 	require.NoError(t, <-done)
 }

@@ -64,6 +64,12 @@ func ConvertCommonLinkToNexusLink(commonLink *commonpb.Link) nexus.Link {
 		return ConvertLinkNexusOperationToNexusLink(commonLink.GetNexusOperation())
 	case *commonpb.Link_Activity_:
 		return ConvertLinkActivityToNexusLink(commonLink.GetActivity())
+	case *commonpb.Link_Callback_:
+		link, err := ConvertLinkCallbackToNexusLink(commonLink.GetCallback())
+		if err != nil {
+			return nexus.Link{}
+		}
+		return link
 	default:
 		return nexus.Link{}
 	}
@@ -81,4 +87,18 @@ func ConvertLinkActivityToNexusLink(a *commonpb.Link_Activity) nexus.Link {
 // NOTE: Experimental
 func ConvertNexusLinkToLinkActivity(link nexus.Link) (*commonpb.Link_Activity, error) {
 	return apinexus.ConvertNexusLinkToLinkActivity(link)
+}
+
+// ConvertLinkCallbackToNexusLink converts a Link_Callback type to a Nexus Link.
+//
+// NOTE: Experimental
+func ConvertLinkCallbackToNexusLink(cb *commonpb.Link_Callback) (nexus.Link, error) {
+	return apinexus.ConvertLinkCallbackToNexusLink(cb)
+}
+
+// ConvertNexusLinkToLinkCallback converts a Nexus Link back to a Link_Callback.
+//
+// NOTE: Experimental
+func ConvertNexusLinkToLinkCallback(link nexus.Link) (*commonpb.Link_Callback, error) {
+	return apinexus.ConvertNexusLinkToLinkCallback(link)
 }

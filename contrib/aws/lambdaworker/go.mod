@@ -6,7 +6,7 @@ require (
 	github.com/aws/aws-lambda-go v1.47.0
 	github.com/nexus-rpc/sdk-go v0.7.0
 	github.com/stretchr/testify v1.10.0
-	go.temporal.io/sdk v1.33.0
+	go.temporal.io/sdk v1.39.0
 	go.temporal.io/sdk/contrib/envconfig v1.0.0
 )
 
@@ -23,7 +23,7 @@ require (
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/robfig/cron v1.2.0 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
-	go.temporal.io/api v1.63.5 // indirect
+	go.temporal.io/api v1.64.0 // indirect
 	golang.org/x/net v0.58.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect

@@ -201,10 +201,17 @@ func (h *nexusTaskHandler) handleStartOperation(
 	req *nexuspb.StartOperationRequest,
 	header nexus.Header,
 ) (*nexuspb.Response, *nexus.HandlerError, error) {
-	dataConverter := converter.WithDataConverterSerializationContext(
-		h.dataConverter,
-		nctx.nexusSerializationContext,
-	)
+	var dataConverter converter.DataConverter
+	if nctx.Endpoint == systemNexusEndpoint {
+		// In production, System Nexus operations are handled by the temporal service.
+		// This path is only exercised by unit tests with a mock system nexus handler.
+		dataConverter = converter.NewCompositeDataConverter(converter.NewProtoPayloadConverter())
+	} else {
+		dataConverter = converter.WithDataConverterSerializationContext(
+			h.dataConverter,
+			nctx.nexusSerializationContext,
+		)
+	}
 	failureConverter := converter.WithFailureConverterSerializationContext(
 		h.failureConverter,
 		nctx.nexusSerializationContext,

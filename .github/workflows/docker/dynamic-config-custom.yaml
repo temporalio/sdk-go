@@ -34,7 +34,7 @@ system.enableNexus:
 component.nexusoperations.callback.endpoint.template:
   - value: http://localhost:7243/namespaces/{{.NamespaceName}}/nexus/callback
 # SDK tests use arbitrary callback URLs, permit that on the server.
-component.callbacks.allowedAddresses:
+callback.allowedAddresses:
   - value:
     - Pattern: "*"
       AllowInsecure: true
@@ -45,6 +45,8 @@ frontend.activityAPIsEnabled:
 activity.enableStandalone:
   - value: true
 history.enableChasm:
+  - value: true
+history.enableSignalWithStartFromWorkflow:
   - value: true
 history.enableTransitionHistory:
   - value: true

@@ -759,8 +759,8 @@ func TestPayloadLimitsVisitorQueryResultExternalStorage(t *testing.T) {
 // under proxy.VisitPayloadsOptions.ConcurrencyLimit > 1, where the mutation of
 // the query result and the visiting of the sibling Failure subtree can run in
 // separate goroutines at the same time (see internal_task_pollers.go, which
-// passes WorkerOptions.MaxConcurrentWorkflowTaskExternalStorageVisits as the
-// concurrency limit for these same message types). Each case below sets both
+// visits these same message types with an unbounded concurrency limit). Each
+// case below sets both
 // the result field and a Failure with payload-bearing details, so a run under
 // -race would catch a data race between the two mutations.
 func TestPayloadLimitsVisitorQueryResultConcurrentVisit(t *testing.T) {

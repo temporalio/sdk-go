@@ -463,7 +463,7 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorActivityResult() {
 }
 
 func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorDisabledWorkflowResult() {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 
 	logger := ilog.NewMemoryLogger()

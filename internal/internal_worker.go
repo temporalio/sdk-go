@@ -267,7 +267,7 @@ type (
 
 		outboundPayloadVisitor PayloadVisitor
 
-		payloadVisitorConcurrency int
+		storageParams extstore.StorageParameters
 
 		setErrorLimits func(*payloadLimits)
 	}
@@ -1078,7 +1078,9 @@ func (r *registry) getWorkflowDefinition(wt WorkflowType) (WorkflowDefinition, e
 	}
 	var dynamic bool
 	if d, ok := wf.(string); ok && d == "dynamic" {
+		r.Lock()
 		wf = r.dynamicWorkflow
+		r.Unlock()
 		dynamic = true
 	}
 	// A dynamic workflow may itself be a WorkflowDefinitionFactory (e.g. the
@@ -1235,7 +1237,7 @@ func (we *workflowExecutor) Execute(ctx Context, input *commonpb.Payloads) (*com
 	result, err := envInterceptor.inboundInterceptor.ExecuteWorkflow(ctx, &ExecuteWorkflowInput{Args: args})
 	var serializedResult *commonpb.Payloads
 	if err == nil && result != nil {
-		serializedResult, err = encodeArg(dataConverter, result)
+		serializedResult, err = encodeArg(resultDataConverter(ctx), result)
 	}
 	return serializedResult, err
 }
@@ -1278,7 +1280,7 @@ func (ae *activityExecutor) Execute(ctx context.Context, input *commonpb.Payload
 }
 
 func (ae *activityExecutor) ExecuteWithActualArgs(ctx context.Context, args []any) (*commonpb.Payloads, error) {
-	dataConverter := getDataConverterFromActivityCtx(ctx)
+	dataConverter := callerFacingDataConverterFromActivityCtx(ctx)
 
 	envInterceptor := getActivityEnvironmentInterceptor(ctx)
 	envInterceptor.fn = ae.fn
@@ -1313,6 +1315,16 @@ func getDataConverterFromActivityCtx(ctx context.Context) converter.DataConverte
 		dataConverter = converter.GetDefaultDataConverter()
 	}
 	return WithContext(ctx, dataConverter)
+}
+
+// callerFacingDataConverterFromActivityCtx returns the data converter for payloads that may reach the Nexus
+// caller when the activity was started by a Nexus handler. This includes heartbeat details, since the server
+// includes the last ones in timeout failures. See serializationContextFor.
+func callerFacingDataConverterFromActivityCtx(ctx context.Context) converter.DataConverter {
+	if env := getActivityEnvironmentFromCtx(ctx); env != nil && env.callerFacingDataConverter != nil {
+		return WithContext(ctx, env.callerFacingDataConverter)
+	}
+	return getDataConverterFromActivityCtx(ctx)
 }
 
 func getActivityEnvironmentFromCtx(ctx context.Context) *activityEnvironment {
@@ -1883,6 +1895,7 @@ type WorkflowReplayer struct {
 	enableLoggingInReplay       bool
 	disableDeadlockDetection    bool
 	inboundPayloadVisitor       PayloadVisitor
+	storageParams               extstore.StorageParameters
 	mu                          sync.Mutex
 	workflowExecutionResults    map[string]*commonpb.Payloads
 	workflowReplayerInstanceKey string
@@ -1970,12 +1983,13 @@ func NewWorkflowReplayer(options WorkflowReplayerOptions) (*WorkflowReplayer, er
 	registry.interceptors = options.Interceptors
 	return &WorkflowReplayer{
 		registry:                    registry,
-		dataConverter:               converter.MakeTransferAware(options.DataConverter),
+		dataConverter:               MakeTransferAware(options.DataConverter),
 		failureConverter:            options.FailureConverter,
 		contextPropagators:          options.ContextPropagators,
 		enableLoggingInReplay:       options.EnableLoggingInReplay,
 		disableDeadlockDetection:    options.DisableDeadlockDetection,
 		inboundPayloadVisitor:       extstore.NewExternalRetrievalVisitor(storageParams),
+		storageParams:               storageParams,
 		workflowExecutionResults:    make(map[string]*commonpb.Payloads),
 		workflowReplayerInstanceKey: workflowReplayerInstanceKey,
 		plugins:                     options.Plugins,
@@ -2207,6 +2221,7 @@ func (aw *WorkflowReplayer) replayWorkflowHistoryRoot(
 			taskQueue:     taskQueue,
 		},
 		inboundVisitor: aw.inboundPayloadVisitor,
+		storageParams:  aw.storageParams,
 	}
 	cache, cacheLease := newWorkerCache(&sharedWorkerCache{}, &sync.Mutex{}, 0)
 	defer cacheLease.release()
@@ -2421,10 +2436,6 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		panic("cannot set both DeploymentOptions.DefaultVersioningBehavior if DeploymentOptions.UseBuildIDForVersioning is false")
 	}
 
-	if options.MaxConcurrentWorkflowTaskExternalStorageVisits < 0 {
-		panic("MaxConcurrentWorkflowTaskExternalStorageVisits must not be negative")
-	}
-
 	// Pollers retain this callback, keeping the worker and cache lease live until they stop.
 	var aw *AggregatedWorker
 	noRepoll := &atomic.Bool{}
@@ -2490,6 +2501,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	}
 
 	payloadLimitVisitor, setErrorLimits := newPayloadLimitsVisitor(client.payloadWarningLimits, logger)
+	workerStorageParams := client.storageParams.WithOwnDriverOperationLimit().WithLogger(logger)
 
 	cache, cacheLease := NewWorkerCache()
 	constructionComplete := false
@@ -2529,10 +2541,11 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		MaxHeartbeatThrottleInterval:     options.MaxHeartbeatThrottleInterval,
 		cache:                            cache,
 		eagerActivityExecutor: newEagerActivityExecutor(eagerActivityExecutorOptions{
-			disabled:      options.DisableEagerActivities,
-			taskQueue:     taskQueue,
-			maxConcurrent: options.MaxConcurrentEagerActivityExecutionSize,
-			maxPerTask:    *options.MaxEagerActivityReservationsPerWorkflowTask,
+			disabled:       options.DisableEagerActivities,
+			taskQueue:      taskQueue,
+			metricsHandler: metricsHandler,
+			maxConcurrent:  options.MaxConcurrentEagerActivityExecutionSize,
+			maxPerTask:     *options.MaxEagerActivityReservationsPerWorkflowTask,
 		}),
 		capabilities:                     &capabilities,
 		pollTimeTracker:                  &pollTimeTracker{},
@@ -2543,12 +2556,12 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		workerPollCompleteOnShutdown:     workerPollCompleteOnShutdown,
 		serverSupportsAutoscaling:        &atomic.Bool{},
 		workflowTaskCompletionPagination: &workflowTaskCompletionPaginationConfig{},
-		inboundPayloadVisitor:            extstore.NewExternalRetrievalVisitor(client.storageParams),
+		inboundPayloadVisitor:            extstore.NewExternalRetrievalVisitor(workerStorageParams),
 		outboundPayloadVisitor: newCompositePayloadVisitor(
-			extstore.NewExternalStorageVisitor(client.storageParams),
+			extstore.NewExternalStorageVisitor(workerStorageParams),
 			payloadLimitVisitor,
 		),
-		payloadVisitorConcurrency: options.MaxConcurrentWorkflowTaskExternalStorageVisits,
+		storageParams: workerStorageParams,
 		setErrorLimits: func(limits *payloadLimits) {
 			if !options.DisablePayloadErrorLimit {
 				setErrorLimits(limits)
@@ -2991,9 +3004,6 @@ func setWorkerOptionsDefaults(options *WorkerOptions) autoEnrollEligibility {
 	}
 	if options.MaxHeartbeatThrottleInterval == 0 {
 		options.MaxHeartbeatThrottleInterval = defaultMaxHeartbeatThrottleInterval
-	}
-	if options.MaxConcurrentWorkflowTaskExternalStorageVisits == 0 {
-		options.MaxConcurrentWorkflowTaskExternalStorageVisits = defaultMaxConcurrentWorkflowTaskExternalStorageVisits
 	}
 	if options.Tuner == nil {
 		// Err cannot happen since these slot numbers are guaranteed valid

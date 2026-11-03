@@ -70,6 +70,11 @@ func (c *ClientConfig) ToTOML(options ClientConfigToTOMLOptions) ([]byte, error)
 		// If there's an additional *nested* field, like profile.default.tls.future, its parent (profile.default.tls) will
 		// show up in keys. As long as that key is a table (or a list of tables), it's not a conflict.
 		for keyName, key := range conflicts {
+			// ext is a special case. Any keys within are intended to be handled solely by extensions. We don't put them in
+			// AdditionalProfileFields when parsing, nor should we merge them here.
+			if isExtKey(key) {
+				continue
+			}
 			keyType := additionalMD.Type(key...)
 			if keyType == "Hash" || keyType == "ArrayHash" {
 				delete(conflicts, keyName)
@@ -119,7 +124,7 @@ func (c *ClientConfig) FromTOML(b []byte, options ClientConfigFromTOMLOptions) e
 		return err
 	}
 
-	undecoded := md.Undecoded()
+	undecoded := slices.DeleteFunc(md.Undecoded(), isExtKey)
 	if options.Strict && len(undecoded) > 0 {
 		keys := make([]string, len(undecoded))
 		for i, k := range undecoded {
@@ -202,6 +207,11 @@ func copyConfig(source, dest map[string]any, key toml.Key) {
 	}
 }
 
+// whether the key is part of an extension's config
+func isExtKey(key toml.Key) bool {
+	return len(key) >= 3 && key[0] == "profile" && key[2] == "ext"
+}
+
 type tomlClientConfig struct {
 	Profiles map[string]tomlClientConfigProfile `toml:"profile"`
 }
@@ -230,6 +240,8 @@ type tomlClientConfigProfile struct {
 	Codec     *tomlClientConfigCodec `toml:"codec,omitempty"`
 	GRPCMeta  map[string]string      `toml:"grpc_meta,omitempty"`
 	Authority string                 `toml:"authority,omitempty"`
+	// Note: decoding into map[string]any does not mark nested keys as decoded, see isExtKey.
+	Ext map[string]map[string]any `toml:"ext,omitempty"`
 }
 
 func (c *tomlClientConfigProfile) toClientConfig() *ClientConfigProfile {
@@ -240,6 +252,7 @@ func (c *tomlClientConfigProfile) toClientConfig() *ClientConfigProfile {
 		TLS:       c.TLS.toClientConfig(),
 		Codec:     c.Codec.toClientConfig(),
 		Authority: c.Authority,
+		Ext:       c.Ext,
 	}
 	// gRPC meta keys have to be normalized
 	if len(c.GRPCMeta) > 0 {
@@ -256,6 +269,7 @@ func (c *tomlClientConfigProfile) fromClientConfig(conf *ClientConfigProfile) {
 	c.Namespace = conf.Namespace
 	c.APIKey = conf.APIKey
 	c.Authority = conf.Authority
+	c.Ext = conf.Ext
 	if conf.TLS != nil {
 		c.TLS = &tomlClientConfigTLS{}
 		c.TLS.fromClientConfig(conf.TLS)

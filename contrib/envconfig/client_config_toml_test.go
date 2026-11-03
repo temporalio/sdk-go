@@ -248,3 +248,64 @@ func TestClientConfigTOMLAdditionalProfileFieldsMarshalLikeRaw(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, buf.Bytes(), tomlFromConfig)
 }
+
+func TestClientConfigTOMLExt(t *testing.T) {
+	data := `
+[profile.foo]
+address = "my-address"
+
+[profile.foo.ext.first]
+str = "value"
+num = 42
+list = ["a", "b"]
+
+[profile.foo.ext.first.nested]
+deep = true
+
+[profile.foo.ext.second]
+
+[profile.bar.ext.first]
+str = "bar-value"`
+
+	// Strict mode accepts ext tables, and they're not reported as additional fields
+	var conf envconfig.ClientConfig
+	additional := make(map[string]map[string]any)
+	require.NoError(t, conf.FromTOML([]byte(data), envconfig.ClientConfigFromTOMLOptions{
+		Strict:                  true,
+		AdditionalProfileFields: additional,
+	}))
+	require.Empty(t, additional)
+	require.Equal(t, map[string]map[string]any{
+		"first": {
+			"str":    "value",
+			"num":    int64(42),
+			"list":   []any{"a", "b"},
+			"nested": map[string]any{"deep": true},
+		},
+		"second": {},
+	}, conf.Profiles["foo"].Ext)
+	require.Equal(t, map[string]map[string]any{"first": {"str": "bar-value"}}, conf.Profiles["bar"].Ext)
+
+	// Non-strict with additional fields doesn't capture ext either
+	conf = envconfig.ClientConfig{}
+	require.NoError(t, conf.FromTOML([]byte(data), envconfig.ClientConfigFromTOMLOptions{AdditionalProfileFields: additional}))
+	require.Empty(t, additional)
+
+	// Round trip
+	b, err := conf.ToTOML(envconfig.ClientConfigToTOMLOptions{})
+	require.NoError(t, err)
+	var newConf envconfig.ClientConfig
+	require.NoError(t, newConf.FromTOML(b, envconfig.ClientConfigFromTOMLOptions{Strict: true}))
+	require.Equal(t, conf, newConf)
+
+	// Additional fields can't use ext
+	_, err = conf.ToTOML(envconfig.ClientConfigToTOMLOptions{
+		AdditionalProfileFields: map[string]map[string]any{"foo": {"ext": map[string]any{}}},
+	})
+	require.ErrorContains(t, err, "conflict with known profile fields")
+
+	// Strict still rejects unknown keys alongside ext
+	err = conf.FromTOML([]byte(data+"\n[profile.foo.tls]\nunknown = 1"), envconfig.ClientConfigFromTOMLOptions{Strict: true})
+	require.ErrorContains(t, err, "profile.foo.tls.unknown")
+	require.NotContains(t, err.Error(), "ext")
+}
