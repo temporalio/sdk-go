@@ -22,13 +22,10 @@ to docs, or any other relevant information.
 
 ### Added
 
-- Added client interceptor hooks for `Client.GetWorkflow` (`GetWorkflowRun`),
-  `WorkflowRun.Get`/`GetWithOptions` (`GetWorkflowResult`), and
-  `Client.GetWorkflowHistory`. Handle interception runs before lazy target
-  resolution, allowing workflow IDs to be rewritten before any lookup.
-  Result interception also runs before lazy target resolution, wraps the complete
-  wait including followed runs, and returns the encoded result or workflow error
-  before result decoding; history interception can wrap the lazily fetched iterator.
+- Plugins can report a version in worker heartbeats, with `SimplePluginOptions.Version` or a
+  `Version() string` method on the plugin.
+- `client.WorkflowExecutionDescription` now includes `RawResponse`, the full
+  `workflowservice.DescribeWorkflowExecutionResponse` returned by the server.
 - Added experimental `temporalnexus.ConvertLinkCallbackToNexusLink` and `temporalnexus.ConvertNexusLinkToLinkCallback`
   for converting `Link_Callback` to and from Nexus links.
 - Nexus handlers now propagate `NexusSerializationContext` to the workflows, workflow updates, and
@@ -47,6 +44,9 @@ to docs, or any other relevant information.
 
 ### Deprecated
 
+- `client.Client.DescribeWorkflowExecution` is deprecated. Use `DescribeWorkflow` and
+  access its response's `RawResponse` field for the full server response instead.
+
 ### :boom: Breaking Changes
 
 - **Experimental**: A Temporal operation handler (`temporalnexus.NewTemporalOperation`) can now send only
@@ -62,6 +62,8 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- Fixed premature activity cancellation on internal heartbeat errors when using a client created
+  with `client.NewClientFromExisting` and the server supports internal error differentiation.
 - Fixed missing `temporal_activity_schedule_to_start_latency` samples for eagerly dispatched activities.
   Like polled activities, eager activities now record this metric on receipt, including during worker shutdown.
 - Fixed a data race between dynamic workflow factory re-registration and workflow definition lookup

@@ -436,9 +436,12 @@ type (
 		//  - serviceerror.Internal
 		//  - serviceerror.Unavailable
 		//  - serviceerror.NotFound
+		//
+		// Deprecated: Use DescribeWorkflow and its response's RawResponse field instead.
 		DescribeWorkflowExecution(ctx context.Context, workflowID, runID string) (*workflowservice.DescribeWorkflowExecutionResponse, error)
 
 		// DescribeWorkflow returns information about the specified workflow execution.
+		// The response's RawResponse field contains the full server response.
 		// The errors it can return:
 		//  - serviceerror.InvalidArgument
 		//  - serviceerror.Internal
@@ -1615,6 +1618,7 @@ func newClientPluginRoot(ctx context.Context, options ClientPluginNewClientOptio
 		}
 	} else if existing, _ = options.FromExisting.(*WorkflowClient); existing != nil {
 		connection = existing.conn
+		options.ClientOptions.ConnectionOptions.excludeInternalFromRetry = existing.excludeInternalFromRetry
 	} else if options.FromExisting != nil {
 		return nil, fmt.Errorf("existing client must have been created directly from a client package call")
 	}
@@ -1687,9 +1691,9 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 
 	// Collect set of applicable worker plugins and interceptors
 	var workerPlugins []WorkerPlugin
-	var clientPluginNames []string
+	var clientPlugins []ClientPlugin
 	for _, plugin := range options.Plugins {
-		clientPluginNames = append(clientPluginNames, plugin.Name())
+		clientPlugins = append(clientPlugins, plugin)
 		if workerPlugin, _ := plugin.(WorkerPlugin); workerPlugin != nil {
 			workerPlugins = append(workerPlugins, workerPlugin)
 		}
@@ -1748,7 +1752,7 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 		contextPropagators:       options.ContextPropagators,
 		workerPlugins:            workerPlugins,
 		workerInterceptors:       workerInterceptors,
-		clientPluginNames:        clientPluginNames,
+		clientPlugins:            clientPlugins,
 		excludeInternalFromRetry: options.ConnectionOptions.excludeInternalFromRetry,
 		eagerDispatcher: &eagerWorkflowDispatcher{
 			workersByTaskQueue: make(map[string]map[eagerWorker]struct{}),
@@ -1842,8 +1846,8 @@ func newNamespaceServiceClient(workflowServiceClient workflowservice.WorkflowSer
 }
 
 // NewValue creates a new converter.EncodedValue which can be used to decode binary data returned by Temporal.  For example:
-// User had Activity.RecordHeartbeat(ctx, "my-heartbeat") and then got response from calling Client.DescribeWorkflowExecution.
-// The response contains binary field PendingActivityInfo.HeartbeatDetails,
+// User had Activity.RecordHeartbeat(ctx, "my-heartbeat") and then got a response from calling Client.DescribeWorkflow.
+// The response's RawResponse contains the binary field PendingActivityInfo.HeartbeatDetails,
 // which can be decoded by using:
 //
 //	var result string // This need to be same type as the one passed to RecordHeartbeat
@@ -1855,8 +1859,8 @@ func NewValue(data *commonpb.Payloads) converter.EncodedValue {
 }
 
 // NewValues creates a new converter.EncodedValues which can be used to decode binary data returned by Temporal. For example:
-// User had Activity.RecordHeartbeat(ctx, "my-heartbeat", 123) and then got response from calling Client.DescribeWorkflowExecution.
-// The response contains binary field PendingActivityInfo.HeartbeatDetails,
+// User had Activity.RecordHeartbeat(ctx, "my-heartbeat", 123) and then got a response from calling Client.DescribeWorkflow.
+// The response's RawResponse contains the binary field PendingActivityInfo.HeartbeatDetails,
 // which can be decoded by using:
 //
 //	var result1 string
