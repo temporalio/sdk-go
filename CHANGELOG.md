@@ -55,6 +55,8 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- Fixed premature activity cancellation on internal heartbeat errors when using a client created
+  with `client.NewClientFromExisting` and the server supports internal error differentiation.
 - Fixed missing `temporal_activity_schedule_to_start_latency` samples for eagerly dispatched activities.
   Like polled activities, eager activities now record this metric on receipt, including during worker shutdown.
 - Fixed a data race between dynamic workflow factory re-registration and workflow definition lookup
