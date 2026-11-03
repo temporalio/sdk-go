@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 
 	commonpb "go.temporal.io/api/common/v1"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -52,14 +53,20 @@ type ZlibCodecOptions struct {
 	AlwaysEncode bool
 }
 
-type zlibCodec struct{ options ZlibCodecOptions }
+type zlibCodec struct {
+	options ZlibCodecOptions
+	// Writers and readers are reused because each new zlib writer allocates
+	// roughly 1 MB of compressor state.
+	writers sync.Pool
+	readers sync.Pool
+}
 
 // NewZlibCodec creates a PayloadCodec for use in NewCodecDataConverter
 // to support zlib payload compression.
 //
 // While this serves as a reasonable example of a compression encoder, callers
 // may prefer alternative compression algorithms for lots of small payloads.
-func NewZlibCodec(options ZlibCodecOptions) PayloadCodec { return &zlibCodec{options} }
+func NewZlibCodec(options ZlibCodecOptions) PayloadCodec { return &zlibCodec{options: options} }
 
 func (z *zlibCodec) Encode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
 	result := make([]*commonpb.Payload, len(payloads))
@@ -70,7 +77,12 @@ func (z *zlibCodec) Encode(payloads []*commonpb.Payload) ([]*commonpb.Payload, e
 			return payloads, err
 		}
 		var buf bytes.Buffer
-		w := zlib.NewWriter(&buf)
+		w, ok := z.writers.Get().(*zlib.Writer)
+		if ok {
+			w.Reset(&buf)
+		} else {
+			w = zlib.NewWriter(&buf)
+		}
 		_, err = w.Write(b)
 		if closeErr := w.Close(); closeErr != nil && err == nil {
 			err = closeErr
@@ -78,6 +90,7 @@ func (z *zlibCodec) Encode(payloads []*commonpb.Payload) ([]*commonpb.Payload, e
 		if err != nil {
 			return payloads, err
 		}
+		z.writers.Put(w)
 		// Only set if smaller than original amount or has option to always encode
 		if buf.Len() < len(b) || z.options.AlwaysEncode {
 			result[i] = &commonpb.Payload{
@@ -91,7 +104,7 @@ func (z *zlibCodec) Encode(payloads []*commonpb.Payload) ([]*commonpb.Payload, e
 	return result, nil
 }
 
-func (*zlibCodec) Decode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+func (z *zlibCodec) Decode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
 	result := make([]*commonpb.Payload, len(payloads))
 	for i, p := range payloads {
 		// Only if it's our encoding
@@ -99,7 +112,14 @@ func (*zlibCodec) Decode(payloads []*commonpb.Payload) ([]*commonpb.Payload, err
 			result[i] = p
 			continue
 		}
-		r, err := zlib.NewReader(bytes.NewReader(p.Data))
+		var r io.ReadCloser
+		var err error
+		if pooled, ok := z.readers.Get().(io.ReadCloser); ok {
+			err = pooled.(zlib.Resetter).Reset(bytes.NewReader(p.Data), nil)
+			r = pooled
+		} else {
+			r, err = zlib.NewReader(bytes.NewReader(p.Data))
+		}
 		if err != nil {
 			return payloads, err
 		}
@@ -111,6 +131,7 @@ func (*zlibCodec) Decode(payloads []*commonpb.Payload) ([]*commonpb.Payload, err
 		if err != nil {
 			return payloads, err
 		}
+		z.readers.Put(r)
 		result[i] = &commonpb.Payload{}
 		err = proto.Unmarshal(b, result[i])
 		if err != nil {
