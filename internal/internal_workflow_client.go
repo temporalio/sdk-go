@@ -76,7 +76,7 @@ type (
 		contextPropagators       []ContextPropagator
 		workerPlugins            []WorkerPlugin
 		workerInterceptors       []WorkerInterceptor
-		clientPluginNames        []string
+		clientPlugins            []ClientPlugin
 		interceptor              ClientOutboundInterceptor
 		excludeInternalFromRetry *atomic.Bool
 		capabilities             *workflowservice.GetSystemInfoResponse_Capabilities

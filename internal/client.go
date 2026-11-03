@@ -1687,9 +1687,9 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 
 	// Collect set of applicable worker plugins and interceptors
 	var workerPlugins []WorkerPlugin
-	var clientPluginNames []string
+	var clientPlugins []ClientPlugin
 	for _, plugin := range options.Plugins {
-		clientPluginNames = append(clientPluginNames, plugin.Name())
+		clientPlugins = append(clientPlugins, plugin)
 		if workerPlugin, _ := plugin.(WorkerPlugin); workerPlugin != nil {
 			workerPlugins = append(workerPlugins, workerPlugin)
 		}
@@ -1748,7 +1748,7 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 		contextPropagators:       options.ContextPropagators,
 		workerPlugins:            workerPlugins,
 		workerInterceptors:       workerInterceptors,
-		clientPluginNames:        clientPluginNames,
+		clientPlugins:            clientPlugins,
 		excludeInternalFromRetry: options.ConnectionOptions.excludeInternalFromRetry,
 		eagerDispatcher: &eagerWorkflowDispatcher{
 			workersByTaskQueue: make(map[string]map[eagerWorker]struct{}),

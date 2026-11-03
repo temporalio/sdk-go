@@ -952,12 +952,14 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatPlugins() {
 	ctx := context.Background()
 
 	clientPlugin, err := temporal.NewSimplePlugin(temporal.SimplePluginOptions{
-		Name: "test-client-plugin",
+		Name:    "test-client-plugin",
+		Version: "1.0.0",
 	})
 	ts.NoError(err)
 
 	workerPlugin, err := temporal.NewSimplePlugin(temporal.SimplePluginOptions{
-		Name: "test-worker-plugin",
+		Name:    "test-worker-plugin",
+		Version: "2.0.0",
 	})
 	ts.NoError(err)
 
@@ -998,12 +1000,14 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatPlugins() {
 		return workerInfo != nil && len(workerInfo.Plugins) == 2
 	}, 5*time.Second, 200*time.Millisecond, "Should have 2 unique plugins (duplicates deduped)")
 
-	pluginNames := make(map[string]bool)
+	pluginVersions := make(map[string]string)
 	for _, plugin := range workerInfo.Plugins {
-		pluginNames[plugin.Name] = true
+		pluginVersions[plugin.Name] = plugin.Version
 	}
-	ts.True(pluginNames["test-client-plugin"])
-	ts.True(pluginNames["test-worker-plugin"])
+	ts.Equal(map[string]string{
+		"test-client-plugin": "1.0.0",
+		"test-worker-plugin": "2.0.0",
+	}, pluginVersions)
 }
 
 func (ts *WorkerHeartbeatTestSuite) TestWorkerPollCompleteOnShutdown() {
