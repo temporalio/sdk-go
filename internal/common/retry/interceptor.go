@@ -2,6 +2,7 @@ package retry
 
 import (
 	"context"
+	"errors"
 	"math"
 	"slices"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"github.com/grpc-ecosystem/go-grpc-middleware/v2/util/backoffutils"
 	errordetailspb "go.temporal.io/api/errordetails/v1"
 	"go.temporal.io/api/serviceerror"
+	workflowservice "go.temporal.io/api/workflowservice/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -44,6 +46,8 @@ type (
 		expirationInterval time.Duration
 		jitter             float64
 		maximumAttempts    int
+
+		retryActivityTaskResultDeadlineExceeded bool
 	}
 
 	GrpcMessageTooLargeError struct {
@@ -56,6 +60,11 @@ type (
 
 func (ck contextKey) String() string {
 	return "RetryConfig"
+}
+
+// SetRetryActivityTaskResultDeadlineExceeded enables live-context deadline retries for token-based activity results.
+func (g *GrpcRetryConfig) SetRetryActivityTaskResultDeadlineExceeded() {
+	g.retryActivityTaskResultDeadlineExceeded = true
 }
 
 // SetBackoffCoefficient sets rate at which backoff coefficient will change.
@@ -138,6 +147,11 @@ func NewRetryOptionsInterceptor(excludeInternal *atomic.Bool) grpc.UnaryClientIn
 				opts = append(opts, grpc_retry.WithMax(math.MaxUint32))
 			}
 			opts = append(opts, grpc_retry.WithRetriable(func(err error) bool {
+				if rc.retryActivityTaskResultDeadlineExceeded && isTokenActivityResult(method, req) &&
+					ctx.Err() == nil && !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) &&
+					serviceerror.ToStatus(err).Code() == codes.DeadlineExceeded {
+					return true
+				}
 				return IsRetryable(err, excludeInternal)
 			}))
 		} else {
@@ -146,6 +160,22 @@ func NewRetryOptionsInterceptor(excludeInternal *atomic.Bool) grpc.UnaryClientIn
 		}
 		return invoker(ctx, method, req, reply, cc, opts...)
 	}
+}
+
+// By-ID reports do not bind an activity attempt and must keep their existing policy.
+func isTokenActivityResult(method string, req any) bool {
+	switch method {
+	case workflowservice.WorkflowService_RespondActivityTaskCompleted_FullMethodName:
+		q, ok := req.(*workflowservice.RespondActivityTaskCompletedRequest)
+		return ok && len(q.GetTaskToken()) > 0
+	case workflowservice.WorkflowService_RespondActivityTaskFailed_FullMethodName:
+		q, ok := req.(*workflowservice.RespondActivityTaskFailedRequest)
+		return ok && len(q.GetTaskToken()) > 0
+	case workflowservice.WorkflowService_RespondActivityTaskCanceled_FullMethodName:
+		q, ok := req.(*workflowservice.RespondActivityTaskCanceledRequest)
+		return ok && len(q.GetTaskToken()) > 0
+	}
+	return false
 }
 
 func IsRetryable(err error, excludeInternalFromRetry *atomic.Bool) bool {
