@@ -50,6 +50,7 @@ func (e *eagerWorkflowDispatcher) applyToRequest(request *workflowservice.StartW
 		maybePermit := worker.tryReserveSlot()
 		if maybePermit != nil {
 			request.RequestEagerExecution = true
+			request.WorkerControlTaskQueue = worker.getWorkerControlTaskQueue()
 			// Attach deployment options if worker has deployment versioning enabled
 			deploymentOpts := worker.getDeploymentOptions()
 			if (deploymentOpts.Version != WorkerDeploymentVersion{}) {

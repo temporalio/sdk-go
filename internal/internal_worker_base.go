@@ -207,25 +207,27 @@ type (
 
 	// baseWorkerOptions options to configure base worker.
 	baseWorkerOptions struct {
-		pollerRate                   int
-		slotSupplier                 SlotSupplier
-		maxTaskPerSecond             float64
-		taskPollers                  []scalableTaskPoller
-		taskProcessor                taskProcessor
-		workerType                   string
-		identity                     string
-		buildId                      string
-		deploymentOptions            WorkerDeploymentOptions
-		logger                       log.Logger
-		stopTimeout                  time.Duration
-		fatalErrCb                   func(error)
-		noRepoll                     *atomic.Bool
-		backgroundContextCancel      context.CancelCauseFunc
-		metricsHandler               metrics.Handler
-		sessionTokenBucket           *sessionTokenBucket
-		slotReservationData          slotReservationData
-		isInternalWorker             bool
-		workerPollCompleteOnShutdown *atomic.Bool
+		pollerRate                         int
+		slotSupplier                       SlotSupplier
+		maxTaskPerSecond                   float64
+		taskPollers                        []scalableTaskPoller
+		taskProcessor                      taskProcessor
+		workerType                         string
+		identity                           string
+		buildId                            string
+		deploymentOptions                  WorkerDeploymentOptions
+		logger                             log.Logger
+		stopTimeout                        time.Duration
+		fatalErrCb                         func(error)
+		noRepoll                           *atomic.Bool
+		backgroundContextCancel            context.CancelCauseFunc
+		metricsHandler                     metrics.Handler
+		sessionTokenBucket                 *sessionTokenBucket
+		slotReservationData                slotReservationData
+		isInternalWorker                   bool
+		workerPollCompleteOnShutdown       *atomic.Bool
+		workerControlTaskQueue             string
+		workflowTaskHeartbeatNotifications *workflowTaskHeartbeatNotifications
 	}
 
 	// baseWorker that wraps worker activities.
@@ -707,6 +709,13 @@ func (bw *baseWorker) pushEagerTask(task eagerTask) {
 
 func (bw *baseWorker) getDeploymentOptions() WorkerDeploymentOptions {
 	return bw.options.deploymentOptions
+}
+
+func (bw *baseWorker) getWorkerControlTaskQueue() string {
+	if !bw.options.workflowTaskHeartbeatNotifications.canReceiveNotifications() {
+		return ""
+	}
+	return bw.options.workerControlTaskQueue
 }
 
 func (bw *baseWorker) processTaskAsync(eagerOrPolled eagerOrPolledTask) {
