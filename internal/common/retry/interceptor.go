@@ -4,17 +4,18 @@ import (
 	"context"
 	"math"
 	"slices"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
 
-	grpc_retry "github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/retry"
 	"github.com/grpc-ecosystem/go-grpc-middleware/v2/util/backoffutils"
 	errordetailspb "go.temporal.io/api/errordetails/v1"
 	"go.temporal.io/api/serviceerror"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
@@ -112,45 +113,64 @@ var (
 	retryableCodesWithoutInternal = []codes.Code{codes.Aborted, codes.ResourceExhausted, codes.Unavailable, codes.Unknown}
 )
 
-// NewRetryOptionsInterceptor creates a new gRPC interceptor that populates retry options for each call based on values
-// provided in the context. The atomic bool is checked each call to determine whether internals are included in retry.
-// If not present or false, internals are assumed to be included.
-// A positive google.rpc.RetryInfo delay on ResourceExhausted errors floors the next backoff.
+// NewRetryOptionsInterceptor retries calls when a GrpcRetryConfig is present in the context. The atomic bool is
+// checked each call to determine whether internal errors are included in retry. If not present or false, internals
+// are assumed to be included. A positive google.rpc.RetryInfo delay on ResourceExhausted errors floors the next wait.
 func NewRetryOptionsInterceptor(excludeInternal *atomic.Bool) grpc.UnaryClientInterceptor {
 	return func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-		if rc, ok := ctx.Value(ConfigKey).(*GrpcRetryConfig); ok {
-			var retryDelayFloor time.Duration
-			if _, ok := ctx.Deadline(); !ok {
-				deadlineCtx, cancel := context.WithDeadline(ctx, time.Now().Add(rc.expirationInterval))
-				defer cancel()
-				ctx = deadlineCtx
-			}
-			// Populate backoff function, which provides retrier with the delay for each attempt.
-			opts = append(opts, grpc_retry.WithBackoff(func(_ context.Context, attempt uint) time.Duration {
-				next := float64(rc.initialInterval) * math.Pow(rc.backoffCoefficient, float64(attempt))
-				if rc.maximumInterval != UnlimitedInterval {
-					next = math.Min(next, float64(rc.maximumInterval))
-				}
-				delay := max(backoffutils.JitterUp(time.Duration(next), rc.jitter), retryDelayFloor)
-				retryDelayFloor = 0
-				return delay
-			}))
-			// Max attempts is a required parameter in grpc retry interceptor,
-			// if it's set to zero then no retries will be made.
-			if rc.maximumAttempts != UnlimitedMaximumAttempts {
-				opts = append(opts, grpc_retry.WithMax(uint(rc.maximumAttempts)))
-			} else {
-				opts = append(opts, grpc_retry.WithMax(math.MaxUint32))
-			}
-			opts = append(opts, grpc_retry.WithRetriable(func(err error) bool {
-				retryDelayFloor = resourceExhaustedRetryDelayFloor(err)
-				return IsRetryable(err, excludeInternal)
-			}))
-		} else {
+		rc, ok := ctx.Value(ConfigKey).(*GrpcRetryConfig)
+		if !ok {
 			// Do not retry if retry config is not set.
-			opts = append(opts, grpc_retry.Disable())
+			return invoker(ctx, method, req, reply, cc, opts...)
 		}
-		return invoker(ctx, method, req, reply, cc, opts...)
+		if _, ok := ctx.Deadline(); !ok {
+			deadlineCtx, cancel := context.WithDeadline(ctx, time.Now().Add(rc.expirationInterval))
+			defer cancel()
+			ctx = deadlineCtx
+		}
+
+		// Retries run serially, so each response directly determines the next delay.
+		for attempt := uint(0); ; attempt++ {
+			attemptCtx := ctx
+			if attempt > 0 {
+				md, _ := metadata.FromOutgoingContext(ctx)
+				md = md.Copy()
+				md.Set("x-retry-attempt", strconv.FormatUint(uint64(attempt), 10))
+				attemptCtx = metadata.NewOutgoingContext(ctx, md)
+			}
+
+			err := invoker(attemptCtx, method, req, reply, cc, opts...)
+			if err == nil || !IsRetryable(err, excludeInternal) {
+				return err
+			}
+			if rc.maximumAttempts != UnlimitedMaximumAttempts && attempt+1 >= uint(rc.maximumAttempts) {
+				return err
+			}
+
+			serverDelayFloor := resourceExhaustedRetryDelayFloor(err)
+			if serverDelayFloor > 0 {
+				if deadline, ok := ctx.Deadline(); ok && serverDelayFloor >= time.Until(deadline) {
+					return err
+				}
+			}
+
+			next := float64(rc.initialInterval) * math.Pow(rc.backoffCoefficient, float64(attempt+1))
+			if rc.maximumInterval != UnlimitedInterval {
+				next = math.Min(next, float64(rc.maximumInterval))
+			}
+			delay := max(backoffutils.JitterUp(time.Duration(next), rc.jitter), serverDelayFloor)
+			if delay <= 0 {
+				continue
+			}
+
+			timer := time.NewTimer(delay)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return status.FromContextError(ctx.Err()).Err()
+			case <-timer.C:
+			}
+		}
 	}
 }
 
