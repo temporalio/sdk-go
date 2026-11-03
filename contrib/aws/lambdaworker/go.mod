@@ -6,7 +6,7 @@ require (
 	github.com/aws/aws-lambda-go v1.47.0
 	github.com/nexus-rpc/sdk-go v0.7.0
 	github.com/stretchr/testify v1.10.0
-	go.temporal.io/sdk v1.33.0
+	go.temporal.io/sdk v1.39.0
 	go.temporal.io/sdk/contrib/envconfig v1.0.0
 )
 

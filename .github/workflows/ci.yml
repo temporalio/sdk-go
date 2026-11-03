@@ -46,7 +46,7 @@ jobs:
           - os: macos-intel
             runsOn: macos-15-intel
           - os: macos-arm
-            runsOn: macos-14
+            runsOn: macos-15
     permissions:
       contents: read
       checks: write
@@ -97,7 +97,7 @@ jobs:
           - os: macos-intel
             runsOn: macos-15-intel
           - os: macos-arm
-            runsOn: macos-14
+            runsOn: macos-15
     permissions:
       contents: read
       checks: write
@@ -148,7 +148,7 @@ jobs:
           - os: macos-intel
             runsOn: macos-15-intel
           - os: macos-arm
-            runsOn: macos-14
+            runsOn: macos-15
     permissions:
       contents: read
       checks: write
