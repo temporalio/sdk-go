@@ -1,13 +1,6 @@
 package test_test
 
 // Schedule time-skipping (v2) integration tests.
-//
-// Schedules differ from workflows in three ways that shape these tests:
-//   - Configuration arrives through SchedulePatch; the Schedule message has no
-//     field for it, so UpdateSchedule cannot carry (or clear) it.
-//   - A bounded fast-forward is required. A workflow has a terminal state to
-//     skip to; a schedule does not.
-//   - There is no long-poll RPC, so completion is polled off Describe.
 
 import (
 	"context"
@@ -46,9 +39,6 @@ func (s *TimeSkippingScheduleTestSuite) SetupSuite() {
 	s.Assertions = require.New(s.T())
 
 	srv, err := timeskipping.StartDevServer(context.Background(), testsuite.DevServerOptions{
-		// The time-skipping dynamic config uses the post-rename key names, which
-		// no published CLI release carries yet; point this at a newer binary to
-		// run these suites. See timeskipping.StartDevServer.
 		ExistingPath:   os.Getenv("TEMPORAL_DEV_SERVER_EXISTING_PATH"),
 		CachedDownload: testsuite.CachedDownload{Version: devServerVersion},
 		ClientOptions:  &client.Options{Namespace: "default"},
@@ -64,14 +54,10 @@ func (s *TimeSkippingScheduleTestSuite) TearDownSuite() {
 	}
 }
 
-// ScheduleTargetWorkflow returns immediately; used where only the fact that an
-// action fired matters.
 func ScheduleTargetWorkflow(ctx workflow.Context) (string, error) {
 	return "done", nil
 }
 
-// ScheduleSleepTargetWorkflow sleeps an hour. It only finishes promptly if the
-// schedule propagated time skipping to it.
 func ScheduleSleepTargetWorkflow(ctx workflow.Context) (string, error) {
 	if err := workflow.Sleep(ctx, time.Hour); err != nil {
 		return "", err
@@ -79,9 +65,6 @@ func ScheduleSleepTargetWorkflow(ctx workflow.Context) (string, error) {
 	return "done", nil
 }
 
-// startScheduleWorker runs a worker for the schedule's target workflows. A
-// schedule's clock will not advance while it has in-flight starts, so the
-// actions need somewhere to run.
 func (s *TimeSkippingScheduleTestSuite) startScheduleWorker(tq string) worker.Worker {
 	w := worker.New(s.server.Client(), tq, worker.Options{})
 	w.RegisterWorkflow(ScheduleTargetWorkflow)
@@ -90,7 +73,6 @@ func (s *TimeSkippingScheduleTestSuite) startScheduleWorker(tq string) worker.Wo
 	return w
 }
 
-// createHourlySchedule makes an unpaused schedule that fires wf every hour.
 func (s *TimeSkippingScheduleTestSuite) createHourlySchedule(
 	ctx context.Context, tq string, wf any,
 ) client.ScheduleHandle {
@@ -101,12 +83,9 @@ func (s *TimeSkippingScheduleTestSuite) createHourlySchedule(
 			Intervals: []client.ScheduleIntervalSpec{{Every: time.Hour}},
 		},
 		Action: &client.ScheduleWorkflowAction{
-			Workflow:  wf,
-			ID:        "swf-" + uuid.NewString(),
-			TaskQueue: tq,
-			// Execution timeouts are measured in the workflow's own (virtual)
-			// time, so this has to exceed anything the action sleeps through
-			// or skipping will time the action out instead of completing it.
+			Workflow:                 wf,
+			ID:                       "swf-" + uuid.NewString(),
+			TaskQueue:                tq,
 			WorkflowExecutionTimeout: 24 * time.Hour,
 			WorkflowTaskTimeout:      time.Second,
 		},
@@ -115,10 +94,7 @@ func (s *TimeSkippingScheduleTestSuite) createHourlySchedule(
 	return handle
 }
 
-// TestFastForwardScheduleRequiresDuration asserts the schedule-specific rule
-// that unbounded skipping is rejected. For workflows a zero Duration
-// means "skip to the end"; a schedule has no end.
-func (s *TimeSkippingScheduleTestSuite) TestFastForwardScheduleRequiresDuration() {
+func (s *TimeSkippingScheduleTestSuite) TestFastForwardScheduleRequiresPositiveDuration() {
 	ctx := context.Background()
 	tq := "tq-" + uuid.NewString()
 	w := s.startScheduleWorker(tq)
@@ -139,8 +115,6 @@ func (s *TimeSkippingScheduleTestSuite) TestFastForwardScheduleRequiresDuration(
 	s.Contains(err.Error(), "greater than zero")
 }
 
-// TestScheduleTimeSkippingInfoNilWhenNeverEnabled asserts Describe reports no
-// time-skipping info for a schedule that never had it enabled.
 func (s *TimeSkippingScheduleTestSuite) TestScheduleTimeSkippingInfoNilWhenNeverEnabled() {
 	ctx := context.Background()
 	tq := "tq-" + uuid.NewString()
@@ -155,8 +129,6 @@ func (s *TimeSkippingScheduleTestSuite) TestScheduleTimeSkippingInfoNilWhenNever
 	s.Nil(tsi)
 }
 
-// TestFastForwardScheduleFiresActions is the core case: advancing an hourly
-// schedule by three hours runs the actions in that window back-to-back.
 func (s *TimeSkippingScheduleTestSuite) TestFastForwardScheduleFiresActions() {
 	ctx := context.Background()
 	tq := "tq-" + uuid.NewString()
@@ -180,13 +152,6 @@ func (s *TimeSkippingScheduleTestSuite) TestFastForwardScheduleFiresActions() {
 		time.Since(wallStart))
 }
 
-// TestSequentialFastForwardsOnOneSchedule checks that a schedule can be
-// fast-forwarded repeatedly, each call completing and firing its own actions.
-//
-// It deliberately asserts nothing about fast-forward ids. Whether a call
-// observes its own fast-forward rather than a previous completed one is not
-// observable through the public API today — see go-tsk-phases.md, "restore when
-// schedules get a polling API".
 func (s *TimeSkippingScheduleTestSuite) TestSequentialFastForwardsOnOneSchedule() {
 	ctx := context.Background()
 	tq := "tq-" + uuid.NewString()
