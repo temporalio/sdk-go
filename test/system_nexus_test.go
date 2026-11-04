@@ -385,7 +385,7 @@ func (ts *SystemNexusTestSuite) TestWorkflowSignalWithStart() {
 
 	// The responses from each call are written into the responses array.
 	var responses []workflow.SignalWithStartWorkflowResponse
-	ts.NoError(ts.executeWorkflow(executeWorkflowParams{
+	ts.NoError(ts.executeWorkflowWithOptions(executeWorkflowOptions{
 		ID:       callerID,
 		Workflow: SignalAndStartRepeatedly,
 		Args:     []any{calleeID, numCalls},
@@ -422,7 +422,7 @@ func (ts *SystemNexusTestSuite) TestWorkflowSignalWithStartEncodingFailure() {
 
 			callerID := ts.workflowID("caller")
 			calleeID := ts.workflowID("callee")
-			err := ts.executeWorkflow(executeWorkflowParams{
+			err := ts.executeWorkflowWithOptions(executeWorkflowOptions{
 				ID:       callerID,
 				Workflow: SignalAndStartWithEncodingFailure,
 				Args:     []any{calleeID, field},
@@ -443,7 +443,7 @@ func (ts *SystemNexusTestSuite) TestWorkflowSignalWithStartContextPropagation() 
 	calleeID := ts.workflowID("callee")
 	value := "from caller"
 	var calleeRunID string
-	ts.NoError(ts.executeWorkflow(executeWorkflowParams{
+	ts.NoError(ts.executeWorkflowWithOptions(executeWorkflowOptions{
 		ID:       callerID,
 		Workflow: SignalAndStartWithContext,
 		Args:     []any{calleeID, value},
@@ -470,7 +470,7 @@ func (ts *SystemNexusTestSuite) TestWorkflowSignalWithStartPropagatorError() {
 
 	callerID := ts.workflowID("caller")
 	calleeID := ts.workflowID("callee")
-	err := ts.executeWorkflow(executeWorkflowParams{
+	err := ts.executeWorkflowWithOptions(executeWorkflowOptions{
 		ID:       callerID,
 		Workflow: SignalAndStartWithPropagationFailure,
 		Args:     []any{calleeID},
@@ -489,7 +489,7 @@ func (ts *SystemNexusTestSuite) TestWorkflowSignalWithStartInterceptors() {
 	callerID := ts.workflowID("caller")
 	calleeID := ts.workflowID("callee")
 	var calleeRunID string
-	ts.NoError(ts.executeWorkflow(executeWorkflowParams{
+	ts.NoError(ts.executeWorkflowWithOptions(executeWorkflowOptions{
 		ID:       callerID,
 		Workflow: SignalAndStartOnce,
 		Args:     []any{calleeID},
@@ -536,7 +536,7 @@ func (ts *SystemNexusTestSuite) TestWorkflowSignalWithStartWithLotsOfOptions() {
 		StaticDetails:          "details",
 	}
 
-	ts.NoError(ts.executeWorkflow(executeWorkflowParams{
+	ts.NoError(ts.executeWorkflowWithOptions(executeWorkflowOptions{
 		ID:       callerID,
 		Workflow: SignalAndStartWithLotsOfOptions,
 		Args:     []any{options},
@@ -587,7 +587,7 @@ func (ts *SystemNexusTestSuite) TestWorkflowSignalWithStartWithCron() {
 	callerID := ts.workflowID("caller")
 	calleeID := ts.workflowID("callee")
 
-	ts.NoError(ts.executeWorkflow(executeWorkflowParams{
+	ts.NoError(ts.executeWorkflowWithOptions(executeWorkflowOptions{
 		ID:       callerID,
 		Workflow: SignalAndStartWithCron,
 		Args:     []any{calleeID},

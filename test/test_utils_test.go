@@ -448,17 +448,12 @@ func (ts *ConfigAndClientSuiteBase) registerNamespace() error {
 	}
 	// below is used to guarantee namespace is ready
 	var dummyReturn string
-	params := executeWorkflowParams{
-		ID:       "test-namespace-exist",
-		Workflow: SimplestWorkflow,
-		Result:   &dummyReturn,
-	}
-	err = ts.executeWorkflow(params)
+	err = ts.executeWorkflow("test-namespace-exist", SimplestWorkflow, &dummyReturn)
 	numOfRetry := 20
 	for err != nil && numOfRetry >= 0 {
 		if _, ok := err.(*serviceerror.NamespaceNotFound); ok {
 			time.Sleep(namespaceCacheRefreshInterval)
-			err = ts.executeWorkflow(params)
+			err = ts.executeWorkflow("test-namespace-exist", SimplestWorkflow, &dummyReturn)
 		} else {
 			break
 		}
@@ -502,25 +497,35 @@ func (ts *ConfigAndClientSuiteBase) ensureSearchAttributes() error {
 	return nil
 }
 
-type executeWorkflowParams struct {
+// executeWorkflow executes a given workflow and waits for the result.
+func (ts *ConfigAndClientSuiteBase) executeWorkflow(
+	wfID string, wfFunc any, retValPtr any, args ...any) error {
+	return ts.executeWorkflowWithOptions(executeWorkflowOptions{
+		ID:       wfID,
+		Workflow: wfFunc,
+		Result:   retValPtr,
+		Args:     args,
+	})
+}
+
+type executeWorkflowOptions struct {
 	ID       string
 	Workflow any
 	Result   any
 	Args     []any
 }
 
-// executeWorkflow executes a given workflow and waits for the result.
-func (ts *ConfigAndClientSuiteBase) executeWorkflow(params executeWorkflowParams) error {
-	options := ts.startWorkflowOptions(params.ID)
+func (ts *ConfigAndClientSuiteBase) executeWorkflowWithOptions(options executeWorkflowOptions) error {
+	startOptions := ts.startWorkflowOptions(options.ID)
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
-	run, err := ts.client.ExecuteWorkflow(ctx, options, params.Workflow, params.Args...)
+	run, err := ts.client.ExecuteWorkflow(ctx, startOptions, options.Workflow, options.Args...)
 	if err != nil {
 		return err
 	}
-	err = run.Get(ctx, params.Result)
+	err = run.Get(ctx, options.Result)
 	if ts.config.Debug {
-		iter := ts.client.GetWorkflowHistory(ctx, options.ID, run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+		iter := ts.client.GetWorkflowHistory(ctx, startOptions.ID, run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
 		for iter.HasNext() {
 			event, err1 := iter.Next()
 			if err1 != nil {
