@@ -89,7 +89,44 @@ type CancelFunc func()
 func WithCancel(parent Context) (ctx Context, cancel CancelFunc) {
 	c := newCancelCtx(parent)
 	propagateCancel(parent, c)
-	return c, func() { c.cancel(true, ErrCanceled) }
+	return c, func() { c.cancel(true, ErrCanceled, nil) }
+}
+
+// CancelCauseFunc cancels a context with a cause. Only the first cancellation
+// of a context sets its cause. A nil cause sets the cause to ErrCanceled.
+//
+// Exposed as: [go.temporal.io/sdk/workflow.CancelCauseFunc]
+type CancelCauseFunc func(cause error)
+
+// WithCancelCause is like WithCancel, but the returned cancellation function
+// records a cause that can be retrieved with Cause. Context.Err still returns
+// ErrCanceled.
+//
+// Exposed as: [go.temporal.io/sdk/workflow.WithCancelCause]
+func WithCancelCause(parent Context) (ctx Context, cancel CancelCauseFunc) {
+	c := newCancelCtx(parent)
+	propagateCancel(parent, c)
+	return c, func(cause error) { c.cancel(true, ErrCanceled, cause) }
+}
+
+// Cause returns the error that caused ctx to be canceled, or nil if ctx has not
+// been canceled. If no cause was provided, Cause returns ctx.Err().
+//
+// Exposed as: [go.temporal.io/sdk/workflow.Cause]
+func Cause(ctx Context) error {
+	if c, ok := parentCancelCtx(ctx); ok {
+		c.errLock.RLock()
+		defer c.errLock.RUnlock()
+		return c.cause
+	}
+	return ctx.Err()
+}
+
+func getWorkflowCancellationReason(ctx Context) string {
+	if cause := Cause(ctx); cause != nil && cause != ErrCanceled {
+		return cause.Error()
+	}
+	return ""
 }
 
 // NewDisconnectedContext returns a new context that won't propagate parent's cancellation to the new child context.
@@ -106,7 +143,7 @@ func WithCancel(parent Context) (ctx Context, cancel CancelFunc) {
 // Exposed as: [go.temporal.io/sdk/workflow.NewDisconnectedContext]
 func NewDisconnectedContext(parent Context) (ctx Context, cancel CancelFunc) {
 	c := newCancelCtx(parent)
-	return c, func() { c.cancel(true, ErrCanceled) }
+	return c, func() { c.cancel(true, ErrCanceled, nil) }
 }
 
 // newCancelCtx returns an initialized cancelCtx.
@@ -125,7 +162,7 @@ func propagateCancel(parent Context, child canceler) {
 	if p, ok := parentCancelCtx(parent); ok {
 		if parentErr := p.Err(); parentErr != nil {
 			// parent has already been canceled
-			child.cancel(false, parentErr)
+			child.cancel(false, parentErr, Cause(parent))
 		} else {
 			p.childrenLock.Lock()
 			p.children.add(child)
@@ -166,7 +203,7 @@ func removeChild(parent Context, child canceler) {
 // A canceler is a context type that can be canceled directly.  The
 // implementations are *cancelCtx and *timerCtx.
 type canceler interface {
-	cancel(removeFromParent bool, err error)
+	cancel(removeFromParent bool, err, cause error)
 	Done() Channel
 }
 
@@ -237,6 +274,7 @@ type cancelCtx struct {
 	children     childList
 	childrenLock sync.Mutex
 	err          error // set to non-nil by the first cancel call
+	cause        error // set with err by the first cancel call
 	errLock      sync.RWMutex
 }
 
@@ -256,9 +294,12 @@ func (c *cancelCtx) String() string {
 
 // cancel closes c.done, cancels each of c's children, and, if
 // removeFromParent is true, removes c from its parent's children.
-func (c *cancelCtx) cancel(removeFromParent bool, err error) {
+func (c *cancelCtx) cancel(removeFromParent bool, err, cause error) {
 	if err == nil {
 		panic("context: internal error: missing cancel error")
+	}
+	if cause == nil {
+		cause = err
 	}
 	// This can be called from separate goroutines concurrently, so we use the
 	// presence of the error under lock to prevent duplicate calls
@@ -266,6 +307,7 @@ func (c *cancelCtx) cancel(removeFromParent bool, err error) {
 	alreadyCancelled := c.err != nil
 	if !alreadyCancelled {
 		c.err = err
+		c.cause = cause
 	}
 	c.errLock.Unlock()
 	if alreadyCancelled {
@@ -279,11 +321,11 @@ func (c *cancelCtx) cancel(removeFromParent bool, err error) {
 	// Avoid recording the SDK flag when cancellation order cannot affect behavior.
 	if len(children.nodes) > 1 && GetWorkflowEnvironment(c).TryUse(SDKFlagOrderedChildCancel) {
 		for node := children.first; node != nil; node = node.next {
-			node.child.cancel(false, err)
+			node.child.cancel(false, err, cause)
 		}
 	} else {
 		for child := range children.nodes {
-			child.cancel(false, err)
+			child.cancel(false, err, cause)
 		}
 	}
 

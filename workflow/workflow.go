@@ -382,8 +382,18 @@ func GetUnhandledSignalNames(ctx Context) []string {
 //	ctx := WithWorkflowNamespace(ctx, "namespace")
 //
 // RequestCancelExternalWorkflow return Future with failure or empty success result.
+// If ctx has a cancellation cause, its error message is used as the reason.
 func RequestCancelExternalWorkflow(ctx Context, workflowID, runID string) Future {
 	return internal.RequestCancelExternalWorkflow(ctx, workflowID, runID)
+}
+
+// CancelExternalWorkflowOptions contains optional parameters for requesting cancellation of an external workflow.
+type CancelExternalWorkflowOptions = internal.CancelExternalWorkflowOptions
+
+// RequestCancelExternalWorkflowWithOptions requests cancellation of an external workflow, optionally with a reason.
+// workflowID is required. If runID is empty, the currently running execution is targeted.
+func RequestCancelExternalWorkflowWithOptions(ctx Context, workflowID, runID string, options CancelExternalWorkflowOptions) Future {
+	return internal.RequestCancelExternalWorkflowWithOptions(ctx, workflowID, runID, options)
 }
 
 // SignalExternalWorkflow can be used to send signal info to an external workflow.

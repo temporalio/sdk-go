@@ -1951,7 +1951,7 @@ type orderCanceler struct {
 	order *[]int
 }
 
-func (c *orderCanceler) cancel(bool, error) {
+func (c *orderCanceler) cancel(bool, error, error) {
 	*c.order = append(*c.order, c.index)
 }
 

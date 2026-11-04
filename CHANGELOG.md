@@ -22,6 +22,16 @@ to docs, or any other relevant information.
 
 ### Added
 
+- Workflows can inspect cancellation causes with `workflow.Cause` and cancel local
+  contexts with `workflow.WithCancelCause`. Reasons supplied through
+  `client.CancelWorkflowWithOptions` or the new
+  `workflow.RequestCancelExternalWorkflowWithOptions` are available as cancellation
+  causes inside the target workflow. `Context.Err()` continues to return
+  `workflow.ErrCanceled`. External- and child-workflow cancellation requests inherit
+  the context's cause when no nonempty reason is supplied.
+- `internalbindings.WorkflowEnvironment` exposes `GetCancellationReason` and
+  reason parameters on child- and external-workflow cancellation requests for
+  SDKs built on top of the Go SDK.
 - Plugins can report a version in worker heartbeats, with `SimplePluginOptions.Version` or a
   `Version() string` method on the plugin.
 - `client.WorkflowExecutionDescription` now includes `RawResponse`, the full

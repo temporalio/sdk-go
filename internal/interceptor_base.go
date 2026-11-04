@@ -304,6 +304,17 @@ func (w *WorkflowOutboundInterceptorBase) RequestCancelExternalWorkflow(
 	return w.Next.RequestCancelExternalWorkflow(ctx, workflowID, runID)
 }
 
+// RequestCancelExternalWorkflowWithOptions implements
+// WorkflowOutboundInterceptor.RequestCancelExternalWorkflowWithOptions.
+func (w *WorkflowOutboundInterceptorBase) RequestCancelExternalWorkflowWithOptions(
+	ctx Context,
+	workflowID string,
+	runID string,
+	options CancelExternalWorkflowOptions,
+) Future {
+	return w.Next.RequestCancelExternalWorkflowWithOptions(ctx, workflowID, runID, options)
+}
+
 // SignalExternalWorkflow implements
 // WorkflowOutboundInterceptor.SignalExternalWorkflow.
 func (w *WorkflowOutboundInterceptorBase) SignalExternalWorkflow(
