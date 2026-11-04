@@ -1,7 +1,6 @@
 package internal
 
 import (
-	"sync"
 	"time"
 )
 
@@ -96,15 +95,23 @@ type (
 		HasCompleted bool
 	}
 
-	// TimeSkippingFastForwardOptions configures a single fast-forward on a workflow.
+	// WorkflowFastForwardOptions configures a single fast-forward on a workflow.
 	//
-	// Exposed as: [go.temporal.io/sdk/timeskipping.FastForwardOptions]
+	// Exposed as: [go.temporal.io/sdk/timeskipping.WorkflowFastForwardOptions]
 	//
 	// NOTE: Experimental
-	TimeSkippingFastForwardOptions struct {
+	WorkflowFastForwardOptions struct {
 		// Duration to advance virtual time by. Zero means unbounded: enable time
 		// skipping and wait for the execution to end.
 		Duration time.Duration
+
+		// RunID pins the fast-forward to one run. Leave it empty — the usual
+		// case — and the server resolves the current run, which lets the
+		// fast-forward follow a chain across retry, continue-as-new and cron.
+		//
+		// Only the workflow ID is taken from the run passed alongside these
+		// options, so pinning is always explicit.
+		RunID string
 	}
 
 	// ScheduleFastForwardOptions configures a single fast-forward on a schedule.
@@ -138,21 +145,16 @@ type (
 		FailedReason string
 	}
 
-	// TimeSkippingPollFastForwardOptions identifies the workflow fast-forward to
+	// WorkflowPollFastForwardOptions identifies the workflow fast-forward to
 	// wait for.
 	//
-	// Exposed as: [go.temporal.io/sdk/timeskipping.PollFastForwardOptions]
+	// There is no RunID: the server keys the wait on the workflow ID and it spans
+	// the run chain, so the wait cannot be pinned to a single run.
+	//
+	// Exposed as: [go.temporal.io/sdk/timeskipping.WorkflowPollFastForwardOptions]
 	//
 	// NOTE: Experimental
-	TimeSkippingPollFastForwardOptions struct {
-		// WorkflowID of the execution being fast-forwarded. Required.
-		WorkflowID string
-
-		// RunID pins the wait to one run. Leaving it empty lets the server resolve
-		// the current run, so the wait follows a chain across retry,
-		// continue-as-new and cron — which is usually what a caller wants.
-		RunID string
-
+	WorkflowPollFastForwardOptions struct {
 		// FastForwardID of the fast-forward to wait for, as set in
 		// FastForwardConfig.ID. Required.
 		FastForwardID string
@@ -161,35 +163,12 @@ type (
 	// SchedulePollFastForwardOptions identifies the schedule fast-forward to wait
 	// for.
 	//
-	// Exposed as: [go.temporal.io/sdk/timeskipping.PollScheduleFastForwardOptions]
+	// Exposed as: [go.temporal.io/sdk/timeskipping.SchedulePollFastForwardOptions]
 	//
 	// NOTE: Experimental
 	SchedulePollFastForwardOptions struct {
 		// FastForwardID of the fast-forward to wait for, as set in
 		// FastForwardConfig.ID. Required.
 		FastForwardID string
-	}
-
-	// TimeSkipper wraps a client with an interceptor that stamps a
-	// TimeSkippingConfig on every workflow started through TimeSkipper.Client.
-	// Callers can also FastForward a running workflow, read its virtual clock, or
-	// suspend stamping for a block.
-	//
-	// TimeSkipper is normally accessed through a time-skipping dev server; see
-	// [go.temporal.io/sdk/timeskipping.StartDevServer]. It can also be used
-	// directly to drive time skipping on an existing client.
-	//
-	// Exposed as: [go.temporal.io/sdk/timeskipping.TimeSkipper]
-	//
-	// NOTE: Experimental
-	TimeSkipper struct {
-		client    *WorkflowClient
-		namespace string
-
-		// mu guards config and stampEnabled, which callers may mutate from one
-		// goroutine while workflows are being started from another.
-		mu           sync.RWMutex
-		config       TimeSkippingConfig
-		stampEnabled bool
 	}
 )

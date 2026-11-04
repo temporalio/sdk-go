@@ -63,16 +63,17 @@ type (
 		Value *TimeSkippingConfig
 	}
 
-	// pollWorkflowTimeSkippingRequest is a request for [Client.PollWorkflowTimeSkipping].
+	// pollWorkflowTimeSkippingRequest is a request for PollWorkflowFastForward.
+	//
+	// There is deliberately no run ID. The server keys the wait on the workflow ID
+	// and spans the run chain, so a run ID cannot narrow the wait; it would only
+	// narrow the initial read, where a superseded run reports the fast-forward as
+	// an ID mismatch that the current run is still working on.
 	//
 	// NOTE: Experimental
 	pollWorkflowTimeSkippingRequest struct {
 		// ID of the workflow.
 		WorkflowID string
-		// Running execution for a workflow ID. If empty, the server resolves the
-		// current run, which lets a fast-forward follow a chain across retry,
-		// continue-as-new and cron boundaries.
-		RunID string
 		// Required. Identifies the fast-forward to wait for. Must match the
 		// FastForwardConfig id set in the execution's TimeSkippingConfig.
 		FastForwardID string

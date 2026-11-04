@@ -22,21 +22,25 @@ to docs, or any other relevant information.
 
 ### Added
 
+- Added experimental per-workflow time skipping (v2) which runs against a real
+  Temporal server that has time skipping enabled. Time skipping is enabled per
+  execution, by passing a `client.TimeSkippingConfig` on `StartWorkflowOptions`
+  when the workflow is started; it propagates to child and scheduled workflows
+  unless `DisablePropagation` is set. `timeskipping.FastForwardWorkflow`
+  advances a running workflow's virtual clock and waits,
+  `GetWorkflowCurrentTime` and `GetWorkflowTimeSkippingInfo` observe it, and
+  `PollWorkflowFastForward` waits on a fast-forward issued previously.
+  `timeskipping.StartDevServer` starts a dev server with the required dynamic
+  config already applied. Unlike the older Java test server, each workflow has
+  its own virtual clock. Requires a Temporal Server with the workflow
+  time-skipping feature enabled.
 - Added experimental time skipping for schedules. `client.ScheduleOptions.TimeSkippingConfig`
   configures a schedule at creation, `ScheduleInfo.TimeSkippingInfo` surfaces its state
   from `ScheduleHandle.Describe`, `ScheduleHandle.SetTimeSkippingConfig` applies one to an
-  existing schedule, and `timeskipping.TimeSkipper.FastForwardSchedule` advances a
-  schedule's virtual clock so the actions in that window run back-to-back. A bounded
-  duration is required: a schedule has no terminal state to skip to. Requires a Temporal
-  Server with schedule time skipping enabled, on the CHASM (v2) scheduler.
-- Added experimental per-workflow time skipping (v2) in the new `timeskipping` package:
-  `timeskipping.TimeSkipper` wraps a client so every workflow it starts carries a
-  `client.TimeSkippingConfig`, and exposes `FastForward`, `GetCurrentTime`,
-  `GetTimeSkippingInfo`, and `WithTimeSkippingDisabled` to drive and observe a running
-  workflow's virtual clock. `timeskipping.StartDevServer` starts a dev server with the
-  required dynamic config already applied. Unlike the older Java test server, each
-  workflow has its own virtual clock. Requires a Temporal Server with the workflow
-  time-skipping feature enabled.
+  existing schedule, and `timeskipping.FastForwardSchedule` advances a schedule's virtual
+  clock so the actions in that window run back-to-back. `GetScheduleTimeSkippingInfo` and
+  `GetScheduleCurrentTime` observe it, and `PollScheduleFastForward` waits on a
+  fast-forward issued previously. Schedules only support bounded time skipping.
 - Added experimental `temporalnexus.ConvertLinkCallbackToNexusLink` and `temporalnexus.ConvertNexusLinkToLinkCallback`
   for converting `Link_Callback` to and from Nexus links.
 - Nexus handlers now propagate `NexusSerializationContext` to the workflows, workflow updates, and

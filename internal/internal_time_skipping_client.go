@@ -113,97 +113,8 @@ func timeFromProto(t *timestamppb.Timestamp) time.Time {
 	return t.AsTime()
 }
 
-// NewTimeSkipper wraps client so that all workflows started via the returned
-// TimeSkipper.Client() are stamped with config.
-//
-// Exposed as: [go.temporal.io/sdk/timeskipping.NewTimeSkipper]
-//
-// NOTE: Experimental
-func NewTimeSkipper(c Client, namespace string, config TimeSkippingConfig) (*TimeSkipper, error) {
-	if err := config.Validate(); err != nil {
-		return nil, err
-	}
-	ts := &TimeSkipper{
-		namespace:    namespace,
-		config:       config,
-		stampEnabled: true,
-	}
-	wrapped, err := NewClientFromExisting(context.Background(), c, ClientOptions{
-		Interceptors: []ClientInterceptor{&timeSkippingClientInterceptor{skipper: ts}},
-	})
-	if err != nil {
-		return nil, err
-	}
-	// NewClientFromExisting always returns a *WorkflowClient.
-	ts.client = wrapped.(*WorkflowClient)
-	return ts, nil
-}
-
-// Client returns the wrapped client that stamps a TimeSkippingConfig on each
-// workflow start.
-//
-// NOTE: Experimental
-func (t *TimeSkipper) Client() Client { return t.client }
-
-// Config returns the configuration currently applied to future workflow starts.
-//
-// NOTE: Experimental
-func (t *TimeSkipper) Config() TimeSkippingConfig {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-	return t.config
-}
-
-// SetConfig replaces the configuration applied to future workflow starts.
-// Does not affect workflows already running.
-//
-// NOTE: Experimental
-func (t *TimeSkipper) SetConfig(config TimeSkippingConfig) error {
-	if err := config.Validate(); err != nil {
-		return err
-	}
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	t.config = config
-	return nil
-}
-
-// WithTimeSkippingDisabled runs f with TimeSkippingConfig stamping suspended.
-// Workflows started via TimeSkipper.Client during f do not receive a
-// TimeSkippingConfig on their StartWorkflow request. Existing workflows are
-// unaffected.
-//
-// Suspension applies process-wide for the duration of f, not just to the
-// calling goroutine.
-//
-// NOTE: Experimental
-func (t *TimeSkipper) WithTimeSkippingDisabled(f func()) {
-	t.mu.Lock()
-	prev := t.stampEnabled
-	t.stampEnabled = false
-	t.mu.Unlock()
-	defer func() {
-		t.mu.Lock()
-		t.stampEnabled = prev
-		t.mu.Unlock()
-	}()
-	f()
-}
-
-// stampConfig returns the config to stamp on a starting workflow, or nil when
-// stamping is currently suspended.
-func (t *TimeSkipper) stampConfig() *TimeSkippingConfig {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-	if !t.stampEnabled {
-		return nil
-	}
-	cfg := t.config
-	return &cfg
-}
-
-// FastForward issues a fast-forward on the workflow and waits for it to
-// complete.
+// FastForwardWorkflow issues a fast-forward on the workflow and waits for it
+// to complete.
 //
 // With a Duration: bounded — sends a TimeSkippingConfig carrying a fresh
 // FastForwardConfig and long-polls PollWorkflowExecutionTimeSkipping for
@@ -211,72 +122,114 @@ func (t *TimeSkipper) stampConfig() *TimeSkippingConfig {
 // workflow chain terminates or the fast-forward is superseded/reset/TS
 // disabled before completion; (false, err) when the server reports that the
 // fast_forward_id no longer matches (typically means another caller issued
-// a superseding FastForward).
+// a superseding fast-forward).
 //
 // Without a Duration: unbounded — enables time skipping (no bounded FF) and
 // waits for a terminal history event on the current run. Always returns
 // (false, nil) after the workflow terminates.
 //
+// Exposed as: [go.temporal.io/sdk/timeskipping.FastForwardWorkflow]
+//
 // NOTE: Experimental
-func (t *TimeSkipper) FastForward(
-	ctx context.Context, run WorkflowRun, options TimeSkippingFastForwardOptions,
+func FastForwardWorkflow(
+	ctx context.Context, c Client, run WorkflowRun, options WorkflowFastForwardOptions,
 ) (bool, error) {
-	if options.Duration == 0 {
-		return t.enableUnboundedAndWait(ctx, run)
+	wc, err := workflowClientFrom(c)
+	if err != nil {
+		return false, err
 	}
-	return t.doBoundedFastForward(ctx, run, options.Duration)
+	if options.Duration == 0 {
+		return enableUnboundedAndWait(ctx, wc, run, options.RunID)
+	}
+	return doBoundedFastForward(ctx, wc, run, options.Duration, options.RunID)
 }
 
-// GetTimeSkippingInfo fetches the workflow's TimeSkippingInfo via
+// GetWorkflowTimeSkippingInfo fetches the workflow's TimeSkippingInfo via
 // DescribeWorkflowExecution. Returns (nil, nil) if the workflow has never had
 // time skipping enabled.
 //
+// Exposed as: [go.temporal.io/sdk/timeskipping.GetWorkflowTimeSkippingInfo]
+//
 // NOTE: Experimental
-func (t *TimeSkipper) GetTimeSkippingInfo(
-	ctx context.Context, run WorkflowRun,
+func GetWorkflowTimeSkippingInfo(
+	ctx context.Context, c Client, run WorkflowRun,
 ) (*TimeSkippingInfo, error) {
-	desc, err := t.client.DescribeWorkflowExecution(ctx, run.GetID(), run.GetRunID())
+	// Empty run ID: TimeSkippingInfo is per-run state that propagates along the
+	// chain, so reading the current run is what reports where time skipping now is.
+	// The run's own ID would pin to whichever run it was built from.
+	desc, err := c.DescribeWorkflowExecution(ctx, run.GetID(), "")
 	if err != nil {
 		return nil, err
 	}
 	return timeSkippingInfoFromProto(desc.GetWorkflowExtendedInfo().GetTimeSkippingInfo()), nil
 }
 
-// GetCurrentTime returns the workflow's current virtual clock, read from
-// TimeSkippingInfo.CurrentTime via GetTimeSkippingInfo. If the workflow has
-// never had time skipping enabled, returns the wall clock (virtual == wall in
-// that case).
+// GetWorkflowCurrentTime returns the workflow's current virtual clock, read
+// from TimeSkippingInfo.CurrentTime. If the workflow has never had time
+// skipping enabled, returns the wall clock (virtual == wall in that case).
+//
+// Exposed as: [go.temporal.io/sdk/timeskipping.GetWorkflowCurrentTime]
 //
 // NOTE: Experimental
-func (t *TimeSkipper) GetCurrentTime(
-	ctx context.Context, run WorkflowRun,
+func GetWorkflowCurrentTime(
+	ctx context.Context, c Client, run WorkflowRun,
 ) (time.Time, error) {
-	tsi, err := t.GetTimeSkippingInfo(ctx, run)
+	tsi, err := GetWorkflowTimeSkippingInfo(ctx, c, run)
 	if err != nil {
 		return time.Time{}, err
 	}
-	if tsi == nil || tsi.CurrentTime.IsZero() {
-		return time.Now().UTC(), nil
-	}
-	return tsi.CurrentTime, nil
+	return currentTimeFrom(tsi), nil
 }
 
-// fastForwardConfigFrom builds the config to stamp for a fast-forward, carrying
-// DisablePropagation and MaxSessionSkipCount over from the current config.
-// A nil duration means unbounded — enable skipping with no bounded fast-forward.
-func (t *TimeSkipper) fastForwardConfigFrom(ffID string, d *time.Duration) TimeSkippingConfig {
-	current := t.Config()
-	tsc := TimeSkippingConfig{
-		Enabled:             true,
-		DisablePropagation:  current.DisablePropagation,
-		MaxSessionSkipCount: current.MaxSessionSkipCount,
+// currentTimeFrom reads the virtual clock out of a TimeSkippingInfo, falling
+// back to the wall clock when the resource has never skipped any time — the
+// two are the same thing in that case.
+func currentTimeFrom(tsi *TimeSkippingInfo) time.Time {
+	if tsi == nil || tsi.CurrentTime.IsZero() {
+		return time.Now().UTC()
+	}
+	return tsi.CurrentTime
+}
+
+// workflowClientFrom resolves the concrete client the time-skipping calls need.
+func workflowClientFrom(c Client) (*WorkflowClient, error) {
+	wc, ok := c.(*WorkflowClient)
+	if !ok {
+		return nil, fmt.Errorf(
+			"time skipping needs the SDK's own client implementation, got %T", c)
+	}
+	return wc, nil
+}
+
+// Copy in the fields that are needed from the existing config, because
+// TimeSkippingConfig is always overwritten on the server as a unit.
+func carryOverFrom(current *TimeSkippingConfig, tsc *TimeSkippingConfig) {
+	if current == nil {
+		return
+	}
+	tsc.DisablePropagation = current.DisablePropagation
+	tsc.MaxSessionSkipCount = current.MaxSessionSkipCount
+}
+
+// fastForwardConfigFor builds the config for a fast-forward on a workflow,
+// carrying over the fields an update would otherwise reset. A nil duration
+// means unbounded — enable skipping with no bounded fast-forward.
+func fastForwardConfigFor(
+	ctx context.Context, c Client, run WorkflowRun, ffID string, d *time.Duration,
+) (TimeSkippingConfig, error) {
+	tsc := TimeSkippingConfig{Enabled: true}
+	cur, err := GetWorkflowTimeSkippingInfo(ctx, c, run)
+	if err != nil {
+		return TimeSkippingConfig{}, err
+	}
+	if cur != nil {
+		carryOverFrom(cur.EffectiveConfig, &tsc)
 	}
 	if d != nil {
 		tsc.FastForwardConfig = &FastForwardConfig{ID: ffID, Duration: *d}
 	}
-	return tsc
+	return tsc, nil
 }
-
 func (wc *WorkflowClient) pollWorkflowTimeSkipping(
 	ctx context.Context, request pollWorkflowTimeSkippingRequest,
 ) (FastForwardPollResult, error) {
@@ -294,7 +247,6 @@ func (wc *WorkflowClient) pollWorkflowTimeSkipping(
 		Namespace: wc.namespace,
 		WorkflowExecution: &commonpb.WorkflowExecution{
 			WorkflowId: request.WorkflowID,
-			RunId:      request.RunID,
 		},
 		FastForwardId: request.FastForwardID,
 	}
@@ -341,8 +293,8 @@ func (wc *WorkflowClient) pollWorkflowTimeSkipping(
 	}
 }
 
-// PollFastForward waits for the identified fast-forward on a workflow execution
-// to complete.
+// PollWorkflowFastForward waits for the identified fast-forward on a workflow
+// execution to complete.
 //
 // Returns (true, nil) on completion; (false, nil) when the workflow chain
 // terminates or the fast-forward is superseded, reset, or time skipping is
@@ -351,31 +303,36 @@ func (wc *WorkflowClient) pollWorkflowTimeSkipping(
 //
 // The wait is a server long poll, bounded by the caller's context.
 //
-// Exposed as: [go.temporal.io/sdk/timeskipping.PollFastForward]
+// Exposed as: [go.temporal.io/sdk/timeskipping.PollWorkflowFastForward]
 //
 // NOTE: Experimental
-func PollFastForward(
-	ctx context.Context, c Client, options TimeSkippingPollFastForwardOptions,
+func PollWorkflowFastForward(
+	ctx context.Context, c Client, run WorkflowRun, options WorkflowPollFastForwardOptions,
 ) (FastForwardPollResult, error) {
-	wc, ok := c.(*WorkflowClient)
-	if !ok {
-		return FastForwardPollResult{}, fmt.Errorf(
-			"polling a fast-forward needs the SDK's own client implementation, got %T", c)
+	wc, err := workflowClientFrom(c)
+	if err != nil {
+		return FastForwardPollResult{}, err
 	}
-	return wc.pollWorkflowTimeSkipping(ctx, pollWorkflowTimeSkippingRequest(options))
+	return wc.pollWorkflowTimeSkipping(ctx, pollWorkflowTimeSkippingRequest{
+		WorkflowID:    run.GetID(),
+		FastForwardID: options.FastForwardID,
+	})
 }
 
-func (t *TimeSkipper) doBoundedFastForward(
-	ctx context.Context, run WorkflowRun, d time.Duration,
+func doBoundedFastForward(
+	ctx context.Context, wc *WorkflowClient, run WorkflowRun, d time.Duration, runID string,
 ) (bool, error) {
 	ffID := uuid.NewString()
-	tsc := t.fastForwardConfigFrom(ffID, &d)
-	if err := t.updateTimeSkippingConfig(ctx, run, tsc); err != nil {
+	tsc, err := fastForwardConfigFor(ctx, wc, run, ffID, &d)
+	if err != nil {
 		return false, err
 	}
-	// RunId is left unset so the server resolves the current run, letting a
-	// fast-forward follow a chain across retry / continue-as-new / cron.
-	res, err := t.client.pollWorkflowTimeSkipping(ctx, pollWorkflowTimeSkippingRequest{
+	if err := updateTimeSkippingConfig(ctx, wc, run, tsc, runID); err != nil {
+		return false, err
+	}
+	// The poll is chain-wide whatever runID says, and the fast-forward ID is unique
+	// to this call, so it resolves against whichever run ends up holding it.
+	res, err := wc.pollWorkflowTimeSkipping(ctx, pollWorkflowTimeSkippingRequest{
 		WorkflowID:    run.GetID(),
 		FastForwardID: ffID,
 	})
@@ -391,15 +348,21 @@ func (t *TimeSkipper) doBoundedFastForward(
 	return res.Completed, nil
 }
 
-func (t *TimeSkipper) enableUnboundedAndWait(
-	ctx context.Context, run WorkflowRun,
+func enableUnboundedAndWait(
+	ctx context.Context, wc *WorkflowClient, run WorkflowRun, runID string,
 ) (bool, error) {
-	tsc := t.fastForwardConfigFrom("", nil)
-	if err := t.updateTimeSkippingConfig(ctx, run, tsc); err != nil {
+	tsc, err := fastForwardConfigFor(ctx, wc, run, "", nil)
+	if err != nil {
 		return false, err
 	}
-	// Watch history until a terminal event fires on the current run.
-	iter := t.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), true, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+	if err := updateTimeSkippingConfig(ctx, wc, run, tsc, runID); err != nil {
+		return false, err
+	}
+	// Watch history until a terminal event fires. This is the one place that reads
+	// the run's own ID, deliberately: continue-as-new counts as terminal here, so
+	// the wait is scoped to a single run anyway, and naming it avoids racing a
+	// chain that advances between the update above and this read.
+	iter := wc.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), true, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
 	for iter.HasNext() {
 		event, err := iter.Next()
 		if err != nil {
@@ -412,13 +375,16 @@ func (t *TimeSkipper) enableUnboundedAndWait(
 	return false, nil
 }
 
-func (t *TimeSkipper) updateTimeSkippingConfig(
-	ctx context.Context, run WorkflowRun, config TimeSkippingConfig,
+// updateTimeSkippingConfig sets the config on the workflow. runID is normally
+// empty, leaving the server to resolve the current run so the fast-forward
+// follows a chain across retry / continue-as-new / cron; a caller that pinned
+// the operation passes it through.
+func updateTimeSkippingConfig(
+	ctx context.Context, c Client, run WorkflowRun, config TimeSkippingConfig, runID string,
 ) error {
-	// RunId is left empty so the server resolves the current run, letting a
-	// fast-forward follow a chain across retry / continue-as-new / cron.
-	_, err := t.client.UpdateWorkflowExecutionOptions(ctx, UpdateWorkflowExecutionOptionsRequest{
+	_, err := c.UpdateWorkflowExecutionOptions(ctx, UpdateWorkflowExecutionOptionsRequest{
 		WorkflowId: run.GetID(),
+		RunId:      runID,
 		WorkflowExecutionOptionsChanges: WorkflowExecutionOptionsChanges{
 			TimeSkippingConfig: &TimeSkippingConfigChange{Value: &config},
 		},
@@ -447,8 +413,10 @@ func isTerminalEvent(e *historypb.HistoryEvent) bool {
 // Returns (true, nil) once the fast-forward completes, and an error if another
 // caller's fast-forward supersedes it.
 //
+// Exposed as: [go.temporal.io/sdk/timeskipping.FastForwardSchedule]
+//
 // NOTE: Experimental
-func (t *TimeSkipper) FastForwardSchedule(
+func FastForwardSchedule(
 	ctx context.Context, handle ScheduleHandle, options ScheduleFastForwardOptions,
 ) (bool, error) {
 	if options.Duration == 0 {
@@ -458,14 +426,26 @@ func (t *TimeSkipper) FastForwardSchedule(
 	}
 
 	ffID := uuid.NewString()
-	tsc := t.fastForwardConfigFrom(ffID, &options.Duration)
-	if err := t.patchScheduleTimeSkippingConfig(ctx, handle.GetID(), tsc); err != nil {
+	tsc := TimeSkippingConfig{
+		Enabled:           true,
+		FastForwardConfig: &FastForwardConfig{ID: ffID, Duration: options.Duration},
+	}
+	cur, err := GetScheduleTimeSkippingInfo(ctx, handle)
+	if err != nil {
+		return false, err
+	}
+	if cur != nil {
+		carryOverFrom(cur.EffectiveConfig, &tsc)
+	}
+	if err := handle.SetTimeSkippingConfig(ctx,
+		ScheduleSetTimeSkippingConfigOptions{Config: &tsc}); err != nil {
 		return false, err
 	}
 	res, err := PollScheduleFastForward(ctx, handle, SchedulePollFastForwardOptions{FastForwardID: ffID})
 	if err != nil {
 		return false, err
 	}
+
 	if res.FailedReason != "" {
 		return false, fmt.Errorf("fast_forward %q did not complete: %s", ffID, res.FailedReason)
 	}
@@ -478,8 +458,10 @@ func (t *TimeSkipper) FastForwardSchedule(
 // The server always returns the most recent info, so check HasCompleted to
 // check for completion.
 //
+// Exposed as: [go.temporal.io/sdk/timeskipping.GetScheduleTimeSkippingInfo]
+//
 // NOTE: Experimental
-func (t *TimeSkipper) GetScheduleTimeSkippingInfo(
+func GetScheduleTimeSkippingInfo(
 	ctx context.Context, handle ScheduleHandle,
 ) (*TimeSkippingInfo, error) {
 	desc, err := handle.Describe(ctx)
@@ -489,12 +471,21 @@ func (t *TimeSkipper) GetScheduleTimeSkippingInfo(
 	return desc.Info.TimeSkippingInfo, nil
 }
 
-// patchScheduleTimeSkippingConfig sets the schedule's time-skipping config.
-func (t *TimeSkipper) patchScheduleTimeSkippingConfig(
-	ctx context.Context, scheduleID string, config TimeSkippingConfig,
-) error {
-	return t.client.ScheduleClient().GetHandle(ctx, scheduleID).
-		SetTimeSkippingConfig(ctx, ScheduleSetTimeSkippingConfigOptions{Config: &config})
+// GetScheduleCurrentTime returns the schedule's current virtual clock, read
+// from TimeSkippingInfo.CurrentTime. If the schedule has never had time
+// skipping enabled, returns the wall clock (virtual == wall in that case).
+//
+// Exposed as: [go.temporal.io/sdk/timeskipping.GetScheduleCurrentTime]
+//
+// NOTE: Experimental
+func GetScheduleCurrentTime(
+	ctx context.Context, handle ScheduleHandle,
+) (time.Time, error) {
+	tsi, err := GetScheduleTimeSkippingInfo(ctx, handle)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return currentTimeFrom(tsi), nil
 }
 
 // PollScheduleFastForward waits for the identified fast-forward on a schedule to
@@ -584,43 +575,4 @@ func scheduleFastForwardTimeout(
 			"%w. A schedule's clock only advances while it is idle, so check whether it is "+
 			"paused, closed, migrating, backfilling, or has starts still in flight",
 		ffID, handle.GetID(), paused, actions, cause)
-}
-
-// timeSkippingClientInterceptor is the outbound interceptor that stamps
-// TimeSkippingConfig on ExecuteWorkflow calls when stamping is enabled.
-type timeSkippingClientInterceptor struct {
-	InterceptorBase
-	skipper *TimeSkipper
-}
-
-func (i *timeSkippingClientInterceptor) InterceptClient(
-	next ClientOutboundInterceptor,
-) ClientOutboundInterceptor {
-	return &timeSkippingClientOutboundInterceptor{
-		ClientOutboundInterceptorBase: ClientOutboundInterceptorBase{Next: next},
-		skipper:                       i.skipper,
-	}
-}
-
-type timeSkippingClientOutboundInterceptor struct {
-	ClientOutboundInterceptorBase
-	skipper *TimeSkipper
-}
-
-func (o *timeSkippingClientOutboundInterceptor) ExecuteWorkflow(
-	ctx context.Context, in *ClientExecuteWorkflowInput,
-) (WorkflowRun, error) {
-	if in.Options != nil && in.Options.TimeSkippingConfig == nil {
-		in.Options.TimeSkippingConfig = o.skipper.stampConfig()
-	}
-	return o.Next.ExecuteWorkflow(ctx, in)
-}
-
-func (o *timeSkippingClientOutboundInterceptor) SignalWithStartWorkflow(
-	ctx context.Context, in *ClientSignalWithStartWorkflowInput,
-) (WorkflowRun, error) {
-	if in.Options != nil && in.Options.TimeSkippingConfig == nil {
-		in.Options.TimeSkippingConfig = o.skipper.stampConfig()
-	}
-	return o.Next.SignalWithStartWorkflow(ctx, in)
 }
