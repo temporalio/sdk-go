@@ -177,6 +177,9 @@ type (
 		workflowID          string
 		firstExecutionRunID string
 		currentRunID        func() string
+		// resultRunID supplies the result interceptor's target without resolving currentRunID.
+		resultRunID string
+		client      *WorkflowClient
 		// iterFn returns an iterator over the close event of runID. onSerializationContext is called
 		// while fetching history whenever the server returns the run's propagated Nexus serialization
 		// context, which only Nexus-started workflows have. GetWithOptions uses it to decode the close event.
@@ -257,6 +260,13 @@ func (wc *WorkflowClient) ExecuteWorkflow(ctx context.Context, options StartWork
 // The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
 // subjected to change in the future.
 func (wc *WorkflowClient) GetWorkflow(ctx context.Context, workflowID string, runID string) WorkflowRun {
+	return wc.interceptor.GetWorkflowRun(ctx, &ClientGetWorkflowRunInput{
+		WorkflowID: workflowID,
+		RunID:      runID,
+	})
+}
+
+func (wc *WorkflowClient) getWorkflow(ctx context.Context, workflowID string, runID string) WorkflowRun {
 	// We intentionally don't "ensureIntialized" here because there is no direct
 	// error return path. Rather we let GetWorkflowHistory do it.
 
@@ -293,6 +303,8 @@ func (wc *WorkflowClient) GetWorkflow(ctx context.Context, workflowID string, ru
 	return &workflowRunImpl{
 		workflowID:            workflowID,
 		currentRunID:          currentRunID,
+		resultRunID:           runID,
+		client:                wc,
 		iterFn:                iterFn,
 		dataConverter:         converter.WithDataConverterSerializationContext(wc.dataConverter, gwCtx),
 		failureConverter:      converter.WithFailureConverterSerializationContext(wc.failureConverter, gwCtx),
@@ -434,7 +446,12 @@ func (wc *WorkflowClient) GetWorkflowHistory(
 	isLongPoll bool,
 	filterType enumspb.HistoryEventFilterType,
 ) HistoryEventIterator {
-	return wc.getWorkflowHistory(ctx, workflowID, runID, isLongPoll, filterType, wc.metricsHandler, nil)
+	return wc.interceptor.GetWorkflowHistory(ctx, &ClientGetWorkflowHistoryInput{
+		WorkflowID: workflowID,
+		RunID:      runID,
+		IsLongPoll: isLongPoll,
+		FilterType: filterType,
+	}).Iterator
 }
 
 func (wc *WorkflowClient) getWorkflowHistory(
@@ -1964,6 +1981,31 @@ func (workflowRun *workflowRunImpl) GetWithOptions(
 	valuePtr any,
 	options WorkflowRunGetOptions,
 ) error {
+	out, err := workflowRun.client.interceptor.GetWorkflowResult(ctx, &ClientGetWorkflowResultInput{
+		WorkflowID:  workflowRun.workflowID,
+		RunID:       workflowRun.resultRunID,
+		Options:     options,
+		workflowRun: workflowRun,
+	})
+	if err != nil {
+		return err
+	}
+	if out.Error != nil {
+		return out.Error
+	}
+	if valuePtr == nil || out.Result == nil {
+		return nil
+	}
+	if reflect.TypeOf(valuePtr).Kind() != reflect.Pointer {
+		return errors.New("value parameter is not a pointer")
+	}
+	return out.Result.Get(valuePtr)
+}
+
+func (workflowRun *workflowRunImpl) getResult(
+	ctx context.Context,
+	options WorkflowRunGetOptions,
+) (*ClientGetWorkflowResultOutput, error) {
 	var propagatedContext *converter.NexusSerializationContext
 	iter := workflowRun.iterFn(ctx, workflowRun.currentRunID(), func(context converter.NexusSerializationContext) {
 		propagatedContext = &context
@@ -1973,11 +2015,11 @@ func (workflowRun *workflowRunImpl) GetWithOptions(
 	}
 	closeEvent, err := iter.Next()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if err := visitProtoPayloads(ctx, workflowRun.inboundPayloadVisitor, closeEvent, 0); err != nil {
-		return err
+		return nil, err
 	}
 	dataConverter := workflowRun.dataConverter
 	failureConverter := workflowRun.failureConverter
@@ -1990,20 +2032,16 @@ func (workflowRun *workflowRunImpl) GetWithOptions(
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED:
 		attributes := closeEvent.GetWorkflowExecutionCompletedEventAttributes()
 		if !options.DisableFollowingRuns && attributes.NewExecutionRunId != "" {
-			return workflowRun.follow(ctx, valuePtr, attributes.NewExecutionRunId, options)
+			return workflowRun.follow(ctx, attributes.NewExecutionRunId, options)
 		}
-		if valuePtr == nil || attributes.Result == nil {
-			return nil
+		if attributes.Result == nil {
+			return &ClientGetWorkflowResultOutput{}, nil
 		}
-		rf := reflect.ValueOf(valuePtr)
-		if rf.Type().Kind() != reflect.Pointer {
-			return errors.New("value parameter is not a pointer")
-		}
-		return dataConverter.FromPayloads(attributes.Result, valuePtr)
+		return &ClientGetWorkflowResultOutput{Result: newEncodedValue(attributes.Result, dataConverter)}, nil
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_FAILED:
 		attributes := closeEvent.GetWorkflowExecutionFailedEventAttributes()
 		if !options.DisableFollowingRuns && attributes.NewExecutionRunId != "" {
-			return workflowRun.follow(ctx, valuePtr, attributes.NewExecutionRunId, options)
+			return workflowRun.follow(ctx, attributes.NewExecutionRunId, options)
 		}
 		err = failureConverter.FailureToError(attributes.GetFailure())
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_CANCELED:
@@ -2015,13 +2053,13 @@ func (workflowRun *workflowRunImpl) GetWithOptions(
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_TIMED_OUT:
 		attributes := closeEvent.GetWorkflowExecutionTimedOutEventAttributes()
 		if !options.DisableFollowingRuns && attributes.NewExecutionRunId != "" {
-			return workflowRun.follow(ctx, valuePtr, attributes.NewExecutionRunId, options)
+			return workflowRun.follow(ctx, attributes.NewExecutionRunId, options)
 		}
 		err = NewTimeoutError("Workflow timeout", enumspb.TIMEOUT_TYPE_START_TO_CLOSE, nil)
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_CONTINUED_AS_NEW:
 		attributes := closeEvent.GetWorkflowExecutionContinuedAsNewEventAttributes()
 		if !options.DisableFollowingRuns {
-			return workflowRun.follow(ctx, valuePtr, attributes.NewExecutionRunId, options)
+			return workflowRun.follow(ctx, attributes.NewExecutionRunId, options)
 		}
 		err := &ContinueAsNewError{
 			WorkflowType:  &WorkflowType{Name: attributes.GetWorkflowType().GetName()},
@@ -2035,9 +2073,9 @@ func (workflowRun *workflowRunImpl) GetWithOptions(
 		if attributes.WorkflowTaskTimeout != nil {
 			err.WorkflowTaskTimeout = attributes.WorkflowTaskTimeout.AsDuration()
 		}
-		return err
+		return &ClientGetWorkflowResultOutput{Error: err}, nil
 	default:
-		return fmt.Errorf("unexpected event type %s when handling workflow execution result", closeEvent.GetEventType())
+		return nil, fmt.Errorf("unexpected event type %s when handling workflow execution result", closeEvent.GetEventType())
 	}
 
 	err = NewWorkflowExecutionError(
@@ -2046,7 +2084,7 @@ func (workflowRun *workflowRunImpl) GetWithOptions(
 		workflowRun.workflowType,
 		err)
 
-	return err
+	return &ClientGetWorkflowResultOutput{Error: err}, nil
 }
 
 // follow is used by Get to follow a chain of executions linked by NewExecutionRunId, so that Get
@@ -2055,12 +2093,12 @@ func (workflowRun *workflowRunImpl) GetWithOptions(
 // policy or cron schedule).
 func (workflowRun *workflowRunImpl) follow(
 	ctx context.Context,
-	valuePtr any,
 	newRunID string,
 	options WorkflowRunGetOptions,
-) error {
+) (*ClientGetWorkflowResultOutput, error) {
 	workflowRun.currentRunID = func() string { return newRunID }
-	return workflowRun.GetWithOptions(ctx, valuePtr, options)
+	workflowRun.resultRunID = newRunID
+	return workflowRun.getResult(ctx, options)
 }
 
 // encodeMemoValue encodes a single memo value. useUserDC controls whether the user's data converter
@@ -2300,6 +2338,8 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 		workflowID:            workflowID,
 		firstExecutionRunID:   firstExecutionRunID,
 		currentRunID:          func() string { return runID },
+		resultRunID:           runID,
+		client:                w.client,
 		iterFn:                iterFn,
 		dataConverter:         converter.WithDataConverterSerializationContext(w.client.dataConverter, serializationContext),
 		failureConverter:      converter.WithFailureConverterSerializationContext(w.client.failureConverter, serializationContext),
@@ -2360,6 +2400,8 @@ func (w *workflowClientInterceptor) UpdateWithStartWorkflow(
 			workflowID:          startOp.input.Options.ID,
 			firstExecutionRunID: startResp.GetFirstExecutionRunId(),
 			currentRunID:        func() string { return runID },
+			resultRunID:         runID,
+			client:              w.client,
 			iterFn:              iterFn,
 			dataConverter:       converter.WithDataConverterSerializationContext(w.client.dataConverter, startWfCtx),
 			failureConverter:    converter.WithFailureConverterSerializationContext(w.client.failureConverter, startWfCtx),
@@ -2720,12 +2762,33 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 		workflowID:            in.Options.ID,
 		firstExecutionRunID:   response.GetFirstExecutionRunId(),
 		currentRunID:          func() string { return runID },
+		resultRunID:           runID,
+		client:                w.client,
 		iterFn:                iterFn,
 		dataConverter:         converter.WithDataConverterSerializationContext(w.client.dataConverter, swsCtx),
 		failureConverter:      converter.WithFailureConverterSerializationContext(w.client.failureConverter, swsCtx),
 		registry:              w.client.registry,
 		inboundPayloadVisitor: w.inboundPayloadVisitor,
 	}, nil
+}
+
+func (w *workflowClientInterceptor) GetWorkflowRun(ctx context.Context, in *ClientGetWorkflowRunInput) WorkflowRun {
+	return w.client.getWorkflow(ctx, in.WorkflowID, in.RunID)
+}
+
+func (w *workflowClientInterceptor) GetWorkflowResult(ctx context.Context, in *ClientGetWorkflowResultInput) (*ClientGetWorkflowResultOutput, error) {
+	run := in.workflowRun
+	if in.WorkflowID != run.workflowID || in.RunID != run.resultRunID {
+		// Redirection affects this wait, not the original handle's current run.
+		run = w.client.getWorkflow(ctx, in.WorkflowID, in.RunID).(*workflowRunImpl)
+	}
+	return run.getResult(ctx, in.Options)
+}
+
+func (w *workflowClientInterceptor) GetWorkflowHistory(ctx context.Context, in *ClientGetWorkflowHistoryInput) *ClientGetWorkflowHistoryOutput {
+	return &ClientGetWorkflowHistoryOutput{
+		Iterator: w.client.getWorkflowHistory(ctx, in.WorkflowID, in.RunID, in.IsLongPoll, in.FilterType, w.client.metricsHandler, nil),
+	}
 }
 
 func (w *workflowClientInterceptor) CancelWorkflow(ctx context.Context, in *ClientCancelWorkflowInput) error {
