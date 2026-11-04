@@ -136,11 +136,13 @@ func (d *deadlockTicker) resume() {
 }
 
 func (d *deadlockTicker) end() {
-	d.lock.Lock()
-	defer d.lock.Unlock()
+	// Take the detector lock before the ticker lock, in the same order as
+	// pause and resume, which may run on another goroutine.
 	d.d.lock.Lock()
 	delete(d.d.tickers, d)
 	d.d.lock.Unlock()
+	d.lock.Lock()
+	defer d.lock.Unlock()
 	d.t.Stop()
 	d.t = nil
 }
