@@ -36,15 +36,6 @@
 // WorkflowRun holds no client of its own, while a
 // [go.temporal.io/sdk/client.ScheduleHandle] does and so travels alone.
 //
-// A workflow operation takes only the workflow ID from the run it is given,
-// and by default targets the chain's current run, so it follows along across
-// retry, continue-as-new and cron. Pinning to one run is therefore always
-// explicit, via RunID on [WorkflowFastForwardOptions].
-//
-// [PollWorkflowFastForward] has no such field, because the server keys the wait
-// on the workflow ID and it spans the chain: a fast-forward issued on one run
-// can complete on a later one, and the poll is woken either way.
-//
 // The server must have time skipping enabled; [StartDevServer] starts a dev
 // server with the dynamic config it needs.
 package timeskipping

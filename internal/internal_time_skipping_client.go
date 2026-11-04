@@ -125,8 +125,8 @@ func timeFromProto(t *timestamppb.Timestamp) time.Time {
 // a superseding fast-forward).
 //
 // Without a Duration: unbounded — enables time skipping (no bounded FF) and
-// waits for a terminal history event on the current run. Always returns
-// (false, nil) after the workflow terminates.
+// waits for the execution to end, following the chain across retry,
+// continue-as-new and cron. Returns (false, nil) once it ends.
 //
 // Exposed as: [go.temporal.io/sdk/timeskipping.FastForwardWorkflow]
 //
@@ -139,9 +139,9 @@ func FastForwardWorkflow(
 		return false, err
 	}
 	if options.Duration == 0 {
-		return enableUnboundedAndWait(ctx, wc, run, options.RunID)
+		return enableUnboundedAndWait(ctx, wc, run)
 	}
-	return doBoundedFastForward(ctx, wc, run, options.Duration, options.RunID)
+	return doBoundedFastForward(ctx, wc, run, options.Duration)
 }
 
 // GetWorkflowTimeSkippingInfo fetches the workflow's TimeSkippingInfo via
@@ -320,18 +320,16 @@ func PollWorkflowFastForward(
 }
 
 func doBoundedFastForward(
-	ctx context.Context, wc *WorkflowClient, run WorkflowRun, d time.Duration, runID string,
+	ctx context.Context, wc *WorkflowClient, run WorkflowRun, d time.Duration,
 ) (bool, error) {
 	ffID := uuid.NewString()
 	tsc, err := fastForwardConfigFor(ctx, wc, run, ffID, &d)
 	if err != nil {
 		return false, err
 	}
-	if err := updateTimeSkippingConfig(ctx, wc, run, tsc, runID); err != nil {
+	if err := updateTimeSkippingConfig(ctx, wc, run, tsc); err != nil {
 		return false, err
 	}
-	// The poll is chain-wide whatever runID says, and the fast-forward ID is unique
-	// to this call, so it resolves against whichever run ends up holding it.
 	res, err := wc.pollWorkflowTimeSkipping(ctx, pollWorkflowTimeSkippingRequest{
 		WorkflowID:    run.GetID(),
 		FastForwardID: ffID,
@@ -349,42 +347,44 @@ func doBoundedFastForward(
 }
 
 func enableUnboundedAndWait(
-	ctx context.Context, wc *WorkflowClient, run WorkflowRun, runID string,
+	ctx context.Context, wc *WorkflowClient, run WorkflowRun,
 ) (bool, error) {
 	tsc, err := fastForwardConfigFor(ctx, wc, run, "", nil)
 	if err != nil {
 		return false, err
 	}
-	if err := updateTimeSkippingConfig(ctx, wc, run, tsc, runID); err != nil {
+	if err := updateTimeSkippingConfig(ctx, wc, run, tsc); err != nil {
 		return false, err
 	}
-	// Watch history until a terminal event fires. This is the one place that reads
-	// the run's own ID, deliberately: continue-as-new counts as terminal here, so
-	// the wait is scoped to a single run anyway, and naming it avoids racing a
-	// chain that advances between the update above and this read.
-	iter := wc.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), true, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
-	for iter.HasNext() {
-		event, err := iter.Next()
-		if err != nil {
-			return false, err
+	// Watch history until the full execution chain ends.
+	watchRunID := run.GetRunID()
+	for {
+		iter := wc.GetWorkflowHistory(ctx, run.GetID(), watchRunID, true, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+		var nextRunID string
+		var closed bool
+		for iter.HasNext() {
+			event, err := iter.Next()
+			if err != nil {
+				return false, err
+			}
+			if nextRunID, closed = runClosedBy(event); closed {
+				break
+			}
 		}
-		if isTerminalEvent(event) {
+		if !closed || nextRunID == "" {
 			return false, nil
 		}
+		watchRunID = nextRunID
 	}
-	return false, nil
 }
 
-// updateTimeSkippingConfig sets the config on the workflow. runID is normally
-// empty, leaving the server to resolve the current run so the fast-forward
-// follows a chain across retry / continue-as-new / cron; a caller that pinned
-// the operation passes it through.
+// updateTimeSkippingConfig sets the config on the current workflow execution
+// run.
 func updateTimeSkippingConfig(
-	ctx context.Context, c Client, run WorkflowRun, config TimeSkippingConfig, runID string,
+	ctx context.Context, c Client, run WorkflowRun, config TimeSkippingConfig,
 ) error {
 	_, err := c.UpdateWorkflowExecutionOptions(ctx, UpdateWorkflowExecutionOptionsRequest{
 		WorkflowId: run.GetID(),
-		RunId:      runID,
 		WorkflowExecutionOptionsChanges: WorkflowExecutionOptionsChanges{
 			TimeSkippingConfig: &TimeSkippingConfigChange{Value: &config},
 		},
@@ -392,17 +392,22 @@ func updateTimeSkippingConfig(
 	return err
 }
 
-func isTerminalEvent(e *historypb.HistoryEvent) bool {
+// runClosedBy reports whether e closes a run, and if not, returns the next run ID.
+func runClosedBy(e *historypb.HistoryEvent) (nextRunID string, closed bool) {
 	switch e.GetEventType() {
-	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED,
-		enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_FAILED,
-		enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_TIMED_OUT,
-		enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_TERMINATED,
-		enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_CANCELED,
-		enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_CONTINUED_AS_NEW:
-		return true
+	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED:
+		return e.GetWorkflowExecutionCompletedEventAttributes().GetNewExecutionRunId(), true
+	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_FAILED:
+		return e.GetWorkflowExecutionFailedEventAttributes().GetNewExecutionRunId(), true
+	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_TIMED_OUT:
+		return e.GetWorkflowExecutionTimedOutEventAttributes().GetNewExecutionRunId(), true
+	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_CONTINUED_AS_NEW:
+		return e.GetWorkflowExecutionContinuedAsNewEventAttributes().GetNewExecutionRunId(), true
+	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_TERMINATED,
+		enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_CANCELED:
+		return "", true
 	}
-	return false
+	return "", false
 }
 
 // FastForwardSchedule advances a schedule's virtual clock by the given

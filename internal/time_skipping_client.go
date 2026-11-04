@@ -104,14 +104,6 @@ type (
 		// Duration to advance virtual time by. Zero means unbounded: enable time
 		// skipping and wait for the execution to end.
 		Duration time.Duration
-
-		// RunID pins the fast-forward to one run. Leave it empty — the usual
-		// case — and the server resolves the current run, which lets the
-		// fast-forward follow a chain across retry, continue-as-new and cron.
-		//
-		// Only the workflow ID is taken from the run passed alongside these
-		// options, so pinning is always explicit.
-		RunID string
 	}
 
 	// ScheduleFastForwardOptions configures a single fast-forward on a schedule.
@@ -147,9 +139,6 @@ type (
 
 	// WorkflowPollFastForwardOptions identifies the workflow fast-forward to
 	// wait for.
-	//
-	// There is no RunID: the server keys the wait on the workflow ID and it spans
-	// the run chain, so the wait cannot be pinned to a single run.
 	//
 	// Exposed as: [go.temporal.io/sdk/timeskipping.WorkflowPollFastForwardOptions]
 	//

@@ -367,6 +367,49 @@ func (s *TimeSkippingV2TestSuite) TestPollFastForwardIssuedSeparately() {
 	s.assertTimeWasSkipped(ctx, run)
 }
 
+func (s *TimeSkippingV2TestSuite) TestPollFastForwardSpansContinueAsNew() {
+	ctx := context.Background()
+	tq := "tq-" + uuid.NewString()
+	w := worker.New(s.server.Client(), tq, worker.Options{})
+	registerTSTestWorkflows(w)
+	s.NoError(w.Start())
+	defer w.Stop()
+
+	// Three runs of an hour each, with the fast-forward targeting two hours in:
+	// its target can only be reached after at least one continue-as-new.
+	ffID := uuid.NewString()
+	cfg := client.TimeSkippingConfig{
+		Enabled:           true,
+		FastForwardConfig: &client.FastForwardConfig{ID: ffID, Duration: 2 * time.Hour},
+	}
+	wfID := "wf-" + uuid.NewString()
+	cl := s.server.Client()
+	run, err := cl.ExecuteWorkflow(ctx,
+		client.StartWorkflowOptions{ID: wfID, TaskQueue: tq, TimeSkippingConfig: &cfg},
+		ContinueAsNewSleepWorkflow, CANArgs{SleepSeconds: 3600, RunsRemaining: 3, CurrentRun: 1})
+	s.NoError(err)
+	firstRunID := run.GetRunID()
+	// Reaching the target disables time skipping, so the last run would sleep a
+	// real hour. Nothing here waits for the chain to finish; cancel it instead.
+	defer func() { _ = cl.CancelWorkflow(ctx, wfID, "") }()
+
+	// run still points at the first run; only its workflow ID reaches the server.
+	res, err := timeskipping.PollWorkflowFastForward(ctx, cl, run,
+		timeskipping.WorkflowPollFastForwardOptions{FastForwardID: ffID})
+	s.NoError(err)
+	s.True(res.Completed, "expected the fast-forward to complete on a later run")
+	s.Empty(res.FailedReason)
+
+	// The run that completed it is not the run the poll was given, which is what
+	// makes this a chain-spanning wait rather than a single-run one.
+	desc, err := cl.DescribeWorkflowExecution(ctx, wfID, "")
+	s.NoError(err)
+	s.NotEqual(firstRunID, desc.GetWorkflowExecutionInfo().GetExecution().GetRunId(),
+		"fast-forward completed without the chain advancing; test proves nothing")
+
+	s.assertTimeWasSkipped(ctx, run)
+}
+
 // TestPollFastForwardSurfacesServerReason checks the other half of what
 // PollFastForward reports: a fast-forward that stops without completing comes
 // back as a result carrying the server's own explanation, not as an error. This
@@ -709,6 +752,44 @@ func (s *TimeSkippingV2TestSuite) TestFastForwardSpansContinueAsNew() {
 	// Re-enable unbounded.
 	_, err = timeskipping.FastForwardWorkflow(ctx, s.server.Client(), run, timeskipping.WorkflowFastForwardOptions{})
 	s.NoError(err)
+	var result string
+	s.NoError(run.Get(ctx, &result))
+	s.Equal("done", result)
+	s.assertTimeWasSkipped(ctx, run)
+}
+
+func (s *TimeSkippingV2TestSuite) TestUnboundedWaitSpansContinueAsNew() {
+	ctx := context.Background()
+	tq := "tq-" + uuid.NewString()
+	w := worker.New(s.server.Client(), tq, worker.Options{})
+	registerTSTestWorkflows(w)
+	s.NoError(w.Start())
+	defer w.Stop()
+
+	wfID := "wf-" + uuid.NewString()
+	run, err := s.server.Client().ExecuteWorkflow(ctx,
+		client.StartWorkflowOptions{ID: wfID, TaskQueue: tq},
+		ContinueAsNewSleepWorkflow, CANArgs{SleepSeconds: 3600, RunsRemaining: 3, CurrentRun: 1})
+	s.NoError(err)
+
+	// Unbounded: enable skipping and wait. Returns (false, nil) by contract.
+	ok, err := timeskipping.FastForwardWorkflow(ctx, s.server.Client(), run,
+		timeskipping.WorkflowFastForwardOptions{})
+	s.NoError(err)
+	s.False(ok)
+
+	// Checked immediately, with no Eventually: if the wait had stopped at the
+	// first continue-as-new, the chain would still be mid-flight here.
+	desc, err := s.server.Client().DescribeWorkflowExecution(ctx, wfID, "")
+	s.NoError(err)
+	s.Equal(enumspb.WORKFLOW_EXECUTION_STATUS_COMPLETED,
+		desc.GetWorkflowExecutionInfo().GetStatus(),
+		"unbounded wait returned before the chain finished")
+
+	n, err := s.countWorkflowsWithID(ctx, wfID)
+	s.NoError(err)
+	s.Equal(3, n, "expected all three runs of the chain")
+
 	var result string
 	s.NoError(run.Get(ctx, &result))
 	s.Equal("done", result)

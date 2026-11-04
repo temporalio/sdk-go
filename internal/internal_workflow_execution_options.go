@@ -65,11 +65,6 @@ type (
 
 	// pollWorkflowTimeSkippingRequest is a request for PollWorkflowFastForward.
 	//
-	// There is deliberately no run ID. The server keys the wait on the workflow ID
-	// and spans the run chain, so a run ID cannot narrow the wait; it would only
-	// narrow the initial read, where a superseded run reports the fast-forward as
-	// an ID mismatch that the current run is still working on.
-	//
 	// NOTE: Experimental
 	pollWorkflowTimeSkippingRequest struct {
 		// ID of the workflow.
