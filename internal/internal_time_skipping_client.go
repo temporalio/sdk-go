@@ -138,6 +138,11 @@ func FastForwardWorkflow(
 	if err != nil {
 		return false, err
 	}
+	if options.Duration < 0 {
+		return false, fmt.Errorf(
+			"FastForwardWorkflow needs a Duration of zero (unbounded) or more, got %v",
+			options.Duration)
+	}
 	if options.Duration == 0 {
 		return enableUnboundedAndWait(ctx, wc, run)
 	}
@@ -424,10 +429,11 @@ func runClosedBy(e *historypb.HistoryEvent) (nextRunID string, closed bool) {
 func FastForwardSchedule(
 	ctx context.Context, handle ScheduleHandle, options ScheduleFastForwardOptions,
 ) (bool, error) {
-	if options.Duration == 0 {
-		return false, errors.New(
-			"FastForwardSchedule requires a Duration: a schedule has no terminal " +
-				"state to skip to, so the server rejects unbounded time skipping on it")
+	if options.Duration <= 0 {
+		return false, fmt.Errorf(
+			"FastForwardSchedule requires a Duration greater than zero, got %v: a "+
+				"schedule has no terminal state to skip to, so the server rejects "+
+				"unbounded time skipping on it", options.Duration)
 	}
 
 	ffID := uuid.NewString()

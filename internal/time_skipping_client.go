@@ -98,8 +98,12 @@ type (
 	//
 	// NOTE: Experimental
 	WorkflowFastForwardOptions struct {
-		// Duration to advance virtual time by. Zero means unbounded: enable time
-		// skipping and wait for the execution to end.
+		// Duration to advance virtual time by. Must not be negative; the server
+		// requires a positive fast-forward duration.
+		//
+		// Zero is a client-side convention for unbounded: no fast-forward is sent
+		// at all, time skipping is simply enabled and the call waits for the
+		// execution to end.
 		Duration time.Duration
 	}
 
@@ -109,9 +113,11 @@ type (
 	//
 	// NOTE: Experimental
 	ScheduleFastForwardOptions struct {
-		// Duration to advance the schedule's virtual clock by. Required — a schedule
-		// has no terminal state to skip to, so the server rejects unbounded time
-		// skipping on one.
+		// Duration to advance the schedule's virtual clock by. Must be positive.
+		//
+		// Zero is not "unbounded" here as it is for a workflow: a schedule has no
+		// terminal state to skip to, and the server requires a fast-forward
+		// whenever time skipping is enabled on a schedule.
 		Duration time.Duration
 	}
 

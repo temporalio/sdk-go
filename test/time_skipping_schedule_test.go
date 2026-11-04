@@ -131,6 +131,12 @@ func (s *TimeSkippingScheduleTestSuite) TestFastForwardScheduleRequiresDuration(
 	s.Error(err)
 	s.False(ok)
 	s.Contains(err.Error(), "requires a Duration")
+
+	ok, err = timeskipping.FastForwardSchedule(ctx, handle,
+		timeskipping.ScheduleFastForwardOptions{Duration: -time.Hour})
+	s.Error(err)
+	s.False(ok)
+	s.Contains(err.Error(), "greater than zero")
 }
 
 // TestScheduleTimeSkippingInfoNilWhenNeverEnabled asserts Describe reports no

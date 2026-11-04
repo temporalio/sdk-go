@@ -476,6 +476,18 @@ func (s *TimeSkippingV2TestSuite) TestPollFastForwardValidatesArgs() {
 	s.Contains(err.Error(), "fast forward id")
 }
 
+func (s *TimeSkippingV2TestSuite) TestFastForwardWorkflowRejectsNegativeDuration() {
+	ctx := context.Background()
+	cl := s.server.Client()
+
+	// Rejected before any RPC, so the workflow need not exist.
+	_, err := timeskipping.FastForwardWorkflow(ctx, cl,
+		cl.GetWorkflow(ctx, "wf-"+uuid.NewString(), ""),
+		timeskipping.WorkflowFastForwardOptions{Duration: -time.Hour})
+	s.Error(err)
+	s.Contains(err.Error(), "zero (unbounded) or more")
+}
+
 func (s *TimeSkippingV2TestSuite) TestSkipFullRun() {
 	ctx := context.Background()
 	tq := "tq-" + uuid.NewString()
