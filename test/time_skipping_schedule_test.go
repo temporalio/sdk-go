@@ -4,6 +4,7 @@ package test_test
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -94,6 +95,29 @@ func (s *TimeSkippingScheduleTestSuite) createHourlySchedule(
 	return handle
 }
 
+// scheduleBookkeepingWait bounds how long a test waits for the scheduler to
+// finish recording what a fast-forward did.
+const scheduleBookkeepingWait = 10 * time.Second
+
+// waitForScheduleActions waits until cond holds on the schedule's description.
+func (s *TimeSkippingScheduleTestSuite) waitForScheduleActions(
+	ctx context.Context,
+	handle client.ScheduleHandle,
+	msg string,
+	cond func(*client.ScheduleDescription) bool,
+) {
+	require.Eventually(s.T(), func() bool {
+		desc, err := handle.Describe(ctx)
+		return err == nil && cond(desc)
+	}, scheduleBookkeepingWait, 100*time.Millisecond, msg)
+}
+
+// hasStartedAction reports whether the schedule has recorded an action whose
+// workflow actually started, which is what the propagation tests go on to read.
+func hasStartedAction(d *client.ScheduleDescription) bool {
+	return len(d.Info.RecentActions) > 0 && d.Info.RecentActions[0].StartWorkflowResult != nil
+}
+
 func (s *TimeSkippingScheduleTestSuite) TestFastForwardScheduleRequiresPositiveDuration() {
 	ctx := context.Background()
 	tq := "tq-" + uuid.NewString()
@@ -143,10 +167,8 @@ func (s *TimeSkippingScheduleTestSuite) TestFastForwardScheduleFiresActions() {
 	s.NoError(err)
 	s.True(ok)
 
-	desc, err := handle.Describe(ctx)
-	s.NoError(err)
-	s.GreaterOrEqualf(desc.Info.NumActions, 3,
-		"expected >= 3 actions after a 3h fast-forward, got %d", desc.Info.NumActions)
+	s.waitForScheduleActions(ctx, handle, "expected >= 3 actions after a 3h fast-forward",
+		func(d *client.ScheduleDescription) bool { return d.Info.NumActions >= 3 })
 	s.Lessf(time.Since(wallStart), 30*time.Second,
 		"3h of schedule fires took %v wall time; time skipping did not engage",
 		time.Since(wallStart))
@@ -167,10 +189,12 @@ func (s *TimeSkippingScheduleTestSuite) TestSequentialFastForwardsOnOneSchedule(
 		s.NoErrorf(err, "fast-forward #%d failed", i)
 		s.Truef(ok, "fast-forward #%d did not report completion", i)
 
+		prev := prevActions
+		s.waitForScheduleActions(ctx, handle,
+			fmt.Sprintf("fast-forward #%d fired no new actions (still %d)", i, prev),
+			func(d *client.ScheduleDescription) bool { return d.Info.NumActions > prev })
 		desc, err := handle.Describe(ctx)
 		s.NoError(err)
-		s.Greaterf(desc.Info.NumActions, prevActions,
-			"fast-forward #%d fired no new actions (still %d)", i, desc.Info.NumActions)
 		prevActions = desc.Info.NumActions
 	}
 }
@@ -198,9 +222,8 @@ func (s *TimeSkippingScheduleTestSuite) TestPollScheduleFastForwardIssuedSeparat
 	s.True(res.Completed)
 	s.Empty(res.FailedReason)
 
-	desc, err := handle.Describe(ctx)
-	s.NoError(err)
-	s.Greater(desc.Info.NumActions, 0, "expected the fast-forward to have fired actions")
+	s.waitForScheduleActions(ctx, handle, "expected the fast-forward to have fired actions",
+		func(d *client.ScheduleDescription) bool { return d.Info.NumActions > 0 })
 }
 
 func (s *TimeSkippingScheduleTestSuite) TestPollScheduleFastForwardRequiresID() {
@@ -295,9 +318,10 @@ func (s *TimeSkippingScheduleTestSuite) TestSchedulePropagatesTimeSkippingToWork
 	s.NoError(err)
 	s.True(ok)
 
+	s.waitForScheduleActions(ctx, handle,
+		"expected the schedule to have started a workflow", hasStartedAction)
 	desc, err := handle.Describe(ctx)
 	s.NoError(err)
-	s.NotEmpty(desc.Info.RecentActions, "expected the schedule to have started a workflow")
 	s.Lessf(time.Since(wallStart), 30*time.Second,
 		"actions sleeping 1h each took %v wall time; skipping did not propagate",
 		time.Since(wallStart))
@@ -330,11 +354,6 @@ func (s *TimeSkippingScheduleTestSuite) TestSchedulePropagatesTimeSkippingToWork
 		"the schedule's 1h-sleeping action took %v wall time", time.Since(wallStart))
 }
 
-// TestScheduleWithPropagationDisabled is the schedule counterpart of
-// TestChildWorkflowWithPropagationDisabled: with DisablePropagation set, the
-// schedule still skips its own clock, but its actions start without time
-// skipping. The target returns immediately so the assertion is structural
-// rather than a race against wall time.
 func (s *TimeSkippingScheduleTestSuite) TestScheduleWithPropagationDisabled() {
 	ctx := context.Background()
 	tq := "tq-" + uuid.NewString()
@@ -362,9 +381,10 @@ func (s *TimeSkippingScheduleTestSuite) TestScheduleWithPropagationDisabled() {
 	s.Empty(res.FailedReason)
 	s.True(res.Completed, "the schedule's own clock should still fast-forward")
 
+	s.waitForScheduleActions(ctx, handle,
+		"expected the schedule to have started a workflow", hasStartedAction)
 	desc, err := handle.Describe(ctx)
 	s.NoError(err)
-	s.NotEmpty(desc.Info.RecentActions, "expected the schedule to have started a workflow")
 
 	started := desc.Info.RecentActions[0].StartWorkflowResult
 	s.NotNil(started)
