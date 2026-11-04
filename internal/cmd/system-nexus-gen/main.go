@@ -197,16 +197,15 @@ func (a app) run() (err error) {
 	}
 
 	if err := nexgen(nexgenOptions{
-		language:        "go",
-		inputs:          []string{a.tmp.witFile(), a.tmp.witDepsDir()},
-		descriptors:     []string{a.tmp.descriptorsFile()},
-		supportPackage:  "go.temporal.io/sdk/internal",
-		output:          a.tmp.internalDir(),
-		facadeOutput:    a.tmp.workflowDir(),
-		facadeImport:    "go.temporal.io/sdk/internal",
-		systemNexus:     true,
-		sdkInterceptors: true,
-		format:          true,
+		language:       "go",
+		inputs:         []string{a.tmp.witFile(), a.tmp.witDepsDir()},
+		descriptors:    []string{a.tmp.descriptorsFile()},
+		supportPackage: "go.temporal.io/sdk/internal",
+		output:         a.tmp.internalDir(),
+		facadeOutput:   a.tmp.workflowDir(),
+		facadeImport:   "go.temporal.io/sdk/internal",
+		systemNexus:    true,
+		format:         true,
 	}); err != nil {
 		return fmt.Errorf("nexgen: %w", err)
 	}
@@ -305,16 +304,15 @@ func addProtoDescriptor(set *descriptorpb.FileDescriptorSet, seen map[string]str
 }
 
 type nexgenOptions struct {
-	language        string
-	inputs          []string
-	descriptors     []string
-	supportPackage  string
-	output          string
-	facadeOutput    string
-	facadeImport    string
-	systemNexus     bool
-	sdkInterceptors bool
-	format          bool
+	language       string
+	inputs         []string
+	descriptors    []string
+	supportPackage string
+	output         string
+	facadeOutput   string
+	facadeImport   string
+	systemNexus    bool
+	format         bool
 }
 
 func nexgen(options nexgenOptions) error {
@@ -341,9 +339,6 @@ func nexgen(options nexgenOptions) error {
 	}
 	if options.systemNexus {
 		args = append(args, "--system-nexus")
-	}
-	if options.sdkInterceptors {
-		args = append(args, "--sdk-interceptors")
 	}
 	args = append(args, "--targets", "workflow")
 	if options.format {

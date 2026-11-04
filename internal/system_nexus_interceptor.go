@@ -2,8 +2,6 @@ package internal
 
 import commonpb "go.temporal.io/api/common/v1"
 
-type systemnexus_workflowHeader = map[string]*commonpb.Payload
-
 func systemnexus_contextWithHeader(ctx Context, header *map[string]*commonpb.Payload) Context {
 	if *header == nil {
 		*header = make(map[string]*commonpb.Payload)

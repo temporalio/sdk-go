@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/nexus-rpc/sdk-go/nexus"
+	common "go.temporal.io/api/common/v1"
 	enums "go.temporal.io/api/enums/v1"
 	sdk "go.temporal.io/api/sdk/v1"
 	workflowservice "go.temporal.io/api/workflowservice/v1"
@@ -118,10 +119,10 @@ type SystemNexus_SignalWithStartWorkflowRequest struct {
 	//
 	// Optional.
 	UserMetadata *SystemNexus_UserMetadata
-	// Headers - Headers for the request. A nil Go map represents an absent header.
+	// Headers - Headers for the request.
 	//
-	// Required.
-	Headers   systemnexus_workflowHeader
+	// Optional.
+	Headers   map[string]*common.Payload
 	Namespace string
 }
 
@@ -201,7 +202,7 @@ func (m SystemNexus_SignalWithStartWorkflowRequest) GetUserMetadata() *SystemNex
 	return m.UserMetadata
 }
 
-func (m SystemNexus_SignalWithStartWorkflowRequest) GetHeaders() systemnexus_workflowHeader {
+func (m SystemNexus_SignalWithStartWorkflowRequest) GetHeaders() map[string]*common.Payload {
 	return m.Headers
 }
 
@@ -319,7 +320,7 @@ func systemnexus_signalWithStartWorkflowRequestToProto(cfg *commonconverter.Syst
 		message.UserMetadata = converted
 	}
 	{
-		converted, err := HeaderToProto(cfg.DataConverter, &m.Headers)
+		converted, err := HeaderToProto(cfg.DataConverter, m.Headers)
 		if err != nil {
 			return nil, err
 		}
@@ -452,9 +453,7 @@ func systemnexus_signalWithStartWorkflowRequestFromProto(cfg *commonconverter.Sy
 		if err != nil {
 			return err
 		}
-		if converted != nil {
-			out.Headers = *converted
-		}
+		out.Headers = converted
 	}
 	out.Namespace = proto.GetNamespace()
 	return nil
@@ -769,7 +768,6 @@ var systemnexus_nexusOperationRegistry = map[SystemNexusRegistryKey]SystemNexusR
 		SerializationContext: func(request any) converter.SerializationContext {
 			return SignalWithStartWorkflowSerializationContext(request.(SystemNexus_SignalWithStartWorkflowRequest))
 		},
-		Intercept: systemnexus_interceptSignalWithStartWorkflow,
 	},
 }
 
@@ -807,15 +805,23 @@ func (wc *workflowEnvironmentInterceptor) SignalWithStartWorkflow(ctx Context, i
 	})
 }
 
-func systemnexus_interceptSignalWithStartWorkflow(ctx Context, outbound WorkflowOutboundInterceptor, input ExecuteNexusOperationInput) NexusOperationFuture {
-	request, ok := input.Input.(SystemNexus_SignalWithStartWorkflowRequest)
-	if !ok {
-		return systemnexus_failedFuture(ctx, fmt.Errorf("system Nexus operation %s/%s expects SystemNexus_SignalWithStartWorkflowRequest, got %T", "temporal.api.workflowservice.v1.WorkflowService", "SignalWithStartWorkflowExecution", input.Input))
+func systemnexus_startOperation(ctx Context, outbound WorkflowOutboundInterceptor, input ExecuteNexusOperationInput) NexusOperationFuture {
+	operationName, err := nexusOperationName(input.Operation, input.Input)
+	if err != nil {
+		return systemnexus_failedFuture(ctx, err)
 	}
-	ctx = systemnexus_contextWithHeader(ctx, &request.Headers)
-	return outbound.SignalWithStartWorkflow(ctx, &SystemNexus_SignalWithStartWorkflowInput{
-		Request:     request,
-		Options:     input.Options,
-		NexusHeader: input.NexusHeader,
-	})
+	switch {
+	case input.Client.Service() == "temporal.api.workflowservice.v1.WorkflowService" && operationName == "SignalWithStartWorkflowExecution":
+		request, ok := input.Input.(SystemNexus_SignalWithStartWorkflowRequest)
+		if !ok {
+			return systemnexus_failedFuture(ctx, fmt.Errorf("system Nexus operation %s/%s expects SystemNexus_SignalWithStartWorkflowRequest, got %T", "temporal.api.workflowservice.v1.WorkflowService", "SignalWithStartWorkflowExecution", input.Input))
+		}
+		ctx = systemnexus_contextWithHeader(ctx, &request.Headers)
+		return outbound.SignalWithStartWorkflow(ctx, &SystemNexus_SignalWithStartWorkflowInput{
+			Request:     request,
+			Options:     input.Options,
+			NexusHeader: input.NexusHeader,
+		})
+	}
+	return systemnexus_failedFuture(ctx, fmt.Errorf("unsupported system Nexus operation %s/%s", input.Client.Service(), operationName))
 }

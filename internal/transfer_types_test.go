@@ -780,9 +780,6 @@ func TestSystemNexusMock(t *testing.T) {
 
 	UpdateSystemNexusRegistry(map[SystemNexusRegistryKey]SystemNexusRegistryEntry{
 		{Service: service, Operation: operation}: {
-			Intercept: func(ctx Context, _ WorkflowOutboundInterceptor, input ExecuteNexusOperationInput) NexusOperationFuture {
-				return getWorkflowEnvironmentInterceptor(ctx).systemnexus_executeOperation(ctx, input)
-			},
 			SerializationContext: func(value any) converter.SerializationContext {
 				require.Equal(t, input, value)
 				return wsc
@@ -797,11 +794,14 @@ func TestSystemNexusMock(t *testing.T) {
 		}).
 		Return(&nexus.HandlerStartOperationResultSync[*commonpb.Payload]{Value: response}, nil).Once()
 
+	// This synthetic operation tests serialization, outside the generated API dispatcher.
 	env.ExecuteWorkflow(func(ctx Context) (string, error) {
 		var output systemNexusModel
-		err := NewSystemNexusClient(service).
-			ExecuteOperation(ctx, operation, input, NexusOperationOptions{}).
-			Get(ctx, &output)
+		err := getWorkflowEnvironmentInterceptor(ctx).scheduleNexusOperation(ctx, ExecuteNexusOperationInput{
+			Client:    NewSystemNexusClient(service),
+			Operation: operation,
+			Input:     input,
+		}).Get(ctx, &output)
 		return output.Value, err
 	})
 	require.True(t, env.IsWorkflowCompleted())

@@ -17,11 +17,9 @@ type SystemNexusRegistryKey struct {
 }
 
 type SystemNexusRegistryEntry struct {
-	// Intercept enters the generated operation-specific outbound chain.
-	Intercept func(Context, WorkflowOutboundInterceptor, ExecuteNexusOperationInput) NexusOperationFuture
 	// SerializationContext computes a serialization context for the given
 	// system nexus request. The SDK uses that context to encode payloads
-	// inside the request. It may be nil for operations without nested payloads.
+	// inside the request.
 	SerializationContext func(request any) converter.SerializationContext
 }
 

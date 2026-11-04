@@ -187,19 +187,18 @@ func MemoFromProto(dc converter.DataConverter, memo *common.Memo) (map[string]an
 	return result, nil
 }
 
-func HeaderToProto(_ converter.DataConverter, header *systemnexus_workflowHeader) (*common.Header, error) {
-	if header == nil || *header == nil {
-		return nil, nil
-	}
-	return &common.Header{Fields: *header}, nil
-}
-
-func HeaderFromProto(_ converter.DataConverter, header *common.Header) (*systemnexus_workflowHeader, error) {
+func HeaderToProto(_ converter.DataConverter, header map[string]*common.Payload) (*common.Header, error) {
 	if header == nil {
 		return nil, nil
 	}
-	fields := header.GetFields()
-	return &fields, nil
+	return &common.Header{Fields: header}, nil
+}
+
+func HeaderFromProto(_ converter.DataConverter, header *common.Header) (map[string]*common.Payload, error) {
+	if header == nil {
+		return nil, nil
+	}
+	return header.GetFields(), nil
 }
 
 // --- SearchAttributes (temporal.api.common.v1.SearchAttributes) ---
