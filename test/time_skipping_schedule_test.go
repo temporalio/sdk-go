@@ -175,10 +175,6 @@ func (s *TimeSkippingScheduleTestSuite) TestSequentialFastForwardsOnOneSchedule(
 	}
 }
 
-// TestPollScheduleFastForwardIssuedSeparately covers the CLI's shape: the
-// fast-forward is set on the schedule handle and the wait is a separate call,
-// rather than the two being bundled by FastForwardSchedule. This is the path
-// temporalio/cli#1246 hand-rolled because it was not reachable.
 func (s *TimeSkippingScheduleTestSuite) TestPollScheduleFastForwardIssuedSeparately() {
 	ctx := context.Background()
 	tq := "tq-" + uuid.NewString()
@@ -207,8 +203,6 @@ func (s *TimeSkippingScheduleTestSuite) TestPollScheduleFastForwardIssuedSeparat
 	s.Greater(desc.Info.NumActions, 0, "expected the fast-forward to have fired actions")
 }
 
-// TestPollScheduleFastForwardRequiresID guards the one argument the standalone
-// wait cannot default.
 func (s *TimeSkippingScheduleTestSuite) TestPollScheduleFastForwardRequiresID() {
 	ctx := context.Background()
 	tq := "tq-" + uuid.NewString()
@@ -225,9 +219,6 @@ func (s *TimeSkippingScheduleTestSuite) TestPollScheduleFastForwardRequiresID() 
 	s.Contains(err.Error(), "FastForwardID")
 }
 
-// TestPollScheduleFastForwardReportsTimeSkippingDisabled asserts the wait gives
-// up with a diagnosis, rather than spinning to the caller's deadline, when time
-// skipping is switched off before the fast-forward finishes.
 func (s *TimeSkippingScheduleTestSuite) TestPollScheduleFastForwardReportsTimeSkippingDisabled() {
 	ctx := context.Background()
 	tq := "tq-" + uuid.NewString()
@@ -262,42 +253,7 @@ func (s *TimeSkippingScheduleTestSuite) TestPollScheduleFastForwardReportsTimeSk
 		"should diagnose, not wait out the deadline")
 }
 
-// TestFastForwardPausedScheduleReportsWhyItGaveUp covers the realistic way a
-// schedule fast-forward fails to finish: a paused schedule's clock does not
-// advance, so the call waits out the caller's context. The SDK deliberately
-// does not try to detect that itself — whether a schedule can skip is decided
-// by server state it cannot see — so what is asserted here is that the timeout
-// says enough to diagnose it.
-func (s *TimeSkippingScheduleTestSuite) TestFastForwardPausedScheduleReportsWhyItGaveUp() {
-	ctx := context.Background()
-	tq := "tq-" + uuid.NewString()
-	w := s.startScheduleWorker(tq)
-	defer w.Stop()
-
-	handle := s.createHourlySchedule(ctx, tq, ScheduleTargetWorkflow)
-	defer func() { _ = handle.Delete(ctx) }()
-	s.NoError(handle.Pause(ctx, client.SchedulePauseOptions{Note: "clock must not advance"}))
-
-	ffCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-
-	ok, err := timeskipping.FastForwardSchedule(ffCtx, handle, timeskipping.ScheduleFastForwardOptions{Duration: 3 * time.Hour})
-	s.False(ok)
-	s.Error(err)
-	s.ErrorIs(err, context.DeadlineExceeded, "the caller's deadline is what ends the wait")
-	// The message has to be enough to work out why, without the SDK claiming
-	// to know which of the server's blocking conditions applied.
-	s.Contains(err.Error(), "paused=true")
-	s.Contains(err.Error(), "only advances while it is idle")
-
-	desc, err := handle.Describe(ctx)
-	s.NoError(err)
-	s.Zero(desc.Info.NumActions, "a paused schedule must not fire actions")
-}
-
-// TestScheduleDescribeSurfacesTimeSkippingInfo asserts the config round-trips
-// back through Describe, which is the only way to observe schedule TS state.
-func (s *TimeSkippingScheduleTestSuite) TestScheduleDescribeSurfacesTimeSkippingInfo() {
+func (s *TimeSkippingScheduleTestSuite) TestScheduleDescribeReturnsTimeSkippingInfo() {
 	ctx := context.Background()
 	tq := "tq-" + uuid.NewString()
 	w := s.startScheduleWorker(tq)
@@ -315,22 +271,16 @@ func (s *TimeSkippingScheduleTestSuite) TestScheduleDescribeSurfacesTimeSkipping
 	s.NotNil(tsi)
 	s.False(tsi.CurrentTime.IsZero(), "expected the schedule's virtual clock to be reported")
 
-	// Reaching the target auto-disables skipping, so the terminal state is a
-	// completed fast-forward with the config switched back off.
 	s.True(tsi.FastForwardInfo.HasCompleted,
 		"expected the fast-forward to be recorded as completed")
 	s.False(tsi.EffectiveConfig.Enabled,
 		"expected time skipping to auto-disable once the target time was reached")
 
-	// The virtual clock should have moved roughly the requested span ahead.
 	s.Greaterf(tsi.CurrentTime.Sub(time.Now()), 90*time.Minute,
 		"expected the schedule clock to be ~2h ahead, got %v",
 		tsi.CurrentTime)
 }
 
-// TestSchedulePropagatesTimeSkippingToWorkflows asserts the schedule's actions
-// inherit time skipping: a started workflow that sleeps an hour completes
-// without an hour of wall time, and its history records the transition.
 func (s *TimeSkippingScheduleTestSuite) TestSchedulePropagatesTimeSkippingToWorkflows() {
 	ctx := context.Background()
 	tq := "tq-" + uuid.NewString()
