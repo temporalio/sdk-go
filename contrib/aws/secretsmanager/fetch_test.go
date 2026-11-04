@@ -96,18 +96,25 @@ func TestDefaultFetcherDetection(t *testing.T) {
 	for name, tc := range map[string]struct {
 		set          bool
 		env          string
+		notLambda    bool
 		defaultPort  string
 		expectedPort string
 	}{
-		"unset, default port listening": {defaultPort: listeningPort, expectedPort: listeningPort},
-		"unset, default port closed":    {defaultPort: closedPort},
-		"set, not probed":               {set: true, env: "1234", defaultPort: closedPort, expectedPort: "1234"},
-		"empty, default port listening": {set: true, env: "", defaultPort: listeningPort},
+		"unset, default port listening":                {defaultPort: listeningPort, expectedPort: listeningPort},
+		"unset, default port closed":                   {defaultPort: closedPort},
+		"unset, not in Lambda, default port listening": {notLambda: true, defaultPort: listeningPort},
+		"set, not probed":                              {set: true, env: "1234", defaultPort: closedPort, expectedPort: "1234"},
+		"set, not in Lambda":                           {set: true, env: "1234", notLambda: true, expectedPort: "1234"},
+		"empty, default port listening":                {set: true, env: "", defaultPort: listeningPort},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Setenv(envLambdaExtensionPort, tc.env)
 			if !tc.set {
 				require.NoError(t, os.Unsetenv(envLambdaExtensionPort))
+			}
+			t.Setenv(envLambdaFunctionName, "my-function")
+			if tc.notLambda {
+				require.NoError(t, os.Unsetenv(envLambdaFunctionName))
 			}
 
 			// We don't want to listen on a fixed well-known port in a test, so modify

@@ -19,6 +19,7 @@ import (
 
 const (
 	envLambdaExtensionPort  = "PARAMETERS_SECRETS_EXTENSION_HTTP_PORT"
+	envLambdaFunctionName   = "AWS_LAMBDA_FUNCTION_NAME"
 	envAWSSessionToken      = "AWS_SESSION_TOKEN"
 	lambdaExtensionTokenHdr = "X-Aws-Parameters-Secrets-Token"
 	lambdaExtensionTimeout  = 10 * time.Second
@@ -32,11 +33,15 @@ var defaultLambdaExtensionPort = "2773"
 
 // newDefaultFetcher returns a fetcher for the Lambda extension if it is detected, and otherwise an SDK fetcher with a
 // client created from the default AWS config. The extension doesn't set PARAMETERS_SECRETS_EXTENSION_HTTP_PORT in the
-// function's environment unless the user configured it, so if it is unset, the extension's default port is probed.
-// Setting it to empty disables detection, for when another service uses the default port.
+// function's environment unless the user configured it, so if it is unset and we're running in Lambda, the extension's
+// default port is probed. Setting it to empty disables detection, for when another service uses the default port.
 func newDefaultFetcher() fetcher {
 	port, ok := os.LookupEnv(envLambdaExtensionPort)
 	if !ok {
+		// Only try to auto-detect the Lambda extension if we're in a Lambda function
+		if os.Getenv(envLambdaFunctionName) == "" {
+			return &sdkFetcher{}
+		}
 		conn, err := net.DialTimeout("tcp", net.JoinHostPort(lambdaExtensionHost, defaultLambdaExtensionPort),
 			lambdaExtensionProbeTimeout)
 		if err != nil {

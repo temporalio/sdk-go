@@ -89,8 +89,10 @@ The Lambda extension is detected as follows:
 
 - If `PARAMETERS_SECRETS_EXTENSION_HTTP_PORT` is set to a port, the extension
   is used on that port.
-- If it is unset, the extension's default port, 2773, is probed, and the
-  extension is used if something is listening there.
+- If it is unset and the code is running in Lambda (`AWS_LAMBDA_FUNCTION_NAME`
+  is set), the extension's default port, 2773, is probed, and the extension is
+  used if something is listening there. Outside Lambda, the port is not probed
+  and secrets are fetched directly.
 - Setting `PARAMETERS_SECRETS_EXTENSION_HTTP_PORT` to an empty value explicitly
   disables detection so that secrets are always fetched directly. Use this if
   another service in your function listens on port 2773.
