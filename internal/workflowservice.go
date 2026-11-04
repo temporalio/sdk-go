@@ -777,6 +777,7 @@ func init() {
 
 // --- Workflow outbound interceptors ---
 
+// systemnexus_workflowOutboundInterceptor intercepts System Nexus workflow operations before payload conversion.
 type systemnexus_workflowOutboundInterceptor interface {
 	// SignalWithStartWorkflow intercepts the unencoded System Nexus request.
 	SignalWithStartWorkflow(ctx Context, input *SystemNexus_SignalWithStartWorkflowInput) NexusOperationFuture
@@ -805,7 +806,7 @@ func (wc *workflowEnvironmentInterceptor) SignalWithStartWorkflow(ctx Context, i
 	})
 }
 
-func systemnexus_startOperation(ctx Context, outbound WorkflowOutboundInterceptor, input ExecuteNexusOperationInput) NexusOperationFuture {
+func systemnexus_startOperation(ctx Context, outbound systemnexus_workflowOutboundInterceptor, input ExecuteNexusOperationInput) NexusOperationFuture {
 	operationName, err := nexusOperationName(input.Operation, input.Input)
 	if err != nil {
 		return systemnexus_failedFuture(ctx, err)
