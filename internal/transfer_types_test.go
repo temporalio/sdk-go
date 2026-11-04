@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/golang/mock/gomock"
+	"github.com/google/uuid"
 	"github.com/nexus-rpc/sdk-go/nexus"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -24,7 +25,6 @@ import (
 	commonconverter "go.temporal.io/sdk/internal/common/converter"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
-	"github.com/google/uuid"
 )
 
 // -- BASIC TESTS ----------------------------------------------------
@@ -780,6 +780,9 @@ func TestSystemNexusMock(t *testing.T) {
 
 	UpdateSystemNexusRegistry(map[SystemNexusRegistryKey]SystemNexusRegistryEntry{
 		{Service: service, Operation: operation}: {
+			Intercept: func(ctx Context, _ WorkflowOutboundInterceptor, input ExecuteNexusOperationInput) NexusOperationFuture {
+				return getWorkflowEnvironmentInterceptor(ctx).systemnexus_executeOperation(ctx, input)
+			},
 			SerializationContext: func(value any) converter.SerializationContext {
 				require.Equal(t, input, value)
 				return wsc

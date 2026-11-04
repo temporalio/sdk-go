@@ -178,6 +178,7 @@ type systemNexusTestInterceptor struct {
 	interceptor.WorkerInterceptorBase
 	signalName         atomic.Value
 	ordinaryNexusCalls atomic.Int64
+	systemNexusCalls   atomic.Int64
 }
 
 func (i *systemNexusTestInterceptor) InterceptWorkflow(
@@ -221,6 +222,20 @@ func (i *systemNexusTestWorkflowOutbound) ExecuteNexusOperation(
 ) workflow.NexusOperationFuture {
 	i.recorder.ordinaryNexusCalls.Add(1)
 	return i.Next.ExecuteNexusOperation(ctx, input)
+}
+
+func (i *systemNexusTestWorkflowOutbound) SignalWithStartWorkflow(
+	ctx workflow.Context, input *workflow.SignalWithStartWorkflowInput,
+) workflow.NexusOperationFuture {
+	if !workflow.IsReplaying(ctx) {
+		i.recorder.systemNexusCalls.Add(1)
+	}
+	payload, err := converter.GetDefaultDataConverter().ToPayload("from interceptor")
+	if err != nil {
+		panic(err)
+	}
+	input.Request.Headers["interceptor-header"] = payload
+	return i.Next.SignalWithStartWorkflow(ctx, input)
 }
 
 // -----------------------------------------------------------------------------
@@ -501,6 +516,13 @@ func (ts *SystemNexusTestSuite) TestWorkflowSignalWithStartInterceptors() {
 		"recording interceptor must be installed")
 	ts.Zero(ts.interceptor.ordinaryNexusCalls.Load(),
 		"system Nexus must not use the ordinary Nexus interceptor")
+	ts.Equal(int64(1), ts.interceptor.systemNexusCalls.Load(),
+		"system Nexus must run the operation-specific interceptor once")
+	request := ts.signalWithStartRequestFromHistory(ctx, callerID)
+	var header string
+	ts.NoError(converter.GetDefaultDataConverter().FromPayload(
+		request.GetHeader().GetFields()["interceptor-header"], &header))
+	ts.Equal("from interceptor", header)
 }
 
 // TestWorkflowSignalWithStartWithLotsOfOptions invokes [SignalAndStartWithLotsOfOptions],
