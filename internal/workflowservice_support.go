@@ -72,7 +72,7 @@ func RetryPolicyToProto(_ converter.DataConverter, p *RetryPolicy) (*common.Retr
 }
 
 func RetryPolicyFromProto(_ converter.DataConverter, p *common.RetryPolicy) (*RetryPolicy, error) {
-	return ConvertFromPBRetryPolicy(p), nil
+	return convertFromPBRetryPolicy(p), nil
 }
 
 // --- Priority (temporal.api.common.v1.Priority) ---
@@ -88,7 +88,7 @@ func PriorityFromProto(_ converter.DataConverter, p *common.Priority) (*Priority
 	if p == nil {
 		return nil, nil
 	}
-	value := ConvertFromPBPriority(p)
+	value := convertFromPBPriority(p)
 	return &value, nil
 }
 
@@ -232,7 +232,7 @@ func SearchAttributesFromProto(_ converter.DataConverter, searchAttributes *comm
 		return nil, nil
 	}
 
-	value := ConvertToTypedSearchAttributes(ilog.NewDefaultLogger(), searchAttributes.GetIndexedFields())
+	value := convertToTypedSearchAttributes(ilog.NewDefaultLogger(), searchAttributes.GetIndexedFields())
 	return &value, nil
 }
 
@@ -250,7 +250,7 @@ func systemNexusVersioningOverrideFromProto(_ converter.DataConverter, versionin
 		return nil, nil
 	}
 
-	value := VersioningOverrideFromProto(versioningOverride)
+	value := versioningOverrideFromProto(versioningOverride)
 	return &value, nil
 }
 

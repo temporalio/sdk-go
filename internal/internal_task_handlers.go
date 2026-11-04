@@ -775,12 +775,12 @@ func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *workflowservice.
 		RootWorkflowExecution:    rootWorkflowExecution,
 		Memo:                     attributes.Memo,
 		SearchAttributes:         attributes.SearchAttributes,
-		RetryPolicy:              ConvertFromPBRetryPolicy(attributes.RetryPolicy),
+		RetryPolicy:              convertFromPBRetryPolicy(attributes.RetryPolicy),
 		// Use the original execution run ID from the start event as the initial seed.
 		// Original execution run ID stays the same for the entire chain of workflow resets.
 		// This helps us keep child workflow IDs consistent up until a reset-point is encountered.
 		currentRunID:                        attributes.GetOriginalExecutionRunId(),
-		Priority:                            ConvertFromPBPriority(attributes.Priority),
+		Priority:                            convertFromPBPriority(attributes.Priority),
 		propagatedNexusSerializationContext: attributes.GetPropagatedNexusSerializationContext(),
 	}
 
