@@ -18,9 +18,7 @@ type (
 		Enabled bool
 
 		// FastForwardConfig is the one-shot fast-forward, if any. Nil means no bounded
-		// fast-forward: for a workflow that is unbounded skipping when Enabled, or no
-		// skipping at all when not. A schedule has no terminal state to skip to, so the
-		// server requires a bounded fast-forward on one.
+		// fast-forward.
 		FastForwardConfig *FastForwardConfig
 
 		// DisablePropagation stops the enabled flag from propagating to executions started
@@ -62,8 +60,7 @@ type (
 
 		// EffectiveConfig is the configuration actually in force, which can differ from
 		// the one last set: defaulted fields are filled in, and Enabled goes false once
-		// skipping stops — the fast-forward reached its target, MaxSessionSkipCount was
-		// hit, or a client disabled it.
+		// skipping stops.
 		EffectiveConfig *TimeSkippingConfig
 
 		// FastForwardInfo is the current fast-forward, if any. The server leaves it in
