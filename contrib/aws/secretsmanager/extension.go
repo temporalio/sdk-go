@@ -94,7 +94,7 @@ func (e Extension) ClientPlugin(req envconfig.ClientConfigExtensionRequest) (cli
 	} else {
 		f = newDefaultFetcher()
 	}
-	p := &plugin{ids: ids, cache: newSecretCache(f, refreshInterval, maxStaleness)}
+	p := &plugin{ids: ids, cache: newSecretCache(f, ids, refreshInterval, maxStaleness)}
 	return temporal.NewSimplePlugin(temporal.SimplePluginOptions{
 		Name:            pluginName,
 		ConfigureClient: p.configureClient,
@@ -245,12 +245,11 @@ func (p *plugin) configureClient(ctx context.Context, options client.PluginConfi
 			return fmt.Errorf("cannot use API key from AWS Secrets Manager, client credentials already set")
 		}
 		// Fetch eagerly so that client creation fails on a bad secret instead of the first call
-		if _, err := p.cache.get(ctx, p.ids.APIKey, secretTypeAPIKey, tel); err != nil {
+		if _, err := p.cache.getAPIKey(ctx, tel); err != nil {
 			return err
 		}
 		opts.Credentials = client.NewAPIKeyDynamicCredentials(func(ctx context.Context) (string, error) {
-			b, err := p.cache.get(ctx, p.ids.APIKey, secretTypeAPIKey, tel)
-			return string(b), err
+			return p.cache.getAPIKey(ctx, tel)
 		})
 		// Match envconfig, which defaults TLS to enabled when an API key is present
 		if opts.ConnectionOptions.TLS == nil && !opts.ConnectionOptions.TLSDisabled {
@@ -276,7 +275,7 @@ func (p *plugin) configureClient(ctx context.Context, options client.PluginConfi
 			return fmt.Errorf("cannot use TLS client cert from AWS Secrets Manager, client certificates already set")
 		}
 		// Fetch eagerly so that client creation fails on a bad secret instead of the first call
-		if _, err := p.clientCert(ctx, tel); err != nil {
+		if _, err := p.cache.getClientCert(ctx, tel); err != nil {
 			return err
 		}
 		conf.GetClientCertificate = func(info *tls.CertificateRequestInfo) (*tls.Certificate, error) {
@@ -284,7 +283,7 @@ func (p *plugin) configureClient(ctx context.Context, options client.PluginConfi
 			if ctx == nil {
 				ctx = context.Background()
 			}
-			return p.clientCert(ctx, tel)
+			return p.cache.getClientCert(ctx, tel)
 		}
 	}
 
@@ -292,7 +291,7 @@ func (p *plugin) configureClient(ctx context.Context, options client.PluginConfi
 		if conf.RootCAs != nil {
 			return fmt.Errorf("cannot use TLS server CA cert from AWS Secrets Manager, root CAs already set")
 		}
-		caPEM, err := p.cache.get(ctx, p.ids.ServerCACert, secretTypeServerCACert, tel)
+		caPEM, err := p.cache.getServerCACert(ctx, tel)
 		if err != nil {
 			return err
 		}
@@ -305,25 +304,4 @@ func (p *plugin) configureClient(ctx context.Context, options client.PluginConfi
 
 	opts.ConnectionOptions.TLS = conf
 	return nil
-}
-
-func (p *plugin) clientCert(ctx context.Context, tel telemetry) (*tls.Certificate, error) {
-	certPEM, err := p.cache.get(ctx, p.ids.ClientCert, secretTypeClientCert, tel)
-	if err != nil {
-		return nil, err
-	}
-	// For a bundled cert/key secret, reuse the same value rather than getting it again, which could return a newer
-	// value if the entry expired in between and mismatch the pair. X509KeyPair picks out the appropriate PEM blocks.
-	keyPEM := certPEM
-	if p.ids.ClientKey != p.ids.ClientCert {
-		if keyPEM, err = p.cache.get(ctx, p.ids.ClientKey, secretTypeClientKey, tel); err != nil {
-			return nil, err
-		}
-	}
-	cert, err := tls.X509KeyPair(certPEM, keyPEM)
-	if err != nil {
-		return nil, fmt.Errorf("failed loading TLS client cert/key from secrets %q and %q: %w",
-			p.ids.ClientCert, p.ids.ClientKey, err)
-	}
-	return &cert, nil
 }

@@ -2,11 +2,15 @@ package secretsmanager
 
 import (
 	"context"
+	"encoding/pem"
 	"errors"
+	"fmt"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/aws/smithy-go"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -32,14 +36,13 @@ func TestSecretCache(t *testing.T) {
 			return secretValue{}, fetchErr
 		}
 		return secretValue{value: []byte(value), versionID: version}, nil
-	}), time.Minute, time.Hour)
+	}), secretIDs{APIKey: "id"}, time.Minute, time.Hour)
 	c.now = func() time.Time { return now }
 	logger := &recordingLogger{}
 	metrics := newRecordingMetrics()
 	tel := telemetry{logger: logger, metrics: metrics}
 	get := func() (string, error) {
-		b, err := c.get(context.Background(), "id", secretTypeAPIKey, tel)
-		return string(b), err
+		return c.getAPIKey(context.Background(), tel)
 	}
 	lookups := func(result lookupResult) int64 {
 		return metrics.counter(metricCacheLookup,
@@ -99,7 +102,7 @@ func TestSecretCache(t *testing.T) {
 	require.Equal(t, 4, fetches)
 	require.Equal(t, []string{
 		"WARN Failed refreshing AWS Secrets Manager secret, using previously fetched value SecretID=id " +
-			"SecretType=api_key Error=outage Age=1m0.001s MaxStaleness=1h0m0s",
+			"SecretType=api_key Error=failed fetching AWS Secrets Manager secret \"id\": outage Age=1m0.001s MaxStaleness=1h0m0s",
 	}, logger.take())
 	require.Equal(t, int64(1), failures(fallbackStale))
 	require.Equal(t, int64(1), lookups(lookupMissWithFallback))
@@ -120,7 +123,7 @@ func TestSecretCache(t *testing.T) {
 
 	// Nil logger and metrics handler are allowed
 	now = now.Add(failedRefreshRetryInterval)
-	_, err = c.get(context.Background(), "id", secretTypeAPIKey, telemetry{})
+	_, err = c.getAPIKey(context.Background(), telemetry{})
 	require.NoError(t, err)
 	require.Equal(t, 6, fetches)
 	require.Empty(t, logger.take())
@@ -159,11 +162,11 @@ func TestSecretCacheInitialFetchError(t *testing.T) {
 			return secretValue{}, fetchErr
 		}
 		return secretValue{value: []byte("v"), versionID: "ver"}, nil
-	}), time.Minute, time.Hour)
+	}), secretIDs{ServerCACert: "id"}, time.Minute, time.Hour)
 	logger := &recordingLogger{}
 	metrics := newRecordingMetrics()
 	tel := telemetry{logger: logger, metrics: metrics}
-	_, err := c.get(context.Background(), "id", secretTypeServerCACert, tel)
+	_, err := c.getServerCACert(context.Background(), tel)
 	require.ErrorContains(t, err, `failed fetching AWS Secrets Manager secret "id"`)
 	require.ErrorContains(t, err, "denied")
 	require.Empty(t, logger.take())
@@ -175,9 +178,233 @@ func TestSecretCacheInitialFetchError(t *testing.T) {
 
 	// A first success after failures is logged only as a first fetch
 	fetchErr = nil
-	_, err = c.get(context.Background(), "id", secretTypeServerCACert, tel)
+	_, err = c.getServerCACert(context.Background(), tel)
 	require.NoError(t, err)
 	require.Equal(t, []string{
 		"INFO Fetched AWS Secrets Manager secret SecretID=id SecretType=tls_server_ca_cert FetchPath=sdk VersionID=ver",
 	}, logger.take())
+}
+
+func TestClientCertPair(t *testing.T) {
+	certA, keyA := generateCert(t, "a")
+	certB, keyB := generateCert(t, "b")
+	fake := newFakeClient(map[string]string{"cert": certA, "key": keyA})
+	c := newSecretCache(&sdkFetcher{client: fake}, secretIDs{ClientCert: "cert", ClientKey: "key"}, time.Minute,
+		time.Hour)
+	now := time.Unix(1000, 0)
+	c.now = func() time.Time { return now }
+	logger := &recordingLogger{}
+	metrics := newRecordingMetrics()
+	tel := telemetry{logger: logger, metrics: metrics}
+	requireCert := func(expectedPEM string) {
+		t.Helper()
+		cert, err := c.getClientCert(context.Background(), tel)
+		require.NoError(t, err)
+		block, _ := pem.Decode([]byte(expectedPEM))
+		require.Equal(t, block.Bytes, cert.Certificate[0])
+	}
+	setSecret := func(id, value string) {
+		fake.mu.Lock()
+		defer fake.mu.Unlock()
+		fake.secrets[id] = value
+	}
+
+	// Each secret is logged separately
+	requireCert(certA)
+	require.Equal(t, []string{
+		"INFO Fetched AWS Secrets Manager secret SecretID=cert SecretType=tls_client_cert FetchPath=sdk VersionID=" +
+			fakeVersionID(certA),
+		"INFO Fetched AWS Secrets Manager secret SecretID=key SecretType=tls_client_key FetchPath=sdk VersionID=" +
+			fakeVersionID(keyA),
+	}, logger.take())
+
+	// Fetching partway through rotation gets a mismatched pair, which falls back to the previous pair
+	setSecret("cert", certB)
+	now = now.Add(time.Minute)
+	requireCert(certA)
+	logs := logger.take()
+	require.Len(t, logs, 2)
+	require.Contains(t, logs[0], "WARN Failed refreshing AWS Secrets Manager secret, using previously fetched value "+
+		"SecretID=cert SecretType=tls_client_cert")
+	require.Contains(t, logs[1], "SecretID=key SecretType=tls_client_key")
+	require.Equal(t, int64(1), metrics.counter(metricFetchFailed, labelSecretType, secretTypeClientCert,
+		labelFetchPath, fetchPathSDK, labelFailureReason, failureInvalidResponse, labelFallback, fallbackStale))
+
+	// Once rotation completes, the new pair is used after the retry interval. Both secrets are always fetched
+	// together.
+	setSecret("key", keyB)
+	now = now.Add(failedRefreshRetryInterval - time.Second)
+	requireCert(certA)
+	require.Equal(t, 2, fake.callCount("cert"))
+	now = now.Add(time.Second)
+	requireCert(certB)
+	require.Equal(t, []string{
+		"INFO Fetched updated AWS Secrets Manager secret SecretID=cert SecretType=tls_client_cert " +
+			"PreviousVersionID=" + fakeVersionID(certA) + " VersionID=" + fakeVersionID(certB),
+		"INFO Fetched updated AWS Secrets Manager secret SecretID=key SecretType=tls_client_key " +
+			"PreviousVersionID=" + fakeVersionID(keyA) + " VersionID=" + fakeVersionID(keyB),
+	}, logger.take())
+	require.Equal(t, 3, fake.callCount("cert"))
+	require.Equal(t, 3, fake.callCount("key"))
+}
+
+func TestSecretCacheCallerCanceled(t *testing.T) {
+	var fetches atomic.Int32
+	var blocking atomic.Bool       // blocks the fetch until release is closed
+	started := make(chan struct{}) // emits an event when a fetch blocks
+	release := make(chan struct{}) // unblocks a blocked fetch
+	c := newSecretCache(funcFetcher(func(ctx context.Context, _ string) (secretValue, error) {
+		n := fetches.Add(1)
+		if blocking.Load() {
+			started <- struct{}{}
+			<-release
+		}
+		if err := ctx.Err(); err != nil {
+			return secretValue{}, err
+		}
+		return secretValue{value: fmt.Appendf(nil, "v%d", n), versionID: fmt.Sprint(n)}, nil
+	}), secretIDs{APIKey: "id"}, time.Minute, time.Hour)
+	now := time.Unix(1000, 0)
+	c.now = func() time.Time { return now }
+	metrics := newRecordingMetrics()
+	tel := telemetry{metrics: metrics}
+	lookups := func(result lookupResult) int64 {
+		return metrics.counter(metricCacheLookup,
+			labelSecretType, secretTypeAPIKey, labelFetchPath, fetchPathSDK, labelResult, result)
+	}
+	_, err := c.getAPIKey(context.Background(), tel)
+	require.NoError(t, err)
+
+	// A caller that gives up waiting for a refresh falls back to the stale value
+	now = now.Add(time.Minute)
+	blocking.Store(true)
+	ctx, cancel := context.WithCancel(context.Background())
+	result := make(chan string, 1)
+	go func() {
+		v, err := c.getAPIKey(ctx, tel)
+		assert.NoError(t, err)
+		result <- v
+	}()
+	<-started
+	cancel()
+	require.Equal(t, "v1", <-result)
+	require.Equal(t, int64(1), lookups(lookupMissWithFallback))
+
+	// The fetch isn't canceled along with the caller, and its result is cached
+	c.apiKey.mu.Lock()
+	r := c.apiKey.refreshState
+	c.apiKey.mu.Unlock()
+	close(release)
+	<-r.done
+	v, err := c.getAPIKey(context.Background(), tel)
+	require.NoError(t, err)
+	require.Equal(t, "v2", v)
+	require.Equal(t, int32(2), fetches.Load())
+	require.Equal(t, int64(1), lookups(lookupHit))
+	require.Empty(t, metrics.counters(metricFetchFailed))
+}
+
+func TestSecretCacheFetchTimeout(t *testing.T) {
+	var hang atomic.Bool
+	c := newSecretCache(funcFetcher(func(ctx context.Context, _ string) (secretValue, error) {
+		if hang.Load() {
+			<-ctx.Done()
+			return secretValue{}, ctx.Err()
+		}
+		return secretValue{value: []byte("v"), versionID: "ver"}, nil
+	}), secretIDs{APIKey: "id"}, time.Minute, time.Hour)
+	c.fetchTimeout = time.Millisecond
+	now := time.Unix(1000, 0)
+	c.now = func() time.Time { return now }
+	metrics := newRecordingMetrics()
+	tel := telemetry{metrics: metrics}
+	failures := func(fallback fallback) int64 {
+		return metrics.counter(metricFetchFailed, labelSecretType, secretTypeAPIKey, labelFetchPath, fetchPathSDK,
+			labelFailureReason, failureTimeout, labelFallback, fallback)
+	}
+	_, err := c.getAPIKey(context.Background(), tel)
+	require.NoError(t, err)
+
+	// A hung refresh times out even though the caller didn't, and is recorded as a failure with stale fallback
+	now = now.Add(time.Minute)
+	hang.Store(true)
+	v, err := c.getAPIKey(context.Background(), tel)
+	require.NoError(t, err)
+	require.Equal(t, "v", v)
+	require.Equal(t, int64(1), failures(fallbackStale))
+
+	// Without a usable value, the timeout is returned
+	now = now.Add(time.Hour)
+	_, err = c.getAPIKey(context.Background(), tel)
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	require.Equal(t, int64(1), failures(fallbackNone))
+}
+
+func TestSecretCacheConcurrentRefresh(t *testing.T) {
+	var fetches atomic.Int32
+	var blocking atomic.Bool       // blocks the fetch until release is closed
+	started := make(chan struct{}) // emits an event when a fetch first blocks
+	release := make(chan struct{}) // unblocks a blocked fetch
+	c := newSecretCache(funcFetcher(func(context.Context, string) (secretValue, error) {
+		n := fetches.Add(1)
+		if blocking.Load() {
+			started <- struct{}{}
+			<-release
+		}
+		// value/version increments with each fetch
+		return secretValue{value: fmt.Appendf(nil, "v%d", n), versionID: fmt.Sprint(n)}, nil
+	}), secretIDs{APIKey: "api-key", ServerCACert: "ca"}, time.Minute, time.Hour)
+	now := time.Unix(1000, 0)
+	c.now = func() time.Time { return now }
+	metrics := newRecordingMetrics()
+	// api-key and ca function as two independent entries, shouldn't block each other
+	get := func(ctx context.Context, id string) (string, error) {
+		tel := telemetry{metrics: metrics}
+		if id == "ca" {
+			b, err := c.getServerCACert(ctx, tel)
+			return string(b), err
+		}
+		return c.getAPIKey(ctx, tel)
+	}
+	getAsync := func(id string) <-chan string {
+		ch := make(chan string, 1)
+		go func() {
+			v, err := get(context.Background(), id)
+			assert.NoError(t, err)
+			ch <- v
+		}()
+		<-started
+		return ch
+	}
+
+	// Nothing blocks, get returns normally
+	v, err := get(context.Background(), "api-key")
+	require.NoError(t, err)
+	require.Equal(t, "v1", v)
+
+	// Block an api-key refresh while in progress
+	now = now.Add(time.Minute)
+	blocking.Store(true)
+	refreshed := getAsync("api-key")
+
+	// While a refresh is in progress, other callers get the current value without waiting
+	v, err = get(context.Background(), "api-key")
+	require.NoError(t, err)
+	require.Equal(t, "v1", v) // old value
+	require.Equal(t, int64(1), metrics.counter(metricCacheLookup,
+		labelSecretType, secretTypeAPIKey, labelFetchPath, fetchPathSDK, labelResult, lookupHit))
+
+	// Block a ca refresh while in progress
+	fetched := getAsync("ca")
+	// Without a usable value, callers wait for the fetch in progress, and can give up
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err = get(ctx, "ca")
+	require.ErrorIs(t, err, context.Canceled)
+
+	// Unblock the refreshes and verify the final results
+	close(release)
+	require.Equal(t, "v2", <-refreshed)
+	require.Equal(t, "v3", <-fetched)
+	require.Equal(t, int32(3), fetches.Load())
 }

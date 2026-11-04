@@ -352,7 +352,7 @@ server_ca_cert_id = "ca"
 			envClientKeyID:  "key",
 		})
 		require.NoError(t, err)
-		require.ErrorContains(t, configure(t, &opts), `failed loading TLS client cert/key from secrets "cert" and "key"`)
+		require.ErrorContains(t, configure(t, &opts), `failed loading TLS client cert/key from AWS Secrets Manager secrets "cert" and "key"`)
 	})
 
 	t.Run("invalid CA", func(t *testing.T) {

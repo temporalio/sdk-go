@@ -33,7 +33,7 @@ const (
 )
 
 // secret_type label values
-// Note: a bundled client cert/key secret is reported as secretTypeClientCert
+// Note: client cert/key secrets are bundled and reported as secretTypeClientCert in metrics
 type secretType string
 
 const (
