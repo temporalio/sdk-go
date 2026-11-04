@@ -72,6 +72,40 @@ func WithCancel(parent Context) (ctx Context, cancel CancelFunc) {
 	return internal.WithCancel(parent)
 }
 
+// CancelCauseFunc tells an operation to abandon its work and records why it was
+// canceled. It does not wait for the work to stop. After the first cancellation
+// of a context, subsequent calls do not change its cause. Passing nil sets the
+// cause to ErrCanceled.
+type CancelCauseFunc = internal.CancelCauseFunc
+
+// WithCancelCause is like WithCancel, but the returned cancellation function
+// records a cause that can be retrieved with Cause. Context.Err still returns
+// ErrCanceled.
+//
+// If the parent is canceled first, the returned context inherits its cause.
+// Otherwise, cancel sets the cause of the returned context and its children
+// without changing the parent's cause.
+// The cause's error message is the default reason for external- and child-workflow
+// cancellation requests made with this context.
+//
+//	ctx, cancel := workflow.WithCancelCause(parent)
+//	cancel(errors.New("no longer needed"))
+//	workflow.Cause(ctx) // returns the error passed to cancel
+//	ctx.Err()           // returns workflow.ErrCanceled
+func WithCancelCause(parent Context) (ctx Context, cancel CancelCauseFunc) {
+	return internal.WithCancelCause(parent)
+}
+
+// Cause returns the error that caused ctx to be canceled, or nil if ctx has not
+// been canceled. If no cause was provided, Cause returns ctx.Err().
+//
+// For cancellation requested by a client or another workflow, the cause is a
+// temporal.CanceledError whose message is the reason supplied by the caller.
+// If the caller did not supply a reason, the cause is ErrCanceled.
+func Cause(ctx Context) error {
+	return internal.Cause(ctx)
+}
+
 // WithValue returns a copy of parent in which the value associated with key is
 // val.
 //

@@ -1,10 +1,85 @@
 package internal
 
 import (
+	"context"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	commonpb "go.temporal.io/api/common/v1"
+	"go.temporal.io/sdk/converter"
 )
+
+func TestNexusTestClientCancellationCause(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		reason string
+		legacy bool
+	}{
+		{name: "reason", reason: "  no longer needed  "},
+		{name: "empty reason"},
+		{name: "legacy", legacy: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var suite WorkflowTestSuite
+			env := suite.NewTestWorkflowEnvironment()
+			client := &testSuiteClientForNexusOperations{env: env.impl}
+			ctx := context.WithValue(t.Context(), IsWorkflowRunOpContextKey, true)
+			result := make(chan error, 1)
+			env.SetOnChildWorkflowStartedListener(func(*WorkflowInfo, Context, converter.EncodedValues) {
+				// The client waits for a callback on the test environment's event loop.
+				go func() {
+					if tc.legacy {
+						result <- client.CancelWorkflow(ctx, "nexus-cancel-target", "")
+					} else {
+						result <- client.CancelWorkflowWithOptions(ctx, CancelWorkflowOptions{
+							WorkflowID: "nexus-cancel-target",
+							Reason:     tc.reason,
+						})
+					}
+				}()
+			})
+			child := func(ctx Context) (string, error) {
+				_ = Await(ctx, func() bool { return false })
+				return Cause(ctx).Error(), nil
+			}
+			env.RegisterWorkflow(child)
+			env.ExecuteWorkflow(func(ctx Context) (string, error) {
+				ctx = WithChildWorkflowOptions(ctx, ChildWorkflowOptions{
+					WorkflowID:          "nexus-cancel-target",
+					WaitForCancellation: true,
+				})
+				var cause string
+				err := ExecuteChildWorkflow(ctx, child).Get(ctx, &cause)
+				return cause, err
+			})
+			require.NoError(t, <-result)
+			require.NoError(t, env.GetWorkflowError())
+			var cause string
+			require.NoError(t, env.GetWorkflowResult(&cause))
+			if tc.reason == "" {
+				require.Equal(t, ErrCanceled.Error(), cause)
+			} else {
+				require.Equal(t, tc.reason, cause)
+			}
+		})
+	}
+}
+
+func TestNexusTestClientCancellationRequiresWorkflowRunContext(t *testing.T) {
+	client := &testSuiteClientForNexusOperations{}
+	for _, ctx := range []context.Context{
+		t.Context(),
+		context.WithValue(t.Context(), IsWorkflowRunOpContextKey, false),
+	} {
+		require.PanicsWithValue(t, "not implemented in the test environment", func() {
+			_ = client.CancelWorkflow(ctx, "target", "")
+		})
+		require.PanicsWithValue(t, "not implemented in the test environment", func() {
+			_ = client.CancelWorkflowWithOptions(ctx, CancelWorkflowOptions{WorkflowID: "target", Reason: "reason"})
+		})
+	}
+}
 
 type captureNexusEnv struct {
 	WorkflowEnvironment
