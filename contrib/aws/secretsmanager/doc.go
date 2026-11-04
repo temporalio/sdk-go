@@ -39,9 +39,10 @@
 // By default, secrets are fetched through the AWS Parameters and Secrets Lambda Extension when it is detected, and
 // otherwise directly from Secrets Manager using an AWS SDK client created from the default AWS config. Set
 // [Extension.SecretsClient] to use a specific client instead. The Lambda extension is used on the port in the
-// PARAMETERS_SECRETS_EXTENSION_HTTP_PORT environment variable if it is set, or, if it is unset, on the extension's
-// default port (2773) if something is listening there when options are loaded. If another service uses port 2773, set
-// PARAMETERS_SECRETS_EXTENSION_HTTP_PORT to an empty value to disable detection and always fetch directly.
+// PARAMETERS_SECRETS_EXTENSION_HTTP_PORT environment variable if it is set, or, if it is unset and running in Lambda
+// (AWS_LAMBDA_FUNCTION_NAME is set), on the extension's default port (2773) if something is listening there when
+// options are loaded. If another service uses port 2773, set PARAMETERS_SECRETS_EXTENSION_HTTP_PORT to an empty value
+// to disable detection and always fetch directly.
 //
 // Secrets are first fetched when a client is created from the loaded options, failing client creation if a fetch
 // fails. Fetched secrets are cached by the plugin returned from the extension, so clients created from the same
