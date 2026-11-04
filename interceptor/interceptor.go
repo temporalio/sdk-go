@@ -168,6 +168,26 @@ type ClientOutboundInterceptorBase = internal.ClientOutboundInterceptorBase
 // ClientOutboundInterceptor.ExecuteWorkflow.
 type ClientExecuteWorkflowInput = internal.ClientExecuteWorkflowInput
 
+// ClientGetWorkflowRunInput is input for
+// ClientOutboundInterceptor.GetWorkflowRun.
+type ClientGetWorkflowRunInput = internal.ClientGetWorkflowRunInput
+
+// ClientGetWorkflowResultInput is input for
+// ClientOutboundInterceptor.GetWorkflowResult.
+type ClientGetWorkflowResultInput = internal.ClientGetWorkflowResultInput
+
+// ClientGetWorkflowResultOutput is output for
+// ClientOutboundInterceptor.GetWorkflowResult.
+type ClientGetWorkflowResultOutput = internal.ClientGetWorkflowResultOutput
+
+// ClientGetWorkflowHistoryInput is input for
+// ClientOutboundInterceptor.GetWorkflowHistory.
+type ClientGetWorkflowHistoryInput = internal.ClientGetWorkflowHistoryInput
+
+// ClientGetWorkflowHistoryOutput is output for
+// ClientOutboundInterceptor.GetWorkflowHistory.
+type ClientGetWorkflowHistoryOutput = internal.ClientGetWorkflowHistoryOutput
+
 // ClientSignalWorkflowInput is input for
 // ClientOutboundInterceptor.SignalWorkflow.
 type ClientSignalWorkflowInput = internal.ClientSignalWorkflowInput

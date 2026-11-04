@@ -842,7 +842,9 @@ func (env *testWorkflowEnvironmentImpl) getWorkflowDefinition(wt WorkflowType) (
 	}
 	var dynamic bool
 	if d, ok := wf.(string); ok && d == "dynamic" {
+		env.registry.Lock()
 		wf = env.registry.dynamicWorkflow
+		env.registry.Unlock()
 		dynamic = true
 	}
 	// A dynamic workflow may itself be a WorkflowDefinitionFactory (e.g. the
