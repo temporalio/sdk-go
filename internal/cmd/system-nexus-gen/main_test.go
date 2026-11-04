@@ -48,6 +48,57 @@ func requireTestFile(t *testing.T, path, want string) {
 	}
 }
 
+func TestUpdateGeneratedFiles(t *testing.T) {
+	for _, check := range []bool{false, true} {
+		name := "write"
+		if check {
+			name = "check"
+		}
+		t.Run(name, func(t *testing.T) {
+			a := newTestApp(t)
+			a.options.check = check
+			implementation := filepath.Join(a.tmp.generatedDir(), "workflowservice.go")
+			facade := filepath.Join(a.tmp.generatedDir(), "workflowservice_facade.go")
+			writeTestFile(t, implementation, "implementation")
+			writeTestFile(t, facade, "facade")
+			for _, file := range []struct{ path, contents string }{
+				{"internal/workflowservice.go", "implementation"},
+				{"workflow/workflowservice.go", "facade"},
+			} {
+				contents := "stale"
+				if check {
+					contents = file.contents
+				}
+				writeTestFile(t, filepath.Join(string(a.sdk), file.path), contents)
+			}
+
+			if err := a.updateGeneratedFiles(); err != nil {
+				t.Fatal(err)
+			}
+			requireTestFile(t, filepath.Join(string(a.sdk), "internal/workflowservice.go"), "implementation")
+			requireTestFile(t, filepath.Join(string(a.sdk), "workflow/workflowservice.go"), "facade")
+			requireTestFile(t, implementation, "implementation")
+			requireTestFile(t, facade, "facade")
+		})
+	}
+}
+
+func TestCheckGeneratedFacadeIsOutOfDate(t *testing.T) {
+	a := newTestApp(t)
+	a.options.check = true
+	writeTestFile(t, filepath.Join(a.tmp.generatedDir(), "workflowservice.go"), "implementation")
+	writeTestFile(t, filepath.Join(a.tmp.generatedDir(), "workflowservice_facade.go"), "new facade")
+	writeTestFile(t, filepath.Join(string(a.sdk), "internal/workflowservice.go"), "implementation")
+	facade := filepath.Join(string(a.sdk), "workflow/workflowservice.go")
+	writeTestFile(t, facade, "old facade")
+
+	err := a.updateGeneratedFiles()
+	if err == nil || err.Error() != facade+" is out of date" {
+		t.Fatalf("check generated facade: got %v, want out-of-date error for %s", err, facade)
+	}
+	requireTestFile(t, facade, "old facade")
+}
+
 // -----------------------------------------------------------------------------
 // WIT STAGING
 // -----------------------------------------------------------------------------
