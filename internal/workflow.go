@@ -3259,33 +3259,52 @@ func (c nexusClient) Service() string {
 func (c nexusClient) ExecuteOperation(ctx Context, operation any, input any, options NexusOperationOptions) NexusOperationFuture {
 	assertNotInReadOnlyState(ctx)
 	i := getWorkflowOutboundInterceptor(ctx)
-	return i.ExecuteNexusOperation(ctx, ExecuteNexusOperationInput{
+	in := ExecuteNexusOperationInput{
 		Client:      c,
 		Operation:   operation,
 		Input:       input,
 		Options:     options,
 		NexusHeader: nexus.Header{},
-	})
+	}
+	if c.endpoint == systemNexusEndpoint {
+		operationName, err := nexusOperationName(operation, input)
+		if err != nil {
+			return systemnexus_failedFuture(ctx, err)
+		}
+		entry, ok := systemNexusRegistry[SystemNexusRegistryKey{Service: c.service, Operation: operationName}]
+		if !ok || entry.Intercept == nil {
+			return systemnexus_failedFuture(ctx, fmt.Errorf("unsupported System Nexus operation %s/%s", c.service, operationName))
+		}
+		return entry.Intercept(workflowContextWithoutHeader(ctx), i, in)
+	}
+	return i.ExecuteNexusOperation(ctx, in)
+}
+
+func nexusOperationName(operation, input any) (string, error) {
+	var ok bool
+	var operationName string
+	if operationName, ok = operation.(string); ok {
+	} else if regOp, ok := operation.(interface {
+		Name() string
+		InputType() reflect.Type
+	}); ok {
+		operationName = regOp.Name()
+		inputType := reflect.TypeOf(input)
+		if inputType != nil && !inputType.AssignableTo(regOp.InputType()) {
+			return "", fmt.Errorf("cannot assign argument of type %q to type %q for operation %q", inputType, regOp.InputType(), operationName)
+		}
+	} else {
+		return "", fmt.Errorf("invalid 'operation' parameter, must be an OperationReference or a string")
+	}
+	return operationName, nil
 }
 
 func (wc *workflowEnvironmentInterceptor) prepareNexusOperationParams(ctx Context, input ExecuteNexusOperationInput) (ExecuteNexusOperationParams, error) {
 	endpoint := input.Client.Endpoint()
 	service := input.Client.Service()
-
-	var ok bool
-	var operationName string
-	if operationName, ok = input.Operation.(string); ok {
-	} else if regOp, ok := input.Operation.(interface {
-		Name() string
-		InputType() reflect.Type
-	}); ok {
-		operationName = regOp.Name()
-		inputType := reflect.TypeOf(input.Input)
-		if inputType != nil && !inputType.AssignableTo(regOp.InputType()) {
-			return ExecuteNexusOperationParams{}, fmt.Errorf("cannot assign argument of type %q to type %q for operation %q", inputType, regOp.InputType(), operationName)
-		}
-	} else {
-		return ExecuteNexusOperationParams{}, fmt.Errorf("invalid 'operation' parameter, must be an OperationReference or a string")
+	operationName, err := nexusOperationName(input.Operation, input.Input)
+	if err != nil {
+		return ExecuteNexusOperationParams{}, err
 	}
 
 	// Compute the serialization context, if any.
@@ -3300,7 +3319,7 @@ func (wc *workflowEnvironmentInterceptor) prepareNexusOperationParams(ctx Contex
 		if info, ok := systemNexusRegistry[SystemNexusRegistryKey{
 			Service:   service,
 			Operation: operationName,
-		}]; ok {
+		}]; ok && info.SerializationContext != nil {
 			sc = info.SerializationContext(input.Input)
 		}
 	} else {
@@ -3340,6 +3359,10 @@ func (wc *workflowEnvironmentInterceptor) prepareNexusOperationParams(ctx Contex
 }
 
 func (wc *workflowEnvironmentInterceptor) ExecuteNexusOperation(ctx Context, input ExecuteNexusOperationInput) NexusOperationFuture {
+	return wc.scheduleNexusOperation(ctx, input)
+}
+
+func (wc *workflowEnvironmentInterceptor) scheduleNexusOperation(ctx Context, input ExecuteNexusOperationInput) NexusOperationFuture {
 	mainFuture, mainSettable := newDecodeFuture(ctx, nil /* this param is never used */)
 	executionFuture, executionSettable := NewFuture(ctx)
 	result := &nexusOperationFutureImpl{
