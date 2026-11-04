@@ -1413,11 +1413,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_CodecWorkflowTaskFailureError_I
 		cause := errors.New("transient codec failure: 503")
 		request, err := t.processInputDecodeFailure(policy, converter.NewWorkflowTaskFailureError(cause))
 
-		t.Error(err, "policy %v", policy)
-		t.Nil(request, "policy %v", policy)
-		var marker *converter.WorkflowTaskFailureError
-		t.True(errors.As(err, &marker), "policy %v", policy)
-		t.True(errors.Is(err, cause), "policy %v", policy)
+		t.assertCodecWorkflowTaskFailure(request, err, cause, "policy %v", policy)
 		// The SDK's decode context must survive.
 		t.ErrorContains(err, "unable to decode the workflow function input payload", "policy %v", policy)
 		t.ErrorContains(err, "HelloWorld_Workflow", "policy %v", policy)
@@ -1481,11 +1477,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_CodecWorkflowTaskFailureError_A
 		cause := errors.New("transient codec failure on activity result: 503")
 		request, err := t.processActivityResultDecodeFailure("HelloWorld_Workflow", policy, cause)
 
-		t.Error(err, "policy %v", policy)
-		t.Nil(request, "policy %v", policy)
-		var marker *converter.WorkflowTaskFailureError
-		t.True(errors.As(err, &marker), "policy %v", policy)
-		t.True(errors.Is(err, cause), "policy %v", policy)
+		t.assertCodecWorkflowTaskFailure(request, err, cause, "policy %v", policy)
 	}
 }
 
@@ -1494,11 +1486,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_CodecWorkflowTaskFailureError_A
 		cause := errors.New("transient codec failure on activity result: 503")
 		request, err := t.processActivityResultDecodeFailure("CodecSwallowActivityResult_Workflow", policy, cause)
 
-		t.Error(err, "policy %v", policy)
-		t.Nil(request, "policy %v", policy)
-		var marker *converter.WorkflowTaskFailureError
-		t.True(errors.As(err, &marker), "policy %v", policy)
-		t.True(errors.Is(err, cause), "policy %v", policy)
+		t.assertCodecWorkflowTaskFailure(request, err, cause, "policy %v", policy)
 	}
 }
 
@@ -1591,11 +1579,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_CodecWorkflowTaskFailureError_A
 		request, err := taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
 		wfctx.Unlock(err)
 
-		t.Error(err, "policy %v", policy)
-		t.Nil(request, "policy %v", policy)
-		var marker *converter.WorkflowTaskFailureError
-		t.True(errors.As(err, &marker), "policy %v", policy)
-		t.True(errors.Is(err, cause), "policy %v", policy)
+		t.assertCodecWorkflowTaskFailure(request, err, cause, "policy %v", policy)
 	}
 }
 
@@ -1620,11 +1604,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_CodecWorkflowTaskFailureError_C
 		request, err := taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
 		wfctx.Unlock(err)
 
-		t.Error(err, "policy %v", policy)
-		t.Nil(request, "policy %v", policy)
-		var marker *converter.WorkflowTaskFailureError
-		t.True(errors.As(err, &marker), "policy %v", policy)
-		t.True(errors.Is(err, cause), "policy %v", policy)
+		t.assertCodecWorkflowTaskFailure(request, err, cause, "policy %v", policy)
 	}
 }
 
@@ -1650,11 +1630,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_CodecWorkflowTaskFailureError_C
 			request, err := taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
 			wfctx.Unlock(err)
 
-			t.Error(err, "%s policy %v", workflowName, policy)
-			t.Nil(request, "%s policy %v", workflowName, policy)
-			var marker *converter.WorkflowTaskFailureError
-			t.True(errors.As(err, &marker), "%s policy %v", workflowName, policy)
-			t.True(errors.Is(err, cause), "%s policy %v", workflowName, policy)
+			t.assertCodecWorkflowTaskFailure(request, err, cause, "%s policy %v", workflowName, policy)
 		}
 	}
 }
@@ -1665,11 +1641,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_CodecWorkflowTaskFailureError_S
 		cause := errors.New("transient codec failure on side effect summary: 503")
 		request, err := t.processMatchEncodeFailure("CodecSideEffectSummary_Workflow", sideEffectSummaryMatch, policy, cause)
 
-		t.Error(err, "policy %v", policy)
-		t.Nil(request, "policy %v", policy)
-		var marker *converter.WorkflowTaskFailureError
-		t.True(errors.As(err, &marker), "policy %v", policy)
-		t.True(errors.Is(err, cause), "policy %v", policy)
+		t.assertCodecWorkflowTaskFailure(request, err, cause, "policy %v", policy)
 	}
 }
 
@@ -1678,11 +1650,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_CodecWorkflowTaskFailureError_M
 		cause := errors.New("transient codec failure on mutable side effect summary: 503")
 		request, err := t.processMatchEncodeFailure("CodecMutableSideEffectSummary_Workflow", mutableSideEffectSummaryMatch, policy, cause)
 
-		t.Error(err, "policy %v", policy)
-		t.Nil(request, "policy %v", policy)
-		var marker *converter.WorkflowTaskFailureError
-		t.True(errors.As(err, &marker), "policy %v", policy)
-		t.True(errors.Is(err, cause), "policy %v", policy)
+		t.assertCodecWorkflowTaskFailure(request, err, cause, "policy %v", policy)
 	}
 }
 
@@ -1729,6 +1697,10 @@ func (t *TaskHandlersTestSuite) assertCodecWorkflowTaskFailure(request *workflow
 	var marker *converter.WorkflowTaskFailureError
 	t.True(errors.As(err, &marker), msgAndArgs...)
 	t.True(errors.Is(err, cause), msgAndArgs...)
+	var panicErr *PanicError
+	t.False(errors.As(err, &panicErr), msgAndArgs...)
+	var workflowPanicErr *workflowPanicError
+	t.False(errors.As(err, &workflowPanicErr), msgAndArgs...)
 }
 
 func (t *TaskHandlersTestSuite) TestWorkflowTask_CodecWorkflowTaskFailureError_FutureEncodeSites() {
@@ -1989,11 +1961,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_CodecWorkflowTaskFailureError_L
 		cause := errors.New("transient codec failure on local activity marker: 503")
 		request, err := t.processLocalActivityMarkerEncodeFailure(policy, cause)
 
-		t.Error(err, "policy %v", policy)
-		t.Nil(request, "policy %v", policy)
-		var marker *converter.WorkflowTaskFailureError
-		t.True(errors.As(err, &marker), "policy %v", policy)
-		t.True(errors.Is(err, cause), "policy %v", policy)
+		t.assertCodecWorkflowTaskFailure(request, err, cause, "policy %v", policy)
 	}
 }
 

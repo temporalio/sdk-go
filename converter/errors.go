@@ -47,7 +47,8 @@ var (
 // GetLastCompletionResult, and ApplicationError.Details, return it to the
 // workflow as an ordinary error. Signal, update argument, query, and memo
 // handling are unchanged. Outside Workflow Task processing it is an ordinary
-// error.
+// error. TestWorkflowEnvironment does not retry Workflow Tasks, so the workflow
+// error it reports wraps this error instead.
 type WorkflowTaskFailureError struct {
 	cause error
 }

@@ -1291,6 +1291,11 @@ func (env *testWorkflowEnvironmentImpl) RequestCancelTimer(timerID TimerID) {
 	}, true)
 }
 
+func (env *testWorkflowEnvironmentImpl) roundTripFailure(err error) (converted error) {
+	defer recoverCodecWorkflowTaskFailure(&converted)
+	return env.failureConverter.FailureToError(env.failureConverter.ErrorToFailure(err))
+}
+
 func (env *testWorkflowEnvironmentImpl) Complete(result *commonpb.Payloads, err error) {
 	if env.isWorkflowCompleted {
 		env.logger.Debug("Workflow already completed.")
@@ -1308,13 +1313,14 @@ func (env *testWorkflowEnvironmentImpl) Complete(result *commonpb.Payloads, err 
 		var workflowPanicErr *workflowPanicError
 		var workflowExecutionAlreadyStartedErr *serviceerror.WorkflowExecutionAlreadyStarted
 		var childWorkflowExecutionAlreadyStartedErr *ChildWorkflowExecutionAlreadyStartedError
-		if errors.As(err, &canceledErr) || errors.As(err, &continueAsNewErr) || errors.As(err, &timeoutErr) || errors.As(err, &workflowExecutionAlreadyStartedErr) || errors.As(err, &childWorkflowExecutionAlreadyStartedErr) {
+		if codecErr, ok := codecWorkflowTaskFailureFrom(err); ok {
+			env.testError = codecErr
+		} else if errors.As(err, &canceledErr) || errors.As(err, &continueAsNewErr) || errors.As(err, &timeoutErr) || errors.As(err, &workflowExecutionAlreadyStartedErr) || errors.As(err, &childWorkflowExecutionAlreadyStartedErr) {
 			env.testError = err
 		} else if errors.As(err, &workflowPanicErr) {
 			env.testError = newPanicError(workflowPanicErr.value, workflowPanicErr.stackTrace)
 		} else {
-			failure := env.failureConverter.ErrorToFailure(err)
-			env.testError = env.failureConverter.FailureToError(failure)
+			env.testError = env.roundTripFailure(err)
 		}
 
 		if !env.isChildWorkflow() {
