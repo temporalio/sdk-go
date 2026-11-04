@@ -150,3 +150,59 @@ func TestDataConverterWithoutDeadlockDetectionContext(t *testing.T) {
 	})
 
 }
+
+type slowGoInterceptor struct {
+	WorkerInterceptorBase
+	returned chan struct{}
+}
+
+func (i *slowGoInterceptor) InterceptWorkflow(_ Context, next WorkflowInboundInterceptor) WorkflowInboundInterceptor {
+	return &slowGoInbound{WorkflowInboundInterceptorBase: WorkflowInboundInterceptorBase{Next: next}, owner: i}
+}
+
+type slowGoInbound struct {
+	WorkflowInboundInterceptorBase
+	owner *slowGoInterceptor
+}
+
+func (i *slowGoInbound) Init(out WorkflowOutboundInterceptor) error {
+	return i.Next.Init(&slowGoOutbound{WorkflowOutboundInterceptorBase: WorkflowOutboundInterceptorBase{Next: out}, owner: i.owner})
+}
+
+type slowGoOutbound struct {
+	WorkflowOutboundInterceptorBase
+	owner *slowGoInterceptor
+}
+
+func (o *slowGoOutbound) Go(ctx Context, name string, f func(Context)) Context {
+	if name == "root" {
+		return o.Next.Go(ctx, name, f)
+	}
+	defer close(o.owner.returned)
+	// Stall past the deadlock timeout before the coroutine is created.
+	time.Sleep(2 * deadlockDetectionTime)
+	return o.Next.Go(ctx, name, f)
+}
+
+// A workflow goroutine reported as deadlocked keeps running. Creating a
+// coroutine from it afterwards must not race with the dispatcher (run with -race).
+func TestCoroutineCreatedAfterDeadlockDetected(t *testing.T) {
+	activityFn := func(context.Context) error { return nil }
+	workflowFn := func(ctx Context) error {
+		ctx = WithLocalActivityOptions(ctx, LocalActivityOptions{StartToCloseTimeout: time.Second})
+		return ExecuteLocalActivity(ctx, activityFn).Get(ctx, nil)
+	}
+	var suite WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+	hook := &slowGoInterceptor{returned: make(chan struct{})}
+	env.SetWorkerOptions(WorkerOptions{DeadlockDetectionTimeout: deadlockDetectionTime, Interceptors: []WorkerInterceptor{hook}})
+	env.RegisterActivity(activityFn)
+	env.ExecuteWorkflow(workflowFn)
+	require.True(t, env.IsWorkflowCompleted())
+	require.ErrorContains(t, env.GetWorkflowError(), "Potential deadlock detected")
+	select {
+	case <-hook.returned:
+	case <-time.After(5 * time.Second):
+		t.Fatal("workflow.Go did not return after the deadlock was detected")
+	}
+}
