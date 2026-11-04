@@ -111,9 +111,13 @@ type (
 		WorkflowInfo() *WorkflowInfo
 		TypedSearchAttributes() SearchAttributes
 		Complete(result *commonpb.Payloads, err error)
+		// GetCancellationReason returns the reason from the first cancellation request,
+		// or "" if no cancellation was requested or no reason was supplied.
+		// The reason is available before the registered cancel handler is invoked.
+		GetCancellationReason() string
 		RegisterCancelHandler(handler func())
-		RequestCancelChildWorkflow(namespace, workflowID string)
-		RequestCancelExternalWorkflow(namespace, workflowID, runID string, callback ResultHandler)
+		RequestCancelChildWorkflow(namespace, workflowID, reason string)
+		RequestCancelExternalWorkflow(namespace, workflowID, runID, reason string, callback ResultHandler)
 		ExecuteChildWorkflow(params ExecuteWorkflowParams, callback ResultHandler, startedHandler func(r WorkflowExecution, e error))
 		ExecuteNexusOperation(params ExecuteNexusOperationParams, callback func(*commonpb.Payload, error), startedHandler func(token string, e error)) int64
 		RequestCancelNexusOperation(seq int64)

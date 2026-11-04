@@ -275,6 +275,10 @@ type WorkflowOutboundInterceptor interface {
 	// workflow.RequestCancelExternalWorkflow.
 	RequestCancelExternalWorkflow(ctx Context, workflowID, runID string) Future
 
+	// RequestCancelExternalWorkflowWithOptions intercepts
+	// workflow.RequestCancelExternalWorkflowWithOptions.
+	RequestCancelExternalWorkflowWithOptions(ctx Context, workflowID, runID string, options CancelExternalWorkflowOptions) Future
+
 	// SignalExternalWorkflow intercepts workflow.SignalExternalWorkflow.
 	// interceptor.WorkflowHeader will return a non-nil map for this context.
 	SignalExternalWorkflow(ctx Context, workflowID, runID, signalName string, arg any) Future
