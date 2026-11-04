@@ -382,7 +382,7 @@ func WithActivityTask(
 		priority:                  task.GetPriority(),
 		heartbeatDetails:          task.HeartbeatDetails,
 		namespace:                 task.WorkflowNamespace,
-		retryPolicy:               ConvertFromPBRetryPolicy(task.RetryPolicy),
+		retryPolicy:               convertFromPBRetryPolicy(task.RetryPolicy),
 		workerStopChannel:         workerStopChannel,
 		contextPropagators:        contextPropagators,
 		client:                    client,

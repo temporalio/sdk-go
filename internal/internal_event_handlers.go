@@ -411,7 +411,7 @@ func (wc *workflowEnvironmentImpl) WorkflowInfo() *WorkflowInfo {
 }
 
 func (wc *workflowEnvironmentImpl) TypedSearchAttributes() SearchAttributes {
-	return ConvertToTypedSearchAttributes(wc.logger, wc.workflowInfo.SearchAttributes.GetIndexedFields())
+	return convertToTypedSearchAttributes(wc.logger, wc.workflowInfo.SearchAttributes.GetIndexedFields())
 }
 
 func (wc *workflowEnvironmentImpl) Complete(result *commonpb.Payloads, err error) {

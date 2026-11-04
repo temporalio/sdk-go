@@ -2704,7 +2704,7 @@ func (env *testWorkflowEnvironmentImpl) WorkflowInfo() *WorkflowInfo {
 }
 
 func (env *testWorkflowEnvironmentImpl) TypedSearchAttributes() SearchAttributes {
-	return ConvertToTypedSearchAttributes(env.logger, env.workflowInfo.SearchAttributes.GetIndexedFields())
+	return convertToTypedSearchAttributes(env.logger, env.workflowInfo.SearchAttributes.GetIndexedFields())
 }
 
 func (env *testWorkflowEnvironmentImpl) RegisterWorkflow(w any) {
