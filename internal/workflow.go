@@ -3060,15 +3060,7 @@ func (c nexusClient) ExecuteOperation(ctx Context, operation any, input any, opt
 		NexusHeader: nexus.Header{},
 	}
 	if c.endpoint == systemNexusEndpoint {
-		operationName, err := nexusOperationName(operation, input)
-		if err != nil {
-			return systemnexus_failedFuture(ctx, err)
-		}
-		entry, ok := systemNexusRegistry[SystemNexusRegistryKey{Service: c.service, Operation: operationName}]
-		if !ok || entry.Intercept == nil {
-			return systemnexus_failedFuture(ctx, fmt.Errorf("unsupported System Nexus operation %s/%s", c.service, operationName))
-		}
-		return entry.Intercept(workflowContextWithoutHeader(ctx), i, in)
+		return systemnexus_startOperation(workflowContextWithoutHeader(ctx), i, in)
 	}
 	return i.ExecuteNexusOperation(ctx, in)
 }
@@ -3112,7 +3104,7 @@ func (wc *workflowEnvironmentInterceptor) prepareNexusOperationParams(ctx Contex
 		if info, ok := systemNexusRegistry[SystemNexusRegistryKey{
 			Service:   service,
 			Operation: operationName,
-		}]; ok && info.SerializationContext != nil {
+		}]; ok {
 			sc = info.SerializationContext(input.Input)
 		}
 	} else {

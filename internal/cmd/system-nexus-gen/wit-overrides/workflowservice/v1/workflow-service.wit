@@ -110,9 +110,9 @@ interface workflow-service {
     /// @nexus.omit
     control: placeholder,
     /// @nexus.api-omit
-    /// @nexus.doc "Headers for the request. A nil Go map represents an absent header."
+    /// @nexus.doc "Headers for the request."
     /// @nexus.proto-field "header"
-    headers: header,
+    headers: option<header>,
     /// @nexus.omit
     links: placeholder,
     /// @nexus.omit
