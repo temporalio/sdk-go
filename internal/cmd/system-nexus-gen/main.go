@@ -112,12 +112,8 @@ func (d buildDir) descriptorsFile() string {
 	return filepath.Join(d.descriptorsDir(), "descriptors.bin")
 }
 
-func (d buildDir) internalDir() string {
-	return filepath.Join(string(d), "internal")
-}
-
-func (d buildDir) workflowDir() string {
-	return filepath.Join(string(d), "workflow")
+func (d buildDir) generatedDir() string {
+	return filepath.Join(string(d), "generated")
 }
 
 // app represents the state of the system-nexus-gen command
@@ -201,33 +197,38 @@ func (a app) run() (err error) {
 		inputs:         []string{a.tmp.witFile(), a.tmp.witDepsDir()},
 		descriptors:    []string{a.tmp.descriptorsFile()},
 		supportPackage: "go.temporal.io/sdk/internal",
-		output:         a.tmp.internalDir(),
-		facadeOutput:   a.tmp.workflowDir(),
-		facadeImport:   "go.temporal.io/sdk/internal",
+		output:         a.tmp.generatedDir(),
 		systemNexus:    true,
 		format:         true,
 	}); err != nil {
 		return fmt.Errorf("nexgen: %w", err)
 	}
 
-	for _, dir := range []string{"internal", "workflow"} {
-		generatedFile := filepath.Join(string(a.tmp), dir, "workflowservice.go")
-		checkedInFile := filepath.Join(string(a.sdk), dir, "workflowservice.go")
+	return a.updateGeneratedFiles()
+}
+
+func (a app) updateGeneratedFiles() error {
+	for _, file := range []struct{ generated, destination string }{
+		{"workflowservice.go", "internal/workflowservice.go"},
+		{"workflowservice_facade.go", "workflow/workflowservice.go"},
+	} {
+		generatedFile := filepath.Join(a.tmp.generatedDir(), file.generated)
+		checkedInFile := filepath.Join(string(a.sdk), filepath.FromSlash(file.destination))
+		generated, err := os.ReadFile(generatedFile)
+		if err != nil {
+			return fmt.Errorf("reading generated binding %s: %w", generatedFile, err)
+		}
 		if a.options.check {
-			generated, err := os.ReadFile(generatedFile)
-			if err != nil {
-				return err
-			}
 			checkedIn, err := os.ReadFile(checkedInFile)
 			if err != nil {
-				return err
+				return fmt.Errorf("reading checked-in binding %s: %w", checkedInFile, err)
 			}
 			if !checkEqual(generated, checkedIn) {
 				return fmt.Errorf("%s is out of date", checkedInFile)
 			}
 		} else {
-			if err := os.Rename(generatedFile, checkedInFile); err != nil {
-				return err
+			if err := os.WriteFile(checkedInFile, generated, 0o644); err != nil {
+				return fmt.Errorf("writing binding %s: %w", checkedInFile, err)
 			}
 		}
 	}
@@ -309,8 +310,6 @@ type nexgenOptions struct {
 	descriptors    []string
 	supportPackage string
 	output         string
-	facadeOutput   string
-	facadeImport   string
 	systemNexus    bool
 	format         bool
 }
@@ -330,12 +329,6 @@ func nexgen(options nexgenOptions) error {
 	}
 	if options.output != "" {
 		args = append(args, "--output", options.output)
-	}
-	if options.facadeOutput != "" {
-		args = append(args, "--facade-output", options.facadeOutput)
-	}
-	if options.facadeImport != "" {
-		args = append(args, "--facade-import", options.facadeImport)
 	}
 	if options.systemNexus {
 		args = append(args, "--system-nexus")
