@@ -132,7 +132,7 @@ The extension logs to the client's `Logger` and emits metrics to the client's
 created.
 
 Metrics are all labeled with `secret_type` (`api_key`, `tls_client_cert`,
-`tls_client_key`, `tls_server_ca_cert`; a bundled cert/key secret is
+`tls_server_ca_cert`; client cert and client key metrics are both labeled
 `tls_client_cert`) and `fetch_path` (`extension` or `sdk`). Currently, the following metrics are emitted:
 
 | Metric | Type | Extra labels | Description |
