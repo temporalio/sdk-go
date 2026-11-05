@@ -794,10 +794,9 @@ func TestSystemNexusMock(t *testing.T) {
 		}).
 		Return(&nexus.HandlerStartOperationResultSync[*commonpb.Payload]{Value: response}, nil).Once()
 
-	// This synthetic operation tests serialization, outside the generated API dispatcher.
 	env.ExecuteWorkflow(func(ctx Context) (string, error) {
 		var output systemNexusModel
-		err := getWorkflowEnvironmentInterceptor(ctx).scheduleNexusOperation(ctx, ExecuteNexusOperationInput{
+		err := getWorkflowEnvironmentInterceptor(ctx).ExecuteNexusOperation(ctx, ExecuteNexusOperationInput{
 			Client:    NewSystemNexusClient(service),
 			Operation: operation,
 			Input:     input,

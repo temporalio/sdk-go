@@ -777,52 +777,32 @@ func init() {
 
 // --- Workflow outbound interceptors ---
 
-// systemnexus_workflowOutboundInterceptor intercepts System Nexus workflow operations before payload conversion.
-type systemnexus_workflowOutboundInterceptor interface {
-	// SignalWithStartWorkflow intercepts the unencoded System Nexus request.
-	SignalWithStartWorkflow(ctx Context, input *SystemNexus_SignalWithStartWorkflowInput) NexusOperationFuture
-}
-
-// SystemNexus_SignalWithStartWorkflowInput contains the request before payload conversion.
-// Interceptors may modify it synchronously before forwarding it. They must
-// not retain or mutate it after forwarding, or replace its header map.
-type SystemNexus_SignalWithStartWorkflowInput struct {
-	Request     SystemNexus_SignalWithStartWorkflowRequest
-	Options     NexusOperationOptions
-	NexusHeader nexus.Header
-}
-
-func (w *WorkflowOutboundInterceptorBase) SignalWithStartWorkflow(ctx Context, input *SystemNexus_SignalWithStartWorkflowInput) NexusOperationFuture {
-	return w.Next.SignalWithStartWorkflow(ctx, input)
-}
-
-func (wc *workflowEnvironmentInterceptor) SignalWithStartWorkflow(ctx Context, input *SystemNexus_SignalWithStartWorkflowInput) NexusOperationFuture {
-	return wc.systemnexus_executeOperation(ctx, ExecuteNexusOperationInput{
-		Client:      NewSystemNexusClient("temporal.api.workflowservice.v1.WorkflowService"),
-		Operation:   "SignalWithStartWorkflowExecution",
-		Input:       input.Request,
-		Options:     input.Options,
-		NexusHeader: input.NexusHeader,
-	})
-}
-
-func systemnexus_startOperation(ctx Context, outbound systemnexus_workflowOutboundInterceptor, input ExecuteNexusOperationInput) NexusOperationFuture {
-	operationName, err := nexusOperationName(input.Operation, input.Input)
-	if err != nil {
-		return systemnexus_failedFuture(ctx, err)
-	}
+func systemnexus_executeOperation(ctx Context, outbound systemnexus_workflowOutboundInterceptor, input executeSystemNexusOperationInput) NexusOperationFuture {
 	switch {
-	case input.Client.Service() == "temporal.api.workflowservice.v1.WorkflowService" && operationName == "SignalWithStartWorkflowExecution":
+	case input.Service == "temporal.api.workflowservice.v1.WorkflowService" && input.Operation == "SignalWithStartWorkflowExecution":
 		request, ok := input.Input.(SystemNexus_SignalWithStartWorkflowRequest)
 		if !ok {
-			return systemnexus_failedFuture(ctx, fmt.Errorf("system Nexus operation %s/%s expects SystemNexus_SignalWithStartWorkflowRequest, got %T", "temporal.api.workflowservice.v1.WorkflowService", "SignalWithStartWorkflowExecution", input.Input))
+			return FailedNexusOperationFuture(ctx, fmt.Errorf("system Nexus operation %s/%s expects SystemNexus_SignalWithStartWorkflowRequest, got %T", "temporal.api.workflowservice.v1.WorkflowService", "SignalWithStartWorkflowExecution", input.Input))
 		}
-		ctx = systemnexus_contextWithHeader(ctx, &request.Headers)
-		return outbound.SignalWithStartWorkflow(ctx, &SystemNexus_SignalWithStartWorkflowInput{
-			Request:     request,
-			Options:     input.Options,
-			NexusHeader: input.NexusHeader,
-		})
+		return outbound.SignalWithStartWorkflow(ctx, &request)
 	}
-	return systemnexus_failedFuture(ctx, fmt.Errorf("unsupported system Nexus operation %s/%s", input.Client.Service(), operationName))
+	return FailedNexusOperationFuture(ctx, fmt.Errorf("unsupported system Nexus operation %s/%s", input.Service, input.Operation))
+}
+
+type systemnexus_workflowOutboundInterceptor interface {
+	// SignalWithStartWorkflow intercepts workflow.SignalWithStartWorkflow.
+	SignalWithStartWorkflow(ctx Context, request *SystemNexus_SignalWithStartWorkflowRequest) NexusOperationFuture
+}
+
+func (w *WorkflowOutboundInterceptorBase) SignalWithStartWorkflow(ctx Context, request *SystemNexus_SignalWithStartWorkflowRequest) NexusOperationFuture {
+	return w.Next.SignalWithStartWorkflow(ctx, request)
+}
+
+func (wc *workflowEnvironmentInterceptor) SignalWithStartWorkflow(ctx Context, request *SystemNexus_SignalWithStartWorkflowRequest) NexusOperationFuture {
+	return wc.ExecuteNexusOperation(ctx, ExecuteNexusOperationInput{
+		Client:      NewSystemNexusClient("temporal.api.workflowservice.v1.WorkflowService"),
+		Operation:   "SignalWithStartWorkflowExecution",
+		Input:       *request,
+		NexusHeader: nexus.Header{},
+	})
 }

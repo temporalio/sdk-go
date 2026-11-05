@@ -3052,20 +3052,27 @@ func (c nexusClient) Service() string {
 func (c nexusClient) ExecuteOperation(ctx Context, operation any, input any, options NexusOperationOptions) NexusOperationFuture {
 	assertNotInReadOnlyState(ctx)
 	i := getWorkflowOutboundInterceptor(ctx)
-	in := ExecuteNexusOperationInput{
+	if c.endpoint == systemNexusEndpoint {
+		operationName, err := NexusOperationName(operation, input)
+		if err != nil {
+			return FailedNexusOperationFuture(ctx, err)
+		}
+		return systemnexus_executeOperation(ctx, i, executeSystemNexusOperationInput{
+			Service:   c.service,
+			Operation: operationName,
+			Input:     input,
+		})
+	}
+	return i.ExecuteNexusOperation(ctx, ExecuteNexusOperationInput{
 		Client:      c,
 		Operation:   operation,
 		Input:       input,
 		Options:     options,
 		NexusHeader: nexus.Header{},
-	}
-	if c.endpoint == systemNexusEndpoint {
-		return systemnexus_startOperation(workflowContextWithoutHeader(ctx), i, in)
-	}
-	return i.ExecuteNexusOperation(ctx, in)
+	})
 }
 
-func nexusOperationName(operation, input any) (string, error) {
+func NexusOperationName(operation, input any) (string, error) {
 	var ok bool
 	var operationName string
 	if operationName, ok = operation.(string); ok {
@@ -3084,10 +3091,21 @@ func nexusOperationName(operation, input any) (string, error) {
 	return operationName, nil
 }
 
+func FailedNexusOperationFuture(ctx Context, err error) NexusOperationFuture {
+	mainFuture, mainSettable := newDecodeFuture(ctx, nil)
+	executionFuture, executionSettable := NewFuture(ctx)
+	mainSettable.Set(nil, err)
+	executionSettable.Set(nil, err)
+	return &nexusOperationFutureImpl{
+		decodeFutureImpl: mainFuture.(*decodeFutureImpl),
+		executionFuture:  executionFuture.(*futureImpl),
+	}
+}
+
 func (wc *workflowEnvironmentInterceptor) prepareNexusOperationParams(ctx Context, input ExecuteNexusOperationInput) (ExecuteNexusOperationParams, error) {
 	endpoint := input.Client.Endpoint()
 	service := input.Client.Service()
-	operationName, err := nexusOperationName(input.Operation, input.Input)
+	operationName, err := NexusOperationName(input.Operation, input.Input)
 	if err != nil {
 		return ExecuteNexusOperationParams{}, err
 	}
@@ -3144,10 +3162,6 @@ func (wc *workflowEnvironmentInterceptor) prepareNexusOperationParams(ctx Contex
 }
 
 func (wc *workflowEnvironmentInterceptor) ExecuteNexusOperation(ctx Context, input ExecuteNexusOperationInput) NexusOperationFuture {
-	return wc.scheduleNexusOperation(ctx, input)
-}
-
-func (wc *workflowEnvironmentInterceptor) scheduleNexusOperation(ctx Context, input ExecuteNexusOperationInput) NexusOperationFuture {
 	mainFuture, mainSettable := newDecodeFuture(ctx, nil /* this param is never used */)
 	executionFuture, executionSettable := NewFuture(ctx)
 	result := &nexusOperationFutureImpl{
