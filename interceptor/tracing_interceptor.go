@@ -782,18 +782,15 @@ func (t *tracingWorkflowOutboundInterceptor) NewContinueAsNewError(
 	wfn any,
 	args ...any,
 ) error {
-	err := t.Next.NewContinueAsNewError(ctx, wfn, args...)
 	if !workflow.IsReplaying(ctx) {
-		if contErr, _ := err.(*workflow.ContinueAsNewError); contErr != nil {
-			// Get the current span and write header
-			if span, _ := ctx.Value(t.root.options.SpanContextKey).(TracerSpan); span != nil {
-				if writeErr := t.root.writeSpanToHeader(span, WorkflowHeader(ctx)); writeErr != nil {
-					return fmt.Errorf("failed writing span when creating continue as new error: %w", writeErr)
-				}
+		// Propagation finalizes the headers inside Next, so the tracing producer must write first.
+		if span, _ := ctx.Value(t.root.options.SpanContextKey).(TracerSpan); span != nil {
+			if err := t.root.headerWriter(ctx)(span); err != nil {
+				return fmt.Errorf("failed writing span when creating continue as new error: %w", err)
 			}
 		}
 	}
-	return err
+	return t.Next.NewContinueAsNewError(ctx, wfn, args...)
 }
 
 type nopSpan struct{}

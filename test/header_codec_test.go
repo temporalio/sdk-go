@@ -125,6 +125,43 @@ func (ts *IntegrationTestSuite) TestHeaderCodec() {
 	defer w.Stop()
 	ctx, span := tracer.Start(context.WithValue(ts.T().Context(), contextKey(testContextKey1), "header-value"), "caller")
 	defer span.End()
+	checkRunHeaders := func(run client.WorkflowRun, runID string) {
+		for index := range 2 {
+			history := c.GetWorkflowHistory(ctx, run.GetID(), runID, false,
+				enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+			started, err := history.Next()
+			ts.Require().NoError(err)
+			headerReference := started.GetWorkflowExecutionStartedEventAttributes().GetHeader().GetFields()["_tracer-data"]
+			ts.Require().NotNil(headerReference)
+			var reference sdkpb.ExternalStorageReference
+			ts.Require().NoError(converter.GetDefaultDataConverter().FromPayload(headerReference, &reference))
+			ts.Equal(storage.Name(), reference.GetDriverName())
+			storage.mu.Lock()
+			stored := storage.data[reference.GetClaimData()["key"]]
+			storage.mu.Unlock()
+			ts.Require().NotNil(stored)
+			ts.Equal(run.GetID(), string(stored.Metadata["ctx-signature"]))
+			ts.Equal("binary/zlib", string(stored.Metadata[converter.MetadataEncoding]))
+			bound := converter.WithDataConverterSerializationContext(dc,
+				converter.WorkflowSerializationContext{Namespace: ts.config.Namespace, WorkflowID: run.GetID()})
+			var carrier map[string]string
+			ts.Require().NoError(bound.FromPayload(stored, &carrier))
+			ts.Contains(carrier["traceparent"], span.SpanContext().TraceID().String())
+			nextRunID := ""
+			for history.HasNext() {
+				event, err := history.Next()
+				ts.Require().NoError(err)
+				if continued := event.GetWorkflowExecutionContinuedAsNewEventAttributes(); continued != nil {
+					nextRunID = continued.NewExecutionRunId
+				}
+			}
+			if index == 0 {
+				ts.Require().NotEmpty(nextRunID)
+				ts.Require().NotEqual(runID, nextRunID)
+				runID = nextRunID
+			}
+		}
+	}
 	run, err := c.ExecuteWorkflow(ctx, client.StartWorkflowOptions{ID: uuid.NewString(), TaskQueue: queue}, headerCodecWorkflow, false)
 	ts.Require().NoError(err)
 	startedRunID := run.GetRunID()
@@ -191,19 +228,28 @@ func (ts *IntegrationTestSuite) TestHeaderCodec() {
 	ts.Require().NoError(c.SignalWorkflow(ctx, multiRun.GetID(), "", "finish", nil))
 	ts.Require().NoError(multiRun.Get(ctx, nil))
 	ts.NotEmpty(recorder.Ended())
-	history := c.GetWorkflowHistory(ctx, run.GetID(), startedRunID, false,
-		enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
-	started, err := history.Next()
+	checkRunHeaders(run, startedRunID)
+
+	tracingClient, err := ts.newDefaultClient(func(options *client.Options) {
+		options.DataConverter = dc
+		options.ContextPropagators = nil
+		options.Interceptors = []interceptor.ClientInterceptor{tracing}
+		options.ExternalStorage = converter.ExternalStorage{
+			Drivers: []converter.StorageDriver{storage}, PayloadSizeThreshold: 1,
+		}
+	})
 	ts.Require().NoError(err)
-	headerReference := started.GetWorkflowExecutionStartedEventAttributes().GetHeader().GetFields()["_tracer-data"]
-	ts.Require().NotNil(headerReference)
-	var reference sdkpb.ExternalStorageReference
-	ts.Require().NoError(converter.GetDefaultDataConverter().FromPayload(headerReference, &reference))
-	ts.Equal(storage.Name(), reference.GetDriverName())
-	storage.mu.Lock()
-	stored := storage.data[reference.GetClaimData()["key"]]
-	storage.mu.Unlock()
-	ts.Require().NotNil(stored)
-	ts.Equal(run.GetID(), string(stored.Metadata["ctx-signature"]))
-	ts.Equal("binary/zlib", string(stored.Metadata[converter.MetadataEncoding]))
+	defer tracingClient.Close()
+	tracingQueue := queue + "-tracing"
+	tracingWorker := worker.New(tracingClient, tracingQueue, worker.Options{})
+	tracingWorker.RegisterWorkflow(ts.workflows.ContinueAsNew)
+	ts.Require().NoError(tracingWorker.Start())
+	defer tracingWorker.Stop()
+	tracingRun, err := tracingClient.ExecuteWorkflow(ctx,
+		client.StartWorkflowOptions{ID: uuid.NewString(), TaskQueue: tracingQueue, WorkflowExecutionTimeout: 15 * time.Second},
+		ts.workflows.ContinueAsNew, 1, tracingQueue)
+	ts.Require().NoError(err)
+	tracingRunID := tracingRun.GetRunID()
+	ts.Require().NoError(tracingRun.Get(ctx, nil))
+	checkRunHeaders(tracingRun, tracingRunID)
 }
