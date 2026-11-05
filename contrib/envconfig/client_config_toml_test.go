@@ -232,6 +232,54 @@ func TestClientConfigTOMLAdditionalProfileFieldsConflict(t *testing.T) {
 	require.ErrorContains(t, err, "additional field(s) profile.foo.address conflict with known profile fields")
 }
 
+func TestClientConfigTOMLAdditionalProfileFieldsStrict(t *testing.T) {
+	conf := envconfig.ClientConfig{
+		Profiles: map[string]*envconfig.ClientConfigProfile{
+			"foo": {Address: "my-address"},
+		},
+	}
+
+	extraTLSConfig := map[string]map[string]any{"foo": {"tls": map[string]any{"extra": map[string]any{"nested": true}}}}
+
+	_, err := conf.ToTOML(envconfig.ClientConfigToTOMLOptions{
+		AdditionalProfileFields: extraTLSConfig,
+	})
+	require.NoError(t, err, "Extra fields in a known map should be allowed when Strict = false")
+
+	_, err = conf.ToTOML(envconfig.ClientConfigToTOMLOptions{
+		AdditionalProfileFields: extraTLSConfig,
+		Strict:                  true,
+	})
+	require.ErrorContains(t, err, "known section(s) profile.foo.tls are only defined in AdditionalProfileFields; either set them on their profiles or disable strict mode")
+
+	confWithTLS := envconfig.ClientConfig{
+		Profiles: map[string]*envconfig.ClientConfigProfile{
+			"foo": {TLS: &envconfig.ClientConfigTLS{}},
+		},
+	}
+
+	_, err = confWithTLS.ToTOML(envconfig.ClientConfigToTOMLOptions{
+		AdditionalProfileFields: extraTLSConfig,
+		Strict:                  true,
+	})
+
+	require.NoError(t, err, "Nested maps should still be allowed as long as the modeled parent is already defined")
+
+	_, err = conf.ToTOML(envconfig.ClientConfigToTOMLOptions{
+		AdditionalProfileFields: map[string]map[string]any{"bar": {"custom": "some value"}},
+		Strict:                  true,
+	})
+
+	require.NoError(t, err, "Profiles that only contain AdditionalProfileFields should be allowed")
+
+	_, err = conf.ToTOML(envconfig.ClientConfigToTOMLOptions{
+		AdditionalProfileFields: map[string]map[string]any{"foo": {"custom": map[string]any{"key": "some value"}}},
+		Strict:                  true,
+	})
+
+	require.NoError(t, err, "Adding additional sections to an existing profile should be allowed")
+}
+
 func TestClientConfigTOMLAdditionalProfileFieldsMarshalLikeRaw(t *testing.T) {
 	var blankConfig envconfig.ClientConfig
 	additional := map[string]map[string]any{"foo": {

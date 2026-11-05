@@ -17,6 +17,9 @@ type ClientConfigToTOMLOptions struct {
 	// If non-nil, these additional fields will be serialized with each profile.
 	// Key is profile name, value is map of field name to field value.
 	AdditionalProfileFields map[string]map[string]any
+	// If true, additional profile fields cannot be added to known profile sections unless
+	// those sections are already present in a corresponding ClientConfigProfile.
+	Strict bool
 }
 
 // ToTOML converts the client config to TOML. Note, this may not be byte-for-byte exactly what may have been set in
@@ -31,7 +34,9 @@ func (c *ClientConfig) ToTOML(options ClientConfigToTOMLOptions) ([]byte, error)
 		return nil, err
 	}
 	var rawConf map[string]any
-	if _, err := toml.Decode(buf.String(), &rawConf); err != nil {
+
+	rawConfMD, err := toml.Decode(buf.String(), &rawConf)
+	if err != nil {
 		return nil, err
 	}
 
@@ -54,8 +59,11 @@ func (c *ClientConfig) ToTOML(options ClientConfigToTOMLOptions) ([]byte, error)
 		if err != nil {
 			return nil, err
 		}
+
 		additionalKeys := additionalMD.Keys()
 		conflicts := make(map[string]toml.Key, len(additionalKeys))
+
+		var strictViolations []string
 
 		// Assume everything is a conflict until proven otherwise
 		for _, key := range additionalKeys {
@@ -68,15 +76,22 @@ func (c *ClientConfig) ToTOML(options ClientConfigToTOMLOptions) ([]byte, error)
 		}
 
 		// If there's an additional *nested* field, like profile.default.tls.future, its parent (profile.default.tls) will
-		// show up in keys. As long as that key is a table (or a list of tables), it's not a conflict.
+		// show up in keys. As long as that key is a table (or a list of tables), it's not a conflict, although if the parent
+		// isn't already defined, it won't pass the strictness check
 		for keyName, key := range conflicts {
 			// ext is a special case. Any keys within are intended to be handled solely by extensions. We don't put them in
 			// AdditionalProfileFields when parsing, nor should we merge them here.
 			if isExtKey(key) {
 				continue
 			}
+
 			keyType := additionalMD.Type(key...)
 			if keyType == "Hash" || keyType == "ArrayHash" {
+				// A profile that only contains unmodeled fields is okay
+				if options.Strict && len(key) >= 3 && !rawConfMD.IsDefined(key...) {
+					strictViolations = append(strictViolations, keyName)
+				}
+				// It's possible this key was marked as failing strict checks, but it's not a hard conflict
 				delete(conflicts, keyName)
 			}
 		}
@@ -84,6 +99,12 @@ func (c *ClientConfig) ToTOML(options ClientConfigToTOMLOptions) ([]byte, error)
 		if len(conflicts) > 0 {
 			names := slices.Sorted(maps.Keys(conflicts))
 			return nil, fmt.Errorf("additional field(s) %s conflict with known profile fields", strings.Join(names, ", "))
+		}
+
+		if len(strictViolations) > 0 {
+			slices.Sort(strictViolations)
+			list := strings.Join(strictViolations, ", ")
+			return nil, fmt.Errorf("known section(s) %s are only defined in AdditionalProfileFields; either set them on their profiles or disable strict mode", list)
 		}
 
 		for _, key := range additionalMD.Undecoded() {
@@ -100,6 +121,7 @@ func (c *ClientConfig) ToTOML(options ClientConfigToTOMLOptions) ([]byte, error)
 	if err := enc.Encode(rawConf); err != nil {
 		return nil, err
 	}
+
 	return out.Bytes(), nil
 }
 
