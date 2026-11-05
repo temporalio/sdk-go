@@ -57,7 +57,7 @@ func headerCodecSignalTarget(ctx workflow.Context) error {
 
 func headerCodecWorkflow(ctx workflow.Context, continued bool) ([]string, error) {
 	if !continued {
-		return nil, workflow.NewContinueAsNewError(ctx, headerCodecWorkflow, true)
+		return nil, workflow.NewContinueAsNewErrorWithOptions(ctx, workflow.ContinueAsNewErrorOptions{}, headerCodecWorkflow, true)
 	}
 	if err := workflow.SetUpdateHandler(ctx, "header", func(ctx workflow.Context) (string, error) {
 		return ctx.Value(contextKey(testContextKey1)).(string), nil

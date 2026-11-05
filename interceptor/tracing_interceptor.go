@@ -750,7 +750,7 @@ func (t *tracingWorkflowOutboundInterceptor) SignalExternalWorkflowWithOptions(
 	if !t.root.options.DisableSignalTracing {
 		var span TracerSpan
 		var futErr workflow.Future
-		span, ctx, futErr = t.startNonReplaySpan(ctx, "SignalExternalWorkflow", signalName, false, t.root.workflowHeaderWriter(ctx))
+		span, ctx, futErr = t.startNonReplaySpan(ctx, "SignalExternalWorkflow", signalName, false, t.root.headerWriter(ctx))
 		if futErr != nil {
 			return futErr
 		}
@@ -791,7 +791,7 @@ func (t *tracingWorkflowOutboundInterceptor) SignalChildWorkflowWithOptions(
 	if !t.root.options.DisableSignalTracing {
 		var span TracerSpan
 		var futErr workflow.Future
-		span, ctx, futErr = t.startNonReplaySpan(ctx, "SignalChildWorkflow", signalName, false, t.root.workflowHeaderWriter(ctx))
+		span, ctx, futErr = t.startNonReplaySpan(ctx, "SignalChildWorkflow", signalName, false, t.root.headerWriter(ctx))
 		if futErr != nil {
 			return futErr
 		}
@@ -842,18 +842,14 @@ func (t *tracingWorkflowOutboundInterceptor) NewContinueAsNewErrorWithOptions(
 	wfn any,
 	args ...any,
 ) error {
-	err := t.Next.NewContinueAsNewErrorWithOptions(ctx, options, wfn, args...)
 	if !workflow.IsReplaying(ctx) {
-		if contErr, _ := err.(*workflow.ContinueAsNewError); contErr != nil {
-			// Get the current span and write header
-			if span, _ := ctx.Value(t.root.options.SpanContextKey).(TracerSpan); span != nil {
-				if writeErr := t.root.writeSpanToHeader(span, WorkflowHeader(ctx)); writeErr != nil {
-					return fmt.Errorf("failed writing span when creating continue as new error: %w", writeErr)
-				}
+		if span, _ := ctx.Value(t.root.options.SpanContextKey).(TracerSpan); span != nil {
+			if err := t.root.headerWriter(ctx)(span); err != nil {
+				return fmt.Errorf("failed writing span when creating continue as new error: %w", err)
 			}
 		}
 	}
-	return err
+	return t.Next.NewContinueAsNewErrorWithOptions(ctx, options, wfn, args...)
 }
 
 type nopSpan struct{}

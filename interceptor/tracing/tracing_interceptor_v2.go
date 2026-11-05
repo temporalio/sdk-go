@@ -700,7 +700,7 @@ func (t *tracingWorkflowOutboundInterceptor) SignalExternalWorkflowWithOptions(
 		Operation: "SignalExternalWorkflow",
 		Name:      signalName,
 		Tags:      workflowTags(info),
-	}, t.root.workflowHeaderWriter(t.root.workflowTracer, ctx))
+	}, t.root.headerWriter(t.root.workflowTracer, ctx))
 	if err != nil {
 		return workflowFutureFromErr(ctx, err)
 	}
@@ -741,7 +741,7 @@ func (t *tracingWorkflowOutboundInterceptor) SignalChildWorkflowWithOptions(
 		Operation: "SignalChildWorkflow",
 		Name:      signalName,
 		Tags:      workflowTags(info),
-	}, t.root.workflowHeaderWriter(t.root.workflowTracer, ctx))
+	}, t.root.headerWriter(t.root.workflowTracer, ctx))
 	if err != nil {
 		return workflowFutureFromErr(ctx, err)
 	}
@@ -808,7 +808,7 @@ func (t *tracingWorkflowOutboundInterceptor) NewContinueAsNewErrorWithOptions(
 		Operation: "ContinueAsNew",
 		Name:      info.WorkflowType.Name,
 		Tags:      workflowTags(info),
-	}, t.root.workflowHeaderWriter(t.root.workflowTracer, ctx))
+	}, t.root.headerWriter(t.root.workflowTracer, ctx))
 	if err != nil {
 		return err
 	}
