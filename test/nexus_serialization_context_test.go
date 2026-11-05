@@ -11,6 +11,7 @@ import (
 	enumspb "go.temporal.io/api/enums/v1"
 	nexuspb "go.temporal.io/api/nexus/v1"
 	"go.temporal.io/api/operatorservice/v1"
+	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/workflow"
@@ -98,9 +99,15 @@ func (ts *IntegrationTestSuite) TestNexusSerializationContextPropagation() {
 		{operation: "async-typed-op", workflow: ts.workflows.TemporalOpAsyncTypedCaller},
 		{operation: "async-continue-as-new-op", workflow: ts.workflows.TemporalOpAsyncContinueAsNewCaller},
 		{operation: "async-activity-op", workflow: ts.workflows.TemporalOpAsyncActivityCaller},
+		{operation: "async-update-op", workflow: ts.workflows.TemporalOpAsyncUpdateCaller},
 	} {
 		ts.Run(testCase.operation, func() {
 			input := uuid.NewString()
+			if testCase.operation == "async-update-op" {
+				_, err := ts.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{ID: input, TaskQueue: ts.taskQueueName},
+					ts.workflows.TemporalOpUpdateTarget)
+				ts.Require().NoError(err)
+			}
 			run, err := ts.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
 				ID: "caller-" + input, TaskQueue: ts.taskQueueName, WorkflowTaskTimeout: 10 * time.Second,
 			}, testCase.workflow, input)
@@ -109,7 +116,8 @@ func (ts *IntegrationTestSuite) TestNexusSerializationContextPropagation() {
 			ts.Require().NoError(run.Get(ctx, &result))
 			ts.Equal(input, result)
 			var backingResult string
-			if testCase.operation != "async-activity-op" {
+			switch testCase.operation {
+			case "async-typed-op", "async-continue-as-new-op":
 				ts.Require().NoError(ts.client.GetWorkflow(ctx, input, "").Get(ctx, &backingResult))
 				iter := ts.client.GetWorkflowHistory(ctx, input, "", false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
 				ts.Require().True(iter.HasNext())
@@ -122,11 +130,69 @@ func (ts *IntegrationTestSuite) TestNexusSerializationContextPropagation() {
 					// The server carries the context into the continued run, whose result reaches the caller.
 					ts.NotEmpty(started.GetWorkflowExecutionStartedEventAttributes().GetContinuedExecutionRunId())
 				}
-			}
-			if testCase.operation == "async-activity-op" {
+			case "async-activity-op":
 				handle := ts.client.GetActivityHandle(client.GetActivityHandleOptions{ActivityID: "act-" + input})
 				ts.Require().NoError(handle.Get(ctx, &backingResult))
+			case "async-update-op":
+				handle := ts.client.GetWorkflowUpdateHandle(client.GetWorkflowUpdateHandleOptions{WorkflowID: input, UpdateID: input})
+				ts.Require().NoError(handle.Get(ctx, &backingResult))
 			}
+			ts.Equal(input, backingResult)
+		})
+	}
+
+	// The completing client can't learn the propagated context from the task token, so it passes
+	// the value the activity read from activity.Info. The caller's codec rejects any other context.
+	for _, testCase := range []struct {
+		name     string
+		complete func(info activity.Info, result string) error
+	}{
+		{name: "CompleteActivityWithOptions", complete: func(info activity.Info, result string) error {
+			return ts.client.CompleteActivityWithOptions(ctx, client.CompleteActivityOptions{
+				TaskToken:                 info.TaskToken,
+				Result:                    result,
+				ActivityType:              info.ActivityType.Name,
+				NexusSerializationContext: info.NexusSerializationContext,
+			})
+		}},
+		{name: "CompleteActivityByActivityIDWithOptions", complete: func(info activity.Info, result string) error {
+			return ts.client.CompleteActivityByActivityIDWithOptions(ctx, client.CompleteActivityByActivityIDOptions{
+				Namespace:                 info.Namespace,
+				ActivityID:                info.ActivityID,
+				ActivityRunID:             info.ActivityRunID,
+				Result:                    result,
+				ActivityType:              info.ActivityType.Name,
+				NexusSerializationContext: info.NexusSerializationContext,
+			})
+		}},
+	} {
+		ts.Run("async-completion-activity-op/"+testCase.name, func() {
+			input := uuid.NewString()
+			infoCh := make(chan activity.Info, 1)
+			pendingNexusAsyncCompletions.Store("act-"+input, infoCh)
+			defer pendingNexusAsyncCompletions.Delete("act-" + input)
+			run, err := ts.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
+				ID: "caller-" + input, TaskQueue: ts.taskQueueName, WorkflowTaskTimeout: 10 * time.Second,
+			}, ts.workflows.TemporalOpAsyncCompletionActivityCaller, input)
+			ts.Require().NoError(err)
+
+			var info activity.Info
+			select {
+			case info = <-infoCh:
+			case <-ctx.Done():
+				ts.FailNow("timed out waiting for the activity to start")
+			}
+			ts.Equal(&converter.NexusSerializationContext{
+				Endpoint: endpoint, Service: temporalOpServiceName, Operation: "async-completion-activity-op",
+			}, info.NexusSerializationContext)
+			ts.Require().NoError(testCase.complete(info, input))
+
+			var result string
+			ts.Require().NoError(run.Get(ctx, &result))
+			ts.Equal(input, result)
+			var backingResult string
+			ts.Require().NoError(ts.client.GetActivityHandle(client.GetActivityHandleOptions{ActivityID: "act-" + input}).
+				Get(ctx, &backingResult))
 			ts.Equal(input, backingResult)
 		})
 	}

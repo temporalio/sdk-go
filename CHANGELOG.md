@@ -26,11 +26,23 @@ to docs, or any other relevant information.
 - Added experimental Event Groups support: `workflow.NewEventGroup`, `workflow.WithEventGroups`,
   and `EventGroups` on workflow command options. Update handlers get an implicit group. Signal
   handlers do not.
+- Added client interceptor hooks for `Client.GetWorkflow` (`GetWorkflowRun`),
+  `WorkflowRun.Get`/`GetWithOptions` (`GetWorkflowResult`), and
+  `Client.GetWorkflowHistory`. Handle interception runs before lazy target
+  resolution, allowing workflow IDs to be rewritten before any lookup.
+  Result interception also runs before lazy target resolution, wraps the complete
+  wait including followed runs, and returns the encoded result or workflow error
+  before result decoding; history interception can wrap the lazily fetched iterator.
+- Plugins can report a version in worker heartbeats, with `SimplePluginOptions.Version` or a
+  `Version() string` method on the plugin.
+- `client.WorkflowExecutionDescription` now includes `RawResponse`, the full
+  `workflowservice.DescribeWorkflowExecutionResponse` returned by the server.
 - Added experimental `temporalnexus.ConvertLinkCallbackToNexusLink` and `temporalnexus.ConvertNexusLinkToLinkCallback`
   for converting `Link_Callback` to and from Nexus links.
-- Nexus handlers now propagate `NexusSerializationContext` to the workflows and standalone
-  activities they start. Workflows use it only for their results and failures, which are returned
-  to the caller.
+- Nexus handlers now propagate `NexusSerializationContext` to the workflows, workflow updates, and
+  standalone activities they start, which use it for payloads returned to the Nexus caller: results,
+  failures, and standalone activity heartbeat details. When completing or heartbeating such an
+  activity from a client, pass `activity.Info.NexusSerializationContext` in the options.
 
 ### Changed
 
@@ -42,6 +54,9 @@ to docs, or any other relevant information.
   `temporalnexus.GetClient` keep an independent request ID per call and are not deduplicated.
 
 ### Deprecated
+
+- `client.Client.DescribeWorkflowExecution` is deprecated. Use `DescribeWorkflow` and
+  access its response's `RawResponse` field for the full server response instead.
 
 ### :boom: Breaking Changes
 
@@ -58,6 +73,15 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- Fixed premature activity cancellation on internal heartbeat errors when using a client created
+  with `client.NewClientFromExisting` and the server supports internal error differentiation.
+- Fixed missing `temporal_activity_schedule_to_start_latency` samples for eagerly dispatched activities.
+  Like polled activities, eager activities now record this metric on receipt, including during worker shutdown.
+- Fixed a data race between dynamic workflow factory re-registration and workflow definition lookup
+  in workers and `TestWorkflowEnvironment`.
+- Fixed premature activity cancellation when a heartbeat RPC returns `DeadlineExceeded`.
+  The SDK now preserves Temporal service error codes when deciding whether a heartbeat failure should cancel the activity.
+- Fixed concurrent dev-server CLI downloads failing on Windows when another process has already populated and started the cached executable.
 - `converter.NewRemotePayloadCodec` now handles endpoint URLs with trailing slashes.
 - Fixed race when using `log.With` without a `WithLogger` implementation, where logs could overwrite each others' buffers.
 - The default timeout for client and worker RPCs has been extended. Previously, the default timeout

@@ -40,13 +40,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-intel, macos-arm, windows-latest]
+        os: [ubuntu-latest, macos-arm, windows-latest]
         go-version: ["oldstable", "stable"]
         include:
-          - os: macos-intel
-            runsOn: macos-15-intel
           - os: macos-arm
-            runsOn: macos-14
+            runsOn: macos-15
     permissions:
       contents: read
       checks: write
@@ -91,13 +89,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-intel, macos-arm, windows-latest]
+        os: [ubuntu-latest, macos-arm, windows-latest]
         go-version: ["oldstable", "stable"]
         include:
-          - os: macos-intel
-            runsOn: macos-15-intel
           - os: macos-arm
-            runsOn: macos-14
+            runsOn: macos-15
     permissions:
       contents: read
       checks: write
@@ -142,13 +138,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-intel, macos-arm, windows-latest]
+        os: [ubuntu-latest, macos-arm, windows-latest]
         go-version: ["oldstable", "stable"]
         include:
-          - os: macos-intel
-            runsOn: macos-15-intel
           - os: macos-arm
-            runsOn: macos-14
+            runsOn: macos-15
     permissions:
       contents: read
       checks: write
@@ -357,7 +351,7 @@ jobs:
     name: Required PR Checks
     # Without always(), this job would be skipped when a dependency fails, and GitHub
     # treats a skipped required check as passing.
-    if: always()
+    if: ${{ always() && github.event_name == 'pull_request' }}
     needs:
       - check
       - unit-test

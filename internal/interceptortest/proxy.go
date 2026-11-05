@@ -566,6 +566,32 @@ func (p *proxyClientOutbound) ExecuteWorkflow(
 	return
 }
 
+func (p *proxyClientOutbound) GetWorkflowRun(
+	ctx context.Context,
+	in *interceptor.ClientGetWorkflowRunInput,
+) (ret client.WorkflowRun) {
+	ret, _ = p.invoke(ctx, in)[0].Interface().(client.WorkflowRun)
+	return
+}
+
+func (p *proxyClientOutbound) GetWorkflowResult(
+	ctx context.Context,
+	in *interceptor.ClientGetWorkflowResultInput,
+) (ret *interceptor.ClientGetWorkflowResultOutput, err error) {
+	vals := p.invoke(ctx, in)
+	ret, _ = vals[0].Interface().(*interceptor.ClientGetWorkflowResultOutput)
+	err, _ = vals[1].Interface().(error)
+	return
+}
+
+func (p *proxyClientOutbound) GetWorkflowHistory(
+	ctx context.Context,
+	in *interceptor.ClientGetWorkflowHistoryInput,
+) (ret *interceptor.ClientGetWorkflowHistoryOutput) {
+	ret, _ = p.invoke(ctx, in)[0].Interface().(*interceptor.ClientGetWorkflowHistoryOutput)
+	return
+}
+
 func (p *proxyClientOutbound) SignalWorkflow(
 	ctx context.Context,
 	in *interceptor.ClientSignalWorkflowInput,
