@@ -107,14 +107,14 @@ type (
 		// spread scaling suggestions across a fleet by share rather than by whoever
 		// happens to receive the most tasks. Nil unless the pool is autoscaling, in
 		// which case the pool's autoscaler supplies it -- see newScalablePollerWithTarget.
-		pollerScalingInfo func() *taskqueuepb.PollerScalingInfo
+		pollerPoolInfo func() *taskqueuepb.PollerPoolInfo
 	}
 
-	// pollerScalingInfoReporter is implemented by pollers that can report their pool state
+	// pollerPoolInfoReporter is implemented by pollers that can report their pool state
 	// to the server. Kept off the taskPoller interface so pollers with no pool to report
 	// (local activity, eager) need not implement it.
-	pollerScalingInfoReporter interface {
-		setPollerScalingInfo(func() *taskqueuepb.PollerScalingInfo)
+	pollerPoolInfoReporter interface {
+		setPollerPoolInfo(func() *taskqueuepb.PollerPoolInfo)
 	}
 
 	// numPollerMetric tracks the number of active pollers and publishes a metric on it.
@@ -267,18 +267,18 @@ type (
 	}
 )
 
-func (bp *basePoller) setPollerScalingInfo(f func() *taskqueuepb.PollerScalingInfo) {
-	bp.pollerScalingInfo = f
+func (bp *basePoller) setPollerPoolInfo(f func() *taskqueuepb.PollerPoolInfo) {
+	bp.pollerPoolInfo = f
 }
 
-// getPollerScalingInfo returns the pool state to attach to a poll request, or nil when this
+// getPollerPoolInfo returns the pool state to attach to a poll request, or nil when this
 // poller is not autoscaling. A nil result leaves the field unset, which the server reads as
 // "no report" and excludes the worker from share-based fairness.
-func (bp *basePoller) getPollerScalingInfo() *taskqueuepb.PollerScalingInfo {
-	if bp.pollerScalingInfo == nil {
+func (bp *basePoller) getPollerPoolInfo() *taskqueuepb.PollerPoolInfo {
+	if bp.pollerPoolInfo == nil {
 		return nil
 	}
-	return bp.pollerScalingInfo()
+	return bp.pollerPoolInfo()
 }
 
 func newNumPollerMetric(metricsHandler metrics.Handler, pollerType string) *numPollerMetric {
@@ -1552,7 +1552,7 @@ func (wtp *workflowTaskPoller) getPollRequestForKind(queueKind enumspb.TaskQueue
 		),
 		WorkerInstanceKey:      wtp.workerInstanceKey,
 		WorkerControlTaskQueue: wtp.workerControlTaskQueue,
-		PollerScalingInfo:      wtp.getPollerScalingInfo(),
+		PollerPoolInfo:         wtp.getPollerPoolInfo(),
 	}
 	if wtp.getCapabilities().BuildIdBasedVersioning {
 		//lint:ignore SA1019 ignore deprecated versioning APIs
@@ -1869,7 +1869,7 @@ func (atp *activityTaskPoller) poll(
 		),
 		WorkerInstanceKey:      atp.workerInstanceKey,
 		WorkerControlTaskQueue: atp.workerControlTaskQueue,
-		PollerScalingInfo:      atp.getPollerScalingInfo(),
+		PollerPoolInfo:         atp.getPollerPoolInfo(),
 	}
 
 	request.PollerGroupId = lease.groupIDOrEmpty()

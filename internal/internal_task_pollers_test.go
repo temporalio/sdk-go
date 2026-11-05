@@ -1631,15 +1631,15 @@ func TestAutoscalingPollRequestsCarryCurrentPollerTarget(t *testing.T) {
 		initialPollers = 8
 	)
 
-	var workflowReported, activityReported []*taskqueuepb.PollerScalingInfo
+	var workflowReported, activityReported []*taskqueuepb.PollerPoolInfo
 	service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
 		DoAndReturn(func(_ context.Context, req *workflowservice.PollWorkflowTaskQueueRequest, _ ...grpc.CallOption) (*workflowservice.PollWorkflowTaskQueueResponse, error) {
-			workflowReported = append(workflowReported, req.GetPollerScalingInfo())
+			workflowReported = append(workflowReported, req.GetPollerPoolInfo())
 			return &workflowservice.PollWorkflowTaskQueueResponse{}, nil
 		}).AnyTimes()
 	service.EXPECT().PollActivityTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
 		DoAndReturn(func(_ context.Context, req *workflowservice.PollActivityTaskQueueRequest, _ ...grpc.CallOption) (*workflowservice.PollActivityTaskQueueResponse, error) {
-			activityReported = append(activityReported, req.GetPollerScalingInfo())
+			activityReported = append(activityReported, req.GetPollerPoolInfo())
 			return &workflowservice.PollActivityTaskQueueResponse{}, nil
 		}).AnyTimes()
 
@@ -1724,7 +1724,7 @@ func TestAutoscalingPollRequestsCarryCurrentPollerTarget(t *testing.T) {
 // A fixed-size pool has no target, and leaves the field unset rather than claiming a
 // target of zero: the server reads an unset field as "no report" and excludes the worker
 // from share-based fairness instead of treating it as wanting no pollers.
-func TestFixedSizePollRequestsOmitPollerScalingInfo(t *testing.T) {
+func TestFixedSizePollRequestsOmitPollerPoolInfo(t *testing.T) {
 	t.Parallel()
 
 	ctrl := gomock.NewController(t)
@@ -1732,7 +1732,7 @@ func TestFixedSizePollRequestsOmitPollerScalingInfo(t *testing.T) {
 
 	service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
 		DoAndReturn(func(_ context.Context, req *workflowservice.PollWorkflowTaskQueueRequest, _ ...grpc.CallOption) (*workflowservice.PollWorkflowTaskQueueResponse, error) {
-			require.Nil(t, req.GetPollerScalingInfo())
+			require.Nil(t, req.GetPollerPoolInfo())
 			return &workflowservice.PollWorkflowTaskQueueResponse{}, nil
 		})
 

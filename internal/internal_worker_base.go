@@ -1016,8 +1016,8 @@ func newPollerAutoscaler(options pollerAutoscalerOptions) *pollerAutoscaler {
 // to the server, so scaling suggestions can be spread across a fleet by share rather than
 // landing on whoever happens to receive the most tasks. A fresh message per call keeps
 // requests from sharing mutable state.
-func (prh *pollerAutoscaler) scalingInfo() *taskqueuepb.PollerScalingInfo {
-	return &taskqueuepb.PollerScalingInfo{
+func (prh *pollerAutoscaler) scalingInfo() *taskqueuepb.PollerPoolInfo {
+	return &taskqueuepb.PollerPoolInfo{
 		TargetPollers: int32(prh.target.Load()),
 	}
 }
@@ -1334,8 +1334,8 @@ func newScalablePollerWithTarget(
 		// that holds both the poller and its autoscaler. Pollers whose request has no
 		// field to carry the report -- nexus -- simply never ask for one; they still
 		// report a target on the heartbeat, which baseWorker tracks separately.
-		if reporter, ok := poller.(pollerScalingInfoReporter); ok {
-			reporter.setPollerScalingInfo(tw.pollerAutoscaler.scalingInfo)
+		if reporter, ok := poller.(pollerPoolInfoReporter); ok {
+			reporter.setPollerPoolInfo(tw.pollerAutoscaler.scalingInfo)
 		}
 	case *pollerBehaviorSimpleMaximum:
 		tw.pollerCount = p.maximumNumberOfPollers
