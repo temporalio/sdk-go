@@ -363,23 +363,13 @@ func (s *TimeSkippingScheduleTestSuite) TestScheduleWithPropagationDisabled() {
 	handle := s.createHourlySchedule(ctx, tq, ScheduleTargetWorkflow)
 	defer func() { _ = handle.Delete(ctx) }()
 
-	// DisablePropagation has to ride along on the fast-forward itself: the
-	// server takes a schedule's time-skipping config as a whole, and rejects an
-	// enabled one that carries no bounded fast-forward. So drive it by hand
-	// rather than through FastForwardSchedule.
-	ffID := uuid.NewString()
 	s.NoError(handle.SetTimeSkippingConfig(ctx, client.ScheduleSetTimeSkippingConfigOptions{
-		Config: &client.TimeSkippingConfig{
-			Enabled:            true,
-			DisablePropagation: true,
-			FastForwardConfig:  &client.FastForwardConfig{ID: ffID, Duration: 2 * time.Hour},
-		},
+		Config: &client.TimeSkippingConfig{DisablePropagation: true},
 	}))
-	res, err := timeskipping.PollScheduleFastForward(ctx, handle,
-		timeskipping.SchedulePollFastForwardOptions{FastForwardID: ffID})
+	ok, err := timeskipping.FastForwardSchedule(ctx, handle,
+		timeskipping.ScheduleFastForwardOptions{Duration: 2 * time.Hour})
 	s.NoError(err)
-	s.Empty(res.FailedReason)
-	s.True(res.Completed, "the schedule's own clock should still fast-forward")
+	s.True(ok, "the schedule's own clock should still fast-forward")
 
 	s.waitForScheduleActions(ctx, handle,
 		"expected the schedule to have started a workflow", hasStartedAction)
