@@ -1078,7 +1078,9 @@ func (r *registry) getWorkflowDefinition(wt WorkflowType) (WorkflowDefinition, e
 	}
 	var dynamic bool
 	if d, ok := wf.(string); ok && d == "dynamic" {
+		r.Lock()
 		wf = r.dynamicWorkflow
+		r.Unlock()
 		dynamic = true
 	}
 	// A dynamic workflow may itself be a WorkflowDefinitionFactory (e.g. the
@@ -1278,7 +1280,7 @@ func (ae *activityExecutor) Execute(ctx context.Context, input *commonpb.Payload
 }
 
 func (ae *activityExecutor) ExecuteWithActualArgs(ctx context.Context, args []any) (*commonpb.Payloads, error) {
-	dataConverter := resultDataConverterFromActivityCtx(ctx)
+	dataConverter := callerFacingDataConverterFromActivityCtx(ctx)
 
 	envInterceptor := getActivityEnvironmentInterceptor(ctx)
 	envInterceptor.fn = ae.fn
@@ -1315,11 +1317,12 @@ func getDataConverterFromActivityCtx(ctx context.Context) converter.DataConverte
 	return WithContext(ctx, dataConverter)
 }
 
-// resultDataConverterFromActivityCtx returns the data converter for the activity's result, which is
-// forwarded to the Nexus caller when the activity was started by a Nexus handler. See serializationContextFor.
-func resultDataConverterFromActivityCtx(ctx context.Context) converter.DataConverter {
-	if env := getActivityEnvironmentFromCtx(ctx); env != nil && env.resultDataConverter != nil {
-		return WithContext(ctx, env.resultDataConverter)
+// callerFacingDataConverterFromActivityCtx returns the data converter for payloads that may reach the Nexus
+// caller when the activity was started by a Nexus handler. This includes heartbeat details, since the server
+// includes the last ones in timeout failures. See serializationContextFor.
+func callerFacingDataConverterFromActivityCtx(ctx context.Context) converter.DataConverter {
+	if env := getActivityEnvironmentFromCtx(ctx); env != nil && env.callerFacingDataConverter != nil {
+		return WithContext(ctx, env.callerFacingDataConverter)
 	}
 	return getDataConverterFromActivityCtx(ctx)
 }
@@ -2538,10 +2541,11 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		MaxHeartbeatThrottleInterval:     options.MaxHeartbeatThrottleInterval,
 		cache:                            cache,
 		eagerActivityExecutor: newEagerActivityExecutor(eagerActivityExecutorOptions{
-			disabled:      options.DisableEagerActivities,
-			taskQueue:     taskQueue,
-			maxConcurrent: options.MaxConcurrentEagerActivityExecutionSize,
-			maxPerTask:    *options.MaxEagerActivityReservationsPerWorkflowTask,
+			disabled:       options.DisableEagerActivities,
+			taskQueue:      taskQueue,
+			metricsHandler: metricsHandler,
+			maxConcurrent:  options.MaxConcurrentEagerActivityExecutionSize,
+			maxPerTask:     *options.MaxEagerActivityReservationsPerWorkflowTask,
 		}),
 		capabilities:                     &capabilities,
 		pollTimeTracker:                  &pollTimeTracker{},
@@ -2665,7 +2669,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		hostname, _ := os.Hostname()
 		pid := strconv.Itoa(os.Getpid())
 		var previousHeartbeatTime time.Time
-		pluginInfos := collectPluginInfos(client.clientPluginNames, plugins)
+		pluginInfos := collectPluginInfos(client.clientPlugins, plugins)
 		driverInfos := collectStorageDriverInfos(client.storageDriverTypes)
 
 		var prevWorkflowProcessed, prevWorkflowFailed int64
@@ -3156,21 +3160,22 @@ func getMemUsage(supplier SysInfoProvider, logger log.Logger) float32 {
 	return float32(mem)
 }
 
-// collectPluginInfos collects plugin names from client and worker plugins,
-// deduplicates them, and returns a slice of PluginInfo for heartbeat reporting.
-func collectPluginInfos(clientPluginNames []string, workerPlugins []WorkerPlugin) []*workerpb.PluginInfo {
-	set := make(map[string]struct{}, len(clientPluginNames)+len(workerPlugins))
-	result := make([]*workerpb.PluginInfo, 0, len(clientPluginNames)+len(workerPlugins))
-	for _, name := range clientPluginNames {
-		if _, found := set[name]; !found {
-			set[name] = struct{}{}
-			result = append(result, &workerpb.PluginInfo{Name: name})
+// collectPluginInfos collects plugin names and versions from client and worker
+// plugins, deduplicates them by name, and returns a slice of PluginInfo for
+// heartbeat reporting.
+func collectPluginInfos(clientPlugins []ClientPlugin, workerPlugins []WorkerPlugin) []*workerpb.PluginInfo {
+	set := make(map[string]struct{}, len(clientPlugins)+len(workerPlugins))
+	result := make([]*workerpb.PluginInfo, 0, len(clientPlugins)+len(workerPlugins))
+	for _, plugin := range clientPlugins {
+		if _, found := set[plugin.Name()]; !found {
+			set[plugin.Name()] = struct{}{}
+			result = append(result, &workerpb.PluginInfo{Name: plugin.Name(), Version: pluginVersion(plugin)})
 		}
 	}
 	for _, plugin := range workerPlugins {
 		if _, found := set[plugin.Name()]; !found {
 			set[plugin.Name()] = struct{}{}
-			result = append(result, &workerpb.PluginInfo{Name: plugin.Name()})
+			result = append(result, &workerpb.PluginInfo{Name: plugin.Name(), Version: pluginVersion(plugin)})
 		}
 	}
 
@@ -3179,6 +3184,16 @@ func collectPluginInfos(clientPluginNames []string, workerPlugins []WorkerPlugin
 	})
 
 	return result
+}
+
+// pluginVersion returns the result of the plugin's Version method, if it has
+// one. Version is not on the plugin interfaces because a default on both plugin
+// bases would be ambiguous for plugins that embed both.
+func pluginVersion(plugin any) string {
+	if p, ok := plugin.(interface{ Version() string }); ok {
+		return p.Version()
+	}
+	return ""
 }
 
 func collectStorageDriverInfos(driverTypes []string) []*workerpb.StorageDriverInfo {

@@ -2,6 +2,8 @@ package internal
 
 import (
 	"time"
+
+	sdk "go.temporal.io/api/sdk/v1"
 )
 
 // All code in this file is private to the package.
@@ -21,7 +23,7 @@ type (
 
 		// NewTimer - Creates a new timer that will fire callback after d(resolution is in seconds).
 		// The callback indicates the error(TimerCanceledError) if the timer is canceled.
-		NewTimer(d time.Duration, options TimerOptions, callback ResultHandler) *TimerID
+		NewTimer(d time.Duration, options TimerOptions, eventGroupMarkers []*sdk.EventGroupMarker, callback ResultHandler) *TimerID
 
 		// RequestCancelTimer - Requests cancel of a timer, this one doesn't wait for cancellation request
 		// to complete, instead invokes the ResultHandler with TimerCanceledError

@@ -13,6 +13,7 @@ import (
 
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
+	sdk "go.temporal.io/api/sdk/v1"
 	"go.temporal.io/api/serviceerror"
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc/codes"
@@ -67,13 +68,14 @@ type (
 	}
 
 	ExecuteNexusOperationParams struct {
-		client           NexusClient
-		operation        string
-		input            *commonpb.Payload
-		options          NexusOperationOptions
-		nexusHeader      map[string]string
-		dataConverter    converter.DataConverter
-		failureConverter converter.FailureConverter
+		client            NexusClient
+		operation         string
+		input             *commonpb.Payload
+		options           NexusOperationOptions
+		nexusHeader       map[string]string
+		dataConverter     converter.DataConverter
+		failureConverter  converter.FailureConverter
+		eventGroupMarkers []*sdk.EventGroupMarker
 	}
 )
 
@@ -106,14 +108,14 @@ type (
 		AsyncActivityClient
 		LocalActivityClient
 		WorkflowTimerClient
-		SideEffect(f func() (*commonpb.Payloads, error), callback ResultHandler, summary string)
-		GetVersion(changeID string, minSupported, maxSupported Version) Version
+		SideEffect(f func() (*commonpb.Payloads, error), callback ResultHandler, summary string, eventGroupMarkers []*sdk.EventGroupMarker)
+		GetVersion(changeID string, minSupported, maxSupported Version, eventGroupMarkers []*sdk.EventGroupMarker) Version
 		WorkflowInfo() *WorkflowInfo
 		TypedSearchAttributes() SearchAttributes
 		Complete(result *commonpb.Payloads, err error)
 		RegisterCancelHandler(handler func())
 		RequestCancelChildWorkflow(namespace, workflowID string)
-		RequestCancelExternalWorkflow(namespace, workflowID, runID string, callback ResultHandler)
+		RequestCancelExternalWorkflow(namespace, workflowID, runID string, eventGroupMarkers []*sdk.EventGroupMarker, callback ResultHandler)
 		ExecuteChildWorkflow(params ExecuteWorkflowParams, callback ResultHandler, startedHandler func(r WorkflowExecution, e error))
 		ExecuteNexusOperation(params ExecuteNexusOperationParams, callback func(*commonpb.Payload, error), startedHandler func(token string, e error)) int64
 		RequestCancelNexusOperation(seq int64)
@@ -133,6 +135,7 @@ type (
 			arg any,
 			header *commonpb.Header,
 			childWorkflowOnly bool,
+			eventGroupMarkers []*sdk.EventGroupMarker,
 			callback ResultHandler,
 		)
 		RegisterQueryHandler(
@@ -142,15 +145,15 @@ type (
 			handler func(string, string, *commonpb.Payloads, *commonpb.Header, UpdateCallbacks),
 		)
 		IsReplaying() bool
-		MutableSideEffect(id string, f func() any, equals func(a, b any) bool, summary string) converter.EncodedValue
+		MutableSideEffect(id string, f func() any, equals func(a, b any) bool, summary string, eventGroupMarkers []*sdk.EventGroupMarker) converter.EncodedValue
 		GetDataConverter() converter.DataConverter
 		GetFailureConverter() converter.FailureConverter
 		AddSession(sessionInfo *SessionInfo)
 		RemoveSession(sessionID string)
 		GetContextPropagators() []ContextPropagator
-		UpsertSearchAttributes(attributes map[string]any) error
-		UpsertTypedSearchAttributes(attributes SearchAttributes) error
-		UpsertMemo(memoMap map[string]any) error
+		UpsertSearchAttributes(attributes map[string]any, eventGroupMarkers []*sdk.EventGroupMarker) error
+		UpsertTypedSearchAttributes(attributes SearchAttributes, eventGroupMarkers []*sdk.EventGroupMarker) error
+		UpsertMemo(memoMap map[string]any, eventGroupMarkers []*sdk.EventGroupMarker) error
 		GetRegistry() *registry
 		// QueueUpdate request of type name
 		QueueUpdate(name string, f func())

@@ -18,7 +18,7 @@ import (
 
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
-	"go.temporal.io/api/sdk/v1"
+	sdk "go.temporal.io/api/sdk/v1"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
@@ -206,6 +206,7 @@ type (
 		ParentClosePolicy        enumspb.ParentClosePolicy
 		StaticSummary            string
 		StaticDetails            string
+		eventGroups              []EventGroup
 		signalChannels           map[string]Channel
 		requestedSignalChannels  map[string]*requestedSignalChannel
 		queryHandlers            map[string]*queryHandler
@@ -231,6 +232,7 @@ type (
 		attempt              int32                      // used by test framework to support child workflow retry
 		scheduledTime        time.Time                  // used by test framework to support child workflow retry
 		lastCompletionResult *commonpb.Payloads         // used by test framework to support cron
+		EventGroupMarkers    []*sdk.EventGroupMarker
 	}
 
 	// decodeFutureImpl
@@ -488,6 +490,19 @@ func (f *childWorkflowFutureImpl) SignalChildWorkflow(ctx Context, signalName st
 	// Put header on context before executing
 	ctx = workflowContextWithNewHeader(ctx)
 	return i.SignalChildWorkflow(ctx, childExec.ID, signalName, data)
+}
+
+func (f *childWorkflowFutureImpl) SignalChildWorkflowWithOptions(ctx Context, signalName string, data any, options SignalChildWorkflowOptions) Future {
+	assertNotInReadOnlyState(ctx)
+	var childExec WorkflowExecution
+	if err := f.GetChildWorkflowExecution().Get(ctx, &childExec); err != nil {
+		return f.GetChildWorkflowExecution()
+	}
+
+	i := getWorkflowOutboundInterceptor(ctx)
+	// Put header on context before executing
+	ctx = workflowContextWithNewHeader(ctx)
+	return i.SignalChildWorkflowWithOptions(ctx, childExec.ID, signalName, data, options)
 }
 
 func (f *nexusOperationFutureImpl) GetNexusOperationExecution() Future {
