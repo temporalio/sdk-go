@@ -82,6 +82,11 @@ func (c *Checker) debugf(f string, v ...interface{}) {
 func (c *Checker) Run(pass *analysis.Pass) (PackageNonDeterminisms, error) {
 	c.debugf("Checking package %v", pass.Pkg.Path())
 
+	// The analysis driver needs a source file when logging exported facts.
+	if len(pass.Files) == 0 {
+		return PackageNonDeterminisms{}, nil
+	}
+
 	// Collect all top-level func decls and their types. Also mark var decls as
 	// non-deterministic if pattern matches.
 	funcDecls := map[*types.Func]*ast.FuncDecl{}
