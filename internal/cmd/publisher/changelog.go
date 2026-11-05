@@ -72,6 +72,26 @@ func validateChangelog(text string, oldVersion *semver) error {
 	return nil
 }
 
+// pendingChangelogVersion returns the highest changelog version newer than the latest
+// stable tag, or nil if no release has been prepared.
+func pendingChangelogVersion(text string, oldVersion *semver) *semver {
+	var pending *semver
+	for _, line := range strings.Split(text, "\n") {
+		match := changelogHeadingRE.FindStringSubmatch(line)
+		if match == nil {
+			continue
+		}
+		version, err := parseVersion(match[1])
+		if err != nil || (oldVersion != nil && slices.Compare(version[:], oldVersion[:]) <= 0) {
+			continue
+		}
+		if pending == nil || slices.Compare(version[:], pending[:]) > 0 {
+			pending = &version
+		}
+	}
+	return pending
+}
+
 // computeNewChangelog moves Unreleased entries into a dated version section and reseeds
 // the Unreleased section.
 func computeNewChangelog(text string, version semver, releaseDate time.Time) (string, error) {

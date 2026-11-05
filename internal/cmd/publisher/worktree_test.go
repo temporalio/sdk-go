@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // A misspelled module directory has no go.mod, which is what stops the tool from
@@ -15,9 +16,10 @@ func TestValidateReleaseRejectsUnknownContribModule(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a, eff := newMockApp(app{target: target, version: semver{1, 0, 3}}, nil)
+	release := releaseSpec{target: target, version: semver{1, 0, 3}}
+	a, eff := newMockApp(app{}, nil)
 
-	err = a.worktreeAt(eff.tempDir, "").validateEverything()
+	err = a.worktreeAt(eff.tempDir, "").validateEverything(release, "pr")
 	missing := filepath.Join(eff.tempDir, "contrib", "envconfg", "go.mod")
 	if err == nil || !strings.Contains(err.Error(), missing) {
 		t.Fatalf("expected an error naming %s, got %v", missing, err)
@@ -33,11 +35,12 @@ func TestValidateReleaseRejectsUnknownContribModule(t *testing.T) {
 // A directory holding some other module would otherwise be released under the wrong tag.
 func TestValidateReleaseRejectsMismatchedModulePath(t *testing.T) {
 	target := contribEnvconfig(t)
-	a, eff := newMockApp(app{target: target, version: semver{1, 0, 3}}, nil)
+	release := releaseSpec{target: target, version: semver{1, 0, 3}}
+	a, eff := newMockApp(app{}, nil)
 	eff.files[filepath.Join(eff.tempDir, "contrib", "envconfig", "go.mod")] =
 		"module go.temporal.io/sdk/contrib/tally\nrequire go.temporal.io/sdk v1.48.0\n"
 
-	err := a.worktreeAt(eff.tempDir, "").validateEverything()
+	err := a.worktreeAt(eff.tempDir, "").validateEverything(release, "pr")
 	if err == nil || !strings.Contains(err.Error(), `declares module "go.temporal.io/sdk/contrib/tally", expected "go.temporal.io/sdk/contrib/envconfig"`) {
 		t.Fatalf("expected module path mismatch error, got %v", err)
 	}
@@ -45,13 +48,14 @@ func TestValidateReleaseRejectsMismatchedModulePath(t *testing.T) {
 
 // A contrib module cannot be released against an unreleased SDK.
 func TestValidateReleaseRejectsUnreleasedSDKDependency(t *testing.T) {
-	a, eff := newMockApp(app{target: contribEnvconfig(t), version: semver{1, 0, 3}}, nil)
+	release := releaseSpec{target: contribEnvconfig(t), version: semver{1, 0, 3}}
+	a, eff := newMockApp(app{}, nil)
 	eff.files[filepath.Join(eff.tempDir, "contrib", "envconfig", "go.mod")] = stripIndentation(`
 		module go.temporal.io/sdk/contrib/envconfig
 		require go.temporal.io/sdk v1.48.1-0.20260804123456-abcdef123456
 	`)
 
-	err := a.worktreeAt(eff.tempDir, "").validateEverything()
+	err := a.worktreeAt(eff.tempDir, "").validateEverything(release, "pr")
 	if err == nil || !strings.Contains(err.Error(), "go.temporal.io/sdk must use an official release") {
 		t.Fatalf("expected dependency validation error, got %v", err)
 	}
@@ -62,7 +66,8 @@ func TestValidateReleaseRejectsUnpublishedSiblingRequirement(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a, eff := newMockApp(app{target: target, version: semver{0, 2, 2}}, nil)
+	release := releaseSpec{target: target, version: semver{0, 2, 2}}
+	a, eff := newMockApp(app{}, nil)
 	eff.moduleLookupHandler = func(modulePath, version string) (bool, error) {
 		return version != "v0.0.0", nil
 	}
@@ -77,7 +82,7 @@ func TestValidateReleaseRejectsUnpublishedSiblingRequirement(t *testing.T) {
 		replace go.temporal.io/sdk/contrib/aws/s3driver => ../
 	`)
 
-	err = a.worktreeAt(eff.tempDir, "").validateEverything()
+	err = a.worktreeAt(eff.tempDir, "").validateEverything(release, "pr")
 	if err == nil || !strings.Contains(err.Error(), "go.temporal.io/sdk/contrib/aws/s3driver v0.0.0 is not published") {
 		t.Fatalf("expected unpublished sibling error, got %v", err)
 	}
@@ -87,7 +92,8 @@ func TestValidateReleaseRejectsUnpublishedSiblingRequirement(t *testing.T) {
 }
 
 func TestValidateReleasePropagatesProxyFailure(t *testing.T) {
-	a, eff := newMockApp(app{target: contribEnvconfig(t), version: semver{1, 0, 3}}, nil)
+	release := releaseSpec{target: contribEnvconfig(t), version: semver{1, 0, 3}}
+	a, eff := newMockApp(app{}, nil)
 	eff.moduleLookupHandler = func(string, string) (bool, error) {
 		return false, errors.New("proxy unreachable")
 	}
@@ -96,7 +102,7 @@ func TestValidateReleasePropagatesProxyFailure(t *testing.T) {
 		require go.temporal.io/sdk v1.48.0
 	`)
 
-	err := a.worktreeAt(eff.tempDir, "").validateEverything()
+	err := a.worktreeAt(eff.tempDir, "").validateEverything(release, "pr")
 	if err == nil || !strings.Contains(err.Error(), "proxy unreachable") {
 		t.Fatalf("expected the proxy error to be propagated, got %v", err)
 	}
@@ -113,7 +119,8 @@ func TestValidateReleaseRejectsNonIncreasingVersion(t *testing.T) {
 		)
 	`)
 
-	a, eff := newMockApp(app{target: sdkTarget(), version: semver{1, 47, 0}}, func(cmd string) (string, error) {
+	release := releaseSpec{target: sdkTarget(), version: semver{1, 47, 0}}
+	a, eff := newMockApp(app{}, func(cmd string) (string, error) {
 		if cmd == "git tag --list v*" {
 			return "v1.47.0\n", nil
 		}
@@ -123,7 +130,7 @@ func TestValidateReleaseRejectsNonIncreasingVersion(t *testing.T) {
 	eff.files[filepath.Join(eff.tempDir, "go.mod")] = goMod
 	eff.files[filepath.Join(eff.tempDir, "internal", "version.go")] = versionGo
 
-	err := a.worktreeAt(eff.tempDir, "").validateEverything()
+	err := a.worktreeAt(eff.tempDir, "").validateEverything(release, "pr")
 	if err == nil || !strings.Contains(err.Error(), "does not follow the current version 1.47.0") {
 		t.Fatalf("expected version increase error, got %v", err)
 	}
@@ -135,7 +142,8 @@ func TestValidateReleaseRejectsNonIncreasingVersion(t *testing.T) {
 // The SDK's version constant is a second, independent record of the current
 // version. If it disagrees with the tags, one of them is wrong.
 func TestValidateReleaseRejectsStaleVersionConstant(t *testing.T) {
-	a, eff := newMockApp(app{target: sdkTarget(), version: semver{1, 48, 0}}, func(cmd string) (string, error) {
+	release := releaseSpec{target: sdkTarget(), version: semver{1, 48, 0}}
+	a, eff := newMockApp(app{}, func(cmd string) (string, error) {
 		if cmd == "git tag --list v*" {
 			return "v1.46.0\nv1.47.0\n", nil
 		}
@@ -144,8 +152,8 @@ func TestValidateReleaseRejectsStaleVersionConstant(t *testing.T) {
 	eff.files[filepath.Join(eff.tempDir, "go.mod")] = "module go.temporal.io/sdk\n"
 	eff.files[filepath.Join(eff.tempDir, "internal", "version.go")] = `SDKVersion = "1.45.0"`
 
-	err := a.worktreeAt(eff.tempDir, "").validateEverything()
-	if err == nil || !strings.Contains(err.Error(), "internal/version.go declares version 1.45.0, but the latest release tag is v1.47.0") {
+	err := a.worktreeAt(eff.tempDir, "").validateEverything(release, "pr")
+	if err == nil || !strings.Contains(err.Error(), "internal/version.go declares version 1.45.0, expected 1.47.0") {
 		t.Fatalf("expected version constant mismatch error, got %v", err)
 	}
 }
@@ -153,18 +161,20 @@ func TestValidateReleaseRejectsStaleVersionConstant(t *testing.T) {
 // Without tags there is nothing to check the new version against, so an SDK
 // release must not proceed as if the module had never been released.
 func TestValidateReleaseRejectsMissingSDKTags(t *testing.T) {
-	a, eff := newMockApp(app{target: sdkTarget(), version: semver{1, 48, 0}}, nil)
+	release := releaseSpec{target: sdkTarget(), version: semver{1, 48, 0}}
+	a, eff := newMockApp(app{}, nil)
 	eff.files[filepath.Join(eff.tempDir, "go.mod")] = "module go.temporal.io/sdk\n"
 	eff.files[filepath.Join(eff.tempDir, "internal", "version.go")] = `SDKVersion = "1.47.0"`
 
-	err := a.worktreeAt(eff.tempDir, "").validateEverything()
+	err := a.worktreeAt(eff.tempDir, "").validateEverything(release, "pr")
 	if err == nil || !strings.Contains(err.Error(), `internal/version.go declares version 1.47.0, but no release tags match "v*"`) {
 		t.Fatalf("expected missing tag error, got %v", err)
 	}
 }
 
 func TestValidateReleaseRejectsAlreadyReleasedVersion(t *testing.T) {
-	a, eff := newMockApp(app{target: contribEnvconfig(t), version: semver{1, 0, 3}}, func(cmd string) (string, error) {
+	release := releaseSpec{target: contribEnvconfig(t), version: semver{1, 0, 3}}
+	a, eff := newMockApp(app{}, func(cmd string) (string, error) {
 		if cmd == "git tag --list contrib/envconfig/v*" {
 			return "contrib/envconfig/v1.0.2\ncontrib/envconfig/v1.0.3\n", nil
 		}
@@ -175,7 +185,7 @@ func TestValidateReleaseRejectsAlreadyReleasedVersion(t *testing.T) {
 		require go.temporal.io/sdk v1.48.0
 	`)
 
-	err := a.worktreeAt(eff.tempDir, "").validateEverything()
+	err := a.worktreeAt(eff.tempDir, "").validateEverything(release, "pr")
 	if err == nil || !strings.Contains(err.Error(), "does not follow the current version 1.0.3") {
 		t.Fatalf("expected already-released error, got %v", err)
 	}
@@ -183,7 +193,8 @@ func TestValidateReleaseRejectsAlreadyReleasedVersion(t *testing.T) {
 
 // Contrib modules carry no version constant, so their current version comes from tags.
 func TestValidateReleaseUsesTagsForContribVersion(t *testing.T) {
-	a, eff := newMockApp(app{target: contribEnvconfig(t), version: semver{1, 0, 3}}, func(cmd string) (string, error) {
+	release := releaseSpec{target: contribEnvconfig(t), version: semver{1, 0, 3}}
+	a, eff := newMockApp(app{}, func(cmd string) (string, error) {
 		if cmd == "git tag --list contrib/envconfig/v*" {
 			// Out of order, and including a nested module's tags.
 			return "contrib/envconfig/v1.0.2\ncontrib/envconfig/v0.1.0\ncontrib/envconfig/v1.0.0\n", nil
@@ -198,7 +209,7 @@ func TestValidateReleaseUsesTagsForContribVersion(t *testing.T) {
 		"## [Unreleased]\n\n## [1.0.2] - 2026-07-28\n"
 
 	w := a.worktreeAt(eff.tempDir, "")
-	err := w.validateEverything()
+	err := w.validateEverything(release, "pr")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -206,8 +217,8 @@ func TestValidateReleaseUsesTagsForContribVersion(t *testing.T) {
 		      $ git tag --list contrib/envconfig/v*
 	`)
 
-	w.version = semver{1, 2, 0}
-	err = w.validateEverything()
+	release.version = semver{1, 2, 0}
+	err = w.validateEverything(release, "pr")
 	if err == nil || !strings.Contains(err.Error(), "does not follow the current version 1.0.2") {
 		t.Fatalf("expected version increase error, got %v", err)
 	}
@@ -215,7 +226,8 @@ func TestValidateReleaseUsesTagsForContribVersion(t *testing.T) {
 
 // An untagged contrib module has no previous release section to validate against.
 func TestValidateReleaseAllowsFirstContribRelease(t *testing.T) {
-	a, eff := newMockApp(app{target: contribEnvconfig(t), version: semver{0, 1, 0}}, nil)
+	release := releaseSpec{target: contribEnvconfig(t), version: semver{0, 1, 0}}
+	a, eff := newMockApp(app{}, nil)
 	eff.files[filepath.Join(eff.tempDir, "contrib", "envconfig", "go.mod")] = stripIndentation(`
 		module go.temporal.io/sdk/contrib/envconfig
 		require go.temporal.io/sdk v1.48.0
@@ -223,7 +235,7 @@ func TestValidateReleaseAllowsFirstContribRelease(t *testing.T) {
 	eff.files[filepath.Join(eff.tempDir, "contrib", "envconfig", "CHANGELOG.md")] = "## [Unreleased]\n"
 
 	w := a.worktreeAt(eff.tempDir, "")
-	err := w.validateEverything()
+	err := w.validateEverything(release, "pr")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,8 +243,8 @@ func TestValidateReleaseAllowsFirstContribRelease(t *testing.T) {
 		      $ git tag --list contrib/envconfig/v*
 	`)
 
-	w.version = semver{0, 4, 0}
-	err = w.validateEverything()
+	release.version = semver{0, 4, 0}
+	err = w.validateEverything(release, "pr")
 	if err != nil {
 		t.Fatalf("expected a release without a prior version to be valid, got %v", err)
 	}
@@ -242,7 +254,8 @@ func TestValidateReleaseAllowsFirstContribRelease(t *testing.T) {
 // they record no history at all. That must not block the next release, which is the
 // very thing that starts the history.
 func TestValidateReleaseAllowsContribChangelogWithoutHistory(t *testing.T) {
-	a, eff := newMockApp(app{target: contribEnvconfig(t), version: semver{1, 0, 3}}, func(cmd string) (string, error) {
+	release := releaseSpec{target: contribEnvconfig(t), version: semver{1, 0, 3}}
+	a, eff := newMockApp(app{}, func(cmd string) (string, error) {
 		if cmd == "git tag --list contrib/envconfig/v*" {
 			return "contrib/envconfig/v1.0.0\ncontrib/envconfig/v1.0.1\ncontrib/envconfig/v1.0.2\n", nil
 		}
@@ -262,14 +275,15 @@ func TestValidateReleaseAllowsContribChangelogWithoutHistory(t *testing.T) {
 		- Raised the minimum supported Go version.
 	`)
 
-	err := a.worktreeAt(eff.tempDir, "").validateEverything()
+	err := a.worktreeAt(eff.tempDir, "").validateEverything(release, "pr")
 	if err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestValidateReleaseRejectsInvalidChangelog(t *testing.T) {
-	a, eff := newMockApp(app{target: sdkTarget(), version: semver{1, 48, 0}}, func(cmd string) (string, error) {
+	release := releaseSpec{target: sdkTarget(), version: semver{1, 48, 0}}
+	a, eff := newMockApp(app{}, func(cmd string) (string, error) {
 		if cmd == "git tag --list v*" {
 			return "v1.47.0\n", nil
 		}
@@ -279,9 +293,119 @@ func TestValidateReleaseRejectsInvalidChangelog(t *testing.T) {
 	eff.files[filepath.Join(eff.tempDir, "internal", "version.go")] = `SDKVersion = "1.47.0"`
 	eff.files[filepath.Join(eff.tempDir, "CHANGELOG.md")] = "## [Unreleased]\n\n## [1.47.0]\n\n## [1.46.0]\n\n## [1.46.0]\n"
 
-	err := a.worktreeAt(eff.tempDir, "").validateEverything()
+	err := a.worktreeAt(eff.tempDir, "").validateEverything(release, "pr")
 	if err == nil || !strings.Contains(err.Error(), `found 2 sections for "1.46.0"`) {
 		t.Fatalf("expected duplicate changelog section error, got %v", err)
+	}
+}
+
+func TestLintRelease(t *testing.T) {
+	tests := []struct {
+		name        string
+		changelog   string
+		goMod       string
+		oldVersion  *semver
+		wantVersion semver
+		wantCommand string
+		wantErr     string
+	}{
+		{
+			name:        "minor suggestion",
+			changelog:   "## [Unreleased]\n\n- A fix.\n",
+			oldVersion:  &semver{1, 0, 2},
+			wantVersion: semver{1, 1, 0},
+			wantCommand: "pr",
+		},
+		{
+			name:        "first release suggestion",
+			changelog:   "## [Unreleased]\n\n- A feature.\n",
+			wantVersion: semver{0, 1, 0},
+			wantCommand: "pr",
+		},
+		{
+			name:        "prepared minor release",
+			changelog:   "## [Unreleased]\n\n## [1.1.0]\n\n- A feature.\n",
+			oldVersion:  &semver{1, 0, 2},
+			wantVersion: semver{1, 1, 0},
+			wantCommand: "release",
+		},
+		{
+			name:        "prepared first release",
+			changelog:   "## [Unreleased]\n\n## [0.1.0]\n\n- A feature.\n",
+			wantVersion: semver{0, 1, 0},
+			wantCommand: "release",
+		},
+		{
+			name:        "missing changelog",
+			oldVersion:  &semver{1, 0, 2},
+			wantVersion: semver{1, 1, 0},
+			wantCommand: "pr",
+			wantErr:     "CHANGELOG.md",
+		},
+		{
+			name:        "empty Unreleased",
+			changelog:   "## [Unreleased]\n\n### Fixed\n",
+			oldVersion:  &semver{1, 0, 2},
+			wantVersion: semver{1, 1, 0},
+			wantCommand: "pr",
+			wantErr:     "appears to be empty",
+		},
+		{
+			name:        "empty prepared release",
+			changelog:   "## [Unreleased]\n\n## [1.0.3]\n",
+			oldVersion:  &semver{1, 0, 2},
+			wantVersion: semver{1, 0, 3},
+			wantCommand: "release",
+			wantErr:     "appears to be empty",
+		},
+		{
+			name:        "invalid prepared increment",
+			changelog:   "## [Unreleased]\n\n## [1.0.5]\n\n- A fix.\n",
+			oldVersion:  &semver{1, 0, 2},
+			wantVersion: semver{1, 0, 5},
+			wantCommand: "release",
+			wantErr:     "does not follow",
+		},
+		{
+			name:        "unpublished dependency",
+			changelog:   "## [Unreleased]\n\n## [1.0.3]\n\n- A fix.\n",
+			goMod:       "module go.temporal.io/sdk/contrib/envconfig\nrequire go.temporal.io/sdk v1.48.0\n",
+			oldVersion:  &semver{1, 0, 2},
+			wantVersion: semver{1, 0, 3},
+			wantCommand: "release",
+			wantErr:     "not published",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			target := contribEnvconfig(t)
+			a, eff := newMockApp(app{}, func(cmd string) (string, error) {
+				if cmd == "git tag --list contrib/envconfig/v*" && test.oldVersion != nil {
+					return target.tag(*test.oldVersion) + "\n", nil
+				}
+				return "", nil
+			})
+			eff.moduleLookupHandler = func(string, string) (bool, error) { return false, nil }
+			goMod := test.goMod
+			if goMod == "" {
+				goMod = "module go.temporal.io/sdk/contrib/envconfig\n"
+			}
+			eff.files[filepath.Join(eff.tempDir, "contrib", "envconfig", "go.mod")] = goMod
+			if test.changelog != "" {
+				eff.files[filepath.Join(eff.tempDir, "contrib", "envconfig", "CHANGELOG.md")] = test.changelog
+			}
+
+			release, command, err := a.worktreeAt(eff.tempDir, "").lintRelease(releaseCandidate{target: target, oldVersion: test.oldVersion})
+			if test.wantErr == "" && err != nil {
+				t.Fatal(err)
+			}
+			if test.wantErr != "" && (err == nil || !strings.Contains(err.Error(), test.wantErr)) {
+				t.Fatalf("expected error containing %q, got %v", test.wantErr, err)
+			}
+			if release.target != target || release.version != test.wantVersion || command != test.wantCommand {
+				t.Fatalf("unexpected lint result: got %v %s, want %v %s", release, command, test.wantVersion, test.wantCommand)
+			}
+		})
 	}
 }
 
@@ -304,27 +428,29 @@ func TestListTags(t *testing.T) {
 }
 
 func TestCommitRelease(t *testing.T) {
-	a, eff := newMockApp(app{target: sdkTarget(), version: semver{1, 2, 3}}, nil)
+	release := releaseSpec{target: sdkTarget(), version: semver{1, 2, 3}}
+	a, eff := newMockApp(app{releaseDate: time.Date(2026, time.August, 4, 0, 0, 0, 0, time.UTC)}, nil)
 
-	err := a.worktreeAt("/worktree", "").commitRelease()
+	err := a.worktreeAt("/worktree", "").commitRelease([]releaseSpec{release})
 	if err != nil {
 		t.Fatal(err)
 	}
 	testEqual(t, eff.commands.String(), `
-		/worktree: git commit -m "Prepare release 1.2.3" -- CHANGELOG.md internal/version.go
+		/worktree: git commit -m "Prepare release 2026-08-04\n\n.=1.2.3" -- CHANGELOG.md internal/version.go
 	`)
 }
 
 // Contrib releases only update their CHANGELOG.md, not internal/version.go
 func TestCommitReleaseForContribModule(t *testing.T) {
-	a, eff := newMockApp(app{target: contribEnvconfig(t), version: semver{1, 2, 3}}, nil)
+	release := releaseSpec{target: contribEnvconfig(t), version: semver{1, 2, 3}}
+	a, eff := newMockApp(app{releaseDate: time.Date(2026, time.August, 4, 0, 0, 0, 0, time.UTC)}, nil)
 
-	err := a.worktreeAt("/worktree", "").commitRelease()
+	err := a.worktreeAt("/worktree", "").commitRelease([]releaseSpec{release})
 	if err != nil {
 		t.Fatal(err)
 	}
 	testEqual(t, eff.commands.String(), `
-		/worktree: git commit -m "Prepare contrib/envconfig release 1.2.3" -- contrib/envconfig/CHANGELOG.md
+		/worktree: git commit -m "Prepare release 2026-08-04\n\ncontrib/envconfig=1.2.3" -- contrib/envconfig/CHANGELOG.md
 	`)
 }
 
@@ -341,59 +467,62 @@ func TestPushBranch(t *testing.T) {
 }
 
 func TestOpenDraftPR(t *testing.T) {
-	a, eff := newMockApp(app{target: sdkTarget(), version: semver{1, 2, 3}}, func(cmd string) (string, error) {
-		if cmd == `gh pr create --draft --base main --head release --label skip-changelog --title "Prepare release 1.2.3" --body "Prepare release 1.2.3"` {
+	release := releaseSpec{target: sdkTarget(), version: semver{1, 2, 3}}
+	a, eff := newMockApp(app{releaseDate: time.Date(2026, time.August, 4, 0, 0, 0, 0, time.UTC)}, func(cmd string) (string, error) {
+		if cmd == `gh pr create --draft --base main --head release --label skip-changelog --title "Prepare release 2026-08-04" --body .=1.2.3` {
 			return "https://example.com/pr\n", nil
 		}
 		return "", nil
 	})
 
-	_, err := a.worktreeAt("/worktree", "release").openDraftPR()
+	_, err := a.worktreeAt("/worktree", "release").openDraftPR([]releaseSpec{release})
 	if err != nil {
 		t.Fatal(err)
 	}
 	testEqual(t, eff.output.String(), `
-		      $ gh pr create --draft --base main --head release --label skip-changelog --title "Prepare release 1.2.3" --body "Prepare release 1.2.3"
+		      $ gh pr create --draft --base main --head release --label skip-changelog --title "Prepare release 2026-08-04" --body .=1.2.3
 		      Draft PR: https://example.com/pr
 	`)
 }
 
 func TestOpenDraftPRForContribModule(t *testing.T) {
-	a, eff := newMockApp(app{target: contribEnvconfig(t), version: semver{1, 2, 3}}, func(cmd string) (string, error) {
-		if cmd == `gh pr create --draft --base main --head release --label skip-changelog --title "Prepare contrib/envconfig release 1.2.3" --body "Prepare contrib/envconfig release 1.2.3"` {
+	release := releaseSpec{target: contribEnvconfig(t), version: semver{1, 2, 3}}
+	a, eff := newMockApp(app{releaseDate: time.Date(2026, time.August, 4, 0, 0, 0, 0, time.UTC)}, func(cmd string) (string, error) {
+		if cmd == `gh pr create --draft --base main --head release --label skip-changelog --title "Prepare release 2026-08-04" --body contrib/envconfig=1.2.3` {
 			return "https://example.com/pr\n", nil
 		}
 		return "", nil
 	})
 
-	_, err := a.worktreeAt("/worktree", "release").openDraftPR()
+	_, err := a.worktreeAt("/worktree", "release").openDraftPR([]releaseSpec{release})
 	if err != nil {
 		t.Fatal(err)
 	}
 	testEqual(t, eff.output.String(), `
-		      $ gh pr create --draft --base main --head release --label skip-changelog --title "Prepare contrib/envconfig release 1.2.3" --body "Prepare contrib/envconfig release 1.2.3"
+		      $ gh pr create --draft --base main --head release --label skip-changelog --title "Prepare release 2026-08-04" --body contrib/envconfig=1.2.3
 		      Draft PR: https://example.com/pr
 	`)
 }
 
 func TestCreateDraftRelease(t *testing.T) {
-	a, eff := newMockApp(app{target: sdkTarget(), version: semver{1, 2, 3}}, func(cmd string) (string, error) {
-		if cmd == "gh release create v1.2.3 --draft --title v1.2.3 --notes-file /worktree/prepare-release-notes.md --generate-notes" {
+	release := releaseSpec{target: sdkTarget(), version: semver{1, 2, 3}}
+	a, eff := newMockApp(app{}, func(cmd string) (string, error) {
+		if cmd == "gh release create v1.2.3 --draft --target abc123 --title v1.2.3 --notes-file /worktree/prepare-release-notes.md --generate-notes" {
 			return "https://example.com/release\n", nil
 		}
 		return "", nil
 	})
 
-	_, err := a.worktreeAt("/worktree", "").createDraftRelease("Notes")
+	_, err := a.worktreeAt("/worktree", "").createDraftRelease(release, "abc123", "## Highlights\n\nNotes\n")
 	if err != nil {
 		t.Fatal(err)
 	}
 	testEqual(t, eff.output.String(), `
 		      Release notes: /worktree/prepare-release-notes.md
-		      $ gh release create v1.2.3 --draft --title v1.2.3 --notes-file /worktree/prepare-release-notes.md --generate-notes
+		      $ gh release create v1.2.3 --draft --target abc123 --title v1.2.3 --notes-file /worktree/prepare-release-notes.md --generate-notes
 		      Draft release: https://example.com/release
 	`)
-	testEqual(t, eff.files[filepath.Join("/worktree", "prepare-release-notes.md")], "Notes")
+	testEqual(t, eff.files[filepath.Join("/worktree", "prepare-release-notes.md")], "## Highlights\n\nNotes\n")
 }
 
 // Contrib releases differ from main releases in three ways:
@@ -402,36 +531,33 @@ func TestCreateDraftRelease(t *testing.T) {
 //  3. Their CHANGELOG.md is the whole story, so GitHub does not append a
 //     repo-wide commit list to it
 func TestCreateDraftReleaseForContribModule(t *testing.T) {
-	a, eff := newMockApp(app{target: contribEnvconfig(t), version: semver{1, 2, 3}}, func(cmd string) (string, error) {
-		if cmd == "gh release create contrib/envconfig/v1.2.3 --draft --title contrib/envconfig/v1.2.3 --notes-file /worktree/prepare-release-notes.md --latest=false" {
+	release := releaseSpec{target: contribEnvconfig(t), version: semver{1, 2, 3}}
+	a, eff := newMockApp(app{}, func(cmd string) (string, error) {
+		if cmd == "gh release create contrib/envconfig/v1.2.3 --draft --target abc123 --title contrib/envconfig/v1.2.3 --notes-file /worktree/prepare-release-notes.md --latest=false" {
 			return "https://example.com/release\n", nil
 		}
 		return "", nil
 	})
 
-	_, err := a.worktreeAt("/worktree", "").createDraftRelease("Notes")
+	_, err := a.worktreeAt("/worktree", "").createDraftRelease(release, "abc123", "## Highlights\n\nNotes\n")
 	if err != nil {
 		t.Fatal(err)
 	}
 	testEqual(t, eff.output.String(), `
 		      Release notes: /worktree/prepare-release-notes.md
-		      $ gh release create contrib/envconfig/v1.2.3 --draft --title contrib/envconfig/v1.2.3 --notes-file /worktree/prepare-release-notes.md --latest=false
+		      $ gh release create contrib/envconfig/v1.2.3 --draft --target abc123 --title contrib/envconfig/v1.2.3 --notes-file /worktree/prepare-release-notes.md --latest=false
 		      Draft release: https://example.com/release
 	`)
-	testEqual(t, eff.files[filepath.Join("/worktree", "prepare-release-notes.md")], "Notes")
+	testEqual(t, eff.files[filepath.Join("/worktree", "prepare-release-notes.md")], "## Highlights\n\nNotes\n")
 }
 
-func TestUpdateFile(t *testing.T) {
+func TestWriteReleaseFiles(t *testing.T) {
 	a, eff := newMockApp(app{}, nil)
 	eff.files["version.txt"] = "old"
 
-	updated, err := a.worktreeAt("/worktree", "").updateFile("version.txt", func(contents string) (string, error) {
-		return contents + "-new", nil
-	})
+	err := a.worktreeAt("/worktree", "").writeReleaseFiles([]releaseFile{{path: "version.txt", contents: "new"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if updated != "old-new" || eff.files["version.txt"] != "old-new" {
-		t.Fatalf("unexpected updated file: returned %q, stored %q", updated, eff.files["version.txt"])
-	}
+	testEqual(t, eff.files["version.txt"], "new")
 }
