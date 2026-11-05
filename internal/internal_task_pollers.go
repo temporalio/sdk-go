@@ -1966,23 +1966,30 @@ func reportActivityComplete(
 	switch rqst := request.(type) {
 	case *workflowservice.RespondActivityTaskCanceledRequest:
 		grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsHandler(rpcMetricsHandler),
-			defaultGrpcRetryParameters(ctx))
+			activityTaskResultRetryParameters(ctx))
 		defer cancel()
 		_, err := service.RespondActivityTaskCanceled(grpcCtx, rqst)
 		reportErr = err
 	case *workflowservice.RespondActivityTaskFailedRequest:
-		grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsHandler(rpcMetricsHandler), defaultGrpcRetryParameters(ctx))
+		grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsHandler(rpcMetricsHandler), activityTaskResultRetryParameters(ctx))
 		defer cancel()
 		_, err := service.RespondActivityTaskFailed(grpcCtx, rqst)
 		reportErr = err
 	case *workflowservice.RespondActivityTaskCompletedRequest:
 		grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsHandler(rpcMetricsHandler),
-			defaultGrpcRetryParameters(ctx))
+			activityTaskResultRetryParameters(ctx))
 		defer cancel()
 		_, err := service.RespondActivityTaskCompleted(grpcCtx, rqst)
 		reportErr = err
 	}
 	return reportErr
+}
+
+// Reuse the transport retry loop and its single reporting deadline; never rerun activity execution.
+func activityTaskResultRetryParameters(ctx context.Context) func(builder *grpcContextBuilder) {
+	config := createDynamicServiceRetryPolicy(ctx).GrpcRetryConfig()
+	config.SetRetryActivityTaskResultDeadlineExceeded()
+	return grpcContextValue(retry.ConfigKey, config)
 }
 
 func reportActivityCompleteByID(
