@@ -237,8 +237,8 @@ type (
 		options         baseWorkerOptions
 		isWorkerStarted bool
 		// pollerTargets records each autoscaling pool's target by poller type, for the
-		// heartbeat to report. Written by installPollerScalingReporters, read from the
-		// heartbeat goroutine, so it is a sync.Map rather than a plain field on options.
+		// heartbeat to report. Written by trackPollerTargets, read from the heartbeat
+		// goroutine, so it is a sync.Map rather than a plain field on options.
 		pollerTargets *pollerTargetTracker
 		// stopCh is created by newBaseWorker and closed by baseWorker.Stop().
 		// It is internal to baseWorker and stops its poller, dispatcher, autoscaler,
@@ -430,7 +430,7 @@ func newBaseWorker(
 		bw.pollLimiter = rate.NewLimiter(rate.Limit(options.pollerRate), 1)
 	}
 	bw.validatePollers(options.taskPollers)
-	bw.installPollerScalingReporters(options.taskPollers)
+	bw.trackPollerTargets(options.taskPollers)
 
 	return bw
 }
@@ -442,36 +442,21 @@ func (bw *baseWorker) initializeTaskPollers(taskPollers []scalableTaskPoller) {
 	}
 	bw.options.taskPollers = taskPollers
 	bw.validatePollers(taskPollers)
-	bw.installPollerScalingReporters(taskPollers)
+	bw.trackPollerTargets(taskPollers)
 }
 
-// installPollerScalingReporters lets each autoscaling poller report its pool state to the
-// server on every poll, so scaling suggestions can be spread across a fleet by share
-// rather than landing on whoever happens to receive the most tasks. baseWorker is the only
-// place holding the autoscaler, which is why the wiring lives here rather than at each
-// poller construction site.
-func (bw *baseWorker) installPollerScalingReporters(taskPollers []scalableTaskPoller) {
+// trackPollerTargets records each autoscaling pool's target, keyed by poller type, for
+// the heartbeat to report. The poll path is wired where the poller is built, next to its
+// autoscaler; the heartbeat instead needs the poller type as a key, which only the
+// scalableTaskPoller knows, so that registration stays on baseWorker.
+//
+// Every autoscaling pool is recorded, including nexus, whose poll request has no field to
+// carry a scaling report: the heartbeat covers every autoscaling pool, not only the ones
+// the server's share-based fairness acts on. Fixed-size pools have no autoscaler and are
+// skipped by record.
+func (bw *baseWorker) trackPollerTargets(taskPollers []scalableTaskPoller) {
 	for _, tw := range taskPollers {
-		if tw.pollerAutoscaler == nil {
-			continue // fixed-size pool: no target to report
-		}
-		autoscaler := tw.pollerAutoscaler
-
-		// Recorded before the reporter check below, because the heartbeat covers every
-		// autoscaling pool while the poll request covers only those whose request has a
-		// field for it -- nexus has an autoscaler and a heartbeat slot, but no such
-		// request field.
-		bw.pollerTargets.record(tw.taskPollerType, autoscaler)
-
-		reporter, ok := tw.taskPoller.(pollerScalingInfoReporter)
-		if !ok {
-			continue
-		}
-		reporter.setPollerScalingInfo(func() *taskqueuepb.PollerScalingInfo {
-			return &taskqueuepb.PollerScalingInfo{
-				PollerTarget: int32(autoscaler.target.Load()),
-			}
-		})
+		bw.pollerTargets.record(tw.taskPollerType, tw.pollerAutoscaler)
 	}
 }
 
@@ -1027,6 +1012,16 @@ func newPollerAutoscaler(options pollerAutoscalerOptions) *pollerAutoscaler {
 	return psr
 }
 
+// scalingInfo reports what this pool is currently targeting, for a poll request to carry
+// to the server, so scaling suggestions can be spread across a fleet by share rather than
+// landing on whoever happens to receive the most tasks. A fresh message per call keeps
+// requests from sharing mutable state.
+func (prh *pollerAutoscaler) scalingInfo() *taskqueuepb.PollerScalingInfo {
+	return &taskqueuepb.PollerScalingInfo{
+		PollerTarget: int32(prh.target.Load()),
+	}
+}
+
 func (prh *pollerAutoscaler) handleTask(task taskForWorker) {
 	if !task.isEmpty() {
 		prh.ingestedThisPeriod.Add(1)
@@ -1334,6 +1329,13 @@ func newScalablePollerWithTarget(
 			if targetChanged != nil {
 				targetChanged(target)
 			}
+		}
+		// Only an autoscaling pool has a target to report, and this is the one place
+		// that holds both the poller and its autoscaler. Pollers whose request has no
+		// field to carry the report -- nexus -- simply never ask for one; they still
+		// report a target on the heartbeat, which baseWorker tracks separately.
+		if reporter, ok := poller.(pollerScalingInfoReporter); ok {
+			reporter.setPollerScalingInfo(tw.pollerAutoscaler.scalingInfo)
 		}
 	case *pollerBehaviorSimpleMaximum:
 		tw.pollerCount = p.maximumNumberOfPollers

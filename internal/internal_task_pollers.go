@@ -105,8 +105,8 @@ type (
 		workerPollCompleteOnShutdown *atomic.Bool
 		// Supplies the poller pool state reported to the server on each poll, so it can
 		// spread scaling suggestions across a fleet by share rather than by whoever
-		// happens to receive the most tasks. Nil unless the pool is autoscaling;
-		// installed by baseWorker, which is the only place holding the autoscaler.
+		// happens to receive the most tasks. Nil unless the pool is autoscaling, in
+		// which case the pool's autoscaler supplies it -- see newScalablePollerWithTarget.
 		pollerScalingInfo func() *taskqueuepb.PollerScalingInfo
 	}
 

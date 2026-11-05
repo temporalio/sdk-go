@@ -17,8 +17,8 @@ import (
 // WorkerPollerInfo block and follows the target as it changes. Poller types with a fixed
 // count have no autoscaler and report zero.
 //
-// Registration goes through installPollerScalingReporters rather than being injected, so
-// this also covers the path the running worker actually uses.
+// Registration goes through trackPollerTargets rather than being injected, so this also
+// covers the path the running worker actually uses.
 func TestHeartbeatTracksAutoscalerTarget(t *testing.T) {
 	const initialPollers = 12
 	serverSupportsAutoscaling := &atomic.Bool{}
@@ -45,7 +45,7 @@ func TestHeartbeatTracksAutoscalerTarget(t *testing.T) {
 		nil,
 	)
 	bw := &baseWorker{pollerTargets: &pollerTargetTracker{}}
-	bw.installPollerScalingReporters([]scalableTaskPoller{autoscaled, fixed})
+	bw.trackPollerTargets([]scalableTaskPoller{autoscaled, fixed})
 
 	h := newHeartbeatMetricsHandler(metrics.NewCapturingHandler())
 	heartbeat := func() *workerpb.WorkerHeartbeat {
@@ -93,7 +93,7 @@ func TestHeartbeatReportsNexusPollerTarget(t *testing.T) {
 		nil,
 	)
 	bw := &baseWorker{pollerTargets: &pollerTargetTracker{}}
-	bw.installPollerScalingReporters([]scalableTaskPoller{nexus})
+	bw.trackPollerTargets([]scalableTaskPoller{nexus})
 
 	targets := make(map[string]int32)
 	bw.collectPollerTargets(targets)
