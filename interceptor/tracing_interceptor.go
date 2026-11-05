@@ -11,6 +11,7 @@ import (
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/converter"
+	"go.temporal.io/sdk/internal"
 	"go.temporal.io/sdk/log"
 	"go.temporal.io/sdk/workflow"
 )
@@ -86,6 +87,12 @@ type TracerOptions struct {
 	// HeaderKey is the key name on the Temporal header to serialize the span to.
 	// This should never be empty.
 	HeaderKey string
+
+	// EncodeHeaders uses the configured client's payload codec for this
+	// integration's tracing headers. Defaults to false. Standard tracing
+	// serialization is unchanged; other producers' headers are not encoded.
+	// Configure the same setting on receiving workers.
+	EncodeHeaders bool
 
 	// DisableSignalTracing can be set to disable signal tracing.
 	DisableSignalTracing bool
@@ -506,7 +513,7 @@ func (t *tracingWorkflowInboundInterceptor) ExecuteWorkflow(
 		FromHeader:     true,
 		Time:           t.info.WorkflowStartTime,
 		IdempotencyKey: t.newIdempotencyKey(),
-	}, t.root.workflowHeaderReader(ctx), t.root.workflowHeaderWriter(ctx))
+	}, t.root.headerReader(ctx), t.root.headerWriter(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -535,7 +542,7 @@ func (t *tracingWorkflowInboundInterceptor) HandleSignal(ctx workflow.Context, i
 		FromHeader:     true,
 		Time:           time.Now(),
 		IdempotencyKey: t.newIdempotencyKey(),
-	}, t.root.workflowHeaderReader(ctx), t.root.workflowHeaderWriter(ctx))
+	}, t.root.headerReader(ctx), t.root.headerWriter(ctx))
 	if err != nil {
 		return err
 	}
@@ -569,7 +576,7 @@ func (t *tracingWorkflowInboundInterceptor) HandleQuery(
 		// workflow history. When the tracing interceptor's span counter is reset between workflow
 		// replays, old queries will not be processed which could result in idempotency key
 		// collisions with other queries or signals.
-	}, t.root.workflowHeaderReader(ctx), t.root.workflowHeaderWriter(ctx))
+	}, t.root.headerReader(ctx), t.root.headerWriter(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -606,7 +613,7 @@ func (t *tracingWorkflowInboundInterceptor) ValidateUpdate(
 		// replay. When the tracing interceptor's span counter is reset between workflow
 		// replays, the validator will not be processed which could result in impotency key
 		// collisions with other requests.
-	}, t.root.workflowHeaderReader(ctx), t.root.workflowHeaderWriter(ctx))
+	}, t.root.headerReader(ctx), t.root.headerWriter(ctx))
 	if err != nil {
 		return err
 	}
@@ -641,7 +648,7 @@ func (t *tracingWorkflowInboundInterceptor) ExecuteUpdate(
 		FromHeader:     true,
 		Time:           time.Now(),
 		IdempotencyKey: t.newIdempotencyKey(),
-	}, t.root.workflowHeaderReader(ctx), t.root.workflowHeaderWriter(ctx))
+	}, t.root.headerReader(ctx), t.root.headerWriter(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -664,7 +671,7 @@ func (t *tracingWorkflowOutboundInterceptor) ExecuteActivity(
 	args ...any,
 ) workflow.Future {
 	// Start span writing to header
-	span, ctx, err := t.startNonReplaySpan(ctx, "StartActivity", activityType, true, t.root.workflowHeaderWriter(ctx))
+	span, ctx, err := t.startNonReplaySpan(ctx, "StartActivity", activityType, true, t.root.headerWriter(ctx))
 	if err != nil {
 		return err
 	}
@@ -679,7 +686,7 @@ func (t *tracingWorkflowOutboundInterceptor) ExecuteLocalActivity(
 	args ...any,
 ) workflow.Future {
 	// Start span writing to header
-	span, ctx, err := t.startNonReplaySpan(ctx, "StartActivity", activityType, true, t.root.workflowHeaderWriter(ctx))
+	span, ctx, err := t.startNonReplaySpan(ctx, "StartActivity", activityType, true, t.root.headerWriter(ctx))
 	if err != nil {
 		return err
 	}
@@ -701,7 +708,7 @@ func (t *tracingWorkflowOutboundInterceptor) ExecuteChildWorkflow(
 	args ...any,
 ) workflow.ChildWorkflowFuture {
 	// Start span writing to header
-	span, ctx, errFut := t.startNonReplaySpan(ctx, "StartChildWorkflow", childWorkflowType, false, t.root.workflowHeaderWriter(ctx))
+	span, ctx, errFut := t.startNonReplaySpan(ctx, "StartChildWorkflow", childWorkflowType, false, t.root.headerWriter(ctx))
 	if errFut != nil {
 		return childWorkflowFuture{errFut}
 	}
@@ -721,7 +728,7 @@ func (t *tracingWorkflowOutboundInterceptor) SignalExternalWorkflow(
 	if !t.root.options.DisableSignalTracing {
 		var span TracerSpan
 		var futErr workflow.Future
-		span, ctx, futErr = t.startNonReplaySpan(ctx, "SignalExternalWorkflow", signalName, false, t.root.workflowHeaderWriter(ctx))
+		span, ctx, futErr = t.startNonReplaySpan(ctx, "SignalExternalWorkflow", signalName, false, t.root.headerWriter(ctx))
 		if futErr != nil {
 			return futErr
 		}
@@ -743,7 +750,7 @@ func (t *tracingWorkflowOutboundInterceptor) SignalExternalWorkflowWithOptions(
 	if !t.root.options.DisableSignalTracing {
 		var span TracerSpan
 		var futErr workflow.Future
-		span, ctx, futErr = t.startNonReplaySpan(ctx, "SignalExternalWorkflow", signalName, false, t.root.workflowHeaderWriter(ctx))
+		span, ctx, futErr = t.startNonReplaySpan(ctx, "SignalExternalWorkflow", signalName, false, t.root.headerWriter(ctx))
 		if futErr != nil {
 			return futErr
 		}
@@ -763,7 +770,7 @@ func (t *tracingWorkflowOutboundInterceptor) SignalChildWorkflow(
 	if !t.root.options.DisableSignalTracing {
 		var span TracerSpan
 		var futErr workflow.Future
-		span, ctx, futErr = t.startNonReplaySpan(ctx, "SignalChildWorkflow", signalName, false, t.root.workflowHeaderWriter(ctx))
+		span, ctx, futErr = t.startNonReplaySpan(ctx, "SignalChildWorkflow", signalName, false, t.root.headerWriter(ctx))
 		if futErr != nil {
 			return futErr
 		}
@@ -784,7 +791,7 @@ func (t *tracingWorkflowOutboundInterceptor) SignalChildWorkflowWithOptions(
 	if !t.root.options.DisableSignalTracing {
 		var span TracerSpan
 		var futErr workflow.Future
-		span, ctx, futErr = t.startNonReplaySpan(ctx, "SignalChildWorkflow", signalName, false, t.root.workflowHeaderWriter(ctx))
+		span, ctx, futErr = t.startNonReplaySpan(ctx, "SignalChildWorkflow", signalName, false, t.root.headerWriter(ctx))
 		if futErr != nil {
 			return futErr
 		}
@@ -818,18 +825,15 @@ func (t *tracingWorkflowOutboundInterceptor) NewContinueAsNewError(
 	wfn any,
 	args ...any,
 ) error {
-	err := t.Next.NewContinueAsNewError(ctx, wfn, args...)
 	if !workflow.IsReplaying(ctx) {
-		if contErr, _ := err.(*workflow.ContinueAsNewError); contErr != nil {
-			// Get the current span and write header
-			if span, _ := ctx.Value(t.root.options.SpanContextKey).(TracerSpan); span != nil {
-				if writeErr := t.root.writeSpanToHeader(span, WorkflowHeader(ctx)); writeErr != nil {
-					return fmt.Errorf("failed writing span when creating continue as new error: %w", writeErr)
-				}
+		// Propagation finalizes the headers inside Next, so the tracing producer must write first.
+		if span, _ := ctx.Value(t.root.options.SpanContextKey).(TracerSpan); span != nil {
+			if err := t.root.headerWriter(ctx)(span); err != nil {
+				return fmt.Errorf("failed writing span when creating continue as new error: %w", err)
 			}
 		}
 	}
-	return err
+	return t.Next.NewContinueAsNewError(ctx, wfn, args...)
 }
 
 func (t *tracingWorkflowOutboundInterceptor) NewContinueAsNewErrorWithOptions(
@@ -838,18 +842,14 @@ func (t *tracingWorkflowOutboundInterceptor) NewContinueAsNewErrorWithOptions(
 	wfn any,
 	args ...any,
 ) error {
-	err := t.Next.NewContinueAsNewErrorWithOptions(ctx, options, wfn, args...)
 	if !workflow.IsReplaying(ctx) {
-		if contErr, _ := err.(*workflow.ContinueAsNewError); contErr != nil {
-			// Get the current span and write header
-			if span, _ := ctx.Value(t.root.options.SpanContextKey).(TracerSpan); span != nil {
-				if writeErr := t.root.writeSpanToHeader(span, WorkflowHeader(ctx)); writeErr != nil {
-					return fmt.Errorf("failed writing span when creating continue as new error: %w", writeErr)
-				}
+		if span, _ := ctx.Value(t.root.options.SpanContextKey).(TracerSpan); span != nil {
+			if err := t.root.headerWriter(ctx)(span); err != nil {
+				return fmt.Errorf("failed writing span when creating continue as new error: %w", err)
 			}
 		}
 	}
-	return err
+	return t.Next.NewContinueAsNewErrorWithOptions(ctx, options, wfn, args...)
 }
 
 type nopSpan struct{}
@@ -879,7 +879,7 @@ func (t *tracingWorkflowOutboundInterceptor) startNonReplaySpan(
 		},
 		ToHeader: true,
 		Time:     time.Now(),
-	}, t.root.workflowHeaderReader(ctx), headerWriter)
+	}, t.root.headerReader(ctx), headerWriter)
 	if err != nil {
 		return nopSpan{}, ctx, workflowFutureFromErr(ctx, err)
 	}
@@ -999,31 +999,30 @@ func (t *tracingInterceptor) startSpan(
 	return span, nil
 }
 
-func (t *tracingInterceptor) headerReader(ctx context.Context) func() (TracerSpanRef, error) {
-	header := Header(ctx)
+func (t *tracingInterceptor) headerReader(ctx interface{ Value(any) any }) func() (TracerSpanRef, error) {
+	header := internal.Header(ctx)
 	return func() (TracerSpanRef, error) {
+		if t.options.EncodeHeaders {
+			var err error
+			header, err = internal.DecodedHeader(ctx)
+			if err != nil {
+				return nil, err
+			}
+		}
 		return t.readSpanFromHeader(header)
 	}
 }
 
-func (t *tracingInterceptor) headerWriter(ctx context.Context) func(TracerSpan) error {
-	header := Header(ctx)
+func (t *tracingInterceptor) headerWriter(ctx interface{ Value(any) any }) func(TracerSpan) error {
+	header := internal.Header(ctx)
 	return func(span TracerSpan) error {
-		return t.writeSpanToHeader(span, header)
-	}
-}
-
-func (t *tracingInterceptor) workflowHeaderReader(ctx workflow.Context) func() (TracerSpanRef, error) {
-	header := WorkflowHeader(ctx)
-	return func() (TracerSpanRef, error) {
-		return t.readSpanFromHeader(header)
-	}
-}
-
-func (t *tracingInterceptor) workflowHeaderWriter(ctx workflow.Context) func(TracerSpan) error {
-	header := WorkflowHeader(ctx)
-	return func(span TracerSpan) error {
-		return t.writeSpanToHeader(span, header)
+		if err := t.writeSpanToHeader(span, header); err != nil {
+			return err
+		}
+		if t.options.EncodeHeaders {
+			internal.EncodeHeader(ctx, t.options.HeaderKey)
+		}
+		return nil
 	}
 }
 

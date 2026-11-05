@@ -696,7 +696,7 @@ func (wc *workflowEnvironmentInterceptor) NewContinueAsNewErrorWithOptions(
 		panic(err)
 	}
 
-	header, err := workflowHeaderPropagated(ctx, options.ContextPropagators)
+	header, err := workflowHeaderPropagated(ctx, options.ContextPropagators, nil)
 	if err != nil {
 		return err
 	}
