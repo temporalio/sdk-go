@@ -5,6 +5,9 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	commonpb "go.temporal.io/api/common/v1"
+
+	ilog "go.temporal.io/sdk/internal/log"
 )
 
 func TestSearchAttributes(t *testing.T) {
@@ -152,4 +155,25 @@ func TestSearchAttributesDeepCopy(t *testing.T) {
 	keywordListSA, ok := sa.GetKeywordList(key2)
 	require.True(t, ok)
 	require.Equal(t, []string{"keyword1", "keyword2", "keyword3"}, keywordListSA)
+}
+
+func TestConvertToTypedSearchAttributesIgnoresInvalidValues(t *testing.T) {
+	t.Parallel()
+	payload := func(indexedType, data string) *commonpb.Payload {
+		return &commonpb.Payload{
+			Metadata: map[string][]byte{"encoding": []byte("json/plain"), "type": []byte(indexedType)},
+			Data:     []byte(data),
+		}
+	}
+	// An untyped single-item array is stored as a Keyword whose data is a JSON array.
+	sa := convertToTypedSearchAttributes(ilog.NewNopLogger(), map[string]*commonpb.Payload{
+		"invalidKeyword": payload("Keyword", `["value"]`),
+		"invalidInt":     payload("Int", `"value"`),
+		"validKeyword":   payload("Keyword", `"value"`),
+	})
+
+	require.Equal(t, 1, sa.Size())
+	value, ok := sa.GetKeyword(NewSearchAttributeKeyKeyword("validKeyword"))
+	require.True(t, ok)
+	require.Equal(t, "value", value)
 }
