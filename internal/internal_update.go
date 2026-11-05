@@ -316,7 +316,8 @@ func defaultUpdateHandler(
 			}
 		}
 		callbacks.Accept()
-		success, err := envInterceptor.inboundInterceptor.ExecuteUpdate(ctx, &input)
+		execCtx := withImplicitUpdateEventGroup(ctx, id)
+		success, err := envInterceptor.inboundInterceptor.ExecuteUpdate(execCtx, &input)
 		callbacks.Complete(success, err)
 	}
 

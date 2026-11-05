@@ -22,6 +22,10 @@ to docs, or any other relevant information.
 
 ### Added
 
+
+- Added experimental Event Groups support: `workflow.NewEventGroup`, `workflow.WithEventGroups`,
+  and `EventGroups` on workflow command options. Update handlers get an implicit group. Signal
+  handlers do not.
 - Added client interceptor hooks for `Client.GetWorkflow` (`GetWorkflowRun`),
   `WorkflowRun.Get`/`GetWithOptions` (`GetWorkflowResult`), and
   `Client.GetWorkflowHistory`. Handle interception runs before lazy target
@@ -56,6 +60,15 @@ to docs, or any other relevant information.
 
 ### :boom: Breaking Changes
 
+- `workflow.NewContinueAsNewErrorWithOptions` now calls
+  `interceptor.WorkflowOutboundInterceptor.NewContinueAsNewErrorWithOptions`
+  directly. It previously went through `NewContinueAsNewError`, then applied
+  `ContinueAsNewErrorOptions` to the error that hook returned. An interceptor
+  that overrides only `NewContinueAsNewError` no longer runs for
+  `NewContinueAsNewErrorWithOptions` calls. Override the new method as well;
+  the SDK tracing interceptors already do. An interceptor that records workflow
+  commands inside `NewContinueAsNewError` can cause a non-determinism error on
+  replay when the workflow already called `NewContinueAsNewErrorWithOptions`.
 - **Experimental**: A Temporal operation handler (`temporalnexus.NewTemporalOperation`) can now send only
   one signal per operation invocation through `NexusClient.GetWorkflowClient()`. `SignalWorkflow` and
   `SignalWithStartWorkflow` count toward the same limit. While the first signal is in flight, or after it
