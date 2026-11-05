@@ -2471,10 +2471,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 	}()
 
 	// propagate context information into the activity context from the headers
-	var headerCodec converter.PayloadCodec
-	if ath.client != nil {
-		headerCodec = bindHeaderCodec(ath.client.headerCodec, activityContext)
-	}
+	headerCodec := bindHeaderCodec(headerCodecFromDataConverter(ath.dataConverter), activityContext)
 	ctx, err = contextWithHeaderPropagated(ctx, t.Header, ath.contextPropagators, headerCodec)
 	if err != nil {
 		return activityTaskResult{}, err

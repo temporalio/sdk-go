@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -247,6 +248,52 @@ func TestHeaderCodecWorkflowTestEnvironment(t *testing.T) {
 	require.NoError(t, env.GetWorkflowResult(&result))
 	require.Equal(t, "context", result)
 	require.Equal(t, "binary/zlib", string(payload.Metadata[converter.MetadataEncoding]))
+}
+
+func TestHeaderCodecWorkflowTestEnvironmentActivities(t *testing.T) {
+	for _, local := range []bool{false, true} {
+		name := "activity"
+		if local {
+			name = "local activity"
+		}
+		t.Run(name, func(t *testing.T) {
+			dc := converter.NewCodecDataConverter(converter.GetDefaultDataConverter(),
+				&serCtxSigningCodec{},
+				converter.NewZlibCodec(converter.ZlibCodecOptions{AlwaysEncode: true}))
+			bound := converter.WithDataConverterSerializationContext(dc,
+				converter.WorkflowSerializationContext{WorkflowID: "header-codec-workflow"})
+			payload, err := bound.ToPayload("context")
+			require.NoError(t, err)
+			var suite WorkflowTestSuite
+			env := suite.NewTestWorkflowEnvironment()
+			env.SetStartWorkflowOptions(StartWorkflowOptions{ID: "header-codec-workflow"})
+			env.SetDataConverter(dc)
+			env.SetContextPropagators([]ContextPropagator{codecKeysPropagator{NewKeysPropagator([]string{"encoded"})}})
+			env.SetHeader(&commonpb.Header{Fields: map[string]*commonpb.Payload{"encoded": payload}})
+			activity := func(ctx context.Context) (string, error) {
+				return ctx.Value(contextKey("encoded")).(string), nil
+			}
+			env.RegisterActivity(activity)
+			env.ExecuteWorkflow(func(ctx Context) (string, error) {
+				var result string
+				var err error
+				if local {
+					ctx = WithLocalActivityOptions(ctx, LocalActivityOptions{StartToCloseTimeout: time.Minute,
+						RetryPolicy: &RetryPolicy{MaximumAttempts: 1}})
+					err = ExecuteLocalActivity(ctx, activity).Get(ctx, &result)
+				} else {
+					ctx = WithActivityOptions(ctx, ActivityOptions{StartToCloseTimeout: time.Minute,
+						RetryPolicy: &RetryPolicy{MaximumAttempts: 1}})
+					err = ExecuteActivity(ctx, activity).Get(ctx, &result)
+				}
+				return result, err
+			})
+			require.NoError(t, env.GetWorkflowError())
+			var result string
+			require.NoError(t, env.GetWorkflowResult(&result))
+			require.Equal(t, "context", result)
+		})
+	}
 }
 
 func TestHeaderCodecProducerIsolation(t *testing.T) {
