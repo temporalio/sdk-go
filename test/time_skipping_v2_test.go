@@ -2,7 +2,6 @@ package test_test
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"testing"
@@ -115,29 +114,6 @@ func (s *TimeSkippingV2TestSuite) assertDurationSame(want, got time.Duration, to
 		diff = -diff
 	}
 	s.LessOrEqualf(diff, tolerance, "expected %v within %v of %v", got, tolerance, want)
-}
-
-// waitForFastForwardID polls describe until the workflow's current
-// fast_forward_id is non-empty and (if expectChangeFrom != "") differs from
-// it.
-func (s *TimeSkippingV2TestSuite) waitForFastForwardID(
-	ctx context.Context, run client.WorkflowRun, expectChangeFrom string, deadline time.Duration,
-) (string, error) {
-	giveUp := time.Now().Add(deadline)
-	for time.Now().Before(giveUp) {
-		tsi, err := timeskipping.GetWorkflowTimeSkippingInfo(ctx, s.server.Client(), run)
-		if err != nil {
-			return "", err
-		}
-		if tsi != nil {
-			id := tsi.FastForwardInfo.ID
-			if id != "" && id != expectChangeFrom {
-				return id, nil
-			}
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
-	return "", errors.New("timed out waiting for expected fast_forward_id")
 }
 
 type SleepResult struct {
@@ -276,6 +252,25 @@ func ParentTimeSkippingWorkflow(ctx workflow.Context, args ParentTimeSkippingArg
 	return res, nil
 }
 
+func BlockingActivity(ctx context.Context, seconds float64) error {
+	select {
+	case <-time.After(time.Duration(seconds * float64(time.Second))):
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func ActivityThenSleepWorkflow(ctx workflow.Context, activitySeconds float64) error {
+	ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+		StartToCloseTimeout: time.Minute,
+	})
+	if err := workflow.ExecuteActivity(ctx, BlockingActivity, activitySeconds).Get(ctx, nil); err != nil {
+		return err
+	}
+	return workflow.Sleep(ctx, time.Hour)
+}
+
 func registerTSTestWorkflows(w worker.Worker) {
 	w.RegisterWorkflow(SleepWorkflow)
 	w.RegisterWorkflow(InteractionWorkflow)
@@ -283,6 +278,8 @@ func registerTSTestWorkflows(w worker.Worker) {
 	w.RegisterWorkflow(ContinueAsNewSleepWorkflow)
 	w.RegisterWorkflow(SignalWithStartTargetWorkflow)
 	w.RegisterWorkflow(ParentTimeSkippingWorkflow)
+	w.RegisterWorkflow(ActivityThenSleepWorkflow)
+	w.RegisterActivity(BlockingActivity)
 }
 
 func (s *TimeSkippingV2TestSuite) TestPollFastForwardIssuedSeparately() {
@@ -302,18 +299,7 @@ func (s *TimeSkippingV2TestSuite) TestPollFastForwardIssuedSeparately() {
 
 	cl := s.server.Client()
 	ffID := uuid.NewString()
-	_, err = cl.UpdateWorkflowExecutionOptions(ctx, client.UpdateWorkflowExecutionOptionsRequest{
-		WorkflowId: run.GetID(),
-		WorkflowExecutionOptionsChanges: client.WorkflowExecutionOptionsChanges{
-			TimeSkippingConfig: &client.TimeSkippingConfigChange{
-				Value: &client.TimeSkippingConfig{
-					Enabled:           true,
-					FastForwardConfig: &client.FastForwardConfig{ID: ffID, Duration: time.Hour},
-				},
-			},
-		},
-	})
-	s.NoError(err)
+	s.NoError(s.setFastForward(ctx, run.GetID(), ffID, time.Hour))
 
 	res, err := timeskipping.PollWorkflowFastForward(ctx, cl, run,
 		timeskipping.WorkflowPollFastForwardOptions{FastForwardID: ffID})
@@ -953,62 +939,65 @@ func (s *TimeSkippingV2TestSuite) TestFastForwardClampedToExecutionTimeout() {
 	s.True(timedOut, "expected WORKFLOW_EXECUTION_TIMED_OUT in history")
 }
 
-func (s *TimeSkippingV2TestSuite) TestOverridingFastForwardRaisesOnOriginal() {
+func (s *TimeSkippingV2TestSuite) TestPollingASupersededFastForwardIsRejected() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 	tq := "tq-" + uuid.NewString()
-
-	// No worker yet so skipping doesn't start.
-	run, err := s.server.Client().ExecuteWorkflow(ctx,
-		client.StartWorkflowOptions{ID: "wf-" + uuid.NewString(), TaskQueue: tq},
-		SleepWorkflow, 100000.0)
-	s.NoError(err)
-
-	type ffResult struct {
-		ok  bool
-		err error
-	}
-	firstCh := make(chan ffResult, 1)
-	go func() {
-		ok, err := timeskipping.FastForwardWorkflow(ctx, s.server.Client(), run, timeskipping.WorkflowFastForwardOptions{Duration: 2 * time.Hour})
-		firstCh <- ffResult{ok, err}
-	}()
-
-	// Wait for the first FF's id to land on the workflow.
-	firstID, err := s.waitForFastForwardID(ctx, run, "", 10*time.Second)
-	s.NoError(err)
-
-	secondCh := make(chan ffResult, 1)
-	go func() {
-		ok, err := timeskipping.FastForwardWorkflow(ctx, s.server.Client(), run, timeskipping.WorkflowFastForwardOptions{Duration: 30 * time.Minute})
-		secondCh <- ffResult{ok, err}
-	}()
-
-	// Wait for the second FF's id to land (different from the first's).
-	_, err = s.waitForFastForwardID(ctx, run, firstID, 10*time.Second)
-	s.NoError(err)
-
-	// Awaiting the first FF: server should have delivered
-	// FAST_FORWARD_POLLING_RESULT_FAST_FORWARD_FAILED with an id-mismatch reason.
-	firstRes := <-firstCh
-	s.Error(firstRes.err, "expected id-mismatch error on first FF")
-	// The server's own wording, so this fails if the reason changes shape
-	// rather than passing on any error that mentions a fast-forward.
-	s.ErrorContains(firstRes.err, "does not match the execution's current fast-forward")
-
-	// Attach a worker so the workflow can complete and the second FF finishes.
 	w := worker.New(s.server.Client(), tq, worker.Options{})
 	registerTSTestWorkflows(w)
 	s.NoError(w.Start())
 	defer w.Stop()
-	secondRes := <-secondCh
-	s.NoError(secondRes.err)
-	s.True(secondRes.ok)
 
-	// Let the workflow finish quickly by re-enabling unbounded.
-	_, _ = timeskipping.FastForwardWorkflow(ctx, s.server.Client(), run, timeskipping.WorkflowFastForwardOptions{})
-	_ = run.Get(ctx, nil)
-	s.assertTimeWasSkipped(ctx, run)
+	cl := s.server.Client()
+	wfID := "wf-" + uuid.NewString()
+	run, err := cl.ExecuteWorkflow(ctx,
+		client.StartWorkflowOptions{ID: wfID, TaskQueue: tq},
+		ActivityThenSleepWorkflow, 3.0)
+	s.NoError(err)
+	defer func() { _ = cl.CancelWorkflow(ctx, wfID, "") }()
+
+	// Wait for activity to run, which keeps the fast forward from finishing.
+	require.Eventually(s.T(), func() bool {
+		desc, derr := cl.DescribeWorkflow(ctx, wfID, "")
+		return derr == nil && len(desc.RawResponse.GetPendingActivities()) > 0
+	}, 10*time.Second, 100*time.Millisecond, "expected the activity to start")
+
+	supersededID := uuid.NewString()
+	s.NoError(s.setFastForward(ctx, wfID, supersededID, 2*time.Hour))
+	s.NoError(s.setFastForward(ctx, wfID, uuid.NewString(), 30*time.Minute))
+
+	res, err := timeskipping.PollWorkflowFastForward(ctx, cl, run,
+		timeskipping.WorkflowPollFastForwardOptions{FastForwardID: supersededID})
+	s.NoError(err, "a superseded fast-forward is an outcome, not a call failure")
+	s.False(res.Completed)
+	s.Contains(res.FailedReason, "does not match",
+		"expected the server to name the id mismatch, got %q", res.FailedReason)
+
+	require.Eventually(s.T(), func() bool {
+		found, herr := historyHasEventType(ctx, cl, run,
+			enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_TIME_SKIPPING_TRANSITIONED)
+		return herr == nil && found
+	}, 20*time.Second, 200*time.Millisecond,
+		"expected time skipping to engage once the activity finished")
+}
+
+// Starts a fast forward and returns its ID.
+func (s *TimeSkippingV2TestSuite) setFastForward(
+	ctx context.Context, wfID, ffID string, d time.Duration,
+) error {
+	_, err := s.server.Client().UpdateWorkflowExecutionOptions(ctx,
+		client.UpdateWorkflowExecutionOptionsRequest{
+			WorkflowId: wfID,
+			WorkflowExecutionOptionsChanges: client.WorkflowExecutionOptionsChanges{
+				TimeSkippingConfig: &client.TimeSkippingConfigChange{
+					Value: &client.TimeSkippingConfig{
+						Enabled:           true,
+						FastForwardConfig: &client.FastForwardConfig{ID: ffID, Duration: d},
+					},
+				},
+			},
+		})
+	return err
 }
 
 func (s *TimeSkippingV2TestSuite) TestMaxSessionSkipCountOnStartOptions() {
