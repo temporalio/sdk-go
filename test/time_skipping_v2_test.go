@@ -3,7 +3,6 @@ package test_test
 import (
 	"context"
 	"fmt"
-	"os"
 	"testing"
 	"time"
 
@@ -14,7 +13,6 @@ import (
 	historypb "go.temporal.io/api/history/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/client"
-	"go.temporal.io/sdk/internal"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/testsuite"
 	"go.temporal.io/sdk/timeskipping"
@@ -22,7 +20,7 @@ import (
 	"go.temporal.io/sdk/workflow"
 )
 
-const devServerVersion = internal.PinnedDevServerVersion
+const devServerVersion = "v1.9.4-time-skipping"
 
 type TimeSkippingV2TestSuite struct {
 	*require.Assertions
@@ -45,7 +43,6 @@ func (s *TimeSkippingV2TestSuite) SetupSuite() {
 	// Start our own server because the timeskipping server CHASM flags will not
 	// work for the entire suite.
 	srv, err := timeskipping.StartDevServer(context.Background(), testsuite.DevServerOptions{
-		ExistingPath:   os.Getenv("TEMPORAL_DEV_SERVER_EXISTING_PATH"),
 		CachedDownload: testsuite.CachedDownload{Version: devServerVersion},
 		ClientOptions:  &client.Options{Namespace: "default"},
 		LogLevel:       "warn",

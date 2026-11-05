@@ -32,12 +32,12 @@ import (
 //	frontend.WorkflowTimeSkippingEnabled      -> system.workflowTimeSkippingEnabled
 //	history.enableCHASMSchedulerTimeSkipping  -> system.chasmSchedulerTimeSkippingEnabled
 //
-// These require a server at or past that rename. No published Temporal CLI
-// release embeds one yet, so the pinned dev server
-// (internal.PinnedDevServerVersion) does NOT satisfy this and the time skipping
-// suites fail against it — the server ignores dynamic-config keys it does not
-// recognise, so time skipping is simply off. Supply a newer binary through
-// options.ExistingPath until a CLI release catches up.
+// These require a server at or past that rename, which rules out most CLI
+// releases: the repo-wide pin and the current stable release both predate it,
+// and a server silently ignores dynamic-config keys it does not recognise, so
+// time skipping is simply off rather than loudly broken. The SDK's own suites
+// pin the CLI v1.9.4-time-skipping pre-release, the first to embed a server
+// past the rename. Pass options.ExistingPath to use a locally built one.
 //
 // NOTE: Experimental
 func StartDevServer(

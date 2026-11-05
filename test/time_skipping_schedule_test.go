@@ -5,7 +5,6 @@ package test_test
 import (
 	"context"
 	"fmt"
-	"os"
 	"testing"
 	"time"
 
@@ -40,7 +39,6 @@ func (s *TimeSkippingScheduleTestSuite) SetupSuite() {
 	s.Assertions = require.New(s.T())
 
 	srv, err := timeskipping.StartDevServer(context.Background(), testsuite.DevServerOptions{
-		ExistingPath:   os.Getenv("TEMPORAL_DEV_SERVER_EXISTING_PATH"),
 		CachedDownload: testsuite.CachedDownload{Version: devServerVersion},
 		ClientOptions:  &client.Options{Namespace: "default"},
 		LogLevel:       "warn",
