@@ -40,11 +40,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-intel, macos-arm, windows-latest]
+        os: [ubuntu-latest, macos-arm, windows-latest]
         go-version: ["oldstable", "stable"]
         include:
-          - os: macos-intel
-            runsOn: macos-15-intel
           - os: macos-arm
             runsOn: macos-15
     permissions:
@@ -91,11 +89,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-intel, macos-arm, windows-latest]
+        os: [ubuntu-latest, macos-arm, windows-latest]
         go-version: ["oldstable", "stable"]
         include:
-          - os: macos-intel
-            runsOn: macos-15-intel
           - os: macos-arm
             runsOn: macos-15
     permissions:
@@ -142,11 +138,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-intel, macos-arm, windows-latest]
+        os: [ubuntu-latest, macos-arm, windows-latest]
         go-version: ["oldstable", "stable"]
         include:
-          - os: macos-intel
-            runsOn: macos-15-intel
           - os: macos-arm
             runsOn: macos-15
     permissions:
