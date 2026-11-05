@@ -15,8 +15,6 @@ type UserMetadata = implementation.SystemNexus_UserMetadata
 // Result of signaling a workflow and starting it if needed.
 type SignalWithStartWorkflowResponse = implementation.SystemNexus_SignalWithStartWorkflowResponse
 
-type SignalWithStartWorkflowInput = implementation.SystemNexus_SignalWithStartWorkflowInput
-
 type SignalWithStartWorkflowOptions = implementation.SystemNexus_SignalWithStartWorkflowOptions
 
 // Signal a workflow, starting it first if needed.
