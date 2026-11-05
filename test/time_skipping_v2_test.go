@@ -4,19 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"os"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
-	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
-	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/internal"
@@ -79,21 +75,33 @@ func (s *TimeSkippingV2TestSuite) assertTimeWasNotSkipped(ctx context.Context, r
 	s.False(found, "did not expect any TIME_SKIPPING_TRANSITIONED event in history")
 }
 
-func historyHasEventType(
-	ctx context.Context, c client.Client, run client.WorkflowRun, et enumspb.EventType,
-) (bool, error) {
+// findHistoryEvent returns the first event in the run's history that match
+// accepts, or nil when none does.
+func findHistoryEvent(
+	ctx context.Context, c client.Client, run client.WorkflowRun,
+	match func(*historypb.HistoryEvent) bool,
+) (*historypb.HistoryEvent, error) {
 	iter := c.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), false,
 		enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
 	for iter.HasNext() {
 		e, err := iter.Next()
 		if err != nil {
-			return false, err
+			return nil, err
 		}
-		if e.GetEventType() == et {
-			return true, nil
+		if match(e) {
+			return e, nil
 		}
 	}
-	return false, nil
+	return nil, nil
+}
+
+func historyHasEventType(
+	ctx context.Context, c client.Client, run client.WorkflowRun, et enumspb.EventType,
+) (bool, error) {
+	e, err := findHistoryEvent(ctx, c, run, func(e *historypb.HistoryEvent) bool {
+		return e.GetEventType() == et
+	})
+	return e != nil, err
 }
 
 // assertDurationSame requires |got - want| <= tolerance.
@@ -443,7 +451,7 @@ func (s *TimeSkippingV2TestSuite) TestFastForwardWithResume() {
 
 	ok, err := timeskipping.FastForwardWorkflow(ctx, s.server.Client(), run, timeskipping.WorkflowFastForwardOptions{Duration: 1 * time.Hour})
 	s.NoError(err)
-	s.True(ok, "expected first fast-forward to complete at 1h")
+	s.True(ok, "expected the first fast-forward to reach its target")
 	s.NoError(s.server.Client().SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "proceed", nil))
 
 	t1, err := timeskipping.GetWorkflowCurrentTime(ctx, s.server.Client(), run)
@@ -452,7 +460,7 @@ func (s *TimeSkippingV2TestSuite) TestFastForwardWithResume() {
 
 	ok, err = timeskipping.FastForwardWorkflow(ctx, s.server.Client(), run, timeskipping.WorkflowFastForwardOptions{Duration: 1 * time.Hour})
 	s.NoError(err)
-	s.True(ok, "expected second fast-forward to complete at 2h total")
+	s.True(ok, "expected the second fast-forward to reach its target")
 	s.NoError(s.server.Client().SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "proceed", nil))
 
 	t2, err := timeskipping.GetWorkflowCurrentTime(ctx, s.server.Client(), run)
@@ -603,12 +611,19 @@ func (s *TimeSkippingV2TestSuite) TestFastForwardSpansRetries() {
 
 	ok, err := timeskipping.FastForwardWorkflow(ctx, s.server.Client(), run, timeskipping.WorkflowFastForwardOptions{Duration: 2*time.Hour + 30*time.Minute})
 	s.NoError(err)
-	s.True(ok, "expected FF to span retry")
+	s.True(ok, "expected the fast-forward to reach its target, not be cut short by the retry")
 	_, err = timeskipping.FastForwardWorkflow(ctx, s.server.Client(), run, timeskipping.WorkflowFastForwardOptions{})
 	s.NoError(err)
 	var result string
 	s.NoError(run.Get(ctx, &result))
 	s.Equal("done", result)
+
+	require.Eventually(s.T(), func() bool {
+		n, err := s.countWorkflowsWithID(ctx, run.GetID())
+		return err == nil && n == 2
+	}, 10*time.Second, 200*time.Millisecond,
+		"expected two runs: the failed attempt and its retry")
+
 	s.assertTimeWasSkipped(ctx, run)
 }
 
@@ -627,12 +642,18 @@ func (s *TimeSkippingV2TestSuite) TestFastForwardSpansContinueAsNew() {
 
 	ok, err := timeskipping.FastForwardWorkflow(ctx, s.server.Client(), run, timeskipping.WorkflowFastForwardOptions{Duration: 2 * time.Hour})
 	s.NoError(err)
-	s.True(ok, "expected FF to span CAN chain")
+	s.True(ok, "expected the fast-forward to reach its target, not be cut short by the continue-as-new")
 	_, err = timeskipping.FastForwardWorkflow(ctx, s.server.Client(), run, timeskipping.WorkflowFastForwardOptions{})
 	s.NoError(err)
 	var result string
 	s.NoError(run.Get(ctx, &result))
 	s.Equal("done", result)
+
+	require.Eventually(s.T(), func() bool {
+		n, err := s.countWorkflowsWithID(ctx, run.GetID())
+		return err == nil && n == 3
+	}, 10*time.Second, 200*time.Millisecond, "expected all three runs of the chain")
+
 	s.assertTimeWasSkipped(ctx, run)
 }
 
@@ -809,9 +830,7 @@ func (s *TimeSkippingV2TestSuite) TestTimeSkippingVirtualClock() {
 
 	currentTime, err := timeskipping.GetWorkflowCurrentTime(ctx, s.server.Client(), run)
 	s.NoError(err)
-	offset := currentTime.Sub(wallStart)
-	s.Greaterf(offset, 3550*time.Second, "virtual clock only %v past wall start; expected ~1h", offset)
-	s.Lessf(offset, 3700*time.Second, "virtual clock %v past wall start; expected ~1h", offset)
+	s.assertDurationSame(time.Hour, currentTime.Sub(wallStart), 100*time.Second)
 
 	_ = s.server.Client().CancelWorkflow(ctx, run.GetID(), run.GetRunID())
 	s.assertTimeWasSkipped(ctx, run)
@@ -834,20 +853,11 @@ func (s *TimeSkippingV2TestSuite) TestTransitionEventPayload() {
 	s.NoError(err)
 	s.True(ok)
 
-	// Find the disabled-after-fast-forward transition; verify target_time and wall_clock_time populated.
-	iter := s.server.Client().GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), false,
-		enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
-	var found *historypb.HistoryEvent
-	for iter.HasNext() {
-		e, err := iter.Next()
-		s.NoError(err)
-		if e.GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_TIME_SKIPPING_TRANSITIONED {
-			if attrs := e.GetWorkflowExecutionTimeSkippingTransitionedEventAttributes(); attrs != nil && attrs.GetDisabledAfterFastForward() {
-				found = e
-				break
-			}
-		}
-	}
+	found, err := findHistoryEvent(ctx, s.server.Client(), run, func(e *historypb.HistoryEvent) bool {
+		attrs := e.GetWorkflowExecutionTimeSkippingTransitionedEventAttributes()
+		return attrs != nil && attrs.GetDisabledAfterFastForward()
+	})
+	s.NoError(err)
 	s.NotNil(found, "expected a disabled_after_fast_forward transition event")
 	attrs := found.GetWorkflowExecutionTimeSkippingTransitionedEventAttributes()
 	s.NotNil(attrs.GetTargetTime())
@@ -877,18 +887,12 @@ func (s *TimeSkippingV2TestSuite) TestChildWorkflowStartedEventHasStatePropagati
 	s.NoError(run.Get(ctx, &result))
 
 	childRun := s.server.Client().GetWorkflow(ctx, childID, "")
-	iter := s.server.Client().GetWorkflowHistory(ctx, childRun.GetID(), childRun.GetRunID(), false,
-		enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
-	var startedAttrs *historypb.WorkflowExecutionStartedEventAttributes
-	for iter.HasNext() {
-		e, err := iter.Next()
-		s.NoError(err)
-		if e.GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED {
-			startedAttrs = e.GetWorkflowExecutionStartedEventAttributes()
-			break
-		}
-	}
-	s.NotNil(startedAttrs)
+	started, err := findHistoryEvent(ctx, s.server.Client(), childRun, func(e *historypb.HistoryEvent) bool {
+		return e.GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED
+	})
+	s.NoError(err)
+	s.NotNil(started)
+	startedAttrs := started.GetWorkflowExecutionStartedEventAttributes()
 	s.NotNilf(startedAttrs.GetTimeSkippingStatePropagation(),
 		"child's WorkflowExecutionStarted event has no time_skipping_state_propagation")
 	s.assertTimeWasSkipped(ctx, run)
@@ -914,17 +918,9 @@ func (s *TimeSkippingV2TestSuite) TestFastForwardClampedToExecutionTimeout() {
 	s.NoError(err)
 	s.False(ok, "expected fast_forward to return false when workflow timed out first")
 
-	iter := s.server.Client().GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), false,
-		enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
-	timedOut := false
-	for iter.HasNext() {
-		e, err := iter.Next()
-		s.NoError(err)
-		if e.GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_TIMED_OUT {
-			timedOut = true
-			break
-		}
-	}
+	timedOut, err := historyHasEventType(ctx, s.server.Client(), run,
+		enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_TIMED_OUT)
+	s.NoError(err)
 	s.True(timedOut, "expected WORKFLOW_EXECUTION_TIMED_OUT in history")
 }
 
@@ -1009,32 +1005,25 @@ func (s *TimeSkippingV2TestSuite) TestMaxSessionSkipCountOnStartOptions() {
 		_ = run.Get(ctx, nil)
 	}()
 
-	iter := srv.Client().GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), false,
-		enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
-	var startedTSC *commonpb.TimeSkippingConfig
-	for iter.HasNext() {
-		e, err := iter.Next()
-		s.NoError(err)
-		if e.GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED {
-			startedTSC = e.GetWorkflowExecutionStartedEventAttributes().GetTimeSkippingConfig()
-			break
-		}
-	}
+	started, err := findHistoryEvent(ctx, srv.Client(), run, func(e *historypb.HistoryEvent) bool {
+		return e.GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED
+	})
+	s.NoError(err)
+	s.NotNil(started)
+	startedTSC := started.GetWorkflowExecutionStartedEventAttributes().GetTimeSkippingConfig()
 	s.NotNil(startedTSC)
 	s.EqualValues(5, startedTSC.GetMaxSessionSkipCount())
 }
 
-func (s *TimeSkippingV2TestSuite) assertTimestampFromNow(
-	ts time.Time, expectedFromNow time.Duration, tolerance time.Duration,
-) {
-	fromNow := ts.Sub(time.Now())
-	if fromNow < 0 {
-		fromNow = -fromNow
-	}
-	s.assertDurationSame(expectedFromNow, fromNow, tolerance)
-}
-
-func (s *TimeSkippingV2TestSuite) TestWorkflowEnvTimeSkippingBasicV2() {
+// TestMaxSessionSkipCountIsEnforced checks the cap is acted on rather than
+// merely recorded: the one skip it allows carries the chain past its first run,
+// and then time skipping switches itself off and the rest of the chain waits out
+// real time.
+//
+// CurrentSessionSkipCount is deliberately not asserted here. The server reports
+// it as zero throughout, even while skipping is still enabled, so it cannot
+// distinguish "capped" from "never skipped".
+func (s *TimeSkippingV2TestSuite) TestMaxSessionSkipCountIsEnforced() {
 	ctx := context.Background()
 	tq := "tq-" + uuid.NewString()
 	w := worker.New(s.server.Client(), tq, worker.Options{})
@@ -1042,25 +1031,47 @@ func (s *TimeSkippingV2TestSuite) TestWorkflowEnvTimeSkippingBasicV2() {
 	s.NoError(w.Start())
 	defer w.Stop()
 
-	cfg := client.TimeSkippingConfig{Enabled: true}
+	// One skip allowed against a chain that wants one per run, so the cap has to
+	// bite before the chain can finish. The count carries across continue-as-new,
+	// which is the runaway case the cap exists for.
+	cfg := client.TimeSkippingConfig{Enabled: true, MaxSessionSkipCount: 1}
+	wfID := "wf-" + uuid.NewString()
 	run, err := s.server.Client().ExecuteWorkflow(ctx,
-		client.StartWorkflowOptions{ID: "wf-" + uuid.NewString(), TaskQueue: tq, TimeSkippingConfig: &cfg},
-		SleepWorkflow, 100000.0)
+		client.StartWorkflowOptions{ID: wfID, TaskQueue: tq, TimeSkippingConfig: &cfg},
+		ContinueAsNewSleepWorkflow, CANArgs{SleepSeconds: 3600, RunsRemaining: 3, CurrentRun: 1})
 	s.NoError(err)
-	var result SleepResult
-	s.NoError(run.Get(ctx, &result))
-	s.Equal("all done", result.Message)
+	defer func() { _ = s.server.Client().CancelWorkflow(ctx, wfID, "") }()
+	firstRunID := run.GetRunID()
 
-	now, err := timeskipping.GetWorkflowCurrentTime(ctx, s.server.Client(), run)
+	// The allowed skip lands: an hour of the first run goes by at once, which is
+	// what lets the chain reach its second run this quickly.
+	require.Eventually(s.T(), func() bool {
+		desc, derr := s.server.Client().DescribeWorkflowExecution(ctx, wfID, "")
+		return derr == nil && desc.GetWorkflowExecutionInfo().GetExecution().GetRunId() != firstRunID
+	}, 15*time.Second, 200*time.Millisecond,
+		"expected the one allowed skip to carry the chain past its first run")
+
+	tsi, err := timeskipping.GetWorkflowTimeSkippingInfo(ctx, s.server.Client(), run)
 	s.NoError(err)
-	s.assertTimestampFromNow(now, 100000*time.Second, 30*time.Second)
-	s.assertTimeWasSkipped(ctx, run)
+	s.NotNil(tsi)
+	s.NotNil(tsi.EffectiveConfig)
+	s.False(tsi.EffectiveConfig.Enabled,
+		"expected reaching the skip cap to turn time skipping off")
+
+	// And it stays off, so the next run's hour is real time and the chain cannot
+	// finish. Same shape as TestNoTimeSkippingConfig.
+	deadline, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	s.Error(run.Get(deadline, nil),
+		"expected the rest of the chain to wait out real time once the cap was reached")
+
+	// Pinned to the first run on purpose: that is where the allowed skip
+	// happened, and run.Get above followed the chain, which rewrites run's own
+	// run ID to the successor (see workflowRunImpl.Get).
+	s.assertTimeWasSkipped(ctx, s.server.Client().GetWorkflow(ctx, wfID, firstRunID))
 }
 
-// TestWorkflowEnvTimeSkippingManualV2 ports
-// test_workflow_env_time_skipping_manual_v2: start a very long sleep with no
-// config, then fast-forward only the first 1000s.
-func (s *TimeSkippingV2TestSuite) TestWorkflowEnvTimeSkippingManualV2() {
+func (s *TimeSkippingV2TestSuite) TestBoundedFastForwardAdvancesClockByItsDuration() {
 	ctx := context.Background()
 	tq := "tq-" + uuid.NewString()
 	w := worker.New(s.server.Client(), tq, worker.Options{})
@@ -1075,7 +1086,7 @@ func (s *TimeSkippingV2TestSuite) TestWorkflowEnvTimeSkippingManualV2() {
 
 	now, err := timeskipping.GetWorkflowCurrentTime(ctx, s.server.Client(), run)
 	s.NoError(err)
-	s.assertTimestampFromNow(now, 0, 5*time.Second)
+	s.WithinDuration(time.Now(), now, 5*time.Second)
 
 	ok, err := timeskipping.FastForwardWorkflow(ctx, s.server.Client(), run, timeskipping.WorkflowFastForwardOptions{Duration: 1000 * time.Second})
 	s.NoError(err)
@@ -1083,58 +1094,15 @@ func (s *TimeSkippingV2TestSuite) TestWorkflowEnvTimeSkippingManualV2() {
 
 	now, err = timeskipping.GetWorkflowCurrentTime(ctx, s.server.Client(), run)
 	s.NoError(err)
-	s.assertTimestampFromNow(now, 1000*time.Second, 30*time.Second)
+	s.WithinDuration(time.Now().Add(1000*time.Second), now, 30*time.Second)
 	s.assertTimeWasSkipped(ctx, run)
 
 	s.NoError(s.server.Client().CancelWorkflow(ctx, run.GetID(), run.GetRunID()))
 }
 
-// TestWorkflowEnvTimeSkippingDisabledV2 ports
-// test_workflow_env_time_skipping_disabled_v2: the same short sleep with and
-// without a time-skipping config, checked against wall-clock time.
-func (s *TimeSkippingV2TestSuite) TestWorkflowEnvTimeSkippingDisabledV2() {
-	ctx := context.Background()
-	tq := "tq-" + uuid.NewString()
-	w := worker.New(s.server.Client(), tq, worker.Options{})
-	registerTSTestWorkflows(w)
-	s.NoError(w.Start())
-	defer w.Stop()
-
-	// With a time-skipping config: a 3s sleep finishes in well under 3s wall.
-	cfg := client.TimeSkippingConfig{Enabled: true}
-	start := time.Now()
-	tsOnRun, err := s.server.Client().ExecuteWorkflow(ctx,
-		client.StartWorkflowOptions{
-			ID: "wf-" + uuid.NewString(), TaskQueue: tq, TimeSkippingConfig: &cfg,
-		},
-		SleepWorkflow, 3.0)
-	s.NoError(err)
-	var tsOnResult SleepResult
-	s.NoError(tsOnRun.Get(ctx, &tsOnResult))
-	s.Equal("all done", tsOnResult.Message)
-	s.Lessf(time.Since(start), 2500*time.Millisecond,
-		"expected the 3s sleep to be skipped, took %v", time.Since(start))
-	s.assertTimeWasSkipped(ctx, tsOnRun)
-
-	// Without time skipping: the same sleep takes real time.
-	start = time.Now()
-	var tsOffRun client.WorkflowRun
-	tsOffRun, err = s.server.Client().ExecuteWorkflow(ctx,
-		client.StartWorkflowOptions{ID: "wf-" + uuid.NewString(), TaskQueue: tq},
-		SleepWorkflow, 3.0)
-	s.NoError(err)
-	var tsOffResult SleepResult
-	s.NoError(tsOffRun.Get(ctx, &tsOffResult))
-	s.Equal("all done", tsOffResult.Message)
-	s.Greaterf(time.Since(start), 2500*time.Millisecond,
-		"expected the 3s sleep to run in real time, took %v", time.Since(start))
-	s.assertTimeWasNotSkipped(ctx, tsOffRun)
-}
-
-// TestWorkflowEnvTimeSkippingBasicViaUpdateV2 ports
-// test_workflow_env_time_skipping_basic_via_update_v2: start with no config,
-// then enable unbounded skipping and run to completion.
-func (s *TimeSkippingV2TestSuite) TestWorkflowEnvTimeSkippingBasicViaUpdateV2() {
+// TestUnboundedFastForwardEnablesSkippingMidRun starts with no config, then
+// enables unbounded skipping on the running workflow and runs it to completion.
+func (s *TimeSkippingV2TestSuite) TestUnboundedFastForwardEnablesSkippingMidRun() {
 	ctx := context.Background()
 	tq := "tq-" + uuid.NewString()
 	w := worker.New(s.server.Client(), tq, worker.Options{})
@@ -1159,14 +1127,6 @@ func (s *TimeSkippingV2TestSuite) TestWorkflowEnvTimeSkippingBasicViaUpdateV2() 
 
 	now, err := timeskipping.GetWorkflowCurrentTime(ctx, s.server.Client(), run)
 	s.NoError(err)
-	s.assertTimestampFromNow(now, 100000*time.Second, 30*time.Second)
+	s.WithinDuration(time.Now().Add(100000*time.Second), now, 30*time.Second)
 	s.assertTimeWasSkipped(ctx, run)
 }
-
-// Sanity: the compile-time check that a subset of imports is actually used.
-var (
-	_ = math.Pi
-	_ = errors.New
-	_ sync.Mutex
-	_ = serviceerror.NewInvalidArgument
-)

@@ -150,8 +150,8 @@ func FastForwardWorkflow(
 }
 
 // GetWorkflowTimeSkippingInfo fetches the workflow's TimeSkippingInfo via
-// DescribeWorkflowExecution. Returns (nil, nil) if the workflow has never had
-// time skipping enabled.
+// DescribeWorkflow. Returns (nil, nil) if the workflow has never had time
+// skipping enabled.
 //
 // Exposed as: [go.temporal.io/sdk/timeskipping.GetWorkflowTimeSkippingInfo]
 //
@@ -162,11 +162,12 @@ func GetWorkflowTimeSkippingInfo(
 	// Empty run ID: TimeSkippingInfo is per-run state that propagates along the
 	// chain, so reading the current run is what reports where time skipping now is.
 	// The run's own ID would pin to whichever run it was built from.
-	desc, err := c.DescribeWorkflowExecution(ctx, run.GetID(), "")
+	desc, err := c.DescribeWorkflow(ctx, run.GetID(), "")
 	if err != nil {
 		return nil, err
 	}
-	return timeSkippingInfoFromProto(desc.GetWorkflowExtendedInfo().GetTimeSkippingInfo()), nil
+	return timeSkippingInfoFromProto(
+		desc.RawResponse.GetWorkflowExtendedInfo().GetTimeSkippingInfo()), nil
 }
 
 // GetWorkflowCurrentTime returns the workflow's current virtual clock, read
