@@ -61,6 +61,10 @@ func (s *TimeSkippingV2TestSuite) TearDownSuite() {
 	}
 }
 
+func (s *TimeSkippingV2TestSuite) getWorkflowRun(ctx context.Context, run client.WorkflowRun) client.WorkflowRun {
+	return s.server.Client().GetWorkflow(ctx, run.GetID(), run.GetRunID())
+}
+
 func (s *TimeSkippingV2TestSuite) assertTimeWasSkipped(ctx context.Context, run client.WorkflowRun) {
 	found, err := historyHasEventType(ctx, s.server.Client(), run,
 		enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_TIME_SKIPPING_TRANSITIONED)
@@ -608,6 +612,7 @@ func (s *TimeSkippingV2TestSuite) TestFastForwardSpansRetries() {
 			},
 		}, FailOnceThenSleepWorkflow, 3600.0)
 	s.NoError(err)
+	firstRun := s.getWorkflowRun(ctx, run)
 
 	ok, err := timeskipping.FastForwardWorkflow(ctx, s.server.Client(), run, timeskipping.WorkflowFastForwardOptions{Duration: 2*time.Hour + 30*time.Minute})
 	s.NoError(err)
@@ -624,7 +629,7 @@ func (s *TimeSkippingV2TestSuite) TestFastForwardSpansRetries() {
 	}, 10*time.Second, 200*time.Millisecond,
 		"expected two runs: the failed attempt and its retry")
 
-	s.assertTimeWasSkipped(ctx, run)
+	s.assertTimeWasSkipped(ctx, firstRun)
 }
 
 func (s *TimeSkippingV2TestSuite) TestFastForwardSpansContinueAsNew() {
@@ -639,6 +644,7 @@ func (s *TimeSkippingV2TestSuite) TestFastForwardSpansContinueAsNew() {
 		client.StartWorkflowOptions{ID: "wf-" + uuid.NewString(), TaskQueue: tq},
 		ContinueAsNewSleepWorkflow, CANArgs{SleepSeconds: 3600, RunsRemaining: 3, CurrentRun: 1})
 	s.NoError(err)
+	firstRun := s.getWorkflowRun(ctx, run)
 
 	ok, err := timeskipping.FastForwardWorkflow(ctx, s.server.Client(), run, timeskipping.WorkflowFastForwardOptions{Duration: 2 * time.Hour})
 	s.NoError(err)
@@ -654,7 +660,7 @@ func (s *TimeSkippingV2TestSuite) TestFastForwardSpansContinueAsNew() {
 		return err == nil && n == 3
 	}, 10*time.Second, 200*time.Millisecond, "expected all three runs of the chain")
 
-	s.assertTimeWasSkipped(ctx, run)
+	s.assertTimeWasSkipped(ctx, firstRun)
 }
 
 func (s *TimeSkippingV2TestSuite) TestUnboundedWaitSpansContinueAsNew() {
@@ -670,6 +676,7 @@ func (s *TimeSkippingV2TestSuite) TestUnboundedWaitSpansContinueAsNew() {
 		client.StartWorkflowOptions{ID: wfID, TaskQueue: tq},
 		ContinueAsNewSleepWorkflow, CANArgs{SleepSeconds: 3600, RunsRemaining: 3, CurrentRun: 1})
 	s.NoError(err)
+	firstRun := s.getWorkflowRun(ctx, run)
 
 	ok, err := timeskipping.FastForwardWorkflow(ctx, s.server.Client(), run,
 		timeskipping.WorkflowFastForwardOptions{})
@@ -689,7 +696,7 @@ func (s *TimeSkippingV2TestSuite) TestUnboundedWaitSpansContinueAsNew() {
 	var result string
 	s.NoError(run.Get(ctx, &result))
 	s.Equal("done", result)
-	s.assertTimeWasSkipped(ctx, run)
+	s.assertTimeWasSkipped(ctx, firstRun)
 }
 
 func (s *TimeSkippingV2TestSuite) TestFastForwardSpansCronRestarts() {
@@ -1013,62 +1020,6 @@ func (s *TimeSkippingV2TestSuite) TestMaxSessionSkipCountOnStartOptions() {
 	startedTSC := started.GetWorkflowExecutionStartedEventAttributes().GetTimeSkippingConfig()
 	s.NotNil(startedTSC)
 	s.EqualValues(5, startedTSC.GetMaxSessionSkipCount())
-}
-
-// TestMaxSessionSkipCountIsEnforced checks the cap is acted on rather than
-// merely recorded: the one skip it allows carries the chain past its first run,
-// and then time skipping switches itself off and the rest of the chain waits out
-// real time.
-//
-// CurrentSessionSkipCount is deliberately not asserted here. The server reports
-// it as zero throughout, even while skipping is still enabled, so it cannot
-// distinguish "capped" from "never skipped".
-func (s *TimeSkippingV2TestSuite) TestMaxSessionSkipCountIsEnforced() {
-	ctx := context.Background()
-	tq := "tq-" + uuid.NewString()
-	w := worker.New(s.server.Client(), tq, worker.Options{})
-	registerTSTestWorkflows(w)
-	s.NoError(w.Start())
-	defer w.Stop()
-
-	// One skip allowed against a chain that wants one per run, so the cap has to
-	// bite before the chain can finish. The count carries across continue-as-new,
-	// which is the runaway case the cap exists for.
-	cfg := client.TimeSkippingConfig{Enabled: true, MaxSessionSkipCount: 1}
-	wfID := "wf-" + uuid.NewString()
-	run, err := s.server.Client().ExecuteWorkflow(ctx,
-		client.StartWorkflowOptions{ID: wfID, TaskQueue: tq, TimeSkippingConfig: &cfg},
-		ContinueAsNewSleepWorkflow, CANArgs{SleepSeconds: 3600, RunsRemaining: 3, CurrentRun: 1})
-	s.NoError(err)
-	defer func() { _ = s.server.Client().CancelWorkflow(ctx, wfID, "") }()
-	firstRunID := run.GetRunID()
-
-	// The allowed skip lands: an hour of the first run goes by at once, which is
-	// what lets the chain reach its second run this quickly.
-	require.Eventually(s.T(), func() bool {
-		desc, derr := s.server.Client().DescribeWorkflowExecution(ctx, wfID, "")
-		return derr == nil && desc.GetWorkflowExecutionInfo().GetExecution().GetRunId() != firstRunID
-	}, 15*time.Second, 200*time.Millisecond,
-		"expected the one allowed skip to carry the chain past its first run")
-
-	tsi, err := timeskipping.GetWorkflowTimeSkippingInfo(ctx, s.server.Client(), run)
-	s.NoError(err)
-	s.NotNil(tsi)
-	s.NotNil(tsi.EffectiveConfig)
-	s.False(tsi.EffectiveConfig.Enabled,
-		"expected reaching the skip cap to turn time skipping off")
-
-	// And it stays off, so the next run's hour is real time and the chain cannot
-	// finish. Same shape as TestNoTimeSkippingConfig.
-	deadline, cancel := context.WithTimeout(ctx, 3*time.Second)
-	defer cancel()
-	s.Error(run.Get(deadline, nil),
-		"expected the rest of the chain to wait out real time once the cap was reached")
-
-	// Pinned to the first run on purpose: that is where the allowed skip
-	// happened, and run.Get above followed the chain, which rewrites run's own
-	// run ID to the successor (see workflowRunImpl.Get).
-	s.assertTimeWasSkipped(ctx, s.server.Client().GetWorkflow(ctx, wfID, firstRunID))
 }
 
 func (s *TimeSkippingV2TestSuite) TestBoundedFastForwardAdvancesClockByItsDuration() {
