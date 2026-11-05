@@ -22,6 +22,7 @@ to docs, or any other relevant information.
 
 ### Added
 
+- Added experimental API for calling `SignalWithStartWorkflow` within a workflow.
 
 - Added experimental Event Groups support: `workflow.NewEventGroup`, `workflow.WithEventGroups`,
   and `EventGroups` on workflow command options. Update handlers get an implicit group. Signal

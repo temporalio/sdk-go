@@ -210,12 +210,21 @@ type RequestCancelNexusOperationInput struct {
 	seq int64
 }
 
+// executeSystemNexusOperationInput is the input to systemnexus_executeOperation.
+type executeSystemNexusOperationInput struct {
+	Service   string
+	Operation string
+	Input     any
+}
+
 // WorkflowOutboundInterceptor is an interface for all workflow calls
 // originating from the SDK. See documentation in the interceptor package for
 // more details.
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.WorkflowOutboundInterceptor]
 type WorkflowOutboundInterceptor interface {
+	systemnexus_workflowOutboundInterceptor
+
 	// Go intercepts workflow.Go.
 	Go(ctx Context, name string, f func(ctx Context)) Context
 
