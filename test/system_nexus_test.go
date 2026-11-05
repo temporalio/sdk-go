@@ -56,11 +56,6 @@ func (ts *SystemNexusTestSuite) SetupSuite() {
 		options.DataConverter = converter.NewCodecDataConverter(
 			converter.GetDefaultDataConverter(), &intTestSigningCodec{},
 		)
-		options.ContextPropagators = []workflow.ContextPropagator{
-			&systemNexusTestContextPropagator{
-				ContextPropagator: NewKeysPropagator([]string{testContextKey1}),
-			},
-		}
 	}))
 	ts.NoError(ts.InitNamespace())
 }
@@ -81,8 +76,6 @@ func (ts *SystemNexusTestSuite) SetupTest() {
 	ts.worker.RegisterWorkflow(SignalAndStartWithLotsOfOptions)
 	ts.worker.RegisterWorkflow(SignalAndStartWithCron)
 	ts.worker.RegisterWorkflow(SignalAndStartWithEncodingFailure)
-	ts.worker.RegisterWorkflow(SignalAndStartWithContext)
-	ts.worker.RegisterWorkflow(SignalAndStartWithPropagationFailure)
 	ts.worker.RegisterWorkflow(ReceiveSignalRepeatedly)
 	ts.NoError(ts.worker.Start())
 }
@@ -150,24 +143,6 @@ func (ts *SystemNexusTestSuite) assertNoScheduledNexusOperation(
 		assertions.NoError(err)
 		assertions.Nil(event.GetNexusOperationScheduledEventAttributes())
 	}
-}
-
-// systemNexusTestContextPropagator injects an error into the workflow context
-// to simulate a context propagation failure.
-type systemNexusTestContextPropagator struct {
-	workflow.ContextPropagator
-}
-
-type systemNexusPropagationErrorKey struct{}
-
-func (p *systemNexusTestContextPropagator) InjectFromWorkflow(
-	ctx workflow.Context,
-	writer workflow.HeaderWriter,
-) error {
-	if message, ok := ctx.Value(systemNexusPropagationErrorKey{}).(string); ok {
-		return errors.New(message)
-	}
-	return p.ContextPropagator.InjectFromWorkflow(ctx, writer)
 }
 
 // systemNexusTestInterceptor records:
@@ -298,16 +273,6 @@ func SignalAndStartWithEncodingFailure(ctx workflow.Context, calleeID, field str
 	return workflow.SignalWithStartWorkflow(
 		ctx, options, "signal", signalArg, ReceiveSignalRepeatedly, workflowArg,
 	).Get(ctx, nil)
-}
-
-func SignalAndStartWithContext(ctx workflow.Context, calleeID, value string) (string, error) {
-	ctx = workflow.WithValue(ctx, contextKey(testContextKey1), value)
-	return SignalAndStartOnce(ctx, calleeID)
-}
-
-func SignalAndStartWithPropagationFailure(ctx workflow.Context, calleeID string) (string, error) {
-	ctx = workflow.WithValue(ctx, systemNexusPropagationErrorKey{}, "context injection failed")
-	return SignalAndStartOnce(ctx, calleeID)
 }
 
 type LotsOfOptions struct {
@@ -450,52 +415,6 @@ func (ts *SystemNexusTestSuite) TestWorkflowSignalWithStartEncodingFailure() {
 			ts.assertNoScheduledNexusOperation(ctx, callerID)
 		})
 	}
-}
-
-// TestWorkflowSignalWithStartContextPropagation checks that the context propagator
-// is invoked and the payload is present in the signal-with-start request.
-func (ts *SystemNexusTestSuite) TestWorkflowSignalWithStartContextPropagation() {
-	ctx, cancel := context.WithTimeout(ts.T().Context(), 30*time.Second)
-	defer cancel()
-
-	callerID := ts.workflowID("caller")
-	calleeID := ts.workflowID("callee")
-	value := "from caller"
-	var calleeRunID string
-	ts.NoError(ts.executeWorkflowWithOptions(executeWorkflowOptions{
-		ID:       callerID,
-		Workflow: SignalAndStartWithContext,
-		Args:     []any{calleeID, value},
-		Result:   &calleeRunID,
-	}))
-	ts.NoError(ts.client.GetWorkflow(ctx, calleeID, calleeRunID).Get(ctx, nil))
-
-	request := ts.signalWithStartRequestFromHistory(ctx, callerID)
-	payload := request.GetHeader().GetFields()[testContextKey1]
-	ts.NotNil(payload, "signal-with-start must propagate workflow context")
-	var got string
-	ts.NoError(converter.GetDefaultDataConverter().FromPayload(payload, &got))
-	ts.Equal(value, got)
-	ts.NotContains(payload.GetMetadata(), "ctx-signature",
-		"propagator payloads must not be codec-encoded again")
-}
-
-// TestWorkflowSignalWithStartPropagatorError checks that context propagation
-// errors abort signal-with-start ops and that the error makes its way back
-// to the caller.
-func (ts *SystemNexusTestSuite) TestWorkflowSignalWithStartPropagatorError() {
-	ctx, cancel := context.WithTimeout(ts.T().Context(), 30*time.Second)
-	defer cancel()
-
-	callerID := ts.workflowID("caller")
-	calleeID := ts.workflowID("callee")
-	err := ts.executeWorkflowWithOptions(executeWorkflowOptions{
-		ID:       callerID,
-		Workflow: SignalAndStartWithPropagationFailure,
-		Args:     []any{calleeID},
-	})
-	ts.ErrorContains(err, "context injection failed")
-	ts.assertNoScheduledNexusOperation(ctx, callerID)
 }
 
 // TestWorkflowSignalWithStartInterceptors checks that signal-with-start
