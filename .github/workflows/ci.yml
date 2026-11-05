@@ -29,7 +29,7 @@ jobs:
           rustup toolchain install 1.96.0 --profile minimal
           cargo +1.96.0 install --locked --features advanced \
             --git https://github.com/temporalio/nexgen \
-            --rev 03141d39621375e2621486b7c976850bb074a3e3 nexgen
+            --rev 8ecfb12dc39140e8a21cd5d21679ebcbe9a7e1fa nexgen
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
       - name: Check generated files
@@ -65,13 +65,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-intel, macos-arm, windows-latest]
+        os: [ubuntu-latest, macos-arm, windows-latest]
         go-version: ["oldstable", "stable"]
         include:
-          - os: macos-intel
-            runsOn: macos-15-intel
           - os: macos-arm
-            runsOn: macos-14
+            runsOn: macos-15
     permissions:
       contents: read
       checks: write
@@ -116,13 +114,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-intel, macos-arm, windows-latest]
+        os: [ubuntu-latest, macos-arm, windows-latest]
         go-version: ["oldstable", "stable"]
         include:
-          - os: macos-intel
-            runsOn: macos-15-intel
           - os: macos-arm
-            runsOn: macos-14
+            runsOn: macos-15
     permissions:
       contents: read
       checks: write
@@ -167,13 +163,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-intel, macos-arm, windows-latest]
+        os: [ubuntu-latest, macos-arm, windows-latest]
         go-version: ["oldstable", "stable"]
         include:
-          - os: macos-intel
-            runsOn: macos-15-intel
           - os: macos-arm
-            runsOn: macos-14
+            runsOn: macos-15
     permissions:
       contents: read
       checks: write
@@ -250,6 +244,9 @@ jobs:
           DISABLE_NEXUS_SERIALIZATION_CONTEXT_TESTS: "1"
           # TODO(antlai-temporal): Remove this flag once server 1.27 released.
           DISABLE_SERVER_1_27_TESTS: "1"
+          # TODO: Remove this flag once samples-server's pinned Temporal server supports
+          # Event Groups (>= 1.32.0-162).
+          DISABLE_EVENT_GROUPS_TESTS: "1"
           DISABLE_STANDALONE_ACTIVITY_TESTS: "1"
           DISABLE_STANDALONE_NEXUS_TESTS: "1"
           DISABLE_NEXUS_SDK_ERGONOMICS_TESTS: "1"
@@ -379,7 +376,7 @@ jobs:
     name: Required PR Checks
     # Without always(), this job would be skipped when a dependency fails, and GitHub
     # treats a skipped required check as passing.
-    if: always()
+    if: ${{ always() && github.event_name == 'pull_request' }}
     needs:
       - check
       - unit-test

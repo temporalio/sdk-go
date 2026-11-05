@@ -156,6 +156,7 @@ func (s *historyEventIteratorSuite) SetupTest() {
 		excludeInternalFromRetry: &atomic.Bool{},
 		getSystemInfoTimeout:     defaultGetSystemInfoTimeout,
 	}
+	s.wfClient.interceptor = &workflowClientInterceptor{client: s.wfClient}
 }
 
 func (s *historyEventIteratorSuite) TearDownTest() {
@@ -1104,6 +1105,43 @@ func (s *workflowRunSuite) TestGetWorkflow() {
 	err := workflowRun.Get(context.Background(), &decodedResult)
 	s.Nil(err)
 	s.Equal(workflowResult, decodedResult)
+}
+
+func (s *workflowRunSuite) TestDescribeWorkflowRawResponse() {
+	for _, requestedRunID := range []string{"", runID} {
+		s.Run(requestedRunID, func() {
+			response := &workflowservice.DescribeWorkflowExecutionResponse{
+				WorkflowExecutionInfo: &workflowpb.WorkflowExecutionInfo{
+					Execution: &commonpb.WorkflowExecution{
+						WorkflowId: workflowID,
+						RunId:      runID,
+					},
+					Status:           enumspb.WORKFLOW_EXECUTION_STATUS_RUNNING,
+					SearchAttributes: &commonpb.SearchAttributes{},
+				},
+				PendingActivities: []*workflowpb.PendingActivityInfo{{
+					ActivityId: "pending-activity",
+					State:      enumspb.PENDING_ACTIVITY_STATE_STARTED,
+				}},
+			}
+			s.workflowServiceClient.EXPECT().DescribeWorkflowExecution(
+				gomock.Any(),
+				&workflowservice.DescribeWorkflowExecutionRequest{
+					Namespace: DefaultNamespace,
+					Execution: &commonpb.WorkflowExecution{WorkflowId: workflowID, RunId: requestedRunID},
+				},
+				gomock.Any(),
+			).Return(response, nil)
+
+			desc, err := s.workflowClient.DescribeWorkflow(s.T().Context(), workflowID, requestedRunID)
+			s.Require().NoError(err)
+			s.Same(response, desc.RawResponse)
+			s.Equal(workflowID, desc.WorkflowExecution.ID)
+			s.Equal(runID, desc.WorkflowExecution.RunID)
+			s.Equal(enumspb.WORKFLOW_EXECUTION_STATUS_RUNNING, desc.Status)
+			s.Equal("pending-activity", desc.RawResponse.GetPendingActivities()[0].GetActivityId())
+		})
+	}
 }
 
 // Verify that when `GetWorkflow` is called with no run ID, the current run ID is populated
