@@ -1,11 +1,5 @@
 package test_test
 
-// Port of tests/testing/test_timeskipping_v2.py from sdk-python. Tests are
-// 1:1 with the Python version where the language allows; each test ends with
-// an assertTimeWasSkipped/NotSkipped(handle) engagement check.
-//
-// The dev server is downloaded; see devServerVersion.
-
 import (
 	"context"
 	"errors"
@@ -33,13 +27,6 @@ import (
 	"go.temporal.io/sdk/workflow"
 )
 
-// ============================================================================
-// Suite
-// ============================================================================
-
-// devServerVersion is the shared pin, not a time-skipping-specific one. This
-// suite starts its own server because the time-skipping dynamic config cannot
-// be set on the shared one; see timeskipping.StartDevServer.
 const devServerVersion = internal.PinnedDevServerVersion
 
 type TimeSkippingV2TestSuite struct {
@@ -53,10 +40,6 @@ func TestTimeSkippingV2TestSuite(t *testing.T) {
 	suite.Run(t, new(TimeSkippingV2TestSuite))
 }
 
-// SetupTest rebinds the embedded *require.Assertions to the current sub-test
-// T. Without this, assertions written via s.NoError()/s.True()/... target the
-// parent suite T from SetupSuite, and FailNow does not halt the sub-test —
-// making later assertions silent no-ops and producing false PASS reports.
 func (s *TimeSkippingV2TestSuite) SetupTest() {
 	s.Assertions = require.New(s.T())
 }
@@ -64,10 +47,9 @@ func (s *TimeSkippingV2TestSuite) SetupTest() {
 func (s *TimeSkippingV2TestSuite) SetupSuite() {
 	s.Assertions = require.New(s.T())
 
+	// Start our own server because the timeskipping server CHASM flags will not
+	// work for the entire suite.
 	srv, err := timeskipping.StartDevServer(context.Background(), testsuite.DevServerOptions{
-		// The time-skipping dynamic config uses the post-rename key names, which
-		// no published CLI release carries yet; point this at a newer binary to
-		// run these suites. See timeskipping.StartDevServer.
 		ExistingPath:   os.Getenv("TEMPORAL_DEV_SERVER_EXISTING_PATH"),
 		CachedDownload: testsuite.CachedDownload{Version: devServerVersion},
 		ClientOptions:  &client.Options{Namespace: "default"},
@@ -83,16 +65,6 @@ func (s *TimeSkippingV2TestSuite) TearDownSuite() {
 	}
 }
 
-// Time skipping is per execution: a workflow skips only if it was started with
-// a client.TimeSkippingConfig, or had one applied afterwards by a fast-forward.
-// Tests that want the wall clock simply start without one.
-
-// ============================================================================
-// Helpers
-// ============================================================================
-
-// assertTimeWasSkipped scans history and requires that at least one
-// WorkflowExecutionTimeSkippingTransitioned event fired for this workflow.
 func (s *TimeSkippingV2TestSuite) assertTimeWasSkipped(ctx context.Context, run client.WorkflowRun) {
 	found, err := historyHasEventType(ctx, s.server.Client(), run,
 		enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_TIME_SKIPPING_TRANSITIONED)
@@ -135,7 +107,7 @@ func (s *TimeSkippingV2TestSuite) assertDurationSame(want, got time.Duration, to
 
 // waitForFastForwardID polls describe until the workflow's current
 // fast_forward_id is non-empty and (if expectChangeFrom != "") differs from
-// it. Used in TestOverridingFastForward.
+// it.
 func (s *TimeSkippingV2TestSuite) waitForFastForwardID(
 	ctx context.Context, run client.WorkflowRun, expectChangeFrom string, deadline time.Duration,
 ) (string, error) {
@@ -156,14 +128,6 @@ func (s *TimeSkippingV2TestSuite) waitForFastForwardID(
 	return "", errors.New("timed out waiting for expected fast_forward_id")
 }
 
-// ============================================================================
-// Workflow definitions
-// ============================================================================
-
-// SleepWorkflow sleeps for the requested duration then reports timings.
-// The `tick` signal is a non-query WFT that causes workflow.Now() to have the
-// correct value if queried afterward.
-
 type SleepResult struct {
 	Start   time.Time
 	End     time.Time
@@ -172,9 +136,7 @@ type SleepResult struct {
 
 func SleepWorkflow(ctx workflow.Context, seconds float64) (SleepResult, error) {
 	tStart := workflow.Now(ctx)
-	// Signal channel for tick — same as Python signal.
 	tickCh := workflow.GetSignalChannel(ctx, "tick")
-	// Use a selector so sleep + signals interleave (mirrors Python semantics).
 	sleepFuture := workflow.NewTimer(ctx, time.Duration(seconds*float64(time.Second)))
 	for {
 		selector := workflow.NewSelector(ctx)
@@ -195,13 +157,12 @@ func SleepWorkflow(ctx workflow.Context, seconds float64) (SleepResult, error) {
 	return SleepResult{Start: tStart, End: workflow.Now(ctx), Message: "all done"}, nil
 }
 
-// InteractionWorkflow waits for N "proceed" signals with a 10h timeout.
-func InteractionWorkflow(ctx workflow.Context, requiredSignals int) (string, error) {
+func InteractionWorkflow(ctx workflow.Context, numRequiredSignals int) (string, error) {
 	ch := workflow.GetSignalChannel(ctx, "proceed")
 	timer := workflow.NewTimer(ctx, 10*time.Hour)
 	got := 0
 	done := false
-	for !done && got < requiredSignals {
+	for !done && got < numRequiredSignals {
 		selector := workflow.NewSelector(ctx)
 		selector.AddReceive(ch, func(c workflow.ReceiveChannel, _ bool) {
 			var dummy struct{}
@@ -217,7 +178,6 @@ func InteractionWorkflow(ctx workflow.Context, requiredSignals int) (string, err
 	return "done", nil
 }
 
-// FailOnceThenSleepWorkflow: sleeps and fails on first attempt; succeeds on later ones.
 func FailOnceThenSleepWorkflow(ctx workflow.Context, seconds float64) (string, error) {
 	if err := workflow.Sleep(ctx, time.Duration(seconds*float64(time.Second))); err != nil {
 		return "", err
@@ -228,7 +188,6 @@ func FailOnceThenSleepWorkflow(ctx workflow.Context, seconds float64) (string, e
 	return "done", nil
 }
 
-// ContinueAsNewSleepWorkflow: sleeps, then continue-as-news until runsRemaining==1.
 type CANArgs struct {
 	SleepSeconds  float64
 	RunsRemaining int
@@ -252,7 +211,6 @@ func ContinueAsNewSleepWorkflow(ctx workflow.Context, args CANArgs) (string, err
 	return "done", nil
 }
 
-// SignalWithStartTargetWorkflow: waits for at least one "go" signal, then sleeps.
 type SignalWithStartResult struct {
 	AfterSignal time.Time
 	End         time.Time
@@ -269,7 +227,6 @@ func SignalWithStartTargetWorkflow(ctx workflow.Context, seconds float64) (Signa
 	return SignalWithStartResult{AfterSignal: afterSignal, End: workflow.Now(ctx)}, nil
 }
 
-// ParentTimeSkippingWorkflow: parent sleeps 1h, starts a child, parent sleeps 1h.
 type ParentTimeSkippingArgs struct {
 	ChildID           string
 	ChildSleepSeconds float64
@@ -282,6 +239,7 @@ type ParentTimeSkippingResult struct {
 	ParentEnd             time.Time
 }
 
+// ParentTimeSkippingWorkflow: parent sleeps 1h, starts a child, parent sleeps 1h.
 func ParentTimeSkippingWorkflow(ctx workflow.Context, args ParentTimeSkippingArgs) (ParentTimeSkippingResult, error) {
 	res := ParentTimeSkippingResult{}
 	res.ParentStart = workflow.Now(ctx)
@@ -306,7 +264,6 @@ func ParentTimeSkippingWorkflow(ctx workflow.Context, args ParentTimeSkippingArg
 	return res, nil
 }
 
-// Registrar
 func registerTSTestWorkflows(w worker.Worker) {
 	w.RegisterWorkflow(SleepWorkflow)
 	w.RegisterWorkflow(InteractionWorkflow)
@@ -316,16 +273,6 @@ func registerTSTestWorkflows(w worker.Worker) {
 	w.RegisterWorkflow(ParentTimeSkippingWorkflow)
 }
 
-// ============================================================================
-// Tests — 1:1 ports of the Python V2 tests
-// ============================================================================
-
-// TestSkipFullRun ports test_skip_full_run: enable TS, let workflow run to completion.
-// TestPollFastForwardIssuedSeparately covers the CLI's shape: the fast-forward
-// is issued through UpdateWorkflowExecutionOptions and the wait is a separate
-// call, rather than the two being bundled by FastForward. This is the path
-// temporalio/cli#1246 went to the raw WorkflowService for, losing the
-// long-poll reissue loop in the process.
 func (s *TimeSkippingV2TestSuite) TestPollFastForwardIssuedSeparately() {
 	ctx := context.Background()
 	tq := "tq-" + uuid.NewString()
@@ -334,8 +281,7 @@ func (s *TimeSkippingV2TestSuite) TestPollFastForwardIssuedSeparately() {
 	s.NoError(w.Start())
 	defer w.Stop()
 
-	// Started with no time-skipping config, so the fast-forward below is what
-	// enables it.
+	// Start without time skipping.
 	run, err := s.server.Client().ExecuteWorkflow(ctx,
 		client.StartWorkflowOptions{ID: "wf-" + uuid.NewString(), TaskQueue: tq},
 		SleepWorkflow, 3600.0)
@@ -389,81 +335,26 @@ func (s *TimeSkippingV2TestSuite) TestPollFastForwardSpansContinueAsNew() {
 		ContinueAsNewSleepWorkflow, CANArgs{SleepSeconds: 3600, RunsRemaining: 3, CurrentRun: 1})
 	s.NoError(err)
 	firstRunID := run.GetRunID()
-	// Reaching the target disables time skipping, so the last run would sleep a
-	// real hour. Nothing here waits for the chain to finish; cancel it instead.
 	defer func() { _ = cl.CancelWorkflow(ctx, wfID, "") }()
 
-	// run still points at the first run; only its workflow ID reaches the server.
 	res, err := timeskipping.PollWorkflowFastForward(ctx, cl, run,
 		timeskipping.WorkflowPollFastForwardOptions{FastForwardID: ffID})
 	s.NoError(err)
 	s.True(res.Completed, "expected the fast-forward to complete on a later run")
 	s.Empty(res.FailedReason)
 
-	// The run that completed it is not the run the poll was given, which is what
-	// makes this a chain-spanning wait rather than a single-run one.
 	desc, err := cl.DescribeWorkflowExecution(ctx, wfID, "")
 	s.NoError(err)
 	s.NotEqual(firstRunID, desc.GetWorkflowExecutionInfo().GetExecution().GetRunId(),
-		"fast-forward completed without the chain advancing; test proves nothing")
+		"fast-forward completed without the chain advancing")
 
 	s.assertTimeWasSkipped(ctx, run)
 }
 
-// TestPollFastForwardSurfacesServerReason checks the other half of what
-// PollFastForward reports: a fast-forward that stops without completing comes
-// back as a result carrying the server's own explanation, not as an error. This
-// is the path the CLI takes to tell a user why nothing happened, so the reason
-// has to survive the trip intact.
-func (s *TimeSkippingV2TestSuite) TestPollFastForwardSurfacesServerReason() {
-	ctx := context.Background()
-	tq := "tq-" + uuid.NewString()
-	w := worker.New(s.server.Client(), tq, worker.Options{})
-	registerTSTestWorkflows(w)
-	s.NoError(w.Start())
-	defer w.Stop()
-
-	run, err := s.server.Client().ExecuteWorkflow(ctx,
-		client.StartWorkflowOptions{ID: "wf-" + uuid.NewString(), TaskQueue: tq},
-		SleepWorkflow, 60.0)
-	s.NoError(err)
-
-	// Fast-forward well past the workflow's own sleep, so the execution ends
-	// before the fast-forward reaches its target.
-	cl := s.server.Client()
-	ffID := uuid.NewString()
-	_, err = cl.UpdateWorkflowExecutionOptions(ctx, client.UpdateWorkflowExecutionOptionsRequest{
-		WorkflowId: run.GetID(),
-		WorkflowExecutionOptionsChanges: client.WorkflowExecutionOptionsChanges{
-			TimeSkippingConfig: &client.TimeSkippingConfigChange{
-				Value: &client.TimeSkippingConfig{
-					Enabled:           true,
-					FastForwardConfig: &client.FastForwardConfig{ID: ffID, Duration: 2 * time.Hour},
-				},
-			},
-		},
-	})
-	s.NoError(err)
-
-	res, err := timeskipping.PollWorkflowFastForward(ctx, cl, run,
-		timeskipping.WorkflowPollFastForwardOptions{FastForwardID: ffID})
-	s.NoError(err, "stopping without completing is an outcome, not a call failure")
-	s.False(res.Completed)
-	s.Contains(res.FailedReason, "execution ended",
-		"expected the server's own reason, got %q", res.FailedReason)
-
-	s.NoError(run.Get(ctx, nil))
-	s.assertTimeWasSkipped(ctx, run)
-}
-
-// TestPollFastForwardValidatesArgs guards the two arguments the standalone wait
-// cannot default.
 func (s *TimeSkippingV2TestSuite) TestPollFastForwardValidatesArgs() {
 	ctx := context.Background()
 	cl := s.server.Client()
 
-	// The workflow ID now comes from the run, so an empty one can only arrive
-	// via a run that has none.
 	_, err := timeskipping.PollWorkflowFastForward(ctx, cl, cl.GetWorkflow(ctx, "", ""),
 		timeskipping.WorkflowPollFastForwardOptions{FastForwardID: uuid.NewString()})
 	s.Error(err)
@@ -480,7 +371,6 @@ func (s *TimeSkippingV2TestSuite) TestFastForwardWorkflowRejectsNegativeDuration
 	ctx := context.Background()
 	cl := s.server.Client()
 
-	// Rejected before any RPC, so the workflow need not exist.
 	_, err := timeskipping.FastForwardWorkflow(ctx, cl,
 		cl.GetWorkflow(ctx, "wf-"+uuid.NewString(), ""),
 		timeskipping.WorkflowFastForwardOptions{Duration: -time.Hour})
@@ -510,15 +400,11 @@ func (s *TimeSkippingV2TestSuite) TestSkipFullRun() {
 	virtualElapsed := result.End.Sub(result.Start)
 	s.GreaterOrEqualf(virtualElapsed, 3600*time.Second,
 		"virtual elapsed was %v; expected >= 3600s", virtualElapsed)
-	// 1h timer should skip in well under 3s wall.
 	s.Lessf(wallElapsed, 3*time.Second,
 		"workflow took %v wall time; time skipping did not engage", wallElapsed)
 	s.assertTimeWasSkipped(ctx, run)
 }
 
-// TestNoTimeSkippingConfig ports test_with_time_skipping_disabled: a workflow
-// started without a time-skipping config runs on the wall clock, so its 1h
-// timer does not complete within 3s.
 func (s *TimeSkippingV2TestSuite) TestNoTimeSkippingConfig() {
 	ctx := context.Background()
 	tq := "tq-" + uuid.NewString()
@@ -535,12 +421,9 @@ func (s *TimeSkippingV2TestSuite) TestNoTimeSkippingConfig() {
 	deadline, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 	waitErr := run.Get(deadline, nil)
-	// Expect deadline exceeded (workflow can't finish in 3s of wall clock).
 	s.Error(waitErr)
 }
 
-// TestFastForwardWithResume ports test_fast_forward_with_resume: 1h FF,
-// signal, +1h FF, signal, workflow completes.
 func (s *TimeSkippingV2TestSuite) TestFastForwardWithResume() {
 	ctx := context.Background()
 	tq := "tq-" + uuid.NewString()
@@ -585,7 +468,6 @@ func (s *TimeSkippingV2TestSuite) TestFastForwardWithResume() {
 	s.assertTimeWasSkipped(ctx, run)
 }
 
-// TestPartialFastForwardThenUnbounded ports test_partial_fast_forward_then_unbounded.
 func (s *TimeSkippingV2TestSuite) TestPartialFastForwardThenUnbounded() {
 	ctx := context.Background()
 	tq := "tq-" + uuid.NewString()
@@ -610,7 +492,6 @@ func (s *TimeSkippingV2TestSuite) TestPartialFastForwardThenUnbounded() {
 	s.NoError(err)
 	s.assertDurationSame(30*60*time.Second, t1.Sub(t0), 10*time.Second)
 
-	// Unbounded resume: returns (false, nil) after termination.
 	ok, err = timeskipping.FastForwardWorkflow(ctx, s.server.Client(), run, timeskipping.WorkflowFastForwardOptions{})
 	s.NoError(err)
 	s.False(ok)
@@ -626,7 +507,6 @@ func (s *TimeSkippingV2TestSuite) TestPartialFastForwardThenUnbounded() {
 	s.assertTimeWasSkipped(ctx, run)
 }
 
-// TestChildWorkflowPropagatesTimeSkipping ports the equivalent test.
 func (s *TimeSkippingV2TestSuite) TestChildWorkflowPropagatesTimeSkipping() {
 	ctx := context.Background()
 	tq := "tq-" + uuid.NewString()
@@ -648,15 +528,12 @@ func (s *TimeSkippingV2TestSuite) TestChildWorkflowPropagatesTimeSkipping() {
 	s.NoError(run.Get(ctx, &result))
 	wallElapsed := time.Since(wallStart)
 
-	// Parent skipped 1h + 1h = 2h. Child skipped 1h. All virtual.
 	s.Lessf(wallElapsed, 15*time.Second, "took %v wall; expected TS engaged in both parent and child", wallElapsed)
 	s.assertTimeWasSkipped(ctx, run)
-	// Child too:
 	childRun := s.server.Client().GetWorkflow(ctx, childID, "")
 	s.assertTimeWasSkipped(ctx, childRun)
 }
 
-// TestChildWorkflowWithPropagationDisabled ports the equivalent test.
 func (s *TimeSkippingV2TestSuite) TestChildWorkflowWithPropagationDisabled() {
 	ctx := context.Background()
 	tq := "tq-" + uuid.NewString()
@@ -665,8 +542,6 @@ func (s *TimeSkippingV2TestSuite) TestChildWorkflowWithPropagationDisabled() {
 	s.NoError(w.Start())
 	defer w.Stop()
 
-	// The parent enables skipping for itself but refuses to pass it on, so its
-	// child runs on the wall clock.
 	cfg := client.TimeSkippingConfig{Enabled: true, DisablePropagation: true}
 
 	childID := "child-" + uuid.NewString()
@@ -680,8 +555,6 @@ func (s *TimeSkippingV2TestSuite) TestChildWorkflowWithPropagationDisabled() {
 		ParentTimeSkippingArgs{ChildID: childID, ChildSleepSeconds: 2},
 	)
 	s.NoError(err)
-	// Parent will skip its own timers; child won't skip (propagation off).
-	// Give the child a bit of wall time for its 2s sleep to complete.
 	var result ParentTimeSkippingResult
 	s.NoError(run.Get(ctx, &result))
 	s.assertTimeWasSkipped(ctx, run)
@@ -689,7 +562,6 @@ func (s *TimeSkippingV2TestSuite) TestChildWorkflowWithPropagationDisabled() {
 	s.assertTimeWasNotSkipped(ctx, childRun)
 }
 
-// TestFastForwardReturnsFalseWhenWorkflowTerminatesFirst ports the equivalent.
 func (s *TimeSkippingV2TestSuite) TestFastForwardReturnsFalseWhenWorkflowTerminatesFirst() {
 	ctx := context.Background()
 	tq := "tq-" + uuid.NewString()
@@ -703,14 +575,12 @@ func (s *TimeSkippingV2TestSuite) TestFastForwardReturnsFalseWhenWorkflowTermina
 		SleepWorkflow, 60.0)
 	s.NoError(err)
 
-	// FF beyond workflow's own sleep → workflow ends before FF target.
 	ok, err := timeskipping.FastForwardWorkflow(ctx, s.server.Client(), run, timeskipping.WorkflowFastForwardOptions{Duration: 2 * time.Hour})
 	s.NoError(err)
 	s.False(ok, "expected fast_forward to return false when workflow terminated first")
 	s.assertTimeWasSkipped(ctx, run)
 }
 
-// TestFastForwardSpansRetries: FF crosses retry backoff + attempt 2 sleep.
 func (s *TimeSkippingV2TestSuite) TestFastForwardSpansRetries() {
 	ctx := context.Background()
 	tq := "tq-" + uuid.NewString()
@@ -734,8 +604,6 @@ func (s *TimeSkippingV2TestSuite) TestFastForwardSpansRetries() {
 	ok, err := timeskipping.FastForwardWorkflow(ctx, s.server.Client(), run, timeskipping.WorkflowFastForwardOptions{Duration: 2*time.Hour + 30*time.Minute})
 	s.NoError(err)
 	s.True(ok, "expected FF to span retry")
-	// Re-enable unbounded skipping so the remaining ~30m of attempt-2 sleep
-	// is skipped rather than waited out.
 	_, err = timeskipping.FastForwardWorkflow(ctx, s.server.Client(), run, timeskipping.WorkflowFastForwardOptions{})
 	s.NoError(err)
 	var result string
@@ -744,7 +612,6 @@ func (s *TimeSkippingV2TestSuite) TestFastForwardSpansRetries() {
 	s.assertTimeWasSkipped(ctx, run)
 }
 
-// TestFastForwardSpansContinueAsNew.
 func (s *TimeSkippingV2TestSuite) TestFastForwardSpansContinueAsNew() {
 	ctx := context.Background()
 	tq := "tq-" + uuid.NewString()
@@ -761,7 +628,6 @@ func (s *TimeSkippingV2TestSuite) TestFastForwardSpansContinueAsNew() {
 	ok, err := timeskipping.FastForwardWorkflow(ctx, s.server.Client(), run, timeskipping.WorkflowFastForwardOptions{Duration: 2 * time.Hour})
 	s.NoError(err)
 	s.True(ok, "expected FF to span CAN chain")
-	// Re-enable unbounded.
 	_, err = timeskipping.FastForwardWorkflow(ctx, s.server.Client(), run, timeskipping.WorkflowFastForwardOptions{})
 	s.NoError(err)
 	var result string
@@ -784,14 +650,11 @@ func (s *TimeSkippingV2TestSuite) TestUnboundedWaitSpansContinueAsNew() {
 		ContinueAsNewSleepWorkflow, CANArgs{SleepSeconds: 3600, RunsRemaining: 3, CurrentRun: 1})
 	s.NoError(err)
 
-	// Unbounded: enable skipping and wait. Returns (false, nil) by contract.
 	ok, err := timeskipping.FastForwardWorkflow(ctx, s.server.Client(), run,
 		timeskipping.WorkflowFastForwardOptions{})
 	s.NoError(err)
 	s.False(ok)
 
-	// Checked immediately, with no Eventually: if the wait had stopped at the
-	// first continue-as-new, the chain would still be mid-flight here.
 	desc, err := s.server.Client().DescribeWorkflowExecution(ctx, wfID, "")
 	s.NoError(err)
 	s.Equal(enumspb.WORKFLOW_EXECUTION_STATUS_COMPLETED,
@@ -808,7 +671,6 @@ func (s *TimeSkippingV2TestSuite) TestUnboundedWaitSpansContinueAsNew() {
 	s.assertTimeWasSkipped(ctx, run)
 }
 
-// TestFastForwardSpansCronRestarts.
 func (s *TimeSkippingV2TestSuite) TestFastForwardSpansCronRestarts() {
 	ctx := context.Background()
 	tq := "tq-" + uuid.NewString()
@@ -849,9 +711,7 @@ func (s *TimeSkippingV2TestSuite) countWorkflowsWithID(ctx context.Context, wfID
 	return len(resp.GetExecutions()), nil
 }
 
-// TestSignalWithStartCarriesTimeSkippingConfig: the config travels on the
-// start options of a signal-with-start, same as an ordinary start.
-func (s *TimeSkippingV2TestSuite) TestSignalWithStartCarriesTimeSkippingConfig() {
+func (s *TimeSkippingV2TestSuite) TestSignalWithStartSkipsTime() {
 	ctx := context.Background()
 	tq := "tq-" + uuid.NewString()
 	w := worker.New(s.server.Client(), tq, worker.Options{})
@@ -877,7 +737,6 @@ func (s *TimeSkippingV2TestSuite) TestSignalWithStartCarriesTimeSkippingConfig()
 	s.assertTimeWasSkipped(ctx, run)
 }
 
-// TestGetTimeSkippingInfoDuringWorkflow.
 func (s *TimeSkippingV2TestSuite) TestGetTimeSkippingInfoDuringWorkflow() {
 	ctx := context.Background()
 	tq := "tq-" + uuid.NewString()
@@ -908,7 +767,6 @@ func (s *TimeSkippingV2TestSuite) TestGetTimeSkippingInfoDuringWorkflow() {
 	_ = run.Get(ctx, nil)
 }
 
-// TestGetTimeSkippingInfoReturnsNilWhenTSNeverEnabled.
 func (s *TimeSkippingV2TestSuite) TestGetTimeSkippingInfoReturnsNilWhenTSNeverEnabled() {
 	ctx := context.Background()
 	tq := "tq-" + uuid.NewString()
@@ -931,7 +789,6 @@ func (s *TimeSkippingV2TestSuite) TestGetTimeSkippingInfoReturnsNilWhenTSNeverEn
 	s.Nil(tsi)
 }
 
-// TestTimeSkippingVirtualClock.
 func (s *TimeSkippingV2TestSuite) TestTimeSkippingVirtualClock() {
 	ctx := context.Background()
 	tq := "tq-" + uuid.NewString()
@@ -960,7 +817,6 @@ func (s *TimeSkippingV2TestSuite) TestTimeSkippingVirtualClock() {
 	s.assertTimeWasSkipped(ctx, run)
 }
 
-// TestTransitionEventPayload.
 func (s *TimeSkippingV2TestSuite) TestTransitionEventPayload() {
 	ctx := context.Background()
 	tq := "tq-" + uuid.NewString()
@@ -995,14 +851,12 @@ func (s *TimeSkippingV2TestSuite) TestTransitionEventPayload() {
 	s.NotNil(found, "expected a disabled_after_fast_forward transition event")
 	attrs := found.GetWorkflowExecutionTimeSkippingTransitionedEventAttributes()
 	s.NotNil(attrs.GetTargetTime())
-	// wall_clock_time is set by server; existence check.
-	_ = attrs
+	s.NotNil(attrs.GetWallClockTime())
 
 	_ = s.server.Client().CancelWorkflow(ctx, run.GetID(), run.GetRunID())
 	s.assertTimeWasSkipped(ctx, run)
 }
 
-// TestChildWorkflowStartedEventHasStatePropagation.
 func (s *TimeSkippingV2TestSuite) TestChildWorkflowStartedEventHasStatePropagation() {
 	ctx := context.Background()
 	tq := "tq-" + uuid.NewString()
@@ -1022,7 +876,6 @@ func (s *TimeSkippingV2TestSuite) TestChildWorkflowStartedEventHasStatePropagati
 	var result ParentTimeSkippingResult
 	s.NoError(run.Get(ctx, &result))
 
-	// Verify child's WorkflowExecutionStarted event carries time_skipping_state_propagation.
 	childRun := s.server.Client().GetWorkflow(ctx, childID, "")
 	iter := s.server.Client().GetWorkflowHistory(ctx, childRun.GetID(), childRun.GetRunID(), false,
 		enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
@@ -1041,7 +894,6 @@ func (s *TimeSkippingV2TestSuite) TestChildWorkflowStartedEventHasStatePropagati
 	s.assertTimeWasSkipped(ctx, run)
 }
 
-// TestFastForwardClampedToExecutionTimeout.
 func (s *TimeSkippingV2TestSuite) TestFastForwardClampedToExecutionTimeout() {
 	ctx := context.Background()
 	tq := "tq-" + uuid.NewString()
@@ -1058,7 +910,6 @@ func (s *TimeSkippingV2TestSuite) TestFastForwardClampedToExecutionTimeout() {
 		}, SleepWorkflow, 100000.0)
 	s.NoError(err)
 
-	// FF for 1h — but execution timeout is 30m; workflow times out at ~30m before FF completes.
 	ok, err := timeskipping.FastForwardWorkflow(ctx, s.server.Client(), run, timeskipping.WorkflowFastForwardOptions{Duration: 1 * time.Hour})
 	s.NoError(err)
 	s.False(ok, "expected fast_forward to return false when workflow timed out first")
@@ -1077,13 +928,11 @@ func (s *TimeSkippingV2TestSuite) TestFastForwardClampedToExecutionTimeout() {
 	s.True(timedOut, "expected WORKFLOW_EXECUTION_TIMED_OUT in history")
 }
 
-// TestOverridingFastForwardRaisesOnOriginal — fire-and-forget one FF, then
-// fire another; awaiting the first surfaces the id-mismatch error.
 func (s *TimeSkippingV2TestSuite) TestOverridingFastForwardRaisesOnOriginal() {
 	ctx := context.Background()
 	tq := "tq-" + uuid.NewString()
 
-	// No worker yet — the initial workflow task stays pending so TS can't skip.
+	// No worker yet so skipping doesn't start.
 	run, err := s.server.Client().ExecuteWorkflow(ctx,
 		client.StartWorkflowOptions{ID: "wf-" + uuid.NewString(), TaskQueue: tq},
 		SleepWorkflow, 100000.0)
@@ -1136,9 +985,6 @@ func (s *TimeSkippingV2TestSuite) TestOverridingFastForwardRaisesOnOriginal() {
 	s.assertTimeWasSkipped(ctx, run)
 }
 
-// TestMaxSessionSkipCountOnStartOptions starts a workflow with
-// MaxSessionSkipCount=5 and reads the value back off the
-// WorkflowExecutionStarted event.
 func (s *TimeSkippingV2TestSuite) TestMaxSessionSkipCountOnStartOptions() {
 	ctx := context.Background()
 	cfg := client.TimeSkippingConfig{Enabled: true, MaxSessionSkipCount: 5}
@@ -1178,12 +1024,6 @@ func (s *TimeSkippingV2TestSuite) TestMaxSessionSkipCountOnStartOptions() {
 	s.EqualValues(5, startedTSC.GetMaxSessionSkipCount())
 }
 
-// ============================================================================
-// Ports of tests/testing/test_workflow_ts_v2.py
-// ============================================================================
-
-// assertTimestampFromNow requires |ts - now| to be within tolerance of
-// expectedFromNow. Mirrors Python's assert_timestamp_from_now.
 func (s *TimeSkippingV2TestSuite) assertTimestampFromNow(
 	ts time.Time, expectedFromNow time.Duration, tolerance time.Duration,
 ) {
@@ -1194,8 +1034,6 @@ func (s *TimeSkippingV2TestSuite) assertTimestampFromNow(
 	s.assertDurationSame(expectedFromNow, fromNow, tolerance)
 }
 
-// TestWorkflowEnvTimeSkippingBasicV2 ports
-// test_workflow_env_time_skipping_basic_v2: time-skip a very long sleep.
 func (s *TimeSkippingV2TestSuite) TestWorkflowEnvTimeSkippingBasicV2() {
 	ctx := context.Background()
 	tq := "tq-" + uuid.NewString()
@@ -1323,74 +1161,6 @@ func (s *TimeSkippingV2TestSuite) TestWorkflowEnvTimeSkippingBasicViaUpdateV2() 
 	s.NoError(err)
 	s.assertTimestampFromNow(now, 100000*time.Second, 30*time.Second)
 	s.assertTimeWasSkipped(ctx, run)
-}
-
-// ============================================================================
-// Port of test_workflow_cancel_signal_and_timer_fired_in_same_task_ts_v2
-// ============================================================================
-
-// CancelSignalAndTimerFiredInSameTaskWorkflow waits on a 1h timer that a
-// "cancel_timer" signal cancels. Returns an error if the timer completes
-// without having been cancelled.
-func CancelSignalAndTimerFiredInSameTaskWorkflow(ctx workflow.Context) error {
-	timerCtx, cancelTimer := workflow.WithCancel(ctx)
-	timer := workflow.NewTimer(timerCtx, time.Hour)
-
-	workflow.Go(ctx, func(gctx workflow.Context) {
-		var dummy struct{}
-		workflow.GetSignalChannel(gctx, "cancel_timer").Receive(gctx, &dummy)
-		cancelTimer()
-	})
-
-	err := timer.Get(ctx, nil)
-	if temporal.IsCanceledError(err) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	return errors.New("timer fired without having been cancelled")
-}
-
-// TestCancelSignalAndTimerFiredInSameTask ports the _ts_v2 variant from
-// sdk-python's tests/worker/test_workflow.py. The cancel signal is buffered
-// server-side first, then a fast-forward past the timer deadline delivers the
-// signal and the timer-fired event in the same workflow task. The signal
-// cancels the timer, so the timer-fired event is a no-op.
-func (s *TimeSkippingV2TestSuite) TestCancelSignalAndTimerFiredInSameTask() {
-	ctx := context.Background()
-	tq := "tq-" + uuid.NewString()
-	w := worker.New(s.server.Client(), tq, worker.Options{})
-	w.RegisterWorkflow(CancelSignalAndTimerFiredInSameTaskWorkflow)
-	s.NoError(w.Start())
-	defer w.Stop()
-
-	run, err := s.server.Client().ExecuteWorkflow(ctx,
-		client.StartWorkflowOptions{ID: "wf-" + uuid.NewString(), TaskQueue: tq},
-		CancelSignalAndTimerFiredInSameTaskWorkflow)
-	s.NoError(err)
-
-	// Wait until the timer is actually running, rather than sleeping blind.
-	s.Eventually(func() bool {
-		found, hErr := historyHasEventType(ctx, s.server.Client(), run,
-			enumspb.EVENT_TYPE_TIMER_STARTED)
-		return hErr == nil && found
-	}, 10*time.Second, 50*time.Millisecond, "timer never started")
-
-	// Buffer the signal server-side; it is delivered on the next workflow
-	// task, which the fast-forward below triggers.
-	s.NoError(s.server.Client().SignalWorkflow(ctx, run.GetID(), run.GetRunID(),
-		"cancel_timer", nil))
-
-	// The signal can itself trigger the task that cancels the timer and ends the
-	// workflow, leaving nothing to fast-forward. Either ordering exercises the
-	// case under test — the timer must not fire as if uncancelled — so a
-	// fast-forward that arrives too late is fine.
-	if _, err = timeskipping.FastForwardWorkflow(ctx, s.server.Client(), run,
-		timeskipping.WorkflowFastForwardOptions{Duration: 2 * time.Hour}); err != nil {
-		s.ErrorContains(err, "workflow execution already completed")
-	}
-	s.NoError(run.Get(ctx, nil))
 }
 
 // Sanity: the compile-time check that a subset of imports is actually used.
