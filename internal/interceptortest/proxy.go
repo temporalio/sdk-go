@@ -15,6 +15,7 @@ import (
 	"go.temporal.io/sdk/interceptor"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/log"
+	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
 )
 
@@ -357,6 +358,16 @@ func (p *proxyWorkflowOutbound) RequestCancelExternalWorkflow(
 	return
 }
 
+func (p *proxyWorkflowOutbound) RequestCancelExternalWorkflowWithOptions(
+	ctx workflow.Context,
+	workflowID string,
+	runID string,
+	options workflow.CancelExternalWorkflowOptions,
+) (ret workflow.Future) {
+	ret, _ = p.invoke(ctx, workflowID, runID, options)[0].Interface().(workflow.Future)
+	return
+}
+
 func (p *proxyWorkflowOutbound) SignalExternalWorkflow(
 	ctx workflow.Context,
 	workflowID string,
@@ -365,6 +376,29 @@ func (p *proxyWorkflowOutbound) SignalExternalWorkflow(
 	arg any,
 ) (ret workflow.Future) {
 	ret, _ = p.invoke(ctx, workflowID, runID, signalName, arg)[0].Interface().(workflow.Future)
+	return
+}
+
+func (p *proxyWorkflowOutbound) SignalExternalWorkflowWithOptions(
+	ctx workflow.Context,
+	workflowID string,
+	runID string,
+	signalName string,
+	arg any,
+	options workflow.SignalExternalWorkflowOptions,
+) (ret workflow.Future) {
+	ret, _ = p.invoke(ctx, workflowID, runID, signalName, arg, options)[0].Interface().(workflow.Future)
+	return
+}
+
+func (p *proxyWorkflowOutbound) SignalChildWorkflowWithOptions(
+	ctx workflow.Context,
+	workflowID string,
+	signalName string,
+	arg any,
+	options workflow.SignalChildWorkflowOptions,
+) (ret workflow.Future) {
+	ret, _ = p.invoke(ctx, workflowID, signalName, arg, options)[0].Interface().(workflow.Future)
 	return
 }
 
@@ -381,6 +415,24 @@ func (p *proxyWorkflowOutbound) UpsertMemo(
 	memo map[string]any,
 ) (err error) {
 	err, _ = p.invoke(ctx, memo)[0].Interface().(error)
+	return
+}
+
+func (p *proxyWorkflowOutbound) UpsertTypedSearchAttributesWithOptions(
+	ctx workflow.Context,
+	attributes []temporal.SearchAttributeUpdate,
+	options workflow.UpsertSearchAttributesOptions,
+) (err error) {
+	err, _ = p.invoke(ctx, attributes, options)[0].Interface().(error)
+	return
+}
+
+func (p *proxyWorkflowOutbound) UpsertMemoWithOptions(
+	ctx workflow.Context,
+	memo map[string]any,
+	options workflow.UpsertMemoOptions,
+) (err error) {
+	err, _ = p.invoke(ctx, memo, options)[0].Interface().(error)
 	return
 }
 
@@ -440,6 +492,17 @@ func (p *proxyWorkflowOutbound) GetVersion(
 	return
 }
 
+func (p *proxyWorkflowOutbound) GetVersionWithOptions(
+	ctx workflow.Context,
+	changeID string,
+	minSupported workflow.Version,
+	maxSupported workflow.Version,
+	options workflow.GetVersionOptions,
+) (ret workflow.Version) {
+	ret, _ = p.invoke(ctx, changeID, minSupported, maxSupported, options)[0].Interface().(workflow.Version)
+	return
+}
+
 func (p *proxyWorkflowOutbound) SetQueryHandler(
 	ctx workflow.Context,
 	queryType string,
@@ -475,6 +538,16 @@ func (p *proxyWorkflowOutbound) NewContinueAsNewError(
 	args ...any,
 ) (err error) {
 	err, _ = p.invoke(ctx, wfn, args)[0].Interface().(error)
+	return
+}
+
+func (p *proxyWorkflowOutbound) NewContinueAsNewErrorWithOptions(
+	ctx workflow.Context,
+	options workflow.ContinueAsNewErrorOptions,
+	wfn any,
+	args ...any,
+) (err error) {
+	err, _ = p.invoke(ctx, options, wfn, args)[0].Interface().(error)
 	return
 }
 

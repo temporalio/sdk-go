@@ -738,6 +738,28 @@ func (t *tracingWorkflowOutboundInterceptor) SignalExternalWorkflow(
 	return t.Next.SignalExternalWorkflow(ctx, workflowID, runID, signalName, arg)
 }
 
+func (t *tracingWorkflowOutboundInterceptor) SignalExternalWorkflowWithOptions(
+	ctx workflow.Context,
+	workflowID string,
+	runID string,
+	signalName string,
+	arg any,
+	options workflow.SignalExternalWorkflowOptions,
+) workflow.Future {
+	// Start span writing to header if enabled
+	if !t.root.options.DisableSignalTracing {
+		var span TracerSpan
+		var futErr workflow.Future
+		span, ctx, futErr = t.startNonReplaySpan(ctx, "SignalExternalWorkflow", signalName, false, t.root.workflowHeaderWriter(ctx))
+		if futErr != nil {
+			return futErr
+		}
+		defer span.Finish(&TracerFinishSpanOptions{})
+	}
+
+	return t.Next.SignalExternalWorkflowWithOptions(ctx, workflowID, runID, signalName, arg, options)
+}
+
 func (t *tracingWorkflowOutboundInterceptor) SignalChildWorkflow(
 	ctx workflow.Context,
 	workflowID string,
@@ -756,6 +778,27 @@ func (t *tracingWorkflowOutboundInterceptor) SignalChildWorkflow(
 	}
 
 	return t.Next.SignalChildWorkflow(ctx, workflowID, signalName, arg)
+}
+
+func (t *tracingWorkflowOutboundInterceptor) SignalChildWorkflowWithOptions(
+	ctx workflow.Context,
+	workflowID string,
+	signalName string,
+	arg any,
+	options workflow.SignalChildWorkflowOptions,
+) workflow.Future {
+	// Start span writing to header if enabled
+	if !t.root.options.DisableSignalTracing {
+		var span TracerSpan
+		var futErr workflow.Future
+		span, ctx, futErr = t.startNonReplaySpan(ctx, "SignalChildWorkflow", signalName, false, t.root.workflowHeaderWriter(ctx))
+		if futErr != nil {
+			return futErr
+		}
+		defer span.Finish(&TracerFinishSpanOptions{})
+	}
+
+	return t.Next.SignalChildWorkflowWithOptions(ctx, workflowID, signalName, arg, options)
 }
 
 func (t *tracingWorkflowOutboundInterceptor) ExecuteNexusOperation(ctx workflow.Context, input ExecuteNexusOperationInput) workflow.NexusOperationFuture {
@@ -791,6 +834,26 @@ func (t *tracingWorkflowOutboundInterceptor) NewContinueAsNewError(
 		}
 	}
 	return t.Next.NewContinueAsNewError(ctx, wfn, args...)
+}
+
+func (t *tracingWorkflowOutboundInterceptor) NewContinueAsNewErrorWithOptions(
+	ctx workflow.Context,
+	options workflow.ContinueAsNewErrorOptions,
+	wfn any,
+	args ...any,
+) error {
+	err := t.Next.NewContinueAsNewErrorWithOptions(ctx, options, wfn, args...)
+	if !workflow.IsReplaying(ctx) {
+		if contErr, _ := err.(*workflow.ContinueAsNewError); contErr != nil {
+			// Get the current span and write header
+			if span, _ := ctx.Value(t.root.options.SpanContextKey).(TracerSpan); span != nil {
+				if writeErr := t.root.writeSpanToHeader(span, WorkflowHeader(ctx)); writeErr != nil {
+					return fmt.Errorf("failed writing span when creating continue as new error: %w", writeErr)
+				}
+			}
+		}
+	}
+	return err
 }
 
 type nopSpan struct{}
@@ -1041,6 +1104,10 @@ type childWorkflowFuture struct{ workflow.Future }
 
 func (e childWorkflowFuture) GetChildWorkflowExecution() workflow.Future { return e }
 
-func (e childWorkflowFuture) SignalChildWorkflow(ctx workflow.Context, signalName string, data any) workflow.Future {
+func (e childWorkflowFuture) SignalChildWorkflow(workflow.Context, string, any) workflow.Future {
+	return e
+}
+
+func (e childWorkflowFuture) SignalChildWorkflowWithOptions(workflow.Context, string, any, workflow.SignalChildWorkflowOptions) workflow.Future {
 	return e
 }

@@ -11,6 +11,7 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	failurepb "go.temporal.io/api/failure/v1"
+	sdkpb "go.temporal.io/api/sdk/v1"
 
 	"go.temporal.io/sdk/converter"
 )
@@ -234,6 +235,8 @@ type (
 		//    we can't introduce an option, say WithWorkflowRetryPolicy, for backward compatibility.
 		//    See #676 or IntegrationTestSuite::TestContinueAsNewWithWithChildWF for more details.
 		RetryPolicy *RetryPolicy
+
+		eventGroupMarkers []*sdkpb.EventGroupMarker
 	}
 
 	// ContinueAsNewErrorOptions specifies optional attributes to be carried over to the next run.
@@ -252,6 +255,12 @@ type (
 		// For example, choose to AutoUpgrade on continue-as-new instead of inheriting the pinned version of the previous run.
 		// NOTE: Upgrade-on-Continue-as-New is currently experimental.
 		InitialVersioningBehavior ContinueAsNewVersioningBehavior
+
+		// EventGroups are explicit Event Groups attached to the continue-as-new command.
+		// They are combined with any groups on the context.
+		//
+		// NOTE: Experimental (Event Groups)
+		EventGroups []EventGroup
 	}
 
 	// UnknownExternalWorkflowExecutionError can be returned when external workflow doesn't exist
@@ -655,22 +664,23 @@ func NewContinueAsNewError(ctx Context, wfn any, args ...any) error {
 //
 // Exposed as: [go.temporal.io/sdk/workflow.NewContinueAsNewErrorWithOptions]
 func NewContinueAsNewErrorWithOptions(ctx Context, options ContinueAsNewErrorOptions, wfn any, args ...any) error {
-	err := NewContinueAsNewError(ctx, wfn, args...)
-
-	var continueAsNewErr *ContinueAsNewError
-	if errors.As(err, &continueAsNewErr) {
-		if options.RetryPolicy != nil {
-			continueAsNewErr.RetryPolicy = options.RetryPolicy
-		}
-		continueAsNewErr.BackoffStartInterval = options.BackoffStartInterval
-		continueAsNewErr.InitialVersioningBehavior = options.InitialVersioningBehavior
-	}
-
-	return err
+	i := getWorkflowOutboundInterceptor(ctx)
+	// Put header on context before executing
+	ctx = workflowContextWithNewHeader(ctx)
+	return i.NewContinueAsNewErrorWithOptions(ctx, options, wfn, args...)
 }
 
 func (wc *workflowEnvironmentInterceptor) NewContinueAsNewError(
 	ctx Context,
+	wfn any,
+	args ...any,
+) error {
+	return wc.NewContinueAsNewErrorWithOptions(ctx, ContinueAsNewErrorOptions{}, wfn, args...)
+}
+
+func (wc *workflowEnvironmentInterceptor) NewContinueAsNewErrorWithOptions(
+	ctx Context,
+	continueAsNewOptions ContinueAsNewErrorOptions,
 	wfn any,
 	args ...any,
 ) error {
@@ -691,7 +701,7 @@ func (wc *workflowEnvironmentInterceptor) NewContinueAsNewError(
 		return err
 	}
 
-	return &ContinueAsNewError{
+	continueAsNewErr := &ContinueAsNewError{
 		WorkflowType:              workflowType,
 		Input:                     input,
 		Header:                    header,
@@ -699,10 +709,16 @@ func (wc *workflowEnvironmentInterceptor) NewContinueAsNewError(
 		WorkflowExecutionTimeout:  options.WorkflowExecutionTimeout,
 		WorkflowRunTimeout:        options.WorkflowRunTimeout,
 		WorkflowTaskTimeout:       options.WorkflowTaskTimeout,
+		BackoffStartInterval:      continueAsNewOptions.BackoffStartInterval,
 		VersioningIntent:          options.VersioningIntent,
 		RetryPolicy:               nil, // The retry policy can't be propagated like other options due to #676.
-		InitialVersioningBehavior: options.InitialVersioningBehavior,
+		InitialVersioningBehavior: continueAsNewOptions.InitialVersioningBehavior,
+		eventGroupMarkers:         eventGroupMarkersToProto(ctx, continueAsNewOptions.EventGroups),
 	}
+	if continueAsNewOptions.RetryPolicy != nil {
+		continueAsNewErr.RetryPolicy = continueAsNewOptions.RetryPolicy
+	}
+	return continueAsNewErr
 }
 
 // NewActivityNotRegisteredError creates a new ActivityNotRegisteredError.
