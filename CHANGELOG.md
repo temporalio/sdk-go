@@ -63,6 +63,16 @@ to docs, or any other relevant information.
   access its response's `RawResponse` field for the full server response instead.
 
 ### :boom: Breaking Changes
+- `TestWorkflowEnvironment` and `TestActivityEnvironment` now run worker plugins set through
+  `SetWorkerOptions(worker.Options{Plugins: ...})`, which were previously ignored. Once plugins are
+  set, `SetWorkerOptions` may not be called again on that environment, and what a plugin registers
+  in `StartWorker` is undone at `StopWorker`.
+- `converter.WorkflowTaskFailureError`: an opt-in error a `PayloadCodec` can return
+  from `Encode` or `Decode` on a workflow-side payload path to fail the current
+  Workflow Task rather than the Workflow Execution, so the server retries the task and
+  a transient codec failure can recover while the execution stays open. See the
+  `WorkflowTaskFailureError` docs for the honored paths, exclusions, and retry
+  guidance.
 
 - `workflow.NewContinueAsNewErrorWithOptions` now calls
   `interceptor.WorkflowOutboundInterceptor.NewContinueAsNewErrorWithOptions`
@@ -83,6 +93,11 @@ to docs, or any other relevant information.
   Temporal operation handler now requires an explicit workflow ID and returns a `BAD_REQUEST` handler
   error when it is empty. An empty ID is defaulted to a fresh UUID per call, so the server has no
   record to deduplicate against and each retried Nexus task would start another workflow.
+### Changed
+
+### Deprecated
+
+### :boom: Breaking Changes
 
 ### Fixed
 

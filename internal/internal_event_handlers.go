@@ -620,6 +620,7 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 
 	startMetadata, err := BuildUserMetadata(params.StaticSummary, params.StaticDetails, wc.dataConverter)
 	if err != nil {
+		panicOnCodecWorkflowTaskFailure(err)
 		callback(nil, err)
 		return
 	}
@@ -668,6 +669,7 @@ func (wc *workflowEnvironmentImpl) ExecuteNexusOperation(params ExecuteNexusOper
 
 	startMetadata, err := BuildUserMetadata(params.options.Summary, "", wc.dataConverter)
 	if err != nil {
+		panicOnCodecWorkflowTaskFailure(err)
 		callback(nil, err)
 		return 0
 	}
@@ -831,6 +833,7 @@ func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivityPar
 
 	startMetadata, err := BuildUserMetadata(parameters.Summary, "", wc.dataConverter)
 	if err != nil {
+		panicOnCodecWorkflowTaskFailure(err)
 		callback(nil, err)
 		return ActivityID{}
 	}
@@ -1093,6 +1096,7 @@ func (wc *workflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads, erro
 
 	userMetadata, err := BuildUserMetadata(summary, "", wc.dataConverter)
 	if err != nil {
+		panicOnCodecWorkflowTaskFailure(err)
 		panic(fmt.Sprintf("failed to build user metadata for side effect: %v", err))
 	}
 	wc.commandsHelper.recordSideEffectMarker(sideEffectID, result, wc.dataConverter, userMetadata, eventGroupMarkers)
@@ -1246,6 +1250,7 @@ func (wc *workflowEnvironmentImpl) recordMutableSideEffect(id string, callCountH
 	}
 	userMetadata, err := BuildUserMetadata(summary, "", wc.dataConverter)
 	if err != nil {
+		panicOnCodecWorkflowTaskFailure(err)
 		panic(fmt.Sprintf("failed to build user metadata for mutable side effect: %v", err))
 	}
 	wc.commandsHelper.recordMutableSideEffectMarker(id, callCountHint, details, wc.dataConverter, userMetadata, eventGroupMarkers)
@@ -1853,7 +1858,8 @@ func (weh *workflowExecutionEventHandlerImpl) handleLocalActivityMarker(details 
 	return nil
 }
 
-func (weh *workflowExecutionEventHandlerImpl) ProcessLocalActivityResult(lar *localActivityResult) error {
+func (weh *workflowExecutionEventHandlerImpl) ProcessLocalActivityResult(lar *localActivityResult) (err error) {
+	defer recoverCodecWorkflowTaskFailure(&err)
 	details := make(map[string]*commonpb.Payloads)
 
 	// convert local activity result and error to marker data
