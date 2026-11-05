@@ -33,7 +33,7 @@ to docs, or any other relevant information.
   `timeskipping.StartDevServer` starts a dev server with the required dynamic
   config already applied. Unlike the older Java test server, each workflow has
   its own virtual clock. Requires a Temporal Server with the workflow
-  time-skipping feature enabled.
+  time skipping feature enabled.
 - Added experimental time skipping for schedules. `client.ScheduleOptions.TimeSkippingConfig`
   configures a schedule at creation, `ScheduleInfo.TimeSkippingInfo` surfaces its state
   from `ScheduleHandle.Describe`, `ScheduleHandle.SetTimeSkippingConfig` applies one to an

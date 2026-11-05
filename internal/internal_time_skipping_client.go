@@ -193,7 +193,7 @@ func currentTimeFrom(tsi *TimeSkippingInfo) time.Time {
 	return tsi.CurrentTime
 }
 
-// workflowClientFrom resolves the concrete client the time-skipping calls need.
+// workflowClientFrom resolves the concrete client the time skipping calls need.
 func workflowClientFrom(c Client) (*WorkflowClient, error) {
 	wc, ok := c.(*WorkflowClient)
 	if !ok {
@@ -534,7 +534,7 @@ func PollScheduleFastForward(
 		lastActions = desc.Info.NumActions
 
 		// A differing id means a later fast-forward replaced ours; in this
-		// case, querying this ID will never complete. No time-skipping state at
+		// case, querying this ID will never complete. No time skipping state at
 		// all means the schedule has never had it enabled.
 		if desc.Info.TimeSkippingInfo == nil {
 			return FastForwardPollResult{

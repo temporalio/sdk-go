@@ -1334,7 +1334,7 @@ type (
 		// task processing when tasks are backed up in a queue.
 		Priority Priority
 
-		// TimeSkippingConfig - Optional per-workflow time-skipping v2 configuration.
+		// TimeSkippingConfig - Optional per-workflow time skipping v2 configuration.
 		// If set, forwarded to the server on StartWorkflowExecution and enables the
 		// workflow's virtual clock behavior (fast-forward, propagation, session
 		// skip bounds).

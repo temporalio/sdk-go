@@ -396,7 +396,7 @@ type (
 		// [Visibility]: https://docs.temporal.io/visibility
 		TypedSearchAttributes SearchAttributes
 
-		// TimeSkippingConfig - Optional time-skipping v2 configuration for the
+		// TimeSkippingConfig - Optional time skipping v2 configuration for the
 		// schedule. If set, it is applied via the schedule's initial patch, so the
 		// schedule's virtual clock advances to its next fire time while it is idle.
 		// A bounded FastForwardConfig is required; a schedule has no end to skip to,
@@ -643,7 +643,7 @@ type (
 		// Unpause the Schedule will also overwrite the Schedules current note with the new note.
 		Unpause(ctx context.Context, options ScheduleUnpauseOptions) error
 
-		// SetTimeSkippingConfig applies a time-skipping configuration to the Schedule.
+		// SetTimeSkippingConfig applies a time skipping configuration to the Schedule.
 		//
 		// NOTE: Experimental
 		SetTimeSkippingConfig(ctx context.Context, options ScheduleSetTimeSkippingConfigOptions) error
@@ -655,7 +655,7 @@ type (
 	//
 	// Exposed as: [go.temporal.io/sdk/client.ScheduleSetTimeSkippingConfigOptions]
 	ScheduleSetTimeSkippingConfigOptions struct {
-		// Config to apply. A nil Config clears the Schedule's time-skipping configuration.
+		// Config to apply. A nil Config clears the Schedule's time skipping configuration.
 		Config *TimeSkippingConfig
 	}
 

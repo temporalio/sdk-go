@@ -1,6 +1,6 @@
 package test_test
 
-// Schedule time-skipping (v2) integration tests.
+// Schedule time skipping (v2) integration tests.
 
 import (
 	"context"
@@ -336,7 +336,7 @@ func (s *TimeSkippingScheduleTestSuite) TestSchedulePropagatesTimeSkippingToWork
 		"actions sleeping 1h each took %v wall time; skipping did not propagate",
 		time.Since(wallStart))
 
-	// The schedule's action should carry propagated time-skipping state on its
+	// The schedule's action should carry propagated time skipping state on its
 	// WorkflowExecutionStarted event, the same way a child workflow does.
 	started := desc.Info.RecentActions[0].StartWorkflowResult
 	s.NotNil(started)

@@ -23,7 +23,7 @@ import (
 // Schedule time skipping is CHASM (v2) scheduler only, and new schedules are
 // NOT created on CHASM by default — creation is off, behind a percentage
 // rollout that also defaults to zero. Without all three of the history settings
-// a schedule lands on the v1 workflow-backed scheduler and its time-skipping
+// a schedule lands on the v1 workflow-backed scheduler and its time skipping
 // config is quietly ignored.
 //
 // The two feature flags use the names the server adopted after v1.33.0
@@ -34,7 +34,7 @@ import (
 //
 // These require a server at or past that rename. No published Temporal CLI
 // release embeds one yet, so the pinned dev server
-// (internal.PinnedDevServerVersion) does NOT satisfy this and the time-skipping
+// (internal.PinnedDevServerVersion) does NOT satisfy this and the time skipping
 // suites fail against it — the server ignores dynamic-config keys it does not
 // recognise, so time skipping is simply off. Supply a newer binary through
 // options.ExistingPath until a CLI release catches up.

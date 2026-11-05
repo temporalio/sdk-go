@@ -47,13 +47,13 @@ type (
 		// If non-nil, change the versioning override.
 		VersioningOverride *VersioningOverrideChange
 
-		// If non-nil, change the time-skipping configuration.
+		// If non-nil, change the time skipping configuration.
 		//
 		// NOTE: Experimental
 		TimeSkippingConfig *TimeSkippingConfigChange
 	}
 
-	// TimeSkippingConfigChange sets or clears an execution's time-skipping
+	// TimeSkippingConfigChange sets or clears an execution's time skipping
 	// configuration when used with [WorkflowExecutionOptionsChanges].
 	//
 	// NOTE: Experimental

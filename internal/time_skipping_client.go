@@ -5,7 +5,7 @@ import (
 )
 
 type (
-	// TimeSkippingConfig is the time-skipping (v2) configuration for an execution or a
+	// TimeSkippingConfig is the time skipping (v2) configuration for an execution or a
 	// schedule. It mirrors temporal.api.common.v1.TimeSkippingConfig.
 	//
 	// Time skipping is a testing facility and is not intended for production workloads.
@@ -26,7 +26,7 @@ type (
 		// start time still propagates.
 		DisablePropagation bool
 
-		// MaxSessionSkipCount caps the number of skips within one time-skipping session,
+		// MaxSessionSkipCount caps the number of skips within one time skipping session,
 		// which runs from one configuration update to the next. Reaching it disables time
 		// skipping. Zero means use the server default.
 		MaxSessionSkipCount int32
