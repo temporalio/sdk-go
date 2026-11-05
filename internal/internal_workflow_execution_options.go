@@ -261,7 +261,7 @@ func versioningOverrideFromProto(versioningOverride *workflowpb.VersioningOverri
 func workflowExecutionOptionsToProto(options WorkflowExecutionOptions) *workflowpb.WorkflowExecutionOptions {
 	return &workflowpb.WorkflowExecutionOptions{
 		VersioningOverride: VersioningOverrideToProto(options.VersioningOverride),
-		TimeSkippingConfig: options.TimeSkippingConfig.ToProto(),
+		TimeSkippingConfig: options.TimeSkippingConfig.toProto(),
 	}
 }
 

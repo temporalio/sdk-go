@@ -119,7 +119,8 @@ func hasStartedAction(d *client.ScheduleDescription) bool {
 }
 
 func (s *TimeSkippingScheduleTestSuite) TestFastForwardScheduleRequiresPositiveDuration() {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
 	tq := "tq-" + uuid.NewString()
 	w := s.startScheduleWorker(tq)
 	defer w.Stop()
@@ -140,7 +141,8 @@ func (s *TimeSkippingScheduleTestSuite) TestFastForwardScheduleRequiresPositiveD
 }
 
 func (s *TimeSkippingScheduleTestSuite) TestScheduleTimeSkippingInfoNilWhenNeverEnabled() {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
 	tq := "tq-" + uuid.NewString()
 	w := s.startScheduleWorker(tq)
 	defer w.Stop()
@@ -154,7 +156,8 @@ func (s *TimeSkippingScheduleTestSuite) TestScheduleTimeSkippingInfoNilWhenNever
 }
 
 func (s *TimeSkippingScheduleTestSuite) TestFastForwardScheduleFiresActions() {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
 	tq := "tq-" + uuid.NewString()
 	w := s.startScheduleWorker(tq)
 	defer w.Stop()
@@ -175,7 +178,8 @@ func (s *TimeSkippingScheduleTestSuite) TestFastForwardScheduleFiresActions() {
 }
 
 func (s *TimeSkippingScheduleTestSuite) TestSequentialFastForwardsOnOneSchedule() {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
 	tq := "tq-" + uuid.NewString()
 	w := s.startScheduleWorker(tq)
 	defer w.Stop()
@@ -200,7 +204,8 @@ func (s *TimeSkippingScheduleTestSuite) TestSequentialFastForwardsOnOneSchedule(
 }
 
 func (s *TimeSkippingScheduleTestSuite) TestPollScheduleFastForwardIssuedSeparately() {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
 	tq := "tq-" + uuid.NewString()
 	w := s.startScheduleWorker(tq)
 	defer w.Stop()
@@ -227,7 +232,8 @@ func (s *TimeSkippingScheduleTestSuite) TestPollScheduleFastForwardIssuedSeparat
 }
 
 func (s *TimeSkippingScheduleTestSuite) TestPollScheduleFastForwardRequiresID() {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
 	tq := "tq-" + uuid.NewString()
 	w := s.startScheduleWorker(tq)
 	defer w.Stop()
@@ -243,7 +249,9 @@ func (s *TimeSkippingScheduleTestSuite) TestPollScheduleFastForwardRequiresID() 
 }
 
 func (s *TimeSkippingScheduleTestSuite) TestPollScheduleFastForwardReportsTimeSkippingDisabled() {
-	ctx := context.Background()
+	// Longer timeout because of the poll.
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
 	tq := "tq-" + uuid.NewString()
 	w := s.startScheduleWorker(tq)
 	defer w.Stop()
@@ -266,8 +274,8 @@ func (s *TimeSkippingScheduleTestSuite) TestPollScheduleFastForwardReportsTimeSk
 		Config: &client.TimeSkippingConfig{Enabled: false},
 	}))
 
-	waitCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
-	defer cancel()
+	waitCtx, cancelWait := context.WithTimeout(ctx, 20*time.Second)
+	defer cancelWait()
 	res, err := timeskipping.PollScheduleFastForward(waitCtx, handle,
 		timeskipping.SchedulePollFastForwardOptions{FastForwardID: ffID})
 	s.NoError(err, "stopping without completing is an outcome, not a call failure")
@@ -277,7 +285,8 @@ func (s *TimeSkippingScheduleTestSuite) TestPollScheduleFastForwardReportsTimeSk
 }
 
 func (s *TimeSkippingScheduleTestSuite) TestScheduleDescribeReturnsTimeSkippingInfo() {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
 	tq := "tq-" + uuid.NewString()
 	w := s.startScheduleWorker(tq)
 	defer w.Stop()
@@ -305,7 +314,8 @@ func (s *TimeSkippingScheduleTestSuite) TestScheduleDescribeReturnsTimeSkippingI
 }
 
 func (s *TimeSkippingScheduleTestSuite) TestSchedulePropagatesTimeSkippingToWorkflows() {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
 	tq := "tq-" + uuid.NewString()
 	w := s.startScheduleWorker(tq)
 	defer w.Stop()
@@ -355,7 +365,8 @@ func (s *TimeSkippingScheduleTestSuite) TestSchedulePropagatesTimeSkippingToWork
 }
 
 func (s *TimeSkippingScheduleTestSuite) TestScheduleWithPropagationDisabled() {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
 	tq := "tq-" + uuid.NewString()
 	w := s.startScheduleWorker(tq)
 	defer w.Stop()
@@ -407,7 +418,8 @@ func (s *TimeSkippingScheduleTestSuite) TestScheduleWithPropagationDisabled() {
 }
 
 func (s *TimeSkippingScheduleTestSuite) TestScheduleCurrentTimeAdvances() {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
 	tq := "tq-" + uuid.NewString()
 	w := s.startScheduleWorker(tq)
 	defer w.Stop()

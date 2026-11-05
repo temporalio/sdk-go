@@ -30,10 +30,8 @@ func (c *TimeSkippingConfig) Validate() error {
 	return nil
 }
 
-// ToProto converts the config to its proto counterpart.
-//
-// NOTE: Experimental
-func (c *TimeSkippingConfig) ToProto() *commonpb.TimeSkippingConfig {
+// toProto converts the config to its proto counterpart.
+func (c *TimeSkippingConfig) toProto() *commonpb.TimeSkippingConfig {
 	if c == nil {
 		return nil
 	}
@@ -41,14 +39,12 @@ func (c *TimeSkippingConfig) ToProto() *commonpb.TimeSkippingConfig {
 		Enabled:             c.Enabled,
 		DisablePropagation:  c.DisablePropagation,
 		MaxSessionSkipCount: c.MaxSessionSkipCount,
-		FastForwardConfig:   c.FastForwardConfig.ToProto(),
+		FastForwardConfig:   c.FastForwardConfig.toProto(),
 	}
 }
 
-// ToProto converts the config to its proto counterpart.
-//
-// NOTE: Experimental
-func (c *FastForwardConfig) ToProto() *commonpb.FastForwardConfig {
+// toProto converts the config to its proto counterpart.
+func (c *FastForwardConfig) toProto() *commonpb.FastForwardConfig {
 	if c == nil {
 		return nil
 	}

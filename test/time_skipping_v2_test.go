@@ -286,7 +286,8 @@ func registerTSTestWorkflows(w worker.Worker) {
 }
 
 func (s *TimeSkippingV2TestSuite) TestPollFastForwardIssuedSeparately() {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
 	tq := "tq-" + uuid.NewString()
 	w := worker.New(s.server.Client(), tq, worker.Options{})
 	registerTSTestWorkflows(w)
@@ -326,7 +327,8 @@ func (s *TimeSkippingV2TestSuite) TestPollFastForwardIssuedSeparately() {
 }
 
 func (s *TimeSkippingV2TestSuite) TestPollFastForwardSpansContinueAsNew() {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
 	tq := "tq-" + uuid.NewString()
 	w := worker.New(s.server.Client(), tq, worker.Options{})
 	registerTSTestWorkflows(w)
@@ -364,7 +366,8 @@ func (s *TimeSkippingV2TestSuite) TestPollFastForwardSpansContinueAsNew() {
 }
 
 func (s *TimeSkippingV2TestSuite) TestPollFastForwardValidatesArgs() {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
 	cl := s.server.Client()
 
 	_, err := timeskipping.PollWorkflowFastForward(ctx, cl, cl.GetWorkflow(ctx, "", ""),
@@ -380,7 +383,8 @@ func (s *TimeSkippingV2TestSuite) TestPollFastForwardValidatesArgs() {
 }
 
 func (s *TimeSkippingV2TestSuite) TestFastForwardWorkflowRejectsNegativeDuration() {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
 	cl := s.server.Client()
 
 	_, err := timeskipping.FastForwardWorkflow(ctx, cl,
@@ -391,7 +395,8 @@ func (s *TimeSkippingV2TestSuite) TestFastForwardWorkflowRejectsNegativeDuration
 }
 
 func (s *TimeSkippingV2TestSuite) TestSkipFullRun() {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
 	tq := "tq-" + uuid.NewString()
 	w := worker.New(s.server.Client(), tq, worker.Options{})
 	registerTSTestWorkflows(w)
@@ -418,7 +423,8 @@ func (s *TimeSkippingV2TestSuite) TestSkipFullRun() {
 }
 
 func (s *TimeSkippingV2TestSuite) TestNoTimeSkippingConfig() {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
 	tq := "tq-" + uuid.NewString()
 	w := worker.New(s.server.Client(), tq, worker.Options{})
 	registerTSTestWorkflows(w)
@@ -430,14 +436,15 @@ func (s *TimeSkippingV2TestSuite) TestNoTimeSkippingConfig() {
 		SleepWorkflow, 3600.0)
 	s.NoError(err)
 
-	deadline, cancel := context.WithTimeout(ctx, 3*time.Second)
-	defer cancel()
+	deadline, cancelDeadline := context.WithTimeout(ctx, 3*time.Second)
+	defer cancelDeadline()
 	waitErr := run.Get(deadline, nil)
 	s.Error(waitErr)
 }
 
 func (s *TimeSkippingV2TestSuite) TestFastForwardWithResume() {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
 	tq := "tq-" + uuid.NewString()
 	w := worker.New(s.server.Client(), tq, worker.Options{})
 	registerTSTestWorkflows(w)
@@ -481,7 +488,8 @@ func (s *TimeSkippingV2TestSuite) TestFastForwardWithResume() {
 }
 
 func (s *TimeSkippingV2TestSuite) TestPartialFastForwardThenUnbounded() {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
 	tq := "tq-" + uuid.NewString()
 	w := worker.New(s.server.Client(), tq, worker.Options{})
 	registerTSTestWorkflows(w)
@@ -520,7 +528,8 @@ func (s *TimeSkippingV2TestSuite) TestPartialFastForwardThenUnbounded() {
 }
 
 func (s *TimeSkippingV2TestSuite) TestChildWorkflowPropagatesTimeSkipping() {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
 	tq := "tq-" + uuid.NewString()
 	w := worker.New(s.server.Client(), tq, worker.Options{})
 	registerTSTestWorkflows(w)
@@ -547,7 +556,8 @@ func (s *TimeSkippingV2TestSuite) TestChildWorkflowPropagatesTimeSkipping() {
 }
 
 func (s *TimeSkippingV2TestSuite) TestChildWorkflowWithPropagationDisabled() {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
 	tq := "tq-" + uuid.NewString()
 	w := worker.New(s.server.Client(), tq, worker.Options{})
 	registerTSTestWorkflows(w)
@@ -575,7 +585,8 @@ func (s *TimeSkippingV2TestSuite) TestChildWorkflowWithPropagationDisabled() {
 }
 
 func (s *TimeSkippingV2TestSuite) TestFastForwardReturnsFalseWhenWorkflowTerminatesFirst() {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
 	tq := "tq-" + uuid.NewString()
 	w := worker.New(s.server.Client(), tq, worker.Options{})
 	registerTSTestWorkflows(w)
@@ -594,7 +605,8 @@ func (s *TimeSkippingV2TestSuite) TestFastForwardReturnsFalseWhenWorkflowTermina
 }
 
 func (s *TimeSkippingV2TestSuite) TestFastForwardSpansRetries() {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
 	tq := "tq-" + uuid.NewString()
 	w := worker.New(s.server.Client(), tq, worker.Options{})
 	registerTSTestWorkflows(w)
@@ -633,7 +645,8 @@ func (s *TimeSkippingV2TestSuite) TestFastForwardSpansRetries() {
 }
 
 func (s *TimeSkippingV2TestSuite) TestFastForwardSpansContinueAsNew() {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
 	tq := "tq-" + uuid.NewString()
 	w := worker.New(s.server.Client(), tq, worker.Options{})
 	registerTSTestWorkflows(w)
@@ -664,7 +677,8 @@ func (s *TimeSkippingV2TestSuite) TestFastForwardSpansContinueAsNew() {
 }
 
 func (s *TimeSkippingV2TestSuite) TestUnboundedWaitSpansContinueAsNew() {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
 	tq := "tq-" + uuid.NewString()
 	w := worker.New(s.server.Client(), tq, worker.Options{})
 	registerTSTestWorkflows(w)
@@ -700,7 +714,8 @@ func (s *TimeSkippingV2TestSuite) TestUnboundedWaitSpansContinueAsNew() {
 }
 
 func (s *TimeSkippingV2TestSuite) TestFastForwardSpansCronRestarts() {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
 	tq := "tq-" + uuid.NewString()
 	w := worker.New(s.server.Client(), tq, worker.Options{})
 	registerTSTestWorkflows(w)
@@ -740,7 +755,8 @@ func (s *TimeSkippingV2TestSuite) countWorkflowsWithID(ctx context.Context, wfID
 }
 
 func (s *TimeSkippingV2TestSuite) TestSignalWithStartSkipsTime() {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
 	tq := "tq-" + uuid.NewString()
 	w := worker.New(s.server.Client(), tq, worker.Options{})
 	registerTSTestWorkflows(w)
@@ -766,7 +782,8 @@ func (s *TimeSkippingV2TestSuite) TestSignalWithStartSkipsTime() {
 }
 
 func (s *TimeSkippingV2TestSuite) TestGetTimeSkippingInfoDuringWorkflow() {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
 	tq := "tq-" + uuid.NewString()
 	w := worker.New(s.server.Client(), tq, worker.Options{})
 	registerTSTestWorkflows(w)
@@ -796,7 +813,8 @@ func (s *TimeSkippingV2TestSuite) TestGetTimeSkippingInfoDuringWorkflow() {
 }
 
 func (s *TimeSkippingV2TestSuite) TestGetTimeSkippingInfoReturnsNilWhenTSNeverEnabled() {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
 	tq := "tq-" + uuid.NewString()
 	w := worker.New(s.server.Client(), tq, worker.Options{})
 	registerTSTestWorkflows(w)
@@ -818,7 +836,8 @@ func (s *TimeSkippingV2TestSuite) TestGetTimeSkippingInfoReturnsNilWhenTSNeverEn
 }
 
 func (s *TimeSkippingV2TestSuite) TestTimeSkippingVirtualClock() {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
 	tq := "tq-" + uuid.NewString()
 	w := worker.New(s.server.Client(), tq, worker.Options{})
 	registerTSTestWorkflows(w)
@@ -844,7 +863,8 @@ func (s *TimeSkippingV2TestSuite) TestTimeSkippingVirtualClock() {
 }
 
 func (s *TimeSkippingV2TestSuite) TestTransitionEventPayload() {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
 	tq := "tq-" + uuid.NewString()
 	w := worker.New(s.server.Client(), tq, worker.Options{})
 	registerTSTestWorkflows(w)
@@ -875,7 +895,8 @@ func (s *TimeSkippingV2TestSuite) TestTransitionEventPayload() {
 }
 
 func (s *TimeSkippingV2TestSuite) TestChildWorkflowStartedEventHasStatePropagation() {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
 	tq := "tq-" + uuid.NewString()
 	w := worker.New(s.server.Client(), tq, worker.Options{})
 	registerTSTestWorkflows(w)
@@ -906,7 +927,8 @@ func (s *TimeSkippingV2TestSuite) TestChildWorkflowStartedEventHasStatePropagati
 }
 
 func (s *TimeSkippingV2TestSuite) TestFastForwardClampedToExecutionTimeout() {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
 	tq := "tq-" + uuid.NewString()
 	w := worker.New(s.server.Client(), tq, worker.Options{})
 	registerTSTestWorkflows(w)
@@ -932,7 +954,8 @@ func (s *TimeSkippingV2TestSuite) TestFastForwardClampedToExecutionTimeout() {
 }
 
 func (s *TimeSkippingV2TestSuite) TestOverridingFastForwardRaisesOnOriginal() {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
 	tq := "tq-" + uuid.NewString()
 
 	// No worker yet so skipping doesn't start.
@@ -989,7 +1012,8 @@ func (s *TimeSkippingV2TestSuite) TestOverridingFastForwardRaisesOnOriginal() {
 }
 
 func (s *TimeSkippingV2TestSuite) TestMaxSessionSkipCountOnStartOptions() {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
 	cfg := client.TimeSkippingConfig{Enabled: true, MaxSessionSkipCount: 5}
 	srv := s.server
 
@@ -1023,7 +1047,8 @@ func (s *TimeSkippingV2TestSuite) TestMaxSessionSkipCountOnStartOptions() {
 }
 
 func (s *TimeSkippingV2TestSuite) TestBoundedFastForwardAdvancesClockByItsDuration() {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
 	tq := "tq-" + uuid.NewString()
 	w := worker.New(s.server.Client(), tq, worker.Options{})
 	registerTSTestWorkflows(w)
@@ -1054,7 +1079,8 @@ func (s *TimeSkippingV2TestSuite) TestBoundedFastForwardAdvancesClockByItsDurati
 // TestUnboundedFastForwardEnablesSkippingMidRun starts with no config, then
 // enables unbounded skipping on the running workflow and runs it to completion.
 func (s *TimeSkippingV2TestSuite) TestUnboundedFastForwardEnablesSkippingMidRun() {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
 	tq := "tq-" + uuid.NewString()
 	w := worker.New(s.server.Client(), tq, worker.Options{})
 	registerTSTestWorkflows(w)
