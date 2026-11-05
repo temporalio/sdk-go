@@ -17,6 +17,7 @@ import (
 	protocolpb "go.temporal.io/api/protocol/v1"
 	"go.temporal.io/api/proxy"
 	querypb "go.temporal.io/api/query/v1"
+	"go.temporal.io/api/serviceerror"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/update/v1"
 	"go.temporal.io/api/workflowservice/v1"
@@ -1611,4 +1612,150 @@ func TestWorkflowTaskStorageMetricsTotalDuration(t *testing.T) {
 		metrics.PayloadBatchCompleted(1, 1, base.Add(12*time.Second), base.Add(18*time.Second), nil)
 		require.Equal(t, 20*time.Second, metrics.TotalDuration())
 	})
+}
+
+// TestAutoscalingPollRequestsCarryCurrentPollerTarget is regression proofing for
+// fleet-wide poller fairness. The server can only spread scaling suggestions across a
+// fleet by share if every poll says what that worker's pool is currently targeting, so
+// the report has to follow the autoscaler as the target moves rather than be snapshotted
+// when the poller was built.
+func TestAutoscalingPollRequestsCarryCurrentPollerTarget(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	service := workflowservicemock.NewMockWorkflowServiceClient(ctrl)
+	const (
+		namespace      = "test-ns"
+		taskQueue      = "test-task-queue"
+		identity       = "test-worker"
+		initialPollers = 8
+	)
+
+	var workflowReported, activityReported []*taskqueuepb.PollerScalingInfo
+	service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, req *workflowservice.PollWorkflowTaskQueueRequest, _ ...grpc.CallOption) (*workflowservice.PollWorkflowTaskQueueResponse, error) {
+			workflowReported = append(workflowReported, req.GetPollerScalingInfo())
+			return &workflowservice.PollWorkflowTaskQueueResponse{}, nil
+		}).AnyTimes()
+	service.EXPECT().PollActivityTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, req *workflowservice.PollActivityTaskQueueRequest, _ ...grpc.CallOption) (*workflowservice.PollActivityTaskQueueResponse, error) {
+			activityReported = append(activityReported, req.GetPollerScalingInfo())
+			return &workflowservice.PollActivityTaskQueueResponse{}, nil
+		}).AnyTimes()
+
+	base := basePoller{metricsHandler: metrics.NopHandler}
+	wtp := &workflowTaskPoller{
+		basePoller:            base,
+		mode:                  NonSticky,
+		namespace:             namespace,
+		taskQueueName:         taskQueue,
+		identity:              identity,
+		service:               service,
+		logger:                ilog.NewNopLogger(),
+		numNormalPollerMetric: newNumPollerMetric(metrics.NopHandler, metrics.PollerTypeWorkflowTask),
+	}
+	atp := &activityTaskPoller{
+		basePoller:      base,
+		namespace:       namespace,
+		taskQueueName:   taskQueue,
+		identity:        identity,
+		service:         service,
+		logger:          ilog.NewNopLogger(),
+		numPollerMetric: newNumPollerMetric(metrics.NopHandler, metrics.PollerTypeActivityTask),
+	}
+
+	// The pollers learn their target by being built into an autoscaling pool, which is
+	// the wiring a running worker uses.
+	serverSupportsAutoscaling := &atomic.Bool{}
+	serverSupportsAutoscaling.Store(true)
+	autoscaling := func(poller taskPoller, pollerType string) scalableTaskPoller {
+		return newScalableTaskPoller(
+			poller,
+			ilog.NewNopLogger(),
+			&pollerBehaviorAutoscaling{
+				initialNumberOfPollers: initialPollers,
+				maximumNumberOfPollers: 100,
+				minimumNumberOfPollers: 1,
+			},
+			pollerType,
+			serverSupportsAutoscaling,
+			nil,
+		)
+	}
+	workflowPool := autoscaling(wtp, metrics.PollerTypeWorkflowTask)
+	activityPool := autoscaling(atp, metrics.PollerTypeActivityTask)
+
+	// pollTargets polls once with each poller and returns what the server was told.
+	pollTargets := func() (int32, int32) {
+		t.Helper()
+		_, err := wtp.poll(t.Context(), pollerGroupLease{})
+		require.NoError(t, err)
+		_, err = atp.poll(t.Context(), pollerGroupLease{})
+		require.NoError(t, err)
+		return workflowReported[len(workflowReported)-1].GetPollerTarget(),
+			activityReported[len(activityReported)-1].GetPollerTarget()
+	}
+
+	workflowTarget, activityTarget := pollTargets()
+	require.Equal(t, int32(initialPollers), workflowTarget)
+	require.Equal(t, int32(initialPollers), activityTarget)
+
+	// Halving on ResourceExhausted has to reach the very next poll.
+	resourceExhausted := serviceerror.NewResourceExhausted(enumspb.RESOURCE_EXHAUSTED_CAUSE_CONCURRENT_LIMIT, "")
+	workflowPool.pollerAutoscaler.handleError(resourceExhausted)
+	activityPool.pollerAutoscaler.handleError(resourceExhausted)
+	workflowTarget, activityTarget = pollTargets()
+	require.Equal(t, int32(initialPollers/2), workflowTarget)
+	require.Equal(t, int32(initialPollers/2), activityTarget)
+
+	// ...and so does scaling back up, so the report is not a one-way ratchet.
+	workflowPool.pollerAutoscaler.updateTarget(func(target int64) int64 { return target + 5 })
+	activityPool.pollerAutoscaler.updateTarget(func(target int64) int64 { return target + 5 })
+	workflowTarget, activityTarget = pollTargets()
+	require.Equal(t, int32(initialPollers/2+5), workflowTarget)
+	require.Equal(t, int32(initialPollers/2+5), activityTarget)
+
+	// Each poll carries its own message, so an in-flight request cannot be rewritten by
+	// a later scaling decision.
+	require.NotSame(t, workflowReported[0], workflowReported[1])
+	require.NotSame(t, activityReported[0], activityReported[1])
+}
+
+// A fixed-size pool has no target, and leaves the field unset rather than claiming a
+// target of zero: the server reads an unset field as "no report" and excludes the worker
+// from share-based fairness instead of treating it as wanting no pollers.
+func TestFixedSizePollRequestsOmitPollerScalingInfo(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	service := workflowservicemock.NewMockWorkflowServiceClient(ctrl)
+
+	service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, req *workflowservice.PollWorkflowTaskQueueRequest, _ ...grpc.CallOption) (*workflowservice.PollWorkflowTaskQueueResponse, error) {
+			require.Nil(t, req.GetPollerScalingInfo())
+			return &workflowservice.PollWorkflowTaskQueueResponse{}, nil
+		})
+
+	wtp := &workflowTaskPoller{
+		basePoller:            basePoller{metricsHandler: metrics.NopHandler},
+		mode:                  NonSticky,
+		namespace:             "test-ns",
+		taskQueueName:         "test-task-queue",
+		identity:              "test-worker",
+		service:               service,
+		logger:                ilog.NewNopLogger(),
+		numNormalPollerMetric: newNumPollerMetric(metrics.NopHandler, metrics.PollerTypeWorkflowTask),
+	}
+	pool := newScalableTaskPoller(
+		wtp,
+		ilog.NewNopLogger(),
+		NewPollerBehaviorSimpleMaximum(PollerBehaviorSimpleMaximumOptions{MaximumNumberOfPollers: 2}),
+		metrics.PollerTypeWorkflowTask,
+		&atomic.Bool{},
+		nil,
+	)
+	require.Nil(t, pool.pollerAutoscaler)
+
+	_, err := wtp.poll(t.Context(), pollerGroupLease{})
+	require.NoError(t, err)
 }
