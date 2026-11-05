@@ -64,16 +64,16 @@ type SystemNexus_SignalWithStartWorkflowRequest struct {
 	// continue-as-new. Defaults to unlimited.
 	//
 	// Optional.
-	WorkflowExecutionTimeout *time.Duration
+	WorkflowExecutionTimeout time.Duration
 	// WorkflowRunTimeout - Timeout of a single workflow run. Defaults to the workflow
 	// execution timeout.
 	//
 	// Optional.
-	WorkflowRunTimeout *time.Duration
+	WorkflowRunTimeout time.Duration
 	// WorkflowTaskTimeout - Timeout of a single workflow task. Defaults to 10 seconds.
 	//
 	// Optional.
-	WorkflowTaskTimeout *time.Duration
+	WorkflowTaskTimeout time.Duration
 	// WorkflowIDReusePolicy - Behavior when a closed workflow with the same ID exists.
 	// Default is allow-duplicate.
 	//
@@ -84,7 +84,7 @@ type SystemNexus_SignalWithStartWorkflowRequest struct {
 	// set if id-reuse-policy is terminate-if-running. Defaults to use-existing.
 	//
 	// Optional.
-	WorkflowIDConflictPolicy *enums.WorkflowIdConflictPolicy
+	WorkflowIDConflictPolicy enums.WorkflowIdConflictPolicy
 	// RetryPolicy - Retry policy for the workflow.
 	//
 	// Optional.
@@ -93,7 +93,7 @@ type SystemNexus_SignalWithStartWorkflowRequest struct {
 	// https://docs.temporal.io/cron-job.
 	//
 	// Optional.
-	CronSchedule *string
+	CronSchedule string
 	// Memo - Memo for the workflow.
 	//
 	// Optional.
@@ -114,7 +114,7 @@ type SystemNexus_SignalWithStartWorkflowRequest struct {
 	// with cron-schedule.
 	//
 	// Optional.
-	StartDelay *time.Duration
+	StartDelay time.Duration
 	// UserMetadata - Static metadata for the workflow execution.
 	//
 	// Optional.
@@ -150,15 +150,15 @@ func (m SystemNexus_SignalWithStartWorkflowRequest) GetSignalArgs() []any {
 	return m.SignalArgs
 }
 
-func (m SystemNexus_SignalWithStartWorkflowRequest) GetWorkflowExecutionTimeout() *time.Duration {
+func (m SystemNexus_SignalWithStartWorkflowRequest) GetWorkflowExecutionTimeout() time.Duration {
 	return m.WorkflowExecutionTimeout
 }
 
-func (m SystemNexus_SignalWithStartWorkflowRequest) GetWorkflowRunTimeout() *time.Duration {
+func (m SystemNexus_SignalWithStartWorkflowRequest) GetWorkflowRunTimeout() time.Duration {
 	return m.WorkflowRunTimeout
 }
 
-func (m SystemNexus_SignalWithStartWorkflowRequest) GetWorkflowTaskTimeout() *time.Duration {
+func (m SystemNexus_SignalWithStartWorkflowRequest) GetWorkflowTaskTimeout() time.Duration {
 	return m.WorkflowTaskTimeout
 }
 
@@ -166,7 +166,7 @@ func (m SystemNexus_SignalWithStartWorkflowRequest) GetWorkflowIDReusePolicy() e
 	return m.WorkflowIDReusePolicy
 }
 
-func (m SystemNexus_SignalWithStartWorkflowRequest) GetWorkflowIDConflictPolicy() *enums.WorkflowIdConflictPolicy {
+func (m SystemNexus_SignalWithStartWorkflowRequest) GetWorkflowIDConflictPolicy() enums.WorkflowIdConflictPolicy {
 	return m.WorkflowIDConflictPolicy
 }
 
@@ -174,7 +174,7 @@ func (m SystemNexus_SignalWithStartWorkflowRequest) GetRetryPolicy() *RetryPolic
 	return m.RetryPolicy
 }
 
-func (m SystemNexus_SignalWithStartWorkflowRequest) GetCronSchedule() *string {
+func (m SystemNexus_SignalWithStartWorkflowRequest) GetCronSchedule() string {
 	return m.CronSchedule
 }
 
@@ -194,7 +194,7 @@ func (m SystemNexus_SignalWithStartWorkflowRequest) GetVersioningOverride() Vers
 	return m.VersioningOverride
 }
 
-func (m SystemNexus_SignalWithStartWorkflowRequest) GetStartDelay() *time.Duration {
+func (m SystemNexus_SignalWithStartWorkflowRequest) GetStartDelay() time.Duration {
 	return m.StartDelay
 }
 
@@ -242,30 +242,36 @@ func systemnexus_signalWithStartWorkflowRequestToProto(cfg *commonconverter.Syst
 		}
 		message.SignalInput = converted
 	}
-	{
-		converted, err := DurationToProto(cfg.DataConverter, m.WorkflowExecutionTimeout)
-		if err != nil {
-			return nil, err
+	if m.WorkflowExecutionTimeout != 0 {
+		{
+			converted, err := DurationToProto(cfg.DataConverter, &m.WorkflowExecutionTimeout)
+			if err != nil {
+				return nil, err
+			}
+			message.WorkflowExecutionTimeout = converted
 		}
-		message.WorkflowExecutionTimeout = converted
 	}
-	{
-		converted, err := DurationToProto(cfg.DataConverter, m.WorkflowRunTimeout)
-		if err != nil {
-			return nil, err
+	if m.WorkflowRunTimeout != 0 {
+		{
+			converted, err := DurationToProto(cfg.DataConverter, &m.WorkflowRunTimeout)
+			if err != nil {
+				return nil, err
+			}
+			message.WorkflowRunTimeout = converted
 		}
-		message.WorkflowRunTimeout = converted
 	}
-	{
-		converted, err := DurationToProto(cfg.DataConverter, m.WorkflowTaskTimeout)
-		if err != nil {
-			return nil, err
+	if m.WorkflowTaskTimeout != 0 {
+		{
+			converted, err := DurationToProto(cfg.DataConverter, &m.WorkflowTaskTimeout)
+			if err != nil {
+				return nil, err
+			}
+			message.WorkflowTaskTimeout = converted
 		}
-		message.WorkflowTaskTimeout = converted
 	}
 	message.WorkflowIdReusePolicy = enums.WorkflowIdReusePolicy(m.WorkflowIDReusePolicy)
-	if m.WorkflowIDConflictPolicy != nil {
-		message.WorkflowIdConflictPolicy = enums.WorkflowIdConflictPolicy((*m.WorkflowIDConflictPolicy))
+	if m.WorkflowIDConflictPolicy != 0 {
+		message.WorkflowIdConflictPolicy = enums.WorkflowIdConflictPolicy(m.WorkflowIDConflictPolicy)
 	}
 	{
 		converted, err := RetryPolicyToProto(cfg.DataConverter, m.RetryPolicy)
@@ -274,8 +280,8 @@ func systemnexus_signalWithStartWorkflowRequestToProto(cfg *commonconverter.Syst
 		}
 		message.RetryPolicy = converted
 	}
-	if m.CronSchedule != nil {
-		message.CronSchedule = (*m.CronSchedule)
+	if m.CronSchedule != "" {
+		message.CronSchedule = m.CronSchedule
 	}
 	{
 		converted, err := MemoToProto(cfg.DataConverter, m.Memo)
@@ -305,12 +311,14 @@ func systemnexus_signalWithStartWorkflowRequestToProto(cfg *commonconverter.Syst
 		}
 		message.VersioningOverride = converted
 	}
-	{
-		converted, err := DurationToProto(cfg.DataConverter, m.StartDelay)
-		if err != nil {
-			return nil, err
+	if m.StartDelay != 0 {
+		{
+			converted, err := DurationToProto(cfg.DataConverter, &m.StartDelay)
+			if err != nil {
+				return nil, err
+			}
+			message.WorkflowStartDelay = converted
 		}
-		message.WorkflowStartDelay = converted
 	}
 	if m.UserMetadata != nil {
 		converted, err := systemnexus_userMetadataToProto(cfg, m.UserMetadata)
@@ -371,27 +379,30 @@ func systemnexus_signalWithStartWorkflowRequestFromProto(cfg *commonconverter.Sy
 		if err != nil {
 			return err
 		}
-		out.WorkflowExecutionTimeout = converted
+		if converted != nil {
+			out.WorkflowExecutionTimeout = *converted
+		}
 	}
 	{
 		converted, err := DurationFromProto(cfg.DataConverter, proto.GetWorkflowRunTimeout())
 		if err != nil {
 			return err
 		}
-		out.WorkflowRunTimeout = converted
+		if converted != nil {
+			out.WorkflowRunTimeout = *converted
+		}
 	}
 	{
 		converted, err := DurationFromProto(cfg.DataConverter, proto.GetWorkflowTaskTimeout())
 		if err != nil {
 			return err
 		}
-		out.WorkflowTaskTimeout = converted
+		if converted != nil {
+			out.WorkflowTaskTimeout = *converted
+		}
 	}
 	out.WorkflowIDReusePolicy = enums.WorkflowIdReusePolicy(int32(proto.GetWorkflowIdReusePolicy()))
-	{
-		converted := enums.WorkflowIdConflictPolicy(int32(proto.GetWorkflowIdConflictPolicy()))
-		out.WorkflowIDConflictPolicy = &converted
-	}
+	out.WorkflowIDConflictPolicy = enums.WorkflowIdConflictPolicy(int32(proto.GetWorkflowIdConflictPolicy()))
 	{
 		converted, err := RetryPolicyFromProto(cfg.DataConverter, proto.GetRetryPolicy())
 		if err != nil {
@@ -399,10 +410,7 @@ func systemnexus_signalWithStartWorkflowRequestFromProto(cfg *commonconverter.Sy
 		}
 		out.RetryPolicy = converted
 	}
-	{
-		converted := proto.GetCronSchedule()
-		out.CronSchedule = &converted
-	}
+	out.CronSchedule = proto.GetCronSchedule()
 	{
 		converted, err := MemoFromProto(cfg.DataConverter, proto.GetMemo())
 		if err != nil {
@@ -440,7 +448,9 @@ func systemnexus_signalWithStartWorkflowRequestFromProto(cfg *commonconverter.Sy
 		if err != nil {
 			return err
 		}
-		out.StartDelay = converted
+		if converted != nil {
+			out.StartDelay = *converted
+		}
 	}
 	if proto.GetUserMetadata() != nil {
 		out.UserMetadata = new(SystemNexus_UserMetadata)
@@ -688,35 +698,11 @@ func SystemNexus_SignalWithStartWorkflow(
 	} else {
 		taskQueue = GetWorkflowInfo(ctx).TaskQueueName
 	}
-	var workflowExecutionTimeout *time.Duration
-	if opts.WorkflowExecutionTimeout != 0 {
-		workflowExecutionTimeout = &opts.WorkflowExecutionTimeout
-	}
-	var workflowRunTimeout *time.Duration
-	if opts.WorkflowRunTimeout != 0 {
-		workflowRunTimeout = &opts.WorkflowRunTimeout
-	}
-	var workflowTaskTimeout *time.Duration
-	if opts.WorkflowTaskTimeout != 0 {
-		workflowTaskTimeout = &opts.WorkflowTaskTimeout
-	}
 	var workflowIDReusePolicy enums.WorkflowIdReusePolicy
 	if opts.WorkflowIDReusePolicy != 0 {
 		workflowIDReusePolicy = opts.WorkflowIDReusePolicy
 	} else {
 		workflowIDReusePolicy = enums.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE
-	}
-	var workflowIDConflictPolicy *enums.WorkflowIdConflictPolicy
-	if opts.WorkflowIDConflictPolicy != 0 {
-		workflowIDConflictPolicy = &opts.WorkflowIDConflictPolicy
-	}
-	var cronSchedule *string
-	if opts.CronSchedule != "" {
-		cronSchedule = &opts.CronSchedule
-	}
-	var startDelay *time.Duration
-	if opts.StartDelay != 0 {
-		startDelay = &opts.StartDelay
 	}
 	var userMetadataValue *SystemNexus_UserMetadata
 	if opts.StaticSummary != "" || opts.StaticDetails != "" {
@@ -741,18 +727,18 @@ func SystemNexus_SignalWithStartWorkflow(
 		TaskQueue:                taskQueue,
 		Signal:                   signal,
 		SignalArgs:               []any{signalArg},
-		WorkflowExecutionTimeout: workflowExecutionTimeout,
-		WorkflowRunTimeout:       workflowRunTimeout,
-		WorkflowTaskTimeout:      workflowTaskTimeout,
+		WorkflowExecutionTimeout: opts.WorkflowExecutionTimeout,
+		WorkflowRunTimeout:       opts.WorkflowRunTimeout,
+		WorkflowTaskTimeout:      opts.WorkflowTaskTimeout,
 		WorkflowIDReusePolicy:    workflowIDReusePolicy,
-		WorkflowIDConflictPolicy: workflowIDConflictPolicy,
+		WorkflowIDConflictPolicy: opts.WorkflowIDConflictPolicy,
 		RetryPolicy:              opts.RetryPolicy,
-		CronSchedule:             cronSchedule,
+		CronSchedule:             opts.CronSchedule,
 		Memo:                     opts.Memo,
 		TypedSearchAttributes:    opts.TypedSearchAttributes,
 		Priority:                 opts.Priority,
 		VersioningOverride:       opts.VersioningOverride,
-		StartDelay:               startDelay,
+		StartDelay:               opts.StartDelay,
 		UserMetadata:             userMetadataValue,
 		Namespace:                WorkflowNamespace(ctx),
 	})
