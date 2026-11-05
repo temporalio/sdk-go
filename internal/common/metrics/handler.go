@@ -9,6 +9,8 @@ import "time"
 // A common implementation is at
 // go.temporal.io/sdk/contrib/tally.NewMetricsHandler. The NopHandler is a noop
 // handler. A handler may implement "Unwrap() Handler" if it wraps a handler.
+//
+// Exposed as: [go.temporal.io/sdk/client.MetricsHandler]
 type Handler interface {
 	// WithTags returns a new handler with the given tags set for each metric
 	// created from it. Old tags from the previous handler are either preserved
@@ -26,6 +28,8 @@ type Handler interface {
 }
 
 // Counter is an ever-increasing counter.
+//
+// Exposed as: [go.temporal.io/sdk/client.MetricsCounter]
 type Counter interface {
 	// Inc increments the counter value.
 	Inc(int64)
