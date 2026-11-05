@@ -295,7 +295,7 @@ func buildPollerInfo(
 
 	return &workerpb.WorkerPollerInfo{
 		CurrentPollers:         currentPollers,
-		PollerTarget:           pollerTarget,
+		TargetPollers:          pollerTarget,
 		LastSuccessfulPollTime: pollTime,
 		IsAutoscaling:          isAutoscaling,
 	}

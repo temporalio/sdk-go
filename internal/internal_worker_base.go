@@ -1018,7 +1018,7 @@ func newPollerAutoscaler(options pollerAutoscalerOptions) *pollerAutoscaler {
 // requests from sharing mutable state.
 func (prh *pollerAutoscaler) scalingInfo() *taskqueuepb.PollerScalingInfo {
 	return &taskqueuepb.PollerScalingInfo{
-		PollerTarget: int32(prh.target.Load()),
+		TargetPollers: int32(prh.target.Load()),
 	}
 }
 

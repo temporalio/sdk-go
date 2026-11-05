@@ -61,16 +61,16 @@ func TestHeartbeatTracksAutoscalerTarget(t *testing.T) {
 	}
 
 	hb := heartbeat()
-	require.Equal(t, int32(initialPollers), hb.GetActivityPollerInfo().GetPollerTarget())
-	require.Zero(t, hb.GetNexusPollerInfo().GetPollerTarget(),
+	require.Equal(t, int32(initialPollers), hb.GetActivityPollerInfo().GetTargetPollers())
+	require.Zero(t, hb.GetNexusPollerInfo().GetTargetPollers(),
 		"the fixed-size poller has no autoscaler")
 
 	// The heartbeat follows the target as it halves on ResourceExhausted errors.
 	resourceExhausted := serviceerror.NewResourceExhausted(enumspb.RESOURCE_EXHAUSTED_CAUSE_CONCURRENT_LIMIT, "")
 	autoscaled.pollerAutoscaler.handleError(resourceExhausted)
-	require.Equal(t, int32(6), heartbeat().GetActivityPollerInfo().GetPollerTarget())
+	require.Equal(t, int32(6), heartbeat().GetActivityPollerInfo().GetTargetPollers())
 	autoscaled.pollerAutoscaler.handleError(resourceExhausted)
-	require.Equal(t, int32(3), heartbeat().GetActivityPollerInfo().GetPollerTarget())
+	require.Equal(t, int32(3), heartbeat().GetActivityPollerInfo().GetTargetPollers())
 }
 
 // An autoscaling nexus pool reports a target even though the nexus poll request has no
@@ -114,9 +114,9 @@ func TestHeartbeatReportsPollerTargetsPerType(t *testing.T) {
 		},
 	})
 
-	require.Equal(t, int32(10), hb.GetWorkflowPollerInfo().GetPollerTarget())
-	require.Equal(t, int32(12), hb.GetWorkflowStickyPollerInfo().GetPollerTarget())
-	require.Equal(t, int32(30), hb.GetActivityPollerInfo().GetPollerTarget())
-	require.Zero(t, hb.GetNexusPollerInfo().GetPollerTarget(),
+	require.Equal(t, int32(10), hb.GetWorkflowPollerInfo().GetTargetPollers())
+	require.Equal(t, int32(12), hb.GetWorkflowStickyPollerInfo().GetTargetPollers())
+	require.Equal(t, int32(30), hb.GetActivityPollerInfo().GetTargetPollers())
+	require.Zero(t, hb.GetNexusPollerInfo().GetTargetPollers(),
 		"a type absent from the map reports unknown")
 }

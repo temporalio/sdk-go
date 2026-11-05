@@ -1692,8 +1692,8 @@ func TestAutoscalingPollRequestsCarryCurrentPollerTarget(t *testing.T) {
 		require.NoError(t, err)
 		_, err = atp.poll(t.Context(), pollerGroupLease{})
 		require.NoError(t, err)
-		return workflowReported[len(workflowReported)-1].GetPollerTarget(),
-			activityReported[len(activityReported)-1].GetPollerTarget()
+		return workflowReported[len(workflowReported)-1].GetTargetPollers(),
+			activityReported[len(activityReported)-1].GetTargetPollers()
 	}
 
 	workflowTarget, activityTarget := pollTargets()
