@@ -420,15 +420,16 @@ func (e *TestWorkflowEnvironment) InOrderMockCalls(calls ...*MockCallWrapper) {
 	mock.InOrder(wrappedCalls...)
 }
 
-// OnActivity setup a mock call for activity. Parameter activity must be activity function (func) or activity name (string).
+// OnActivity sets up a mock call for activity. Parameter activity must be activity function (func) or activity name (string).
 // You must call Return() with appropriate parameters on the returned *MockCallWrapper instance. The supplied parameters to
 // the Return() call should either be a function that has exact same signature as the mocked activity, or it should be
 // mock values with the same types as the mocked activity function returns.
+//
 // Example: assume the activity you want to mock has function signature as:
 //
 //	func MyActivity(ctx context.Context, msg string) (string, error)
 //
-// You can mock it by return a function with exact same signature:
+// You can mock it by returning a function with exact same signature:
 //
 //	t.OnActivity(MyActivity, mock.Anything, mock.Anything).Return(func(ctx context.Context, msg string) (string, error) {
 //	   // your mock function implementation
@@ -439,10 +440,24 @@ func (e *TestWorkflowEnvironment) InOrderMockCalls(calls ...*MockCallWrapper) {
 //
 //	t.OnActivity(MyActivity, mock.Anything, mock.Anything).Return("mock_result", nil)
 //
+// Calling OnActivity will take over any registration of that activity and use the mocked implementation instead. However,
+// when the parameter is a string activity name, you must register that activity using env.RegisterActivity() providing
+// some function matching that activity's signature (the actual implementation does not matter). If you don't have access
+// to the activity implementation, you can use RegisterActivityWithOptions prior to the OnActivity call:
+//
+// env.RegisterActivityWithOptions(func(context.Context, string) (string, error) { return "", nil },
+//
+//	activity.RegisterOptions{
+//		Name: "MyActivity",
+//	})
+//
 // Note, when using a method reference with a receiver as an activity, the receiver must be an instance the same as if
 // it was being using in RegisterActivity so the parameter types are accurate. In Go, a method reference of
 // (*MyStruct).MyFunc makes the first parameter *MyStruct which will not work, whereas a method reference of
 // new(MyStruct).MyFunc will.
+//
+// When there is no OnActivity mock call set up, the activity must be registered and the registered implementation will
+// run.
 //
 // Mock callbacks here are run on a separate goroutine than the workflow and
 // therefore are not concurrency-safe with workflow code.
