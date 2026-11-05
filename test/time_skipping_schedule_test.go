@@ -393,10 +393,6 @@ func (s *TimeSkippingScheduleTestSuite) TestScheduleWithPropagationDisabled() {
 	}
 	s.NotNil(startedAttrs)
 
-	// Virtual start time propagates regardless: the action is handed the
-	// schedule's accumulated skip so its clock starts where the schedule's is.
-	// What DisablePropagation suppresses is the enabled flag and the
-	// fast-forward, so the action does not go on skipping on its own.
 	prop := startedAttrs.GetTimeSkippingStatePropagation()
 	s.NotNil(prop, "virtual start time should still propagate")
 	s.Nilf(prop.GetFastForwardTargetTime(),
@@ -410,12 +406,6 @@ func (s *TimeSkippingScheduleTestSuite) TestScheduleWithPropagationDisabled() {
 	}
 }
 
-// TestScheduleCurrentTimeAdvances is the schedule half of
-// TestGetCurrentTimeAdvances: the virtual clock a fast-forward moves is
-// readable afterwards, and it has moved by roughly the duration asked for.
-//
-// A schedule that has never skipped any time reports the wall clock, so the
-// before-reading doubles as a check on that fallback.
 func (s *TimeSkippingScheduleTestSuite) TestScheduleCurrentTimeAdvances() {
 	ctx := context.Background()
 	tq := "tq-" + uuid.NewString()
