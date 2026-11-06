@@ -29,7 +29,7 @@ jobs:
           rustup toolchain install 1.96.0 --profile minimal
           cargo +1.96.0 install --locked --features advanced \
             --git https://github.com/temporalio/nexgen \
-            --rev bae737159598f9c031311fff75531ff493caf098 nexgen
+            --rev c3537c58e75bb4c867e6e185d6030fea6b3967a8 nexgen
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
       - name: Check generated files

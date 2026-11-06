@@ -11,7 +11,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
-	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/api/workflowservice/v1"
@@ -226,8 +225,13 @@ func (i *systemNexusTestWorkflowOutbound) ExecuteNexusOperation(
 }
 
 func (i *systemNexusTestWorkflowOutbound) SignalWithStartWorkflow(
-	ctx workflow.Context, request *workflow.SignalWithStartWorkflowRequest,
-) workflow.NexusOperationFuture {
+	ctx workflow.Context,
+	opts workflow.SignalWithStartWorkflowOptions,
+	signal string,
+	signalArg any,
+	workflowValue string,
+	args ...any,
+) workflow.Future {
 	if !workflow.IsReplaying(ctx) {
 		i.recorder.systemNexusCalls.Add(1)
 	}
@@ -235,11 +239,8 @@ func (i *systemNexusTestWorkflowOutbound) SignalWithStartWorkflow(
 	if err != nil {
 		panic(err)
 	}
-	if request.Headers == nil {
-		request.Headers = make(map[string]*commonpb.Payload)
-	}
-	request.Headers["interceptor-header"] = payload
-	return i.Next.SignalWithStartWorkflow(ctx, request)
+	interceptor.WorkflowHeader(ctx)["interceptor-header"] = payload
+	return i.Next.SignalWithStartWorkflow(ctx, opts, signal, signalArg, workflowValue, args...)
 }
 
 // -----------------------------------------------------------------------------

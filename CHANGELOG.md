@@ -23,6 +23,8 @@ to docs, or any other relevant information.
 ### Added
 
 - Added experimental API for calling `SignalWithStartWorkflow` within a workflow.
+- Workflow `SignalWithStartWorkflow` calls now propagate workflow context through
+  request headers after outbound interception, preserving interceptor-supplied headers.
 
 - Added experimental Event Groups support: `workflow.NewEventGroup`, `workflow.WithEventGroups`,
   and `EventGroups` on workflow command options. Update handlers get an implicit group. Signal
@@ -61,6 +63,9 @@ to docs, or any other relevant information.
 
 ### :boom: Breaking Changes
 
+- **Experimental**: Workflow `SignalWithStartWorkflow` interceptors now accept the options
+  and resolved positional arguments and return `workflow.Future`. Use
+  `interceptor.WorkflowHeader(ctx)` to modify Temporal headers instead of modifying a request model.
 - `workflow.NewContinueAsNewErrorWithOptions` now calls
   `interceptor.WorkflowOutboundInterceptor.NewContinueAsNewErrorWithOptions`
   directly. It previously went through `NewContinueAsNewError`, then applied

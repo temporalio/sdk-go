@@ -148,6 +148,7 @@ interface workflow-service {
   ///   dotnet="Temporalio.Workflows.Workflow.GetExternalWorkflowHandle(request.Id, result.RunId)"
   /// @nexus.operation name="SignalWithStartWorkflowExecution"
   /// @nexus.serialization-context python="signal_with_start_workflow_serialization_context" typescript="signalWithStartWorkflowSerializationContext" dotnet="WorkflowServiceSerializationContexts.SignalWithStartWorkflow" go="SignalWithStartWorkflowSerializationContext"
+  /// @nexus.context-propagation go="request.headers"
   /// @nexus.experimental
   signal-with-start-workflow: func(
     request: signal-with-start-workflow-request,
