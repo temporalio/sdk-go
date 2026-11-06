@@ -6,6 +6,8 @@ import (
 	"time"
 
 	enumspb "go.temporal.io/api/enums/v1"
+	taskqueuepb "go.temporal.io/api/taskqueue/v1"
+	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
@@ -17,21 +19,12 @@ func (ts *IntegrationTestSuite) TestQueryClosedWorkflowWithPendingSignal() {
 	worker.SetStickyWorkflowCacheSize(0)
 	defer worker.SetStickyWorkflowCacheSize(ts.config.maxWorkflowCacheSize)
 
-	w := worker.New(ts.client, ts.taskQueueName, worker.Options{})
-	w.RegisterWorkflow(queryClosedWorkflowWithPendingSignal)
-	ts.Require().NoError(w.Start())
-	stopped := false
-	defer func() {
-		if !stopped {
-			w.Stop()
-		}
-	}()
-
+	taskQueue := ts.taskQueueName + "-history"
 	ctx, cancel := context.WithTimeout(ts.T().Context(), time.Minute)
 	defer cancel()
 	run, err := ts.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
 		ID:                       ts.taskQueueName,
-		TaskQueue:                ts.taskQueueName,
+		TaskQueue:                taskQueue,
 		WorkflowExecutionTimeout: time.Minute,
 	}, queryClosedWorkflowWithPendingSignal)
 	ts.Require().NoError(err)
@@ -44,15 +37,24 @@ func (ts *IntegrationTestSuite) TestQueryClosedWorkflowWithPendingSignal() {
 		}
 	}()
 
-	value, err := ts.client.QueryWorkflow(ctx, run.GetID(), run.GetRunID(), "state")
+	// Complete the initial no-command task without leaving background polls that could start the signal's task.
+	task, err := ts.client.WorkflowService().PollWorkflowTaskQueue(ctx, &workflowservice.PollWorkflowTaskQueueRequest{
+		Namespace: ts.config.Namespace,
+		TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue, Kind: enumspb.TASK_QUEUE_KIND_NORMAL},
+		Identity:  "query-history-setup",
+	})
 	ts.Require().NoError(err)
-	var state string
-	ts.Require().NoError(value.Get(&state))
-	ts.Require().Equal("waiting", state)
+	ts.Require().NotEmpty(task.GetTaskToken())
+	ts.Require().Equal(run.GetID(), task.GetWorkflowExecution().GetWorkflowId())
+	ts.Require().Equal(run.GetRunID(), task.GetWorkflowExecution().GetRunId())
+	_, err = ts.client.WorkflowService().RespondWorkflowTaskCompleted(ctx, &workflowservice.RespondWorkflowTaskCompletedRequest{
+		Namespace:  ts.config.Namespace,
+		TaskToken:  task.GetTaskToken(),
+		Identity:   "query-history-setup",
+		ResourceId: "workflow:" + run.GetID(),
+	})
+	ts.Require().NoError(err)
 
-	// No worker may start the signal's workflow task before termination.
-	w.Stop()
-	stopped = true
 	ts.Require().NoError(ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "signal", nil))
 	ts.Require().NoError(ts.client.TerminateWorkflow(ctx, run.GetID(), run.GetRunID(), "test termination"))
 	terminated = true
@@ -82,13 +84,14 @@ func (ts *IntegrationTestSuite) TestQueryClosedWorkflowWithPendingSignal() {
 	ts.Require().Greater(scheduledID, signalID)
 	ts.Require().Greater(terminatedID, scheduledID)
 
-	queryWorker := worker.New(ts.client, ts.taskQueueName, worker.Options{})
+	queryWorker := worker.New(ts.client, taskQueue, worker.Options{})
 	queryWorker.RegisterWorkflow(queryClosedWorkflowWithPendingSignal)
 	ts.Require().NoError(queryWorker.Start())
 	defer queryWorker.Stop()
 
-	value, err = ts.client.QueryWorkflow(ctx, run.GetID(), run.GetRunID(), "state")
+	value, err := ts.client.QueryWorkflow(ctx, run.GetID(), run.GetRunID(), "state")
 	ts.Require().NoError(err)
+	var state string
 	ts.Require().NoError(value.Get(&state))
 	ts.Equal("waiting", state, "query reconstruction must not execute a signal after its last completed workflow task")
 }
