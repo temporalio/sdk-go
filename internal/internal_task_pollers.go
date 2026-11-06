@@ -105,8 +105,8 @@ type (
 		workerPollCompleteOnShutdown *atomic.Bool
 		// Supplies the poller pool state reported to the server on each poll, so it can
 		// spread scaling suggestions across a fleet by share rather than by whoever
-		// happens to receive the most tasks. Nil unless the pool is autoscaling, in
-		// which case the pool's autoscaler supplies it -- see newScalablePollerWithTarget.
+		// happens to receive the most tasks. Set from the pool the poller belongs to,
+		// autoscaling or fixed -- see newScalablePollerWithTarget.
 		pollerPoolInfo func() *taskqueuepb.PollerPoolInfo
 	}
 
@@ -272,8 +272,8 @@ func (bp *basePoller) setPollerPoolInfo(f func() *taskqueuepb.PollerPoolInfo) {
 }
 
 // getPollerPoolInfo returns the pool state to attach to a poll request, or nil when this
-// poller is not autoscaling. A nil result leaves the field unset, which the server reads as
-// "no report" and excludes the worker from share-based fairness.
+// poller has no pool wired up. A nil result leaves the field unset, which the server reads
+// as "no report" and excludes the worker from share-based fairness.
 func (bp *basePoller) getPollerPoolInfo() *taskqueuepb.PollerPoolInfo {
 	if bp.pollerPoolInfo == nil {
 		return nil

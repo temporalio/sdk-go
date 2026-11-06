@@ -1780,7 +1780,7 @@ func (aw *AggregatedWorker) handleFatalError(err error, hook func(error)) {
 	aw.Stop()
 }
 
-// pollerTargets returns the autoscaler target per poller type across this worker's pollers.
+// pollerTargets returns the target poller count per poller type across this worker's pollers.
 //
 // Session workers are deliberately excluded: their activity pollers run on derived task
 // queues but share the activity poller type, so including them would overwrite the target

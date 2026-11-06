@@ -1778,20 +1778,22 @@ func TestAutoscalingPollRequestsCarryCurrentPollerTarget(t *testing.T) {
 	require.NotSame(t, activityReported[0], activityReported[1])
 }
 
-// A fixed-size pool has no target, and leaves the field unset rather than claiming a
-// target of zero: the server reads an unset field as "no report" and excludes the worker
-// from share-based fairness instead of treating it as wanting no pollers.
-func TestFixedSizePollRequestsOmitPollerPoolInfo(t *testing.T) {
+// A fixed-size pool reports its configured size as its target: it is not autoscaling, but
+// it still contributes pollers to the fleet, and reporting nothing would both skew a
+// fleet-wide poller count and be indistinguishable from an SDK too old to report at all.
+func TestFixedSizePollRequestsReportConfiguredPollerCount(t *testing.T) {
 	t.Parallel()
 
 	ctrl := gomock.NewController(t)
 	service := workflowservicemock.NewMockWorkflowServiceClient(ctrl)
+	const maximumPollers = 2
 
+	var reported []*taskqueuepb.PollerPoolInfo
 	service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
 		DoAndReturn(func(_ context.Context, req *workflowservice.PollWorkflowTaskQueueRequest, _ ...grpc.CallOption) (*workflowservice.PollWorkflowTaskQueueResponse, error) {
-			require.Nil(t, req.GetPollerPoolInfo())
+			reported = append(reported, req.GetPollerPoolInfo())
 			return &workflowservice.PollWorkflowTaskQueueResponse{}, nil
-		})
+		}).AnyTimes()
 
 	wtp := &workflowTaskPoller{
 		basePoller:            basePoller{metricsHandler: metrics.NopHandler},
@@ -1806,13 +1808,59 @@ func TestFixedSizePollRequestsOmitPollerPoolInfo(t *testing.T) {
 	pool := newScalableTaskPoller(
 		wtp,
 		ilog.NewNopLogger(),
-		NewPollerBehaviorSimpleMaximum(PollerBehaviorSimpleMaximumOptions{MaximumNumberOfPollers: 2}),
+		NewPollerBehaviorSimpleMaximum(PollerBehaviorSimpleMaximumOptions{MaximumNumberOfPollers: maximumPollers}),
 		metrics.PollerTypeWorkflowTask,
 		&atomic.Bool{},
 		nil,
 	)
 	require.Nil(t, pool.pollerAutoscaler)
 
-	_, err := wtp.poll(t.Context(), pollerGroupLease{})
+	for range 2 {
+		_, err := wtp.poll(t.Context(), pollerGroupLease{})
+		require.NoError(t, err)
+	}
+	require.Len(t, reported, 2)
+	for _, info := range reported {
+		require.Equal(t, int32(maximumPollers), info.GetTargetPollers())
+	}
+	// Each poll carries its own message, as for an autoscaling pool.
+	require.NotSame(t, reported[0], reported[1])
+}
+
+// A fixed-size nexus pool reports on its poll request too, not only on the heartbeat.
+func TestFixedSizeNexusPollRequestsReportConfiguredPollerCount(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	service := workflowservicemock.NewMockWorkflowServiceClient(ctrl)
+	const maximumPollers = 3
+
+	var reported *taskqueuepb.PollerPoolInfo
+	service.EXPECT().PollNexusTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, req *workflowservice.PollNexusTaskQueueRequest, _ ...grpc.CallOption) (*workflowservice.PollNexusTaskQueueResponse, error) {
+			reported = req.GetPollerPoolInfo()
+			return &workflowservice.PollNexusTaskQueueResponse{}, nil
+		})
+
+	ntp := &nexusTaskPoller{
+		basePoller:      basePoller{metricsHandler: metrics.NopHandler},
+		namespace:       "test-ns",
+		taskQueueName:   "test-task-queue",
+		identity:        "test-worker",
+		service:         service,
+		logger:          ilog.NewNopLogger(),
+		numPollerMetric: newNumPollerMetric(metrics.NopHandler, metrics.PollerTypeNexusTask),
+	}
+	newScalableTaskPoller(
+		ntp,
+		ilog.NewNopLogger(),
+		NewPollerBehaviorSimpleMaximum(PollerBehaviorSimpleMaximumOptions{MaximumNumberOfPollers: maximumPollers}),
+		metrics.PollerTypeNexusTask,
+		&atomic.Bool{},
+		nil,
+	)
+
+	_, err := ntp.poll(t.Context(), pollerGroupLease{})
 	require.NoError(t, err)
+	require.Equal(t, int32(maximumPollers), reported.GetTargetPollers())
 }

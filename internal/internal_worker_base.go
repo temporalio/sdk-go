@@ -207,6 +207,11 @@ type (
 		taskPoller        taskPoller
 		pollerAutoscaler  *pollerAutoscaler
 		autoscalingRunner *autoscalingTaskPollerRunner
+
+		// targetPollers reports how many pollers this pool is aiming to run: an
+		// autoscaling pool's live target, or a fixed pool's configured size. Both the
+		// poll request and the heartbeat report it, so they read the same supplier.
+		targetPollers func() int32
 	}
 
 	// baseWorkerOptions options to configure base worker.
@@ -445,31 +450,29 @@ func (bw *baseWorker) initializeTaskPollers(taskPollers []scalableTaskPoller) {
 	bw.trackPollerTargets(taskPollers)
 }
 
-// trackPollerTargets records each autoscaling pool's target, keyed by poller type, for
-// the heartbeat to report. The poll path is wired where the poller is built, next to its
-// autoscaler; the heartbeat instead needs the poller type as a key, which only the
-// scalableTaskPoller knows, so that registration stays on baseWorker.
+// trackPollerTargets records each pool's target, keyed by poller type, for the heartbeat
+// to report. The poll path is wired where the poller is built, next to its pool; the
+// heartbeat instead needs the poller type as a key, which only the scalableTaskPoller
+// knows, so that registration stays on baseWorker.
 //
-// Every autoscaling pool is recorded, including nexus, whose poll request has no field to
-// carry a scaling report: the heartbeat covers every autoscaling pool, not only the ones
-// the server's share-based fairness acts on. Fixed-size pools have no autoscaler and are
-// skipped by record.
+// Every pool is recorded, autoscaling or fixed, and including nexus: the heartbeat covers
+// the whole worker, not only the pools the server's share-based fairness acts on.
 func (bw *baseWorker) trackPollerTargets(taskPollers []scalableTaskPoller) {
 	for _, tw := range taskPollers {
-		bw.pollerTargets.record(tw.taskPollerType, tw.pollerAutoscaler)
+		bw.pollerTargets.record(tw.taskPollerType, tw.targetPollers)
 	}
 }
 
-// collectPollerTargets adds this worker's autoscaler target for each poller type it runs
-// into targets. Poller types with a fixed pool have no autoscaler and are left absent
-// rather than reported as zero, so a caller merging several workers cannot have a real
-// target overwritten by a zero.
+// collectPollerTargets adds this worker's target for each poller type it runs into
+// targets. Poller types this worker does not run are left absent rather than reported as
+// zero, so a caller merging several workers cannot have a real target overwritten by a
+// zero.
 func (bw *baseWorker) collectPollerTargets(targets map[string]int32) {
 	if bw.pollerTargets == nil {
 		return
 	}
-	bw.pollerTargets.autoscalers.Range(func(k, v any) bool {
-		targets[k.(string)] = int32(v.(*pollerAutoscaler).target.Load())
+	bw.pollerTargets.targets.Range(func(k, v any) bool {
+		targets[k.(string)] = v.(func() int32)()
 		return true
 	})
 }
@@ -1012,14 +1015,9 @@ func newPollerAutoscaler(options pollerAutoscalerOptions) *pollerAutoscaler {
 	return psr
 }
 
-// scalingInfo reports what this pool is currently targeting, for a poll request to carry
-// to the server, so scaling suggestions can be spread across a fleet by share rather than
-// landing on whoever happens to receive the most tasks. A fresh message per call keeps
-// requests from sharing mutable state.
-func (prh *pollerAutoscaler) scalingInfo() *taskqueuepb.PollerPoolInfo {
-	return &taskqueuepb.PollerPoolInfo{
-		TargetPollers: int32(prh.target.Load()),
-	}
+// targetPollers is how many pollers this pool is currently aiming to run.
+func (prh *pollerAutoscaler) targetPollers() int32 {
+	return int32(prh.target.Load())
 }
 
 func (prh *pollerAutoscaler) handleTask(task taskForWorker) {
@@ -1330,15 +1328,21 @@ func newScalablePollerWithTarget(
 				targetChanged(target)
 			}
 		}
-		// Only an autoscaling pool has a target to report, and this is the one place
-		// that holds both the poller and its autoscaler. Pollers whose request has no
-		// field to carry the report -- nexus -- simply never ask for one; they still
-		// report a target on the heartbeat, which baseWorker tracks separately.
-		if reporter, ok := poller.(pollerPoolInfoReporter); ok {
-			reporter.setPollerPoolInfo(tw.pollerAutoscaler.scalingInfo)
-		}
+		tw.targetPollers = tw.pollerAutoscaler.targetPollers
 	case *pollerBehaviorSimpleMaximum:
 		tw.pollerCount = p.maximumNumberOfPollers
+		target := int32(p.maximumNumberOfPollers)
+		tw.targetPollers = func() int32 { return target }
+	}
+	// This is the one place that holds both the poller and its pool, so the poll-request
+	// report is wired here. Pollers with no pool state to report never implement the
+	// interface; the heartbeat reports every pool, which baseWorker tracks separately.
+	if reporter, ok := poller.(pollerPoolInfoReporter); ok && tw.targetPollers != nil {
+		targetPollers := tw.targetPollers
+		// A fresh message per call keeps in-flight requests from sharing mutable state.
+		reporter.setPollerPoolInfo(func() *taskqueuepb.PollerPoolInfo {
+			return &taskqueuepb.PollerPoolInfo{TargetPollers: targetPollers()}
+		})
 	}
 	return tw
 }
