@@ -186,6 +186,12 @@ type (
 		// Optional: defaults to none/empty.
 		Summary string
 
+		// EventGroups are explicit Event Groups attached to commands scheduled with
+		// these options. They are combined with any groups on the context.
+		//
+		// NOTE: Experimental (Event Groups)
+		EventGroups []EventGroup
+
 		// Priority - Optional priority settings that control relative ordering of
 		// task processing when tasks are backed up in a queue.
 		Priority Priority
@@ -216,6 +222,12 @@ type (
 		//
 		// Optional: defaults to none/empty.
 		Summary string
+
+		// EventGroups are explicit Event Groups attached to local activity commands
+		// scheduled with these options. They are combined with any groups on the context.
+		//
+		// NOTE: Experimental (Event Groups)
+		EventGroups []EventGroup
 	}
 )
 

@@ -22,6 +22,25 @@ to docs, or any other relevant information.
 
 ### Added
 
+- Added opt-in `EncodeHeaders` tracing options and `workflow.CodecContextPropagator` for header
+  codec processing using the configured client's codec. Only opted-in producers' output is encoded;
+  user-supplied wire-ready headers are unchanged. Receiving consumers use private decoded views.
+  Custom converter wrappers can expose codec stages through `converter.PayloadCodecProvider`.
+
+- Added experimental Event Groups support: `workflow.NewEventGroup`, `workflow.WithEventGroups`,
+  and `EventGroups` on workflow command options. Update handlers get an implicit group. Signal
+  handlers do not.
+- Added client interceptor hooks for `Client.GetWorkflow` (`GetWorkflowRun`),
+  `WorkflowRun.Get`/`GetWithOptions` (`GetWorkflowResult`), and
+  `Client.GetWorkflowHistory`. Handle interception runs before lazy target
+  resolution, allowing workflow IDs to be rewritten before any lookup.
+  Result interception also runs before lazy target resolution, wraps the complete
+  wait including followed runs, and returns the encoded result or workflow error
+  before result decoding; history interception can wrap the lazily fetched iterator.
+- Plugins can report a version in worker heartbeats, with `SimplePluginOptions.Version` or a
+  `Version() string` method on the plugin.
+- `client.WorkflowExecutionDescription` now includes `RawResponse`, the full
+  `workflowservice.DescribeWorkflowExecutionResponse` returned by the server.
 - Added experimental `temporalnexus.ConvertLinkCallbackToNexusLink` and `temporalnexus.ConvertNexusLinkToLinkCallback`
   for converting `Link_Callback` to and from Nexus links.
 - Nexus handlers now propagate `NexusSerializationContext` to the workflows, workflow updates, and
@@ -40,8 +59,20 @@ to docs, or any other relevant information.
 
 ### Deprecated
 
+- `client.Client.DescribeWorkflowExecution` is deprecated. Use `DescribeWorkflow` and
+  access its response's `RawResponse` field for the full server response instead.
+
 ### :boom: Breaking Changes
 
+- `workflow.NewContinueAsNewErrorWithOptions` now calls
+  `interceptor.WorkflowOutboundInterceptor.NewContinueAsNewErrorWithOptions`
+  directly. It previously went through `NewContinueAsNewError`, then applied
+  `ContinueAsNewErrorOptions` to the error that hook returned. An interceptor
+  that overrides only `NewContinueAsNewError` no longer runs for
+  `NewContinueAsNewErrorWithOptions` calls. Override the new method as well;
+  the SDK tracing interceptors already do. An interceptor that records workflow
+  commands inside `NewContinueAsNewError` can cause a non-determinism error on
+  replay when the workflow already called `NewContinueAsNewErrorWithOptions`.
 - **Experimental**: A Temporal operation handler (`temporalnexus.NewTemporalOperation`) can now send only
   one signal per operation invocation through `NexusClient.GetWorkflowClient()`. `SignalWorkflow` and
   `SignalWithStartWorkflow` count toward the same limit. While the first signal is in flight, or after it
@@ -64,6 +95,8 @@ to docs, or any other relevant information.
 - Fixed premature activity cancellation when a heartbeat RPC returns `DeadlineExceeded`.
   The SDK now preserves Temporal service error codes when deciding whether a heartbeat failure should cancel the activity.
 - Fixed concurrent dev-server CLI downloads failing on Windows when another process has already populated and started the cached executable.
+- Fixed a deadlock between data converter deadlock-detector pausing and workflow coroutine cleanup.
+- `workflow.DataConverterWithoutDeadlockDetection` now also exempts automatic header codec calls and their serialization-context binding from workflow deadlock detection.
 - `converter.NewRemotePayloadCodec` now handles endpoint URLs with trailing slashes.
 - Fixed race when using `log.With` without a `WithLogger` implementation, where logs could overwrite each others' buffers.
 - The default timeout for client and worker RPCs has been extended. Previously, the default timeout

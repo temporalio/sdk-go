@@ -9,6 +9,7 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -3367,8 +3368,17 @@ func (ts *IntegrationTestSuite) TestInterceptorCalls() {
 
 	// Confirm response
 	var resStr string
-	ts.NoError(run.Get(ctx, &resStr))
+	ts.NoError(ts.client.GetWorkflow(ctx, run.GetID(), run.GetRunID()).Get(ctx, &resStr))
 	ts.Equal("finished(activity(workflow(root)))", resStr)
+
+	history := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+	eventCount := 0
+	for history.HasNext() {
+		_, err := history.Next()
+		ts.Require().NoError(err)
+		eventCount++
+	}
+	ts.Positive(eventCount)
 
 	// Make other client calls we know will fail
 	_, _ = ts.client.SignalWithStartWorkflow(ctx, "badid", "badsignal", nil, client.StartWorkflowOptions{}, "badworkflow")
@@ -3388,6 +3398,46 @@ func (ts *IntegrationTestSuite) TestInterceptorCalls() {
 		"ClientOutboundInterceptor.ExecuteWorkflow": {
 			arg(1, func(i any) {
 				ts.Equal("InterceptorCalls", i.(*interceptor.ClientExecuteWorkflowInput).WorkflowType)
+			}),
+		},
+		"ClientOutboundInterceptor.GetWorkflowRun": {
+			arg(1, func(i any) {
+				in := i.(*interceptor.ClientGetWorkflowRunInput)
+				ts.Equal(run.GetID(), in.WorkflowID)
+				ts.Equal(run.GetRunID(), in.RunID)
+			}),
+			result(0, func(i any) {
+				existingRun := i.(client.WorkflowRun)
+				ts.Equal(run.GetID(), existingRun.GetID())
+				ts.Equal(run.GetRunID(), existingRun.GetRunID())
+			}),
+		},
+		"ClientOutboundInterceptor.GetWorkflowResult": {
+			arg(1, func(i any) {
+				in := i.(*interceptor.ClientGetWorkflowResultInput)
+				ts.Equal(run.GetID(), in.WorkflowID)
+				ts.Equal(run.GetRunID(), in.RunID)
+				ts.Equal(client.WorkflowRunGetOptions{}, in.Options)
+			}),
+			result(0, func(i any) {
+				out := i.(*interceptor.ClientGetWorkflowResultOutput)
+				ts.Nil(out.Error)
+				var result string
+				ts.NoError(out.Result.Get(&result))
+				ts.Equal(resStr, result)
+			}),
+			result(1, func(i any) { ts.Nil(i) }),
+		},
+		"ClientOutboundInterceptor.GetWorkflowHistory": {
+			arg(1, func(i any) {
+				in := i.(*interceptor.ClientGetWorkflowHistoryInput)
+				ts.Equal(run.GetID(), in.WorkflowID)
+				ts.Equal(run.GetRunID(), in.RunID)
+				ts.False(in.IsLongPoll)
+				ts.Equal(enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT, in.FilterType)
+			}),
+			result(0, func(i any) {
+				ts.NotNil(i.(*interceptor.ClientGetWorkflowHistoryOutput).Iterator)
 			}),
 		},
 		// WorkflowInboundInterceptor
@@ -3491,6 +3541,42 @@ func (ts *IntegrationTestSuite) TestInterceptorCalls() {
 		for _, check := range checks {
 			check(call)
 		}
+	}
+}
+
+func (ts *IntegrationTestSuite) TestInterceptorWorkflowIDMapping() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+	run, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("test-interceptor-workflow-id-mapping"),
+		ts.workflows.SimplestWorkflow)
+	ts.NoError(err)
+	for _, method := range []string{"GetWorkflowRun", "GetWorkflowResult"} {
+		calls := 0
+		mapper := interceptortest.NewProxy(interceptortest.InvokerFunc(func(call *interceptortest.ProxyCall) []reflect.Value {
+			if call.Method.Name == method {
+				calls++
+				switch in := call.Args[1].Interface().(type) {
+				case *interceptor.ClientGetWorkflowRunInput:
+					ts.Equal("logical-workflow", in.WorkflowID)
+					ts.Empty(in.RunID)
+					in.WorkflowID = run.GetID()
+				case *interceptor.ClientGetWorkflowResultInput:
+					ts.Equal("logical-workflow", in.WorkflowID)
+					ts.Empty(in.RunID)
+					in.WorkflowID = run.GetID()
+				}
+			}
+			return call.Call()
+		}))
+		mappedClient, err := ts.newDefaultClient(func(options *client.Options) {
+			options.Interceptors = append(options.Interceptors, mapper)
+		})
+		ts.NoError(err)
+		defer mappedClient.Close()
+		var result string
+		ts.NoError(mappedClient.GetWorkflow(ctx, "logical-workflow", "").Get(ctx, &result))
+		ts.Equal("hello", result)
+		ts.Equal(1, calls)
 	}
 }
 
@@ -7954,6 +8040,10 @@ func (ts *IntegrationTestSuite) TestUserMetadata() {
 	// Confirm the workflow description has the expected details
 	desc, err := ts.client.DescribeWorkflow(ctx, run.GetID(), run.GetRunID())
 	ts.NoError(err)
+	ts.NotNil(desc.RawResponse)
+	ts.Equal(run.GetID(), desc.RawResponse.GetWorkflowExecutionInfo().GetExecution().GetWorkflowId())
+	ts.Equal(run.GetRunID(), desc.RawResponse.GetWorkflowExecutionInfo().GetExecution().GetRunId())
+	ts.Equal(opts.TaskQueue, desc.RawResponse.GetExecutionConfig().GetTaskQueue().GetName())
 	summary, err := desc.GetStaticSummary()
 	ts.NoError(err)
 	ts.Equal("my-wf-summary", summary)

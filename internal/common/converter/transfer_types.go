@@ -400,6 +400,13 @@ func (dc *transferAwareDataConverter) ToStrings(input *commonpb.Payloads) []stri
 	return dc.parent.ToStrings(input)
 }
 
+func (dc *transferAwareDataConverter) Codec() PayloadCodec {
+	if provider, ok := dc.parent.(PayloadCodecProvider); ok {
+		return provider.Codec()
+	}
+	return nil
+}
+
 func (dc *transferAwareDataConverter) WithSerializationContext(ctx SerializationContext) DataConverter {
 	if _, ok := dc.parent.(DataConverterWithSerializationContext); !ok {
 		return dc
