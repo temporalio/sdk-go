@@ -47,6 +47,7 @@ to docs, or any other relevant information.
   standalone activities they start, which use it for payloads returned to the Nexus caller: results,
   failures, and standalone activity heartbeat details. When completing or heartbeating such an
   activity from a client, pass `activity.Info.NexusSerializationContext` in the options.
+- Added experimental `worker.GetSlotUsage`, which returns a snapshot of a worker's task slot usage.
 
 ### Changed
 
