@@ -128,8 +128,10 @@ and client creation fails if a fetch fails. After that:
 ## Observability
 
 The extension logs to the client's `Logger` and emits metrics to the client's
-`MetricsHandler`, if they are set in the client options before the client is
-created.
+`MetricsHandler`. Clients created from the same loaded options share this
+telemetry: fetches are reported to the logger and metrics handler of the most
+recently created client. Load the options separately for each client that
+needs its own.
 
 Metrics are all labeled with `secret_type` (`api_key`, `tls_client_cert`,
 `tls_server_ca_cert`; client cert and client key metrics are both labeled

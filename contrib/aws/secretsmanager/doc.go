@@ -54,8 +54,10 @@
 //
 // # Observability
 //
-// Fetches, rotations, fallbacks to stale values, and recoveries are logged to [client.Options.Logger], and metrics
-// are emitted to [client.Options.MetricsHandler], if they are set in the client options before the client is created.
+// Fetches, rotations, fallbacks to stale values, and recoveries are logged to the client's [client.Options.Logger],
+// and metrics are emitted to its [client.Options.MetricsHandler]. Clients created from the same loaded options share
+// this telemetry: fetches are reported to the logger and metrics handler of the most recently created client. Load
+// the options separately for each client that needs its own.
 // Secret material is never logged or included in metrics. The metrics, all labeled with secret_type and fetch_path,
 // are:
 //
