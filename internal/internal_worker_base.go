@@ -212,9 +212,6 @@ type (
 		// configured size. The poll request and the heartbeat read the same supplier.
 		targetPollers func() int32
 
-		// alsoTargetsPollerType is a second poller type this pool's target is reported
-		// under on the heartbeat. A fixed workflow pool polls both the normal and the
-		// sticky queue from one pool, and the heartbeat has a slot for each.
 		alsoTargetsPollerType string
 	}
 
@@ -246,8 +243,6 @@ type (
 		options         baseWorkerOptions
 		isWorkerStarted bool
 		// pollerTargets records each pool's target by poller type for the heartbeat.
-		// Written by trackPollerTargets, read from the heartbeat goroutine, so it is a
-		// sync.Map rather than a plain field on options.
 		pollerTargets *pollerTargetTracker
 		// stopCh is created by newBaseWorker and closed by baseWorker.Stop().
 		// It is internal to baseWorker and stops its poller, dispatcher, autoscaler,

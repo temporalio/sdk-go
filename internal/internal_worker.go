@@ -1785,10 +1785,6 @@ func (aw *AggregatedWorker) handleFatalError(err error, hook func(error)) {
 }
 
 // pollerTargets returns the target poller count per poller type across this worker's pollers.
-//
-// Session workers are deliberately excluded: their activity pollers run on derived task
-// queues but share the activity poller type, so including them would overwrite the target
-// of the worker's own activity poller.
 func (aw *AggregatedWorker) pollerTargets() map[string]int32 {
 	targets := make(map[string]int32, 4)
 	if aw.workflowWorker != nil {

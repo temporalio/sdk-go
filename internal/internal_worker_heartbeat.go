@@ -445,18 +445,12 @@ func (hw *sharedNamespaceWorker) stop() {
 	<-hw.stoppedC
 }
 
-// pollerTargetTracker tracks the target poller count for each poller type, so the heartbeat
-// can report what each pool is aiming for rather than only what it currently has in flight.
-//
-// Registration is keyed by poller type and holds a supplier, not a snapshot, so an
-// autoscaling pool's target is read live; a fixed pool supplies its configured size. A type
-// that never registers is reported as 0, which the proto defines as unknown.
+// pollerTargetTracker holds each poller type's target supplier, read live by the heartbeat.
+// A type that never registers is reported as 0, which the proto defines as unknown.
 type pollerTargetTracker struct {
 	targets sync.Map // pollerType (string) -> func() int32
 }
 
-// Nil-safe: a baseWorker built directly in a test has no tracker, and reporting no target
-// is the correct behaviour there rather than a panic.
 func (p *pollerTargetTracker) record(pollerType string, target func() int32) {
 	if p == nil || pollerType == "" || target == nil {
 		return
