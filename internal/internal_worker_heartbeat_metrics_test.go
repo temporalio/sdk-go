@@ -134,6 +134,37 @@ func TestHeartbeatReportsFixedPollerTargets(t *testing.T) {
 	require.Equal(t, int32(7), hb.GetNexusPollerInfo().GetTargetPollers())
 }
 
+// A fixed-size workflow pool polls the normal and sticky queues from one pool, so the
+// heartbeat reports the same target in both slots. Reporting only the normal slot would
+// pair a real sticky current_pollers with a zero target.
+func TestHeartbeatReportsFixedStickyTargetFromSharedPool(t *testing.T) {
+	mixed := newScalableTaskPoller(
+		newBlockingProbeTaskPoller(),
+		ilog.NewNopLogger(),
+		NewPollerBehaviorSimpleMaximum(PollerBehaviorSimpleMaximumOptions{MaximumNumberOfPollers: 3}),
+		metrics.PollerTypeWorkflowTask,
+		&atomic.Bool{},
+		nil,
+	)
+	mixed.alsoTargetsPollerType = metrics.PollerTypeWorkflowStickyTask
+
+	bw := &baseWorker{pollerTargets: &pollerTargetTracker{}}
+	bw.trackPollerTargets([]scalableTaskPoller{mixed})
+
+	targets := make(map[string]int32)
+	bw.collectPollerTargets(targets)
+
+	h := newHeartbeatMetricsHandler(metrics.NewCapturingHandler())
+	hb := &workerpb.WorkerHeartbeat{}
+	h.PopulateHeartbeat(hb, &populateHeartbeatOptions{
+		pollTimeTracker: &pollTimeTracker{},
+		pollerTargets:   targets,
+	})
+
+	require.Equal(t, int32(3), hb.GetWorkflowPollerInfo().GetTargetPollers())
+	require.Equal(t, int32(3), hb.GetWorkflowStickyPollerInfo().GetTargetPollers())
+}
+
 // An autoscaling nexus pool reports a target even though the nexus poll request has no
 // field to carry one -- the heartbeat covers every autoscaling pool, not only the pools
 // fairness acts on.

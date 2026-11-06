@@ -212,6 +212,11 @@ type (
 		// autoscaling pool's live target, or a fixed pool's configured size. Both the
 		// poll request and the heartbeat report it, so they read the same supplier.
 		targetPollers func() int32
+
+		// alsoTargetsPollerType is a second poller type this pool's target is reported
+		// under on the heartbeat. A fixed workflow pool polls both the normal and the
+		// sticky queue from one pool, and the heartbeat has a slot for each.
+		alsoTargetsPollerType string
 	}
 
 	// baseWorkerOptions options to configure base worker.
@@ -460,6 +465,9 @@ func (bw *baseWorker) initializeTaskPollers(taskPollers []scalableTaskPoller) {
 func (bw *baseWorker) trackPollerTargets(taskPollers []scalableTaskPoller) {
 	for _, tw := range taskPollers {
 		bw.pollerTargets.record(tw.taskPollerType, tw.targetPollers)
+		if tw.alsoTargetsPollerType != "" {
+			bw.pollerTargets.record(tw.alsoTargetsPollerType, tw.targetPollers)
+		}
 	}
 }
 

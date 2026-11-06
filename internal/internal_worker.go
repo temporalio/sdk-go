@@ -543,16 +543,20 @@ func buildWorkflowScalableTaskPollers(
 
 		return []scalableTaskPoller{normalScalablePoller, stickyScalablePoller}
 	default: // *pollerBehaviorSimpleMaximum
-		return []scalableTaskPoller{
-			newScalableTaskPoller(
-				taskProcessor.createPoller(Mixed, nil),
-				params.Logger,
-				behavior,
-				metrics.PollerTypeWorkflowTask,
-				params.serverSupportsAutoscaling,
-				nil,
-			),
+		mixedScalablePoller := newScalableTaskPoller(
+			taskProcessor.createPoller(Mixed, nil),
+			params.Logger,
+			behavior,
+			metrics.PollerTypeWorkflowTask,
+			params.serverSupportsAutoscaling,
+			nil,
+		)
+		if taskProcessor.stickyCacheSize > 0 {
+			// One pool polls both queues, so the heartbeat's sticky slot reports the same
+			// target. Leaving it unset would pair a real current_pollers with a zero target.
+			mixedScalablePoller.alsoTargetsPollerType = metrics.PollerTypeWorkflowStickyTask
 		}
+		return []scalableTaskPoller{mixedScalablePoller}
 	}
 }
 
