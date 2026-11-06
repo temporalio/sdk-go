@@ -978,7 +978,7 @@ func (s *TimeSkippingV2TestSuite) TestPollingASupersededFastForwardIsRejected() 
 		"expected time skipping to engage once the activity finished")
 }
 
-// Starts a fast forward and returns its ID.
+// Starts a fast forward under a caller-supplied ID.
 func (s *TimeSkippingV2TestSuite) setFastForward(
 	ctx context.Context, wfID, ffID string, d time.Duration,
 ) error {
