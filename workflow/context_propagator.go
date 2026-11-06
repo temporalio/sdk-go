@@ -12,4 +12,8 @@ type (
 	// ContextPropagator is an interface that determines what information from
 	// context to pass along
 	ContextPropagator = internal.ContextPropagator
+
+	// CodecContextPropagator optionally uses the configured client's payload
+	// codec for this propagator's headers. Existing propagators default to false.
+	CodecContextPropagator = internal.CodecContextPropagator
 )
