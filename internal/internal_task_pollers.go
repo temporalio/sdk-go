@@ -103,16 +103,10 @@ type (
 		pollerGroupSnapshotStore *pollerGroupSnapshotStore
 		// Server cancels polls on shutdown
 		workerPollCompleteOnShutdown *atomic.Bool
-		// Supplies the poller pool state reported to the server on each poll, so it can
-		// spread scaling suggestions across a fleet by share rather than by whoever
-		// happens to receive the most tasks. Set from the pool the poller belongs to,
-		// autoscaling or fixed -- see newScalablePollerWithTarget.
+		// Pool state attached to each poll request. Set by newScalablePollerWithTarget.
 		pollerPoolInfo func() *taskqueuepb.PollerPoolInfo
 	}
 
-	// pollerPoolInfoReporter is implemented by pollers that can report their pool state
-	// to the server. Kept off the taskPoller interface so pollers with no pool to report
-	// (local activity, eager) need not implement it.
 	pollerPoolInfoReporter interface {
 		setPollerPoolInfo(func() *taskqueuepb.PollerPoolInfo)
 	}
@@ -271,9 +265,6 @@ func (bp *basePoller) setPollerPoolInfo(f func() *taskqueuepb.PollerPoolInfo) {
 	bp.pollerPoolInfo = f
 }
 
-// getPollerPoolInfo returns the pool state to attach to a poll request, or nil when this
-// poller has no pool wired up. A nil result leaves the field unset, which the server reads
-// as "no report" and excludes the worker from share-based fairness.
 func (bp *basePoller) getPollerPoolInfo() *taskqueuepb.PollerPoolInfo {
 	if bp.pollerPoolInfo == nil {
 		return nil

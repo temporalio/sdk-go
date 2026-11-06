@@ -1614,9 +1614,6 @@ func TestWorkflowTaskStorageMetricsTotalDuration(t *testing.T) {
 	})
 }
 
-// Nexus pools report a target too. Matching runs the same scaling-decision path for
-// Nexus task queues as for workflow and activity, so a Nexus pool that reported nothing
-// would be invisible to share-based fairness there.
 func TestAutoscalingNexusPollRequestsCarryCurrentPollerTarget(t *testing.T) {
 	t.Parallel()
 
@@ -1671,10 +1668,7 @@ func TestAutoscalingNexusPollRequestsCarryCurrentPollerTarget(t *testing.T) {
 	require.Equal(t, int32(initialPollers/2), pollTarget())
 }
 
-// TestAutoscalingPollRequestsCarryCurrentPollerTarget is regression proofing for
-// fleet-wide poller fairness. The server can only spread scaling suggestions across a
-// fleet by share if every poll says what that worker's pool is currently targeting, so
-// the report has to follow the autoscaler as the target moves rather than be snapshotted
+// The reported target follows the autoscaler as it moves, rather than being snapshotted
 // when the poller was built.
 func TestAutoscalingPollRequestsCarryCurrentPollerTarget(t *testing.T) {
 	t.Parallel()
@@ -1721,8 +1715,6 @@ func TestAutoscalingPollRequestsCarryCurrentPollerTarget(t *testing.T) {
 		numPollerMetric: newNumPollerMetric(metrics.NopHandler, metrics.PollerTypeActivityTask),
 	}
 
-	// The pollers learn their target by being built into an autoscaling pool, which is
-	// the wiring a running worker uses.
 	serverSupportsAutoscaling := &atomic.Bool{}
 	serverSupportsAutoscaling.Store(true)
 	autoscaling := func(poller taskPoller, pollerType string) scalableTaskPoller {
@@ -1742,7 +1734,6 @@ func TestAutoscalingPollRequestsCarryCurrentPollerTarget(t *testing.T) {
 	workflowPool := autoscaling(wtp, metrics.PollerTypeWorkflowTask)
 	activityPool := autoscaling(atp, metrics.PollerTypeActivityTask)
 
-	// pollTargets polls once with each poller and returns what the server was told.
 	pollTargets := func() (int32, int32) {
 		t.Helper()
 		_, err := wtp.poll(t.Context(), pollerGroupLease{})
@@ -1778,9 +1769,8 @@ func TestAutoscalingPollRequestsCarryCurrentPollerTarget(t *testing.T) {
 	require.NotSame(t, activityReported[0], activityReported[1])
 }
 
-// A fixed-size pool reports its configured size as its target: it is not autoscaling, but
-// it still contributes pollers to the fleet, and reporting nothing would both skew a
-// fleet-wide poller count and be indistinguishable from an SDK too old to report at all.
+// A fixed pool reports its configured size; reporting nothing would skew a fleet-wide
+// poller count and be indistinguishable from an SDK too old to report.
 func TestFixedSizePollRequestsReportConfiguredPollerCount(t *testing.T) {
 	t.Parallel()
 
@@ -1823,7 +1813,6 @@ func TestFixedSizePollRequestsReportConfiguredPollerCount(t *testing.T) {
 	for _, info := range reported {
 		require.Equal(t, int32(maximumPollers), info.GetTargetPollers())
 	}
-	// Each poll carries its own message, as for an autoscaling pool.
 	require.NotSame(t, reported[0], reported[1])
 }
 

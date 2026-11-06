@@ -162,8 +162,8 @@ type populateHeartbeatOptions struct {
 
 	pollTimeTracker *pollTimeTracker
 
-	// pollerTargets holds the autoscaler target per poller type. Types with a fixed pool
-	// size are absent and report 0, which the proto defines as unknown.
+	// pollerTargets holds each pool's target by poller type. Types this worker does not
+	// run are absent and report 0, which the proto defines as unknown.
 	pollerTargets map[string]int32
 }
 

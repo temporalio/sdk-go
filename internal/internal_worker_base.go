@@ -208,9 +208,8 @@ type (
 		pollerAutoscaler  *pollerAutoscaler
 		autoscalingRunner *autoscalingTaskPollerRunner
 
-		// targetPollers reports how many pollers this pool is aiming to run: an
-		// autoscaling pool's live target, or a fixed pool's configured size. Both the
-		// poll request and the heartbeat report it, so they read the same supplier.
+		// targetPollers is an autoscaling pool's live target, or a fixed pool's
+		// configured size. The poll request and the heartbeat read the same supplier.
 		targetPollers func() int32
 
 		// alsoTargetsPollerType is a second poller type this pool's target is reported
@@ -246,9 +245,9 @@ type (
 	baseWorker struct {
 		options         baseWorkerOptions
 		isWorkerStarted bool
-		// pollerTargets records each autoscaling pool's target by poller type, for the
-		// heartbeat to report. Written by trackPollerTargets, read from the heartbeat
-		// goroutine, so it is a sync.Map rather than a plain field on options.
+		// pollerTargets records each pool's target by poller type for the heartbeat.
+		// Written by trackPollerTargets, read from the heartbeat goroutine, so it is a
+		// sync.Map rather than a plain field on options.
 		pollerTargets *pollerTargetTracker
 		// stopCh is created by newBaseWorker and closed by baseWorker.Stop().
 		// It is internal to baseWorker and stops its poller, dispatcher, autoscaler,
@@ -455,13 +454,7 @@ func (bw *baseWorker) initializeTaskPollers(taskPollers []scalableTaskPoller) {
 	bw.trackPollerTargets(taskPollers)
 }
 
-// trackPollerTargets records each pool's target, keyed by poller type, for the heartbeat
-// to report. The poll path is wired where the poller is built, next to its pool; the
-// heartbeat instead needs the poller type as a key, which only the scalableTaskPoller
-// knows, so that registration stays on baseWorker.
-//
-// Every pool is recorded, autoscaling or fixed, and including nexus: the heartbeat covers
-// the whole worker, not only the pools the server's share-based fairness acts on.
+// trackPollerTargets records every pool's target, keyed by poller type, for the heartbeat.
 func (bw *baseWorker) trackPollerTargets(taskPollers []scalableTaskPoller) {
 	for _, tw := range taskPollers {
 		bw.pollerTargets.record(tw.taskPollerType, tw.targetPollers)
@@ -471,10 +464,8 @@ func (bw *baseWorker) trackPollerTargets(taskPollers []scalableTaskPoller) {
 	}
 }
 
-// collectPollerTargets adds this worker's target for each poller type it runs into
-// targets. Poller types this worker does not run are left absent rather than reported as
-// zero, so a caller merging several workers cannot have a real target overwritten by a
-// zero.
+// collectPollerTargets adds this worker's target for each poller type it runs. Types it
+// does not run are left absent, not zero, so merging workers cannot clobber a real target.
 func (bw *baseWorker) collectPollerTargets(targets map[string]int32) {
 	if bw.pollerTargets == nil {
 		return
@@ -1023,7 +1014,6 @@ func newPollerAutoscaler(options pollerAutoscalerOptions) *pollerAutoscaler {
 	return psr
 }
 
-// targetPollers is how many pollers this pool is currently aiming to run.
 func (prh *pollerAutoscaler) targetPollers() int32 {
 	return int32(prh.target.Load())
 }
@@ -1342,9 +1332,6 @@ func newScalablePollerWithTarget(
 		target := int32(p.maximumNumberOfPollers)
 		tw.targetPollers = func() int32 { return target }
 	}
-	// This is the one place that holds both the poller and its pool, so the poll-request
-	// report is wired here. Pollers with no pool state to report never implement the
-	// interface; the heartbeat reports every pool, which baseWorker tracks separately.
 	if reporter, ok := poller.(pollerPoolInfoReporter); ok && tw.targetPollers != nil {
 		targetPollers := tw.targetPollers
 		// A fresh message per call keeps in-flight requests from sharing mutable state.

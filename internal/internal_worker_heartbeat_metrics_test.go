@@ -13,12 +13,8 @@ import (
 	ilog "go.temporal.io/sdk/internal/log"
 )
 
-// TestHeartbeatTracksAutoscalerTarget verifies the autoscaler target reaches the matching
-// WorkerPollerInfo block and follows the target as it changes, while a fixed-size pool
-// reports the count it was configured with.
-//
-// Registration goes through trackPollerTargets rather than being injected, so this also
-// covers the path the running worker actually uses.
+// Each pool's target reaches its own WorkerPollerInfo block and follows the autoscaler as
+// it changes. Registration goes through trackPollerTargets, the path a worker really uses.
 func TestHeartbeatTracksAutoscalerTarget(t *testing.T) {
 	const initialPollers = 12
 	serverSupportsAutoscaling := &atomic.Bool{}
@@ -97,8 +93,8 @@ func TestHeartbeatOmitsLocalActivityPollerTarget(t *testing.T) {
 	require.Empty(t, targets)
 }
 
-// A fixed-size pool reports through the same tracker the autoscaling pools use, so a
-// worker that never autoscales still shows up in a fleet-wide poller count.
+// A fixed pool reports through the same tracker, so a worker that never autoscales still
+// shows up in a fleet-wide poller count.
 func TestHeartbeatReportsFixedPollerTargets(t *testing.T) {
 	fixed := func(pollerType string, maxPollers int) scalableTaskPoller {
 		return newScalableTaskPoller(
