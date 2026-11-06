@@ -250,10 +250,6 @@ func (p *plugin) configureClient(ctx context.Context, options client.PluginConfi
 		opts.Credentials = client.NewAPIKeyDynamicCredentials(func(ctx context.Context) (string, error) {
 			return p.cache.getAPIKey(ctx, tel)
 		})
-		// Match envconfig, which defaults TLS to enabled when an API key is present
-		if opts.ConnectionOptions.TLS == nil && !opts.ConnectionOptions.TLSDisabled {
-			opts.ConnectionOptions.TLS = &tls.Config{}
-		}
 	}
 
 	if !p.ids.hasTLS() {
