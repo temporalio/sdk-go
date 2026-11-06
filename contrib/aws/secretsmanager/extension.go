@@ -8,13 +8,13 @@ import (
 	"os"
 	"sort"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	awssm "github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/contrib/envconfig"
-	"go.temporal.io/sdk/temporal"
 )
 
 const (
@@ -93,11 +93,7 @@ func (e Extension) ClientPlugin(req envconfig.ClientConfigExtensionRequest) (cli
 	} else {
 		f = newDefaultFetcher()
 	}
-	p := &plugin{ids: ids, cache: newSecretCache(f, ids, refreshInterval, maxStaleness)}
-	return temporal.NewSimplePlugin(temporal.SimplePluginOptions{
-		Name:            pluginName,
-		ConfigureClient: p.configureClient,
-	})
+	return &plugin{ids: ids, cache: newSecretCache(f, ids, refreshInterval, maxStaleness)}, nil
 }
 
 func (e Extension) refreshInterval() (time.Duration, error) {
@@ -232,23 +228,34 @@ func (s secretIDs) validate(prof *envconfig.ClientConfigProfile) error {
 }
 
 type plugin struct {
+	client.PluginBase
 	ids   secretIDs
 	cache *secretCache
+	// Telemetry from the options of the most recently created client, or nil before the first
+	tel atomic.Pointer[telemetry]
 }
 
-func (p *plugin) configureClient(ctx context.Context, options client.PluginConfigureClientOptions) error {
+var _ client.Plugin = (*plugin)(nil)
+
+func (*plugin) Name() string { return pluginName }
+
+// Read at call time rather than captured, since the final options are only seen in NewClient, after ConfigureClient
+// installs the callbacks.
+func (p *plugin) telemetry() telemetry {
+	if tel := p.tel.Load(); tel != nil {
+		return *tel
+	}
+	return telemetry{}
+}
+
+func (p *plugin) ConfigureClient(ctx context.Context, options client.PluginConfigureClientOptions) error {
 	opts := options.ClientOptions
-	tel := telemetry{logger: opts.Logger, metrics: opts.MetricsHandler}
 	if p.ids.APIKey != "" {
 		if opts.Credentials != nil {
 			return fmt.Errorf("cannot use API key from AWS Secrets Manager, client credentials already set")
 		}
-		// Fetch eagerly so that client creation fails on a bad secret instead of the first call
-		if _, err := p.cache.getAPIKey(ctx, tel); err != nil {
-			return err
-		}
 		opts.Credentials = client.NewAPIKeyDynamicCredentials(func(ctx context.Context) (string, error) {
-			return p.cache.getAPIKey(ctx, tel)
+			return p.cache.getAPIKey(ctx, p.telemetry())
 		})
 	}
 
@@ -269,16 +276,12 @@ func (p *plugin) configureClient(ctx context.Context, options client.PluginConfi
 		if len(conf.Certificates) > 0 || conf.GetClientCertificate != nil {
 			return fmt.Errorf("cannot use TLS client cert from AWS Secrets Manager, client certificates already set")
 		}
-		// Fetch eagerly so that client creation fails on a bad secret instead of the first call
-		if _, err := p.cache.getClientCert(ctx, tel); err != nil {
-			return err
-		}
 		conf.GetClientCertificate = func(info *tls.CertificateRequestInfo) (*tls.Certificate, error) {
 			ctx := info.Context()
 			if ctx == nil {
 				ctx = context.Background()
 			}
-			return p.cache.getClientCert(ctx, tel)
+			return p.cache.getClientCert(ctx, p.telemetry())
 		}
 	}
 
@@ -286,6 +289,9 @@ func (p *plugin) configureClient(ctx context.Context, options client.PluginConfi
 		if conf.RootCAs != nil {
 			return fmt.Errorf("cannot use TLS server CA cert from AWS Secrets Manager, root CAs already set")
 		}
+		// The pool must be set on the options, so this fetch can't wait for NewClient and only reports to telemetry
+		// that's already set
+		tel := telemetry{logger: opts.Logger, metrics: opts.MetricsHandler}
 		pool, err := p.cache.getServerCACert(ctx, tel)
 		if err != nil {
 			return err
@@ -295,4 +301,27 @@ func (p *plugin) configureClient(ctx context.Context, options client.PluginConfi
 
 	opts.ConnectionOptions.TLS = conf
 	return nil
+}
+
+func (p *plugin) NewClient(
+	ctx context.Context,
+	options client.PluginNewClientOptions,
+	next func(context.Context, client.PluginNewClientOptions) error,
+) error {
+	// Unlike in ConfigureClient, these are the final options, after all plugins have configured them and the SDK has
+	// applied its defaults
+	tel := telemetry{logger: options.ClientOptions.Logger, metrics: options.ClientOptions.MetricsHandler}
+	p.tel.Store(&tel)
+	// Fetch eagerly so that client creation fails on a bad secret instead of the first call
+	if p.ids.APIKey != "" {
+		if _, err := p.cache.getAPIKey(ctx, tel); err != nil {
+			return err
+		}
+	}
+	if p.ids.ClientCert != "" {
+		if _, err := p.cache.getClientCert(ctx, tel); err != nil {
+			return err
+		}
+	}
+	return next(ctx, options)
 }

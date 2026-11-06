@@ -100,10 +100,29 @@ func loadOptions(t *testing.T, ext Extension, toml string, env mapEnv) (client.O
 	})
 }
 
+// configure runs the plugins' ConfigureClient and then NewClient hooks like client creation does, without connecting.
 func configure(t *testing.T, opts *client.Options) error {
 	t.Helper()
+	return configureWithDefaults(t, opts, nil)
+}
+
+// configureWithDefaults is like configure, but applyDefaults (if non-nil) adjusts the options passed to NewClient,
+// like the SDK does after ConfigureClient.
+func configureWithDefaults(t *testing.T, opts *client.Options, applyDefaults func(*client.Options)) error {
+	t.Helper()
+	ctx := context.Background()
 	for _, p := range opts.Plugins {
-		if err := p.ConfigureClient(context.Background(), client.PluginConfigureClientOptions{ClientOptions: opts}); err != nil {
+		if err := p.ConfigureClient(ctx, client.PluginConfigureClientOptions{ClientOptions: opts}); err != nil {
+			return err
+		}
+	}
+	finalOpts := *opts
+	if applyDefaults != nil {
+		applyDefaults(&finalOpts)
+	}
+	next := func(context.Context, client.PluginNewClientOptions) error { return nil }
+	for _, p := range opts.Plugins {
+		if err := p.NewClient(ctx, client.PluginNewClientOptions{ClientOptions: finalOpts}, next); err != nil {
 			return err
 		}
 	}
@@ -383,9 +402,11 @@ func TestTelemetryFromClientOptions(t *testing.T) {
 	require.NoError(t, err)
 	logger := &recordingLogger{}
 	metrics := newRecordingMetrics()
-	opts.Logger = logger
-	opts.MetricsHandler = metrics
-	require.NoError(t, configure(t, &opts))
+	// Only set in the options NewClient sees, like SDK defaults
+	require.NoError(t, configureWithDefaults(t, &opts, func(o *client.Options) {
+		o.Logger = logger
+		o.MetricsHandler = metrics
+	}))
 	require.Equal(t, []string{
 		"INFO Fetched AWS Secrets Manager secret SecretID=bundle SecretType=tls_client_cert FetchPath=sdk " +
 			"VersionID=" + fakeVersionID(certPEM+keyPEM),
@@ -406,6 +427,29 @@ func TestTelemetryFromClientOptions(t *testing.T) {
 	require.Equal(t, map[string]int64{
 		"temporal_aws_secrets_manager_cache_lookup fetch_path=sdk result=miss secret_type=tls_client_cert": 2,
 	}, metrics.counters(metricCacheLookup))
+}
+
+// Through real client creation, the plugin reports to the client's final telemetry rather than what was set when
+// ConfigureClient ran.
+func TestTelemetryFromFinalClientOptions(t *testing.T) {
+	fake := newFakeClient(map[string]string{"api-key-secret": "my-api-key"})
+	opts, err := loadOptions(t, Extension{SecretsClient: fake}, "", mapEnv{envAPIKeyID: "api-key-secret"})
+	require.NoError(t, err)
+	metrics := newRecordingMetrics()
+	opts.MetricsHandler = metrics
+	opts.Namespace = "my-ns"
+	c, err := client.NewLazyClient(opts)
+	require.NoError(t, err)
+	c.Close()
+
+	lookups := metrics.counters(metricCacheLookup)
+	require.Len(t, lookups, 1)
+	for key := range lookups {
+		require.Contains(t, key, "secret_type=api_key")
+		// The SDK wraps the metrics handler with namespace tags after ConfigureClient, so these tags show the plugin
+		// used the final handler
+		require.Contains(t, key, "namespace=my-ns")
+	}
 }
 
 func requireClientCert(t *testing.T, conf *tls.Config, expectedPEM string) {

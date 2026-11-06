@@ -11,7 +11,7 @@ import (
 	"go.temporal.io/sdk/log"
 )
 
-// telemetry is where the cache reports to, taken from the options of the client being configured.
+// telemetry is where the cache reports to, taken from a client's options.
 type telemetry struct {
 	// May be nil, in which case nothing is logged
 	logger  log.Logger
