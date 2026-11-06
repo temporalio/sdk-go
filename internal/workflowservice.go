@@ -581,6 +581,7 @@ func SystemNexus_SignalWithStartWorkflow(
 	workflow any,
 	args ...any,
 ) Future {
+	assertNotInReadOnlyState(ctx)
 	if opts.TaskQueue == "" {
 		opts.TaskQueue = GetWorkflowInfo(ctx).TaskQueueName
 	}
@@ -588,6 +589,7 @@ func SystemNexus_SignalWithStartWorkflow(
 		opts.WorkflowIDReusePolicy = enums.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE
 	}
 	workflowName := WorkflowFunctionName(ctx, workflow)
+	ctx = workflowContextWithNewHeader(ctx)
 	return getWorkflowOutboundInterceptor(ctx).SignalWithStartWorkflow(ctx, opts, id, signal, signalArg, workflowName, args...)
 }
 
@@ -612,6 +614,7 @@ func init() {
 
 type systemnexus_workflowOutboundInterceptor interface {
 	// SignalWithStartWorkflow intercepts workflow.SignalWithStartWorkflow.
+	// WorkflowHeader returns a non-nil map for this context.
 	SignalWithStartWorkflow(ctx Context, opts SystemNexus_SignalWithStartWorkflowOptions, id string, signal string, signalArg any, workflow string, args ...any) Future
 }
 
@@ -658,6 +661,13 @@ func (wc *workflowEnvironmentInterceptor) SignalWithStartWorkflow(ctx Context, o
 		UserMetadata:             userMetadataValue,
 		Namespace:                WorkflowNamespace(ctx),
 	}
+	_nexgenHeader, err := workflowHeaderPropagated(ctx, getWorkflowEnvOptions(ctx).ContextPropagators, SignalWithStartWorkflowSerializationContext(request))
+	if err != nil {
+		result, resultSettable := NewFuture(ctx)
+		resultSettable.SetError(err)
+		return result
+	}
+	request.Headers = _nexgenHeader.Fields
 	fut := wc.ExecuteNexusOperation(ctx, ExecuteNexusOperationInput{
 		Client:      NewSystemNexusClient("temporal.api.workflowservice.v1.WorkflowService"),
 		Operation:   "SignalWithStartWorkflowExecution",

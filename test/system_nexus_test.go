@@ -215,6 +215,11 @@ func (i *systemNexusTestWorkflowOutbound) SignalWithStartWorkflow(
 	if options.Priority == nil {
 		options.Priority = &temporal.Priority{PriorityKey: 2}
 	}
+	payload, err := converter.GetDefaultDataConverter().ToPayload("from interceptor")
+	if err != nil {
+		panic(err)
+	}
+	interceptor.WorkflowHeader(ctx)["interceptor-header"] = payload
 	return i.Next.SignalWithStartWorkflow(ctx, options, id, signal, signalArg, workflowType, args...)
 }
 
