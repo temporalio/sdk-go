@@ -543,16 +543,20 @@ func buildWorkflowScalableTaskPollers(
 
 		return []scalableTaskPoller{normalScalablePoller, stickyScalablePoller}
 	default: // *pollerBehaviorSimpleMaximum
-		return []scalableTaskPoller{
-			newScalableTaskPoller(
-				taskProcessor.createPoller(Mixed, nil),
-				params.Logger,
-				behavior,
-				metrics.PollerTypeWorkflowTask,
-				params.serverSupportsAutoscaling,
-				nil,
-			),
+		mixedScalablePoller := newScalableTaskPoller(
+			taskProcessor.createPoller(Mixed, nil),
+			params.Logger,
+			behavior,
+			metrics.PollerTypeWorkflowTask,
+			params.serverSupportsAutoscaling,
+			nil,
+		)
+		if taskProcessor.stickyCacheSize > 0 {
+			// One pool polls both queues, so the heartbeat's sticky slot reports the same
+			// target. Leaving it unset would pair a real current_pollers with a zero target.
+			mixedScalablePoller.alsoTargetsPollerType = metrics.PollerTypeWorkflowStickyTask
 		}
+		return []scalableTaskPoller{mixedScalablePoller}
 	}
 }
 
@@ -1780,6 +1784,21 @@ func (aw *AggregatedWorker) handleFatalError(err error, hook func(error)) {
 	aw.Stop()
 }
 
+// pollerTargets returns the target poller count per poller type across this worker's pollers.
+func (aw *AggregatedWorker) pollerTargets() map[string]int32 {
+	targets := make(map[string]int32, 4)
+	if aw.workflowWorker != nil {
+		aw.workflowWorker.worker.collectPollerTargets(targets)
+	}
+	if aw.activityWorker != nil {
+		aw.activityWorker.worker.collectPollerTargets(targets)
+	}
+	if aw.nexusWorker != nil {
+		aw.nexusWorker.worker.collectPollerTargets(targets)
+	}
+	return targets
+}
+
 func (aw *AggregatedWorker) registerHeartbeatWorker() error {
 	if aw.client.heartbeatManager == nil {
 		return nil
@@ -2723,6 +2742,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 			if aw.nexusWorker != nil {
 				populateOpts.nexusSlotSupplierKind = aw.nexusWorker.worker.slotSupplier.GetSlotSupplierKind()
 			}
+			populateOpts.pollerTargets = aw.pollerTargets()
 			heartbeatTime := time.Now()
 
 			status := enumspb.WORKER_STATUS_RUNNING

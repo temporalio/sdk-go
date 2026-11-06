@@ -47,6 +47,10 @@ to docs, or any other relevant information.
   standalone activities they start, which use it for payloads returned to the Nexus caller: results,
   failures, and standalone activity heartbeat details. When completing or heartbeating such an
   activity from a client, pass `activity.Info.NexusSerializationContext` in the options.
+- Poller pools now report their poller target to the server on each poll and in the worker
+  heartbeat: the current target for autoscaling pools, the configured maximum for fixed-size pools.
+  (We'll use this count on the server side for now for load balancing pollers between workers, and
+  for creating a per-worker poller count metric.)
 
 ### Changed
 
