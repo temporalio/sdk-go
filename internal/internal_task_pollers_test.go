@@ -1614,6 +1614,63 @@ func TestWorkflowTaskStorageMetricsTotalDuration(t *testing.T) {
 	})
 }
 
+// Nexus pools report a target too. Matching runs the same scaling-decision path for
+// Nexus task queues as for workflow and activity, so a Nexus pool that reported nothing
+// would be invisible to share-based fairness there.
+func TestAutoscalingNexusPollRequestsCarryCurrentPollerTarget(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	service := workflowservicemock.NewMockWorkflowServiceClient(ctrl)
+	const initialPollers = 6
+
+	var reported []*taskqueuepb.PollerPoolInfo
+	service.EXPECT().PollNexusTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, req *workflowservice.PollNexusTaskQueueRequest, _ ...grpc.CallOption) (*workflowservice.PollNexusTaskQueueResponse, error) {
+			reported = append(reported, req.GetPollerPoolInfo())
+			return &workflowservice.PollNexusTaskQueueResponse{}, nil
+		}).AnyTimes()
+
+	ntp := &nexusTaskPoller{
+		basePoller:      basePoller{metricsHandler: metrics.NopHandler},
+		namespace:       "test-ns",
+		taskQueueName:   "test-task-queue",
+		identity:        "test-worker",
+		service:         service,
+		logger:          ilog.NewNopLogger(),
+		numPollerMetric: newNumPollerMetric(metrics.NopHandler, metrics.PollerTypeNexusTask),
+	}
+
+	serverSupportsAutoscaling := &atomic.Bool{}
+	serverSupportsAutoscaling.Store(true)
+	pool := newScalableTaskPoller(
+		ntp,
+		ilog.NewNopLogger(),
+		&pollerBehaviorAutoscaling{
+			initialNumberOfPollers: initialPollers,
+			maximumNumberOfPollers: 100,
+			minimumNumberOfPollers: 1,
+		},
+		metrics.PollerTypeNexusTask,
+		serverSupportsAutoscaling,
+		nil,
+	)
+
+	pollTarget := func() int32 {
+		t.Helper()
+		_, err := ntp.poll(t.Context(), pollerGroupLease{})
+		require.NoError(t, err)
+		return reported[len(reported)-1].GetTargetPollers()
+	}
+
+	require.Equal(t, int32(initialPollers), pollTarget())
+
+	// The report follows the autoscaler rather than being snapshotted at construction.
+	pool.pollerAutoscaler.handleError(serviceerror.NewResourceExhausted(
+		enumspb.RESOURCE_EXHAUSTED_CAUSE_CONCURRENT_LIMIT, ""))
+	require.Equal(t, int32(initialPollers/2), pollTarget())
+}
+
 // TestAutoscalingPollRequestsCarryCurrentPollerTarget is regression proofing for
 // fleet-wide poller fairness. The server can only spread scaling suggestions across a
 // fleet by share if every poll says what that worker's pool is currently targeting, so

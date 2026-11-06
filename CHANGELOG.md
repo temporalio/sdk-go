@@ -47,11 +47,10 @@ to docs, or any other relevant information.
   standalone activities they start, which use it for payloads returned to the Nexus caller: results,
   failures, and standalone activity heartbeat details. When completing or heartbeating such an
   activity from a client, pass `activity.Info.NexusSerializationContext` in the options.
-- Autoscaling poller pools now tell the server how many pollers they are targeting, on every
-  workflow and activity poll and on the worker heartbeat (for workflow, sticky workflow, activity,
-  and Nexus pools). This lets the server spread scaling suggestions across a fleet by each worker's
-  share rather than concentrating them on whichever worker happens to receive the most tasks. Pools
-  with a fixed poller count report nothing.
+- Autoscaling poller pools now report their current poller target to the server on each poll and
+  in the worker heartbeat, covering workflow, sticky workflow, activity, and Nexus pools. (We'll
+  use this count on the server side for now for load balancing pollers between workers, and for
+  creating a per-worker poller count metric.) Pools with a fixed poller count report nothing.
 
 ### Changed
 
