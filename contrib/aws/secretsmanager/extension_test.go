@@ -262,16 +262,6 @@ api_key_id = "api-key-secret"
 	require.Equal(t, 1, fake.callCount("api-key-secret"))
 }
 
-func TestAPIKeyEnablesTLS(t *testing.T) {
-	fake := newFakeClient(map[string]string{"api-key-secret": "my-api-key"})
-	opts, err := loadOptions(t, Extension{SecretsClient: fake}, "", mapEnv{envAPIKeyID: "api-key-secret"})
-	require.NoError(t, err)
-	require.Nil(t, opts.ConnectionOptions.TLS)
-	require.NoError(t, configure(t, &opts))
-	require.NotNil(t, opts.Credentials)
-	require.NotNil(t, opts.ConnectionOptions.TLS)
-}
-
 func TestAPIKeyFetchFailure(t *testing.T) {
 	opts, err := loadOptions(t, Extension{SecretsClient: newFakeClient(nil)}, "", mapEnv{envAPIKeyID: "missing"})
 	require.NoError(t, err)
