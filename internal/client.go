@@ -1334,6 +1334,14 @@ type (
 		// task processing when tasks are backed up in a queue.
 		Priority Priority
 
+		// TimeSkippingConfig - Optional per-workflow time skipping v2 configuration.
+		// If set, forwarded to the server on StartWorkflowExecution and enables the
+		// workflow's virtual clock behavior (fast-forward, propagation, session
+		// skip bounds).
+		//
+		// NOTE: Experimental
+		TimeSkippingConfig *TimeSkippingConfig
+
 		// responseInfo - Optional pointer to store information of StartWorkflowExecution response.
 		// Only settable by the SDK - e.g. [temporalnexus.workflowRunOperation].
 		responseInfo *startWorkflowResponseInfo
