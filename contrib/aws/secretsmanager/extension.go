@@ -3,7 +3,6 @@ package secretsmanager
 import (
 	"context"
 	"crypto/tls"
-	"crypto/x509"
 	"fmt"
 	"math"
 	"os"
@@ -291,13 +290,9 @@ func (p *plugin) configureClient(ctx context.Context, options client.PluginConfi
 		if conf.RootCAs != nil {
 			return fmt.Errorf("cannot use TLS server CA cert from AWS Secrets Manager, root CAs already set")
 		}
-		caPEM, err := p.cache.getServerCACert(ctx, tel)
+		pool, err := p.cache.getServerCACert(ctx, tel)
 		if err != nil {
 			return err
-		}
-		pool := x509.NewCertPool()
-		if !pool.AppendCertsFromPEM(caPEM) {
-			return fmt.Errorf("no PEM certificates found in TLS server CA cert secret %q", p.ids.ServerCACert)
 		}
 		conf.RootCAs = pool
 	}

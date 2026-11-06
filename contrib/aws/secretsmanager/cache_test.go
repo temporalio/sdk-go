@@ -157,11 +157,12 @@ func TestSecretCache(t *testing.T) {
 
 func TestSecretCacheInitialFetchError(t *testing.T) {
 	fetchErr := error(&smithy.GenericAPIError{Code: "AccessDeniedException", Message: "denied"})
+	caPEM, _ := generateCert(t, "ca")
 	c := newSecretCache(funcFetcher(func(context.Context, string) (secretValue, error) {
 		if fetchErr != nil {
 			return secretValue{}, fetchErr
 		}
-		return secretValue{value: []byte("v"), versionID: "ver"}, nil
+		return secretValue{value: []byte(caPEM), versionID: "ver"}, nil
 	}), secretIDs{ServerCACert: "id"}, time.Minute, time.Hour)
 	logger := &recordingLogger{}
 	metrics := newRecordingMetrics()
@@ -353,16 +354,19 @@ func TestSecretCacheConcurrentRefresh(t *testing.T) {
 		}
 		// value/version increments with each fetch
 		return secretValue{value: fmt.Appendf(nil, "v%d", n), versionID: fmt.Sprint(n)}, nil
-	}), secretIDs{APIKey: "api-key", ServerCACert: "ca"}, time.Minute, time.Hour)
+	}), secretIDs{APIKey: "api-key"}, time.Minute, time.Hour)
 	now := time.Unix(1000, 0)
 	c.now = func() time.Time { return now }
 	metrics := newRecordingMetrics()
-	// api-key and ca function as two independent entries, shouldn't block each other
+	// api-key and other function as two independent entries, shouldn't block each other
+	other := &cacheEntry[string]{
+		refs:  []secretRef{{id: "other", secretType: secretTypeServerCACert}},
+		parse: func(secrets []secretValue) (string, error) { return string(secrets[0].value), nil },
+	}
 	get := func(ctx context.Context, id string) (string, error) {
 		tel := telemetry{metrics: metrics}
-		if id == "ca" {
-			b, err := c.getServerCACert(ctx, tel)
-			return string(b), err
+		if id == "other" {
+			return getEntry(ctx, c, other, tel)
 		}
 		return c.getAPIKey(ctx, tel)
 	}
@@ -394,12 +398,12 @@ func TestSecretCacheConcurrentRefresh(t *testing.T) {
 	require.Equal(t, int64(1), metrics.counter(metricCacheLookup,
 		labelSecretType, secretTypeAPIKey, labelFetchPath, fetchPathSDK, labelResult, lookupHit))
 
-	// Block a ca refresh while in progress
-	fetched := getAsync("ca")
+	// Block a fetch of the other entry while in progress
+	fetched := getAsync("other")
 	// Without a usable value, callers wait for the fetch in progress, and can give up
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	_, err = get(ctx, "ca")
+	_, err = get(ctx, "other")
 	require.ErrorIs(t, err, context.Canceled)
 
 	// Unblock the refreshes and verify the final results
