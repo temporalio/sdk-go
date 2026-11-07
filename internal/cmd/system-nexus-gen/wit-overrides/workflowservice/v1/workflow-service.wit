@@ -45,7 +45,7 @@ interface workflow-service {
     /// @nexus.proto-field "workflow_id"
     id: string,
     /// @nexus.doc "Task queue to run the workflow on. Defaults to the calling workflow's task queue."
-    /// @nexus.default
+    /// @nexus.default targets="workflow"
     ///   python="_support.workflow_task_queue()"
     ///   typescript="workflow.workflowInfo().taskQueue"
     ///   go="internal.GetWorkflowInfo(ctx).TaskQueueName"
@@ -105,7 +105,7 @@ interface workflow-service {
     start-delay: option<duration>,
     /// @nexus.doc "Static metadata for the workflow execution."
     user-metadata: option<user-metadata>,
-    /// @nexus.source python="workflow_namespace()" typescript="workflowNamespace()" go="WorkflowNamespace(ctx)" dotnet="TemporalWorkflowContext.WorkflowNamespace()"
+    /// @nexus.source targets="workflow" python="workflow_namespace()" typescript="workflowNamespace()" go="WorkflowNamespace(ctx)" dotnet="TemporalWorkflowContext.WorkflowNamespace()"
     /// @nexus.doc "Namespace of the workflow execution."
     namespace: string,
     /// @nexus.omit
@@ -124,10 +124,10 @@ interface workflow-service {
   /// @nexus.experimental
   /// @nexus.proto "temporal.api.workflowservice.v1.SignalWithStartWorkflowExecutionResponse" typescript-import="@temporalio/proto"
   record signal-with-start-workflow-response {
-    /// @nexus.doc "Run ID of the started workflow."
-    run-id: option<string>,
+    /// @nexus.doc "Run ID of the signaled workflow."
+    run-id: string,
     /// @nexus.doc "Whether the workflow was started."
-    started: option<bool>,
+    started: bool,
     /// @nexus.omit
     signal-link: placeholder,
     /// @nexus.omit
@@ -136,16 +136,20 @@ interface workflow-service {
 
   /// @nexus.doc
   ///   "Signal a workflow, starting it first if needed."
+  ///   go="Signal a workflow, starting it first if needed. Encode payloads with the configured data converter."
   ///   returns="A workflow handle to the started workflow."
+  ///   go-returns="A workflow.Execution with details about the signaled workflow."
   /// @nexus.output-transform
   ///   python-type="temporalio.workflow.ExternalWorkflowHandle[WorkflowResult]"
   ///   python="temporalio.workflow.get_external_workflow_handle(request.id, run_id=result.run_id)"
   ///   typescript-type="ExternalWorkflowHandle"
-  ///   typescript-type-import="../../../../workflow-handle"
+  ///   typescript-type-import="../../../../workflow"
   ///   typescript="workflow.getExternalWorkflowHandle(request.id, result.runId ?? undefined)"
   ///   typescript-import="@temporalio/workflow"
   ///   dotnet-type="Temporalio.Workflows.ExternalWorkflowHandle"
   ///   dotnet="Temporalio.Workflows.Workflow.GetExternalWorkflowHandle(request.Id, result.RunId)"
+  ///   go-type="go.temporal.io/sdk/internal:internal.WorkflowExecution"
+  ///   go="func() (WorkflowExecution, error) { return WorkflowExecution{ID: request.ID, RunID: result.GetRunId()}, nil }()"
   /// @nexus.operation name="SignalWithStartWorkflowExecution"
   /// @nexus.serialization-context python="signal_with_start_workflow_serialization_context" typescript="signalWithStartWorkflowSerializationContext" dotnet="WorkflowServiceSerializationContexts.SignalWithStartWorkflow" go="SignalWithStartWorkflowSerializationContext"
   /// @nexus.experimental

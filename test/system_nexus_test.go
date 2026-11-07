@@ -11,8 +11,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
-	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
+	historypb "go.temporal.io/api/history/v1"
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/client"
@@ -201,20 +201,21 @@ func (i *systemNexusTestWorkflowOutbound) ExecuteNexusOperation(
 }
 
 func (i *systemNexusTestWorkflowOutbound) SignalWithStartWorkflow(
-	ctx workflow.Context, request *workflow.SignalWithStartWorkflowRequest,
-) workflow.NexusOperationFuture {
+	ctx workflow.Context,
+	options workflow.SignalWithStartWorkflowOptions,
+	id string,
+	signal string,
+	signalArg any,
+	workflowType string,
+	args ...any,
+) workflow.Future {
 	if !workflow.IsReplaying(ctx) {
 		i.recorder.systemNexusCalls.Add(1)
 	}
-	payload, err := converter.GetDefaultDataConverter().ToPayload("from interceptor")
-	if err != nil {
-		panic(err)
+	if options.Priority == nil {
+		options.Priority = &temporal.Priority{PriorityKey: 2}
 	}
-	if request.Headers == nil {
-		request.Headers = make(map[string]*commonpb.Payload)
-	}
-	request.Headers["interceptor-header"] = payload
-	return i.Next.SignalWithStartWorkflow(ctx, request)
+	return i.Next.SignalWithStartWorkflow(ctx, options, id, signal, signalArg, workflowType, args...)
 }
 
 // -----------------------------------------------------------------------------
@@ -225,14 +226,13 @@ func SignalAndStartRepeatedly(
 	ctx workflow.Context,
 	calleeID string,
 	count int,
-) ([]workflow.SignalWithStartWorkflowResponse, error) {
-	var responses []workflow.SignalWithStartWorkflowResponse
+) ([]workflow.Execution, error) {
+	var responses []workflow.Execution
 	for i := range count {
-		var response workflow.SignalWithStartWorkflowResponse
+		var response workflow.Execution
 		err := workflow.SignalWithStartWorkflow(ctx, workflow.SignalWithStartWorkflowOptions{
-			ID:                       calleeID,
 			WorkflowExecutionTimeout: 20 * time.Second,
-		}, "signal", i, ReceiveSignalRepeatedly, count).Get(ctx, &response)
+		}, calleeID, "signal", i, ReceiveSignalRepeatedly, count).Get(ctx, &response)
 		if err != nil {
 			return nil, err
 		}
@@ -242,20 +242,18 @@ func SignalAndStartRepeatedly(
 }
 
 func SignalAndStartOnce(ctx workflow.Context, calleeID string) (string, error) {
-	var response workflow.SignalWithStartWorkflowResponse
+	var response workflow.Execution
 	err := workflow.SignalWithStartWorkflow(ctx, workflow.SignalWithStartWorkflowOptions{
-		ID:                       calleeID,
 		WorkflowExecutionTimeout: 20 * time.Second,
-	}, "signal", 0, ReceiveSignalRepeatedly, 1).Get(ctx, &response)
+	}, calleeID, "signal", 0, ReceiveSignalRepeatedly, 1).Get(ctx, &response)
 	if err != nil {
 		return "", err
 	}
-	return *response.RunID, nil
+	return response.RunID, nil
 }
 
 func SignalAndStartWithEncodingFailure(ctx workflow.Context, calleeID, field string) error {
 	options := workflow.SignalWithStartWorkflowOptions{
-		ID:                       calleeID,
 		WorkflowExecutionTimeout: 20 * time.Second,
 	}
 	var signalArg any = 0
@@ -271,7 +269,7 @@ func SignalAndStartWithEncodingFailure(ctx workflow.Context, calleeID, field str
 		return errors.New("unknown encoding failure field: " + field)
 	}
 	return workflow.SignalWithStartWorkflow(
-		ctx, options, "signal", signalArg, ReceiveSignalRepeatedly, workflowArg,
+		ctx, options, calleeID, "signal", signalArg, ReceiveSignalRepeatedly, workflowArg,
 	).Get(ctx, nil)
 }
 
@@ -296,9 +294,8 @@ type LotsOfOptions struct {
 }
 
 func SignalAndStartWithLotsOfOptions(ctx workflow.Context, options LotsOfOptions) (string, error) {
-	var response workflow.SignalWithStartWorkflowResponse
+	var response workflow.Execution
 	err := workflow.SignalWithStartWorkflow(ctx, workflow.SignalWithStartWorkflowOptions{
-		ID:                       options.ID,
 		TaskQueue:                options.TaskQueue,
 		WorkflowExecutionTimeout: options.WorkflowExecutionTimeout,
 		WorkflowRunTimeout:       options.WorkflowRunTimeout,
@@ -316,26 +313,25 @@ func SignalAndStartWithLotsOfOptions(ctx workflow.Context, options LotsOfOptions
 		StartDelay:         options.StartDelay,
 		StaticSummary:      options.StaticSummary,
 		StaticDetails:      options.StaticDetails,
-	}, "signal", 0, ReceiveSignalRepeatedly, 1).Get(ctx, &response)
+	}, options.ID, "signal", 0, ReceiveSignalRepeatedly, 1).Get(ctx, &response)
 	if err != nil {
 		return "", err
 	}
-	return *response.RunID, nil
+	return response.RunID, nil
 }
 
 func SignalAndStartWithCron(
 	ctx workflow.Context, calleeID string,
 ) (string, error) {
-	var response workflow.SignalWithStartWorkflowResponse
+	var response workflow.Execution
 	err := workflow.SignalWithStartWorkflow(ctx, workflow.SignalWithStartWorkflowOptions{
-		ID:                       calleeID,
 		WorkflowExecutionTimeout: 20 * time.Second,
 		CronSchedule:             "@every 1s",
-	}, "signal", 0, ReceiveSignalRepeatedly, 1).Get(ctx, &response)
+	}, calleeID, "signal", 0, ReceiveSignalRepeatedly, 1).Get(ctx, &response)
 	if err != nil {
 		return "", err
 	}
-	return *response.RunID, nil
+	return response.RunID, nil
 }
 
 func ReceiveSignalRepeatedly(ctx workflow.Context, count int) ([]int, error) {
@@ -368,7 +364,7 @@ func (ts *SystemNexusTestSuite) TestWorkflowSignalWithStart() {
 	numCalls := 5
 
 	// The responses from each call are written into the responses array.
-	var responses []workflow.SignalWithStartWorkflowResponse
+	var responses []workflow.Execution
 	ts.NoError(ts.executeWorkflowWithOptions(executeWorkflowOptions{
 		ID:       callerID,
 		Workflow: SignalAndStartRepeatedly,
@@ -376,24 +372,37 @@ func (ts *SystemNexusTestSuite) TestWorkflowSignalWithStart() {
 		Result:   &responses,
 	}))
 
-	// Expect 5 responses, all with the same ID. The first response also started the workflow.
 	ts.Len(responses, numCalls)
-	for i := range responses {
-		if i == 0 {
-			ts.True(*responses[0].Started)
-			continue
-		}
-		ts.False(*responses[i].Started)
-		ts.Equal(*responses[0].RunID, *responses[i].RunID)
+	ts.NotEmpty(responses[0].RunID)
+	for _, response := range responses {
+		ts.Equal(calleeID, response.ID)
+		ts.Equal(responses[0].RunID, response.RunID)
 	}
 
 	// The callee returns an array with all its signals.
 	var wantSignals, gotSignals []int
-	ts.NoError(ts.client.GetWorkflow(ctx, calleeID, *responses[0].RunID).Get(ctx, &gotSignals))
+	ts.NoError(ts.client.GetWorkflow(ctx, calleeID, responses[0].RunID).Get(ctx, &gotSignals))
 	for i := range responses {
 		wantSignals = append(wantSignals, i)
 	}
 	ts.Equal(wantSignals, gotSignals)
+
+	var history historypb.History
+	iter := ts.client.GetWorkflowHistory(ctx, callerID, "", false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+	for iter.HasNext() {
+		event, err := iter.Next()
+		ts.NoError(err)
+		history.Events = append(history.Events, event)
+	}
+	replayer, err := worker.NewWorkflowReplayerWithOptions(worker.WorkflowReplayerOptions{
+		DataConverter: converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), &intTestSigningCodec{}),
+		Interceptors:  []interceptor.WorkerInterceptor{&systemNexusTestInterceptor{}},
+	})
+	ts.NoError(err)
+	replayer.RegisterWorkflow(SignalAndStartRepeatedly)
+	ts.NoError(replayer.ReplayWorkflowHistoryWithOptions(nil, &history, worker.ReplayWorkflowHistoryOptions{
+		OriginalExecution: workflow.Execution{ID: callerID},
+	}))
 }
 
 // TestWorkflowSignalWithStartEncodingFailure puts a non-serializable value
@@ -442,10 +451,8 @@ func (ts *SystemNexusTestSuite) TestWorkflowSignalWithStartInterceptors() {
 	ts.Equal(int64(1), ts.interceptor.systemNexusCalls.Load(),
 		"system Nexus must run the operation-specific interceptor once")
 	request := ts.signalWithStartRequestFromHistory(ctx, callerID)
-	var header string
-	ts.NoError(converter.GetDefaultDataConverter().FromPayload(
-		request.GetHeader().GetFields()["interceptor-header"], &header))
-	ts.Equal("from interceptor", header)
+	ts.Equal(int32(2), request.GetPriority().GetPriorityKey(),
+		"system Nexus must use the options changed by the operation-specific interceptor")
 }
 
 // TestWorkflowSignalWithStartWithLotsOfOptions invokes [SignalAndStartWithLotsOfOptions],

@@ -3,35 +3,30 @@
 package workflow
 
 import (
-	implementation "go.temporal.io/sdk/internal"
+	"go.temporal.io/sdk/internal"
 )
 
-// Request fields for signaling a workflow, starting it first if needed.
-type SignalWithStartWorkflowRequest = implementation.SystemNexus_SignalWithStartWorkflowRequest
+// SignalWithStartWorkflowOptions - Options for SignalWithStartWorkflow.
+type SignalWithStartWorkflowOptions = internal.SystemNexus_SignalWithStartWorkflowOptions
 
-// Static metadata for a workflow execution.
-type UserMetadata = implementation.SystemNexus_UserMetadata
-
-// Result of signaling a workflow and starting it if needed.
-type SignalWithStartWorkflowResponse = implementation.SystemNexus_SignalWithStartWorkflowResponse
-
-type SignalWithStartWorkflowOptions = implementation.SystemNexus_SignalWithStartWorkflowOptions
-
-// Signal a workflow, starting it first if needed.
+// SignalWithStartWorkflow - Signal a workflow, starting it first if needed. Encode
+// payloads with the configured data converter.
 //
+// Input id: Unique identifier for the workflow execution. Must be nonempty.
 // Input signal: Signal name to send with the start request.
 // Input signalArg: Arguments for the signal.
-// Input workflowValue: Workflow function identifying the workflow to start.
+// Input workflow: Workflow function identifying the workflow to start.
 // Input args: Arguments for the workflow.
 //
-// Returns: A workflow handle to the started workflow.
+// Returns: A workflow.Execution with details about the signaled workflow.
 func SignalWithStartWorkflow(
-	ctx implementation.Context,
+	ctx Context,
 	opts SignalWithStartWorkflowOptions,
+	id string,
 	signal string,
 	signalArg any,
-	workflowValue any,
+	workflow any,
 	args ...any,
-) implementation.Future {
-	return implementation.SystemNexus_SignalWithStartWorkflow(ctx, opts, signal, signalArg, workflowValue, args...)
+) Future {
+	return internal.SystemNexus_SignalWithStartWorkflow(ctx, opts, id, signal, signalArg, workflow, args...)
 }

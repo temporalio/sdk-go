@@ -210,13 +210,6 @@ type RequestCancelNexusOperationInput struct {
 	seq int64
 }
 
-// executeSystemNexusOperationInput is the input to systemnexus_executeOperation.
-type executeSystemNexusOperationInput struct {
-	Service   string
-	Operation string
-	Input     any
-}
-
 // WorkflowOutboundInterceptor is an interface for all workflow calls
 // originating from the SDK. See documentation in the interceptor package for
 // more details.

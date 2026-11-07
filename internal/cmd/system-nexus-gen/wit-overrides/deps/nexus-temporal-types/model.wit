@@ -30,6 +30,8 @@ interface model {
   /// @nexus.type
   ///   python="BaseException"
   ///   typescript="Error"
+  ///   typescript-from="errorFromFailure"
+  ///   typescript-to="errorToFailure"
   ///   go="error"
   ///   dotnet="System.Exception"
   ///   dotnet-from="ProtoExtensions.FromFailureProto"

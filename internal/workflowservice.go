@@ -15,202 +15,117 @@ import (
 	commonconverter "go.temporal.io/sdk/internal/common/converter"
 )
 
-// --- Operations (internal) ---
+// --- Datatypes ---
 
-func systemnexus_signalWithStartWorkflow(ctx Context, request SystemNexus_SignalWithStartWorkflowRequest) Future {
-	c := NewSystemNexusClient("temporal.api.workflowservice.v1.WorkflowService")
-	fut := c.ExecuteOperation(ctx, "SignalWithStartWorkflowExecution", request, NexusOperationOptions{})
-	result, resultSettable := NewFuture(ctx)
-	Go(ctx, func(ctx Context) {
-		var value SystemNexus_SignalWithStartWorkflowResponse
-		if err := fut.Get(ctx, &value); err != nil {
-			resultSettable.SetError(err)
-			return
-		}
-		resultSettable.Set(value, nil)
-	})
-	return result
-}
-
-// --- Operations (public API) ---
-
-type SystemNexus_SignalWithStartWorkflowRequest struct {
-	// Workflow - Workflow function identifying the workflow to start.
-	//
-	// Required.
-	Workflow string
-	// Args - Arguments for the workflow.
-	//
-	// Optional.
-	Args []any
-	// ID - Unique identifier for the workflow execution. Must be nonempty.
-	//
-	// Required.
-	ID string
-	// TaskQueue - Task queue to run the workflow on. Defaults to the calling workflow's
-	// task queue.
-	//
-	// Required.
-	TaskQueue string
-	// Signal - Signal name to send with the start request.
-	//
-	// Required.
-	Signal string
-	// SignalArgs - Arguments for the signal.
-	//
-	// Optional.
-	SignalArgs []any
-	// WorkflowExecutionTimeout - Total workflow execution timeout, including retries and
-	// continue-as-new. Defaults to unlimited.
-	//
-	// Optional.
+type systemnexus_signalWithStartWorkflowRequest struct {
+	Workflow                 string
+	Args                     []any
+	ID                       string
+	TaskQueue                string
+	Signal                   string
+	SignalArgs               []any
 	WorkflowExecutionTimeout time.Duration
-	// WorkflowRunTimeout - Timeout of a single workflow run. Defaults to the workflow
-	// execution timeout.
-	//
-	// Optional.
-	WorkflowRunTimeout time.Duration
-	// WorkflowTaskTimeout - Timeout of a single workflow task. Defaults to 10 seconds.
-	//
-	// Optional.
-	WorkflowTaskTimeout time.Duration
-	// WorkflowIDReusePolicy - Behavior when a closed workflow with the same ID exists.
-	// Default is allow-duplicate.
-	//
-	// Required.
-	WorkflowIDReusePolicy enums.WorkflowIdReusePolicy
-	// WorkflowIDConflictPolicy - Behavior when a workflow is currently running with the
-	// same ID. Set to use-existing for idempotent deduplication on workflow ID. Cannot be
-	// set if id-reuse-policy is terminate-if-running. Defaults to use-existing.
-	//
-	// Optional.
+	WorkflowRunTimeout       time.Duration
+	WorkflowTaskTimeout      time.Duration
+	WorkflowIDReusePolicy    enums.WorkflowIdReusePolicy
 	WorkflowIDConflictPolicy enums.WorkflowIdConflictPolicy
-	// RetryPolicy - Retry policy for the workflow.
-	//
-	// Optional.
-	RetryPolicy *RetryPolicy
-	// CronSchedule - Cron schedule for recurring workflow executions. See
-	// https://docs.temporal.io/cron-job.
-	//
-	// Optional.
-	CronSchedule string
-	// Memo - Memo for the workflow.
-	//
-	// Optional.
-	Memo map[string]any
-	// TypedSearchAttributes - Typed search attributes for the workflow.
-	//
-	// Optional.
-	TypedSearchAttributes SearchAttributes
-	// Priority - Priority of the workflow execution.
-	//
-	// Optional.
-	Priority *Priority
-	// VersioningOverride - Override for workflow versioning behavior.
-	//
-	// Optional.
-	VersioningOverride VersioningOverride
-	// StartDelay - Amount of time to wait before starting the workflow. This does not work
-	// with cron-schedule.
-	//
-	// Optional.
-	StartDelay time.Duration
-	// UserMetadata - Static metadata for the workflow execution.
-	//
-	// Optional.
-	UserMetadata *SystemNexus_UserMetadata
-	// Headers - Headers for the request.
-	//
-	// Optional.
-	Headers   map[string]*common.Payload
-	Namespace string
+	RetryPolicy              *RetryPolicy
+	CronSchedule             string
+	Memo                     map[string]any
+	TypedSearchAttributes    SearchAttributes
+	Priority                 *Priority
+	VersioningOverride       VersioningOverride
+	StartDelay               time.Duration
+	UserMetadata             *systemnexus_userMetadata
+	Headers                  map[string]*common.Payload
+	Namespace                string
 }
 
-func (m SystemNexus_SignalWithStartWorkflowRequest) GetWorkflow() string {
+func (m systemnexus_signalWithStartWorkflowRequest) GetWorkflow() string {
 	return m.Workflow
 }
 
-func (m SystemNexus_SignalWithStartWorkflowRequest) GetArgs() []any {
+func (m systemnexus_signalWithStartWorkflowRequest) GetArgs() []any {
 	return m.Args
 }
 
-func (m SystemNexus_SignalWithStartWorkflowRequest) GetID() string {
+func (m systemnexus_signalWithStartWorkflowRequest) GetID() string {
 	return m.ID
 }
 
-func (m SystemNexus_SignalWithStartWorkflowRequest) GetTaskQueue() string {
+func (m systemnexus_signalWithStartWorkflowRequest) GetTaskQueue() string {
 	return m.TaskQueue
 }
 
-func (m SystemNexus_SignalWithStartWorkflowRequest) GetSignal() string {
+func (m systemnexus_signalWithStartWorkflowRequest) GetSignal() string {
 	return m.Signal
 }
 
-func (m SystemNexus_SignalWithStartWorkflowRequest) GetSignalArgs() []any {
+func (m systemnexus_signalWithStartWorkflowRequest) GetSignalArgs() []any {
 	return m.SignalArgs
 }
 
-func (m SystemNexus_SignalWithStartWorkflowRequest) GetWorkflowExecutionTimeout() time.Duration {
+func (m systemnexus_signalWithStartWorkflowRequest) GetWorkflowExecutionTimeout() time.Duration {
 	return m.WorkflowExecutionTimeout
 }
 
-func (m SystemNexus_SignalWithStartWorkflowRequest) GetWorkflowRunTimeout() time.Duration {
+func (m systemnexus_signalWithStartWorkflowRequest) GetWorkflowRunTimeout() time.Duration {
 	return m.WorkflowRunTimeout
 }
 
-func (m SystemNexus_SignalWithStartWorkflowRequest) GetWorkflowTaskTimeout() time.Duration {
+func (m systemnexus_signalWithStartWorkflowRequest) GetWorkflowTaskTimeout() time.Duration {
 	return m.WorkflowTaskTimeout
 }
 
-func (m SystemNexus_SignalWithStartWorkflowRequest) GetWorkflowIDReusePolicy() enums.WorkflowIdReusePolicy {
+func (m systemnexus_signalWithStartWorkflowRequest) GetWorkflowIDReusePolicy() enums.WorkflowIdReusePolicy {
 	return m.WorkflowIDReusePolicy
 }
 
-func (m SystemNexus_SignalWithStartWorkflowRequest) GetWorkflowIDConflictPolicy() enums.WorkflowIdConflictPolicy {
+func (m systemnexus_signalWithStartWorkflowRequest) GetWorkflowIDConflictPolicy() enums.WorkflowIdConflictPolicy {
 	return m.WorkflowIDConflictPolicy
 }
 
-func (m SystemNexus_SignalWithStartWorkflowRequest) GetRetryPolicy() *RetryPolicy {
+func (m systemnexus_signalWithStartWorkflowRequest) GetRetryPolicy() *RetryPolicy {
 	return m.RetryPolicy
 }
 
-func (m SystemNexus_SignalWithStartWorkflowRequest) GetCronSchedule() string {
+func (m systemnexus_signalWithStartWorkflowRequest) GetCronSchedule() string {
 	return m.CronSchedule
 }
 
-func (m SystemNexus_SignalWithStartWorkflowRequest) GetMemo() map[string]any {
+func (m systemnexus_signalWithStartWorkflowRequest) GetMemo() map[string]any {
 	return m.Memo
 }
 
-func (m SystemNexus_SignalWithStartWorkflowRequest) GetTypedSearchAttributes() SearchAttributes {
+func (m systemnexus_signalWithStartWorkflowRequest) GetTypedSearchAttributes() SearchAttributes {
 	return m.TypedSearchAttributes
 }
 
-func (m SystemNexus_SignalWithStartWorkflowRequest) GetPriority() *Priority {
+func (m systemnexus_signalWithStartWorkflowRequest) GetPriority() *Priority {
 	return m.Priority
 }
 
-func (m SystemNexus_SignalWithStartWorkflowRequest) GetVersioningOverride() VersioningOverride {
+func (m systemnexus_signalWithStartWorkflowRequest) GetVersioningOverride() VersioningOverride {
 	return m.VersioningOverride
 }
 
-func (m SystemNexus_SignalWithStartWorkflowRequest) GetStartDelay() time.Duration {
+func (m systemnexus_signalWithStartWorkflowRequest) GetStartDelay() time.Duration {
 	return m.StartDelay
 }
 
-func (m SystemNexus_SignalWithStartWorkflowRequest) GetUserMetadata() *SystemNexus_UserMetadata {
+func (m systemnexus_signalWithStartWorkflowRequest) GetUserMetadata() *systemnexus_userMetadata {
 	return m.UserMetadata
 }
 
-func (m SystemNexus_SignalWithStartWorkflowRequest) GetHeaders() map[string]*common.Payload {
+func (m systemnexus_signalWithStartWorkflowRequest) GetHeaders() map[string]*common.Payload {
 	return m.Headers
 }
 
-func (m SystemNexus_SignalWithStartWorkflowRequest) GetNamespace() string {
+func (m systemnexus_signalWithStartWorkflowRequest) GetNamespace() string {
 	return m.Namespace
 }
 
-func systemnexus_signalWithStartWorkflowRequestToProto(cfg *commonconverter.SystemNexusContext, m *SystemNexus_SignalWithStartWorkflowRequest) (*workflowservice.SignalWithStartWorkflowExecutionRequest, error) {
+func systemnexus_signalWithStartWorkflowRequestToProto(cfg *commonconverter.SystemNexusContext, m *systemnexus_signalWithStartWorkflowRequest) (*workflowservice.SignalWithStartWorkflowExecutionRequest, error) {
 	message := &workflowservice.SignalWithStartWorkflowExecutionRequest{}
 	{
 		converted, err := WorkflowTypeToProto(cfg.DataConverter, &m.Workflow)
@@ -338,8 +253,8 @@ func systemnexus_signalWithStartWorkflowRequestToProto(cfg *commonconverter.Syst
 	return message, nil
 }
 
-func systemnexus_signalWithStartWorkflowRequestFromProto(cfg *commonconverter.SystemNexusContext, proto *workflowservice.SignalWithStartWorkflowExecutionRequest, out *SystemNexus_SignalWithStartWorkflowRequest) error {
-	*out = SystemNexus_SignalWithStartWorkflowRequest{}
+func systemnexus_signalWithStartWorkflowRequestFromProto(cfg *commonconverter.SystemNexusContext, proto *workflowservice.SignalWithStartWorkflowExecutionRequest, out *systemnexus_signalWithStartWorkflowRequest) error {
+	*out = systemnexus_signalWithStartWorkflowRequest{}
 	{
 		converted, err := WorkflowTypeFromProto(cfg.DataConverter, proto.GetWorkflowType())
 		if err != nil {
@@ -453,7 +368,7 @@ func systemnexus_signalWithStartWorkflowRequestFromProto(cfg *commonconverter.Sy
 		}
 	}
 	if proto.GetUserMetadata() != nil {
-		out.UserMetadata = new(SystemNexus_UserMetadata)
+		out.UserMetadata = new(systemnexus_userMetadata)
 		if err := systemnexus_userMetadataFromProto(cfg, proto.GetUserMetadata(), out.UserMetadata); err != nil {
 			return err
 		}
@@ -469,36 +384,27 @@ func systemnexus_signalWithStartWorkflowRequestFromProto(cfg *commonconverter.Sy
 	return nil
 }
 
-func (SystemNexus_SignalWithStartWorkflowRequest) TransferTypeConverter() (converter.TransferTypeConverter, error) {
+func (systemnexus_signalWithStartWorkflowRequest) TransferTypeConverter() (converter.TransferTypeConverter, error) {
 	return commonconverter.NewSystemNexusTransferTypeConverter(
 		systemnexus_signalWithStartWorkflowRequestToProto,
 		systemnexus_signalWithStartWorkflowRequestFromProto,
 	)
 }
 
-type SystemNexus_UserMetadata struct {
-	// StaticSummary - Single-line fixed summary for the workflow execution that may appear
-	// in UI and CLI. This can be in single-line Temporal Markdown format.
-	//
-	// Optional.
+type systemnexus_userMetadata struct {
 	StaticSummary *string
-	// StaticDetails - General fixed details for the workflow execution that may appear in
-	// UI and CLI. This can be in Temporal Markdown format and can span multiple lines.
-	// This value is fixed on the workflow execution and cannot be updated.
-	//
-	// Optional.
 	StaticDetails *string
 }
 
-func (m SystemNexus_UserMetadata) GetStaticSummary() *string {
+func (m systemnexus_userMetadata) GetStaticSummary() *string {
 	return m.StaticSummary
 }
 
-func (m SystemNexus_UserMetadata) GetStaticDetails() *string {
+func (m systemnexus_userMetadata) GetStaticDetails() *string {
 	return m.StaticDetails
 }
 
-func systemnexus_userMetadataToProto(cfg *commonconverter.SystemNexusContext, m *SystemNexus_UserMetadata) (*sdk.UserMetadata, error) {
+func systemnexus_userMetadataToProto(cfg *commonconverter.SystemNexusContext, m *systemnexus_userMetadata) (*sdk.UserMetadata, error) {
 	message := &sdk.UserMetadata{}
 	if m.StaticSummary != nil {
 		{
@@ -521,8 +427,8 @@ func systemnexus_userMetadataToProto(cfg *commonconverter.SystemNexusContext, m 
 	return message, nil
 }
 
-func systemnexus_userMetadataFromProto(cfg *commonconverter.SystemNexusContext, proto *sdk.UserMetadata, out *SystemNexus_UserMetadata) error {
-	*out = SystemNexus_UserMetadata{}
+func systemnexus_userMetadataFromProto(cfg *commonconverter.SystemNexusContext, proto *sdk.UserMetadata, out *systemnexus_userMetadata) error {
+	*out = systemnexus_userMetadata{}
 	if proto.GetSummary() != nil {
 		converted, err := PayloadFromProto(cfg.DataConverter, proto.GetSummary())
 		if err != nil {
@@ -548,61 +454,39 @@ func systemnexus_userMetadataFromProto(cfg *commonconverter.SystemNexusContext, 
 	return nil
 }
 
-type SystemNexus_SignalWithStartWorkflowResponse struct {
-	// RunID - Run ID of the started workflow.
-	//
-	// Optional.
-	RunID *string
-	// Started - Whether the workflow was started.
-	//
-	// Optional.
-	Started *bool
+type systemnexus_signalWithStartWorkflowResponse struct {
+	RunID   string
+	Started bool
 }
 
-func (m SystemNexus_SignalWithStartWorkflowResponse) GetRunID() *string {
+func (m systemnexus_signalWithStartWorkflowResponse) GetRunID() string {
 	return m.RunID
 }
 
-func (m SystemNexus_SignalWithStartWorkflowResponse) GetStarted() *bool {
+func (m systemnexus_signalWithStartWorkflowResponse) GetStarted() bool {
 	return m.Started
 }
 
-func systemnexus_signalWithStartWorkflowResponseToProto(cfg *commonconverter.SystemNexusContext, m *SystemNexus_SignalWithStartWorkflowResponse) (*workflowservice.SignalWithStartWorkflowExecutionResponse, error) {
+func systemnexus_signalWithStartWorkflowResponseToProto(cfg *commonconverter.SystemNexusContext, m *systemnexus_signalWithStartWorkflowResponse) (*workflowservice.SignalWithStartWorkflowExecutionResponse, error) {
 	message := &workflowservice.SignalWithStartWorkflowExecutionResponse{}
-	if m.RunID != nil {
-		message.RunId = (*m.RunID)
-	}
-	if m.Started != nil {
-		message.Started = (*m.Started)
-	}
+	message.RunId = m.RunID
+	message.Started = m.Started
 	return message, nil
 }
 
-func systemnexus_signalWithStartWorkflowResponseFromProto(cfg *commonconverter.SystemNexusContext, proto *workflowservice.SignalWithStartWorkflowExecutionResponse, out *SystemNexus_SignalWithStartWorkflowResponse) error {
-	*out = SystemNexus_SignalWithStartWorkflowResponse{}
-	{
-		converted := proto.GetRunId()
-		out.RunID = &converted
-	}
-	{
-		converted := proto.GetStarted()
-		out.Started = &converted
-	}
+func systemnexus_signalWithStartWorkflowResponseFromProto(cfg *commonconverter.SystemNexusContext, proto *workflowservice.SignalWithStartWorkflowExecutionResponse, out *systemnexus_signalWithStartWorkflowResponse) error {
+	*out = systemnexus_signalWithStartWorkflowResponse{}
+	out.RunID = proto.GetRunId()
+	out.Started = proto.GetStarted()
 	return nil
 }
 
-func (SystemNexus_SignalWithStartWorkflowResponse) TransferTypeConverter() (converter.TransferTypeConverter, error) {
-	return commonconverter.NewSystemNexusTransferTypeConverter(
-		systemnexus_signalWithStartWorkflowResponseToProto,
-		systemnexus_signalWithStartWorkflowResponseFromProto,
-	)
-}
+// --- Operations (public API) ---
 
+// SignalWithStartWorkflowOptions - Options for SignalWithStartWorkflow.
+//
+// Exposed as: [go.temporal.io/sdk/workflow.SignalWithStartWorkflowOptions]
 type SystemNexus_SignalWithStartWorkflowOptions struct {
-	// ID - Unique identifier for the workflow execution. Must be nonempty.
-	//
-	// Required.
-	ID string
 	// TaskQueue - Task queue to run the workflow on. Defaults to the calling workflow's
 	// task queue.
 	//
@@ -676,72 +560,35 @@ type SystemNexus_SignalWithStartWorkflowOptions struct {
 	StaticDetails string
 }
 
-// Signal a workflow, starting it first if needed.
+// SignalWithStartWorkflow - Signal a workflow, starting it first if needed. Encode
+// payloads with the configured data converter.
 //
+// Input id: Unique identifier for the workflow execution. Must be nonempty.
 // Input signal: Signal name to send with the start request.
 // Input signalArg: Arguments for the signal.
-// Input workflowValue: Workflow function identifying the workflow to start.
+// Input workflow: Workflow function identifying the workflow to start.
 // Input args: Arguments for the workflow.
 //
-// Returns: A workflow handle to the started workflow.
+// Returns: A workflow.Execution with details about the signaled workflow.
+//
+// Exposed as: [go.temporal.io/sdk/workflow.SignalWithStartWorkflow]
 func SystemNexus_SignalWithStartWorkflow(
 	ctx Context,
 	opts SystemNexus_SignalWithStartWorkflowOptions,
+	id string,
 	signal string,
 	signalArg any,
-	workflowValue any,
+	workflow any,
 	args ...any,
 ) Future {
-	var taskQueue string
-	if opts.TaskQueue != "" {
-		taskQueue = opts.TaskQueue
-	} else {
-		taskQueue = GetWorkflowInfo(ctx).TaskQueueName
+	if opts.TaskQueue == "" {
+		opts.TaskQueue = GetWorkflowInfo(ctx).TaskQueueName
 	}
-	var workflowIDReusePolicy enums.WorkflowIdReusePolicy
-	if opts.WorkflowIDReusePolicy != 0 {
-		workflowIDReusePolicy = opts.WorkflowIDReusePolicy
-	} else {
-		workflowIDReusePolicy = enums.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE
+	if opts.WorkflowIDReusePolicy == 0 {
+		opts.WorkflowIDReusePolicy = enums.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE
 	}
-	var userMetadataValue *SystemNexus_UserMetadata
-	if opts.StaticSummary != "" || opts.StaticDetails != "" {
-		var staticSummary *string
-		if opts.StaticSummary != "" {
-			staticSummary = &opts.StaticSummary
-		}
-		var staticDetails *string
-		if opts.StaticDetails != "" {
-			staticDetails = &opts.StaticDetails
-		}
-		userMetadataValue = &SystemNexus_UserMetadata{
-			StaticSummary: staticSummary,
-			StaticDetails: staticDetails,
-		}
-	}
-	workflowValueName := WorkflowFunctionName(ctx, workflowValue)
-	return systemnexus_signalWithStartWorkflow(ctx, SystemNexus_SignalWithStartWorkflowRequest{
-		Workflow:                 workflowValueName,
-		Args:                     args,
-		ID:                       opts.ID,
-		TaskQueue:                taskQueue,
-		Signal:                   signal,
-		SignalArgs:               []any{signalArg},
-		WorkflowExecutionTimeout: opts.WorkflowExecutionTimeout,
-		WorkflowRunTimeout:       opts.WorkflowRunTimeout,
-		WorkflowTaskTimeout:      opts.WorkflowTaskTimeout,
-		WorkflowIDReusePolicy:    workflowIDReusePolicy,
-		WorkflowIDConflictPolicy: opts.WorkflowIDConflictPolicy,
-		RetryPolicy:              opts.RetryPolicy,
-		CronSchedule:             opts.CronSchedule,
-		Memo:                     opts.Memo,
-		TypedSearchAttributes:    opts.TypedSearchAttributes,
-		Priority:                 opts.Priority,
-		VersioningOverride:       opts.VersioningOverride,
-		StartDelay:               opts.StartDelay,
-		UserMetadata:             userMetadataValue,
-		Namespace:                WorkflowNamespace(ctx),
-	})
+	workflowName := WorkflowFunctionName(ctx, workflow)
+	return getWorkflowOutboundInterceptor(ctx).SignalWithStartWorkflow(ctx, opts, id, signal, signalArg, workflowName, args...)
 }
 
 // --- Registry ---
@@ -752,7 +599,7 @@ var systemnexus_nexusOperationRegistry = map[SystemNexusRegistryKey]SystemNexusR
 		Operation: "SignalWithStartWorkflowExecution",
 	}: {
 		SerializationContext: func(request any) converter.SerializationContext {
-			return SignalWithStartWorkflowSerializationContext(request.(SystemNexus_SignalWithStartWorkflowRequest))
+			return SignalWithStartWorkflowSerializationContext(request.(systemnexus_signalWithStartWorkflowRequest))
 		},
 	},
 }
@@ -763,32 +610,75 @@ func init() {
 
 // --- Workflow outbound interceptors ---
 
-func systemnexus_executeOperation(ctx Context, outbound systemnexus_workflowOutboundInterceptor, input executeSystemNexusOperationInput) NexusOperationFuture {
-	switch {
-	case input.Service == "temporal.api.workflowservice.v1.WorkflowService" && input.Operation == "SignalWithStartWorkflowExecution":
-		request, ok := input.Input.(SystemNexus_SignalWithStartWorkflowRequest)
-		if !ok {
-			return FailedNexusOperationFuture(ctx, fmt.Errorf("system Nexus operation %s/%s expects SystemNexus_SignalWithStartWorkflowRequest, got %T", "temporal.api.workflowservice.v1.WorkflowService", "SignalWithStartWorkflowExecution", input.Input))
-		}
-		return outbound.SignalWithStartWorkflow(ctx, &request)
-	}
-	return FailedNexusOperationFuture(ctx, fmt.Errorf("unsupported system Nexus operation %s/%s", input.Service, input.Operation))
-}
-
 type systemnexus_workflowOutboundInterceptor interface {
 	// SignalWithStartWorkflow intercepts workflow.SignalWithStartWorkflow.
-	SignalWithStartWorkflow(ctx Context, request *SystemNexus_SignalWithStartWorkflowRequest) NexusOperationFuture
+	SignalWithStartWorkflow(ctx Context, opts SystemNexus_SignalWithStartWorkflowOptions, id string, signal string, signalArg any, workflow string, args ...any) Future
 }
 
-func (w *WorkflowOutboundInterceptorBase) SignalWithStartWorkflow(ctx Context, request *SystemNexus_SignalWithStartWorkflowRequest) NexusOperationFuture {
-	return w.Next.SignalWithStartWorkflow(ctx, request)
+// SignalWithStartWorkflow implements WorkflowOutboundInterceptor.SignalWithStartWorkflow.
+func (w *WorkflowOutboundInterceptorBase) SignalWithStartWorkflow(ctx Context, opts SystemNexus_SignalWithStartWorkflowOptions, id string, signal string, signalArg any, workflow string, args ...any) Future {
+	return w.Next.SignalWithStartWorkflow(ctx, opts, id, signal, signalArg, workflow, args...)
 }
 
-func (wc *workflowEnvironmentInterceptor) SignalWithStartWorkflow(ctx Context, request *SystemNexus_SignalWithStartWorkflowRequest) NexusOperationFuture {
-	return wc.ExecuteNexusOperation(ctx, ExecuteNexusOperationInput{
+func (wc *workflowEnvironmentInterceptor) SignalWithStartWorkflow(ctx Context, opts SystemNexus_SignalWithStartWorkflowOptions, id string, signal string, signalArg any, workflow string, args ...any) Future {
+	var userMetadataValue *systemnexus_userMetadata
+	if opts.StaticSummary != "" || opts.StaticDetails != "" {
+		var staticSummary *string
+		if opts.StaticSummary != "" {
+			staticSummary = &opts.StaticSummary
+		}
+		var staticDetails *string
+		if opts.StaticDetails != "" {
+			staticDetails = &opts.StaticDetails
+		}
+		userMetadataValue = &systemnexus_userMetadata{
+			StaticSummary: staticSummary,
+			StaticDetails: staticDetails,
+		}
+	}
+	request := systemnexus_signalWithStartWorkflowRequest{
+		Workflow:                 workflow,
+		Args:                     args,
+		ID:                       id,
+		TaskQueue:                opts.TaskQueue,
+		Signal:                   signal,
+		SignalArgs:               []any{signalArg},
+		WorkflowExecutionTimeout: opts.WorkflowExecutionTimeout,
+		WorkflowRunTimeout:       opts.WorkflowRunTimeout,
+		WorkflowTaskTimeout:      opts.WorkflowTaskTimeout,
+		WorkflowIDReusePolicy:    opts.WorkflowIDReusePolicy,
+		WorkflowIDConflictPolicy: opts.WorkflowIDConflictPolicy,
+		RetryPolicy:              opts.RetryPolicy,
+		CronSchedule:             opts.CronSchedule,
+		Memo:                     opts.Memo,
+		TypedSearchAttributes:    opts.TypedSearchAttributes,
+		Priority:                 opts.Priority,
+		VersioningOverride:       opts.VersioningOverride,
+		StartDelay:               opts.StartDelay,
+		UserMetadata:             userMetadataValue,
+		Namespace:                WorkflowNamespace(ctx),
+	}
+	fut := wc.ExecuteNexusOperation(ctx, ExecuteNexusOperationInput{
 		Client:      NewSystemNexusClient("temporal.api.workflowservice.v1.WorkflowService"),
 		Operation:   "SignalWithStartWorkflowExecution",
-		Input:       *request,
+		Input:       request,
 		NexusHeader: nexus.Header{},
 	})
+	result, resultSettable := NewFuture(ctx)
+	Go(ctx, func(ctx Context) {
+		var result workflowservice.SignalWithStartWorkflowExecutionResponse
+		if err := fut.Get(ctx, &result); err != nil {
+			resultSettable.SetError(err)
+			return
+		}
+		value, err := func() (WorkflowExecution, error) {
+			return WorkflowExecution{ID: request.ID, RunID: result.GetRunId()}, nil
+		}()
+		if err != nil {
+			resultSettable.SetError(err)
+			return
+		}
+		resultSettable.Set(value, nil)
+	})
+	return result
 }

@@ -3259,17 +3259,6 @@ func (c nexusClient) Service() string {
 func (c nexusClient) ExecuteOperation(ctx Context, operation any, input any, options NexusOperationOptions) NexusOperationFuture {
 	assertNotInReadOnlyState(ctx)
 	i := getWorkflowOutboundInterceptor(ctx)
-	if c.endpoint == systemNexusEndpoint {
-		operationName, err := NexusOperationName(operation, input)
-		if err != nil {
-			return FailedNexusOperationFuture(ctx, err)
-		}
-		return systemnexus_executeOperation(ctx, i, executeSystemNexusOperationInput{
-			Service:   c.service,
-			Operation: operationName,
-			Input:     input,
-		})
-	}
 	return i.ExecuteNexusOperation(ctx, ExecuteNexusOperationInput{
 		Client:      c,
 		Operation:   operation,
