@@ -666,6 +666,29 @@ func (t *tracingWorkflowOutboundInterceptor) ExecuteChildWorkflow(
 	return t.Next.ExecuteChildWorkflow(ctx, childWorkflowType, args...)
 }
 
+func (t *tracingWorkflowOutboundInterceptor) SignalWithStartWorkflow(
+	ctx workflow.Context,
+	options workflow.SignalWithStartWorkflowOptions,
+	id string,
+	signal string,
+	signalArg any,
+	workflowType string,
+	args ...any,
+) workflow.Future {
+	info := workflow.GetInfo(ctx)
+	ctx, endSpan, err := startOutboundWorkflowSpan(t.root.workflowTracer, ctx, &TracerStartSpanOptions{
+		Operation: "SignalWithStartWorkflow",
+		Name:      workflowType,
+		Tags:      workflowTags(info),
+	}, t.root.headerWriter(t.root.workflowTracer, ctx))
+	if err != nil {
+		return workflowFutureFromErr(ctx, err)
+	}
+	defer endSpan(nil)
+
+	return t.Next.SignalWithStartWorkflow(ctx, options, id, signal, signalArg, workflowType, args...)
+}
+
 func (t *tracingWorkflowOutboundInterceptor) SignalExternalWorkflow(
 	ctx workflow.Context,
 	workflowID string,
