@@ -30,13 +30,11 @@ to docs, or any other relevant information.
   guidance.
 - Added experimental `SignalWithStartWorkflow` API to the `workflow` package. The API does
   not yet support context propagators or telemetry.
+- Added experimental `SignalWithStartWorkflow` API to the `workflow` package.
 - Added opt-in `EncodeHeaders` tracing options and `workflow.CodecContextPropagator` for header
   codec processing using the configured client's codec. Only opted-in producers' output is encoded;
   user-supplied wire-ready headers are unchanged. Receiving consumers use private decoded views.
   Custom converter wrappers can expose codec stages through `converter.PayloadCodecProvider`.
-- Workflow `SignalWithStartWorkflow` calls now propagate workflow context through
-  request headers after outbound interception, preserving interceptor-supplied headers.
-
 - Added experimental Event Groups support: `workflow.NewEventGroup`, `workflow.WithEventGroups`,
   and `EventGroups` on workflow command options. Update handlers get an implicit group. Signal
   handlers do not.
