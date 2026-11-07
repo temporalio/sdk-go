@@ -3268,42 +3268,24 @@ func (c nexusClient) ExecuteOperation(ctx Context, operation any, input any, opt
 	})
 }
 
-func NexusOperationName(operation, input any) (string, error) {
+func (wc *workflowEnvironmentInterceptor) prepareNexusOperationParams(ctx Context, input ExecuteNexusOperationInput) (ExecuteNexusOperationParams, error) {
+	endpoint := input.Client.Endpoint()
+	service := input.Client.Service()
+
 	var ok bool
 	var operationName string
-	if operationName, ok = operation.(string); ok {
-	} else if regOp, ok := operation.(interface {
+	if operationName, ok = input.Operation.(string); ok {
+	} else if regOp, ok := input.Operation.(interface {
 		Name() string
 		InputType() reflect.Type
 	}); ok {
 		operationName = regOp.Name()
-		inputType := reflect.TypeOf(input)
+		inputType := reflect.TypeOf(input.Input)
 		if inputType != nil && !inputType.AssignableTo(regOp.InputType()) {
-			return "", fmt.Errorf("cannot assign argument of type %q to type %q for operation %q", inputType, regOp.InputType(), operationName)
+			return ExecuteNexusOperationParams{}, fmt.Errorf("cannot assign argument of type %q to type %q for operation %q", inputType, regOp.InputType(), operationName)
 		}
 	} else {
-		return "", fmt.Errorf("invalid 'operation' parameter, must be an OperationReference or a string")
-	}
-	return operationName, nil
-}
-
-func FailedNexusOperationFuture(ctx Context, err error) NexusOperationFuture {
-	mainFuture, mainSettable := newDecodeFuture(ctx, nil)
-	executionFuture, executionSettable := NewFuture(ctx)
-	mainSettable.Set(nil, err)
-	executionSettable.Set(nil, err)
-	return &nexusOperationFutureImpl{
-		decodeFutureImpl: mainFuture.(*decodeFutureImpl),
-		executionFuture:  executionFuture.(*futureImpl),
-	}
-}
-
-func (wc *workflowEnvironmentInterceptor) prepareNexusOperationParams(ctx Context, input ExecuteNexusOperationInput) (ExecuteNexusOperationParams, error) {
-	endpoint := input.Client.Endpoint()
-	service := input.Client.Service()
-	operationName, err := NexusOperationName(input.Operation, input.Input)
-	if err != nil {
-		return ExecuteNexusOperationParams{}, err
+		return ExecuteNexusOperationParams{}, fmt.Errorf("invalid 'operation' parameter, must be an OperationReference or a string")
 	}
 
 	// Compute the serialization context, if any.
