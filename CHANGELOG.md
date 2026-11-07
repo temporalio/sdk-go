@@ -28,11 +28,12 @@ to docs, or any other relevant information.
   a transient codec failure can recover while the execution stays open. See the
   `WorkflowTaskFailureError` docs for the honored paths, exclusions, and retry
   guidance.
+- Added experimental `SignalWithStartWorkflow` API to the `workflow` package. The API does
+  not yet support context propagators or telemetry.
 - Added opt-in `EncodeHeaders` tracing options and `workflow.CodecContextPropagator` for header
   codec processing using the configured client's codec. Only opted-in producers' output is encoded;
   user-supplied wire-ready headers are unchanged. Receiving consumers use private decoded views.
   Custom converter wrappers can expose codec stages through `converter.PayloadCodecProvider`.
-
 - Added experimental Event Groups support: `workflow.NewEventGroup`, `workflow.WithEventGroups`,
   and `EventGroups` on workflow command options. Update handlers get an implicit group. Signal
   handlers do not.
@@ -47,13 +48,6 @@ to docs, or any other relevant information.
   `Version() string` method on the plugin.
 - `client.WorkflowExecutionDescription` now includes `RawResponse`, the full
   `workflowservice.DescribeWorkflowExecutionResponse` returned by the server.
-- Added experimental `workflow.SignalWithStartWorkflow` to signal a workflow,
-  starting it first if needed, through Temporal's System Nexus endpoint.
-- Added experimental API for calling `SignalWithStartWorkflow` within a workflow.
-- Added experimental API for calling `SignalWithStartWorkflow` within a workflow, including typed
-  outbound interception and workflow context propagation. System Nexus calls do not enter the ordinary
-  `ExecuteNexusOperation` interceptor chain.
-- Added experimental API for calling `SignalWithStartWorkflow` within a workflow.
 - Added experimental `temporalnexus.ConvertLinkCallbackToNexusLink` and `temporalnexus.ConvertNexusLinkToLinkCallback`
   for converting `Link_Callback` to and from Nexus links.
 - Nexus handlers now propagate `NexusSerializationContext` to the workflows, workflow updates, and
