@@ -61,11 +61,6 @@ to docs, or any other relevant information.
   Temporal operation handler now requires an explicit workflow ID and returns a `BAD_REQUEST` handler
   error when it is empty. An empty ID is defaulted to a fresh UUID per call, so the server has no
   record to deduplicate against and each retried Nexus task would start another workflow.
-### Changed
-
-### Deprecated
-
-### :boom: Breaking Changes
 
 ### Fixed
 
