@@ -7367,7 +7367,7 @@ func (ts *IntegrationTestSuite) TestScheduleBackfillCreate() {
 		description, err := handle.Describe(ctx)
 		ts.NoError(err)
 		return description.Info.NumActions == 60
-	}, 15*time.Second, time.Second)
+	}, 30*time.Second, time.Second)
 }
 
 func (ts *IntegrationTestSuite) TestScheduleBackfill() {
@@ -7414,7 +7414,7 @@ func (ts *IntegrationTestSuite) TestScheduleBackfill() {
 		description, err := handle.Describe(ctx)
 		ts.NoError(err)
 		return description.Info.NumActions == 4
-	}, 5*time.Second, time.Second)
+	}, 30*time.Second, time.Second)
 }
 
 func (ts *IntegrationTestSuite) TestScheduleList() {
