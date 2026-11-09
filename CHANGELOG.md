@@ -22,6 +22,12 @@ to docs, or any other relevant information.
 
 ### Added
 
+- `converter.WorkflowTaskFailureError`: an opt-in error a `PayloadCodec` can return
+  from `Encode` or `Decode` on a workflow-side payload path to fail the current
+  Workflow Task rather than the Workflow Execution, so the server retries the task and
+  a transient codec failure can recover while the execution stays open. See the
+  `WorkflowTaskFailureError` docs for the honored paths, exclusions, and retry
+  guidance.
 - Added opt-in `EncodeHeaders` tracing options and `workflow.CodecContextPropagator` for header
   codec processing using the configured client's codec. Only opted-in producers' output is encoded;
   user-supplied wire-ready headers are unchanged. Receiving consumers use private decoded views.
@@ -63,16 +69,6 @@ to docs, or any other relevant information.
   access its response's `RawResponse` field for the full server response instead.
 
 ### :boom: Breaking Changes
-- `TestWorkflowEnvironment` and `TestActivityEnvironment` now run worker plugins set through
-  `SetWorkerOptions(worker.Options{Plugins: ...})`, which were previously ignored. Once plugins are
-  set, `SetWorkerOptions` may not be called again on that environment, and what a plugin registers
-  in `StartWorker` is undone at `StopWorker`.
-- `converter.WorkflowTaskFailureError`: an opt-in error a `PayloadCodec` can return
-  from `Encode` or `Decode` on a workflow-side payload path to fail the current
-  Workflow Task rather than the Workflow Execution, so the server retries the task and
-  a transient codec failure can recover while the execution stays open. See the
-  `WorkflowTaskFailureError` docs for the honored paths, exclusions, and retry
-  guidance.
 
 - When reconstructing state for a query delivered without any new history, the SDK no longer applies
   input events, such as signals, that have not been processed by a completed workflow task. Replay stops
