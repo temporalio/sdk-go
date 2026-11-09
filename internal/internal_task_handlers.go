@@ -226,6 +226,7 @@ type (
 
 	finishedTask struct {
 		isFailed       bool
+		isCompleted    bool
 		binaryChecksum string
 		flags          []sdkFlag
 		sdkVersion     string
@@ -282,6 +283,10 @@ func (eh *history) IsReplayEvent(event *historypb.HistoryEvent) bool {
 	return event.GetEventId() <= eh.workflowTask.task.GetPreviousStartedEventId() || isCommandEvent(event.GetEventType())
 }
 
+func (eh *history) isBeyondQueryReplayBoundary(eventID int64) bool {
+	return eh.workflowTask.task.Query != nil && eventID > eh.workflowTask.task.GetPreviousStartedEventId()
+}
+
 // isNextWorkflowTaskFailed checks if the workflow task failed or completed. If it did complete returns some information
 // on the completed workflow task.
 func (eh *history) isNextWorkflowTaskFailed() (task finishedTask, err error) {
@@ -318,6 +323,7 @@ func (eh *history) isNextWorkflowTaskFailed() (task finishedTask, err error) {
 		}
 		return finishedTask{
 			isFailed:       isFailed,
+			isCompleted:    nextEventType == enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED,
 			binaryChecksum: binaryChecksum,
 			flags:          flags,
 			sdkName:        nextEvent.GetWorkflowTaskCompletedEventAttributes().GetSdkMetadata().GetSdkName(),
@@ -390,7 +396,7 @@ func (eh *history) nextTask() (*preparedTask, error) {
 	var markers []*historypb.HistoryEvent
 	var acceptedMsgs []*protocolpb.Message
 	var buildID *string
-	if len(result) > 0 {
+	if len(result) > 0 && !eh.isBeyondQueryReplayBoundary(result[len(result)-1].GetEventId()) {
 		nextTaskEvents, err := eh.prepareTask()
 		if err != nil {
 			return nil, err
@@ -485,10 +491,21 @@ OrderEvents:
 
 		switch event.GetEventType() {
 		case enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED:
+			// Read ahead for the query's last task's markers without inspecting a later task's completion.
+			if eh.isBeyondQueryReplayBoundary(eventID) {
+				eh.currentIndex++
+				taskEvents.events = append(taskEvents.events, event)
+				break OrderEvents
+			}
 			finishedTask, err1 := eh.isNextWorkflowTaskFailed()
 			if err1 != nil {
 				err := err1
 				return nil, err
+			}
+			if eh.workflowTask.task.Query != nil && eventID == eh.workflowTask.task.GetPreviousStartedEventId() &&
+				!finishedTask.isCompleted {
+				return nil, fmt.Errorf("cannot replay query %q: workflow task started at event %d has not completed",
+					eh.workflowTask.task.Query.GetQueryType(), eventID)
 			}
 			if !finishedTask.isFailed {
 				eh.binaryChecksum = finishedTask.binaryChecksum
@@ -779,8 +796,9 @@ func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *workflowservice.
 		// Use the original execution run ID from the start event as the initial seed.
 		// Original execution run ID stays the same for the entire chain of workflow resets.
 		// This helps us keep child workflow IDs consistent up until a reset-point is encountered.
-		currentRunID: attributes.GetOriginalExecutionRunId(),
-		Priority:     convertFromPBPriority(attributes.Priority),
+		currentRunID:                        attributes.GetOriginalExecutionRunId(),
+		Priority:                            convertFromPBPriority(attributes.Priority),
+		propagatedNexusSerializationContext: attributes.GetPropagatedNexusSerializationContext(),
 	}
 
 	return newWorkflowExecutionContext(workflowInfo, wth), nil
@@ -1096,6 +1114,8 @@ func (w *workflowExecutionContextImpl) ProcessWorkflowTask(workflowTask *workflo
 	eventHandler.sdkFlags.markSDKFlagsSent()
 
 	w.workflowInfo.currentTaskBuildID = w.wth.workerBuildID
+	// Cache-hit queries already have state; reconstructed queries must reach the advertised completed task.
+	queryReplayBoundaryReached := task.Query == nil || len(task.History.Events) == 0
 ProcessEvents:
 	for {
 		nextTask, err := reorderedHistory.nextTask()
@@ -1110,7 +1130,12 @@ ProcessEvents:
 		nextTaskBuildId := nextTask.buildID
 		admittedUpdates := nextTask.admittedMsgs
 
-		// Peak ahead to confirm there are no more events
+		if len(reorderedEvents) > 0 &&
+			reorderedHistory.isBeyondQueryReplayBoundary(reorderedEvents[len(reorderedEvents)-1].GetEventId()) {
+			break ProcessEvents
+		}
+
+		// Peek ahead to confirm there are no more events.
 		isLastWFTForPartialWFE := len(reorderedEvents) > 0 &&
 			reorderedEvents[len(reorderedEvents)-1].EventType == enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED &&
 			len(reorderedHistory.next) == 0 &&
@@ -1232,6 +1257,10 @@ ProcessEvents:
 			if err != nil {
 				return nil, err
 			}
+			if event.GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED &&
+				event.GetEventId() == task.GetPreviousStartedEventId() {
+				queryReplayBoundaryReached = true
+			}
 			if w.isWorkflowCompleted && !shouldForceReplayCheck() {
 				break ProcessEvents
 			}
@@ -1267,6 +1296,10 @@ ProcessEvents:
 			}
 			eventHandler.outbox = nil
 		}
+		// Apply the target task's markers before stopping, without requesting a later batch.
+		if task.Query != nil && queryReplayBoundaryReached {
+			break ProcessEvents
+		}
 	}
 
 	if partialHistory && curReplayCmdsIndex != -1 {
@@ -1276,6 +1309,11 @@ ProcessEvents:
 	if metricsTimer != nil {
 		metricsTimer.Record(time.Since(start))
 		metricsTimer = nil
+	}
+
+	if !queryReplayBoundaryReached && w.err == nil {
+		return nil, fmt.Errorf("cannot replay query %q: history did not reach workflow task started at event %d",
+			task.Query.GetQueryType(), task.GetPreviousStartedEventId())
 	}
 
 	// Non-deterministic error could happen in 2 different places:
@@ -1931,6 +1969,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 			InheritBuildId:            useCompat,
 			InitialVersioningBehavior: continueAsNewVersioningBehaviorToProto(contErr.InitialVersioningBehavior),
 		}}
+		closeCommand.EventGroupMarkers = contErr.eventGroupMarkers
 	} else if workflowContext.err != nil {
 		// Workflow failures
 		if !isBenignApplicationError(workflowContext.err) {
@@ -1938,11 +1977,11 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		}
 		closeCommand = createNewCommand(enumspb.COMMAND_TYPE_FAIL_WORKFLOW_EXECUTION)
 		wfInfo := eventHandler.workflowInfo
-		wfCtx := converter.WorkflowSerializationContext{
+		serializationContext := serializationContextFor(converter.WorkflowSerializationContext{
 			Namespace:  wfInfo.Namespace,
 			WorkflowID: wfInfo.WorkflowExecution.ID,
-		}
-		fc := converter.WithFailureConverterSerializationContext(wth.failureConverter, wfCtx)
+		}, wfInfo.propagatedNexusSerializationContext)
+		fc := converter.WithFailureConverterSerializationContext(wth.failureConverter, serializationContext)
 		failure := fc.ErrorToFailure(workflowContext.err)
 		closeCommand.Attributes = &commandpb.Command_FailWorkflowExecutionCommandAttributes{FailWorkflowExecutionCommandAttributes: &commandpb.FailWorkflowExecutionCommandAttributes{
 			Failure: failure,
@@ -2383,15 +2422,18 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 			)
 		}
 	})
-	actCtx := converter.ActivitySerializationContext{
+	// The result and failure use the propagated Nexus context, because they are returned to the Nexus
+	// caller. WithActivityTask applies the same choice to heartbeat details and the activity context to input.
+	activityContext := converter.ActivitySerializationContext{
 		Namespace:    ath.namespace,
 		WorkflowID:   t.WorkflowExecution.GetWorkflowId(),
 		WorkflowType: t.WorkflowType.GetName(),
 		ActivityType: t.ActivityType.GetName(),
 		TaskQueue:    taskQueue,
 	}
-	dataConverter := converter.WithDataConverterSerializationContext(ath.dataConverter, actCtx)
-	failureConverter := converter.WithFailureConverterSerializationContext(ath.failureConverter, actCtx)
+	serializationContext := serializationContextFor(activityContext, t.GetPropagatedNexusSerializationContext())
+	dataConverter := converter.WithDataConverterSerializationContext(ath.dataConverter, serializationContext)
+	failureConverter := converter.WithFailureConverterSerializationContext(ath.failureConverter, serializationContext)
 
 	// The root context is only cancelled when the worker is finished shutting down.
 	rootCtx := ath.backgroundContext
@@ -2467,7 +2509,8 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 	}()
 
 	// propagate context information into the activity context from the headers
-	ctx, err = contextWithHeaderPropagated(ctx, t.Header, ath.contextPropagators)
+	headerCodec := bindHeaderCodec(headerCodecFromDataConverter(ath.dataConverter), activityContext)
+	ctx, err = contextWithHeaderPropagated(ctx, t.Header, ath.contextPropagators, headerCodec)
 	if err != nil {
 		return activityTaskResult{}, err
 	}

@@ -12,6 +12,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	commonpb "go.temporal.io/api/common/v1"
+	sdk "go.temporal.io/api/sdk/v1"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
@@ -50,6 +51,7 @@ type (
 		DisableEagerExecution  bool
 		VersioningIntent       VersioningIntent
 		Summary                string
+		eventGroups            []EventGroup
 		Priority               *commonpb.Priority
 		// ScheduleID must be generated before serialization to give
 		// codecs/converters access to ActivityID, while maintaining
@@ -63,30 +65,33 @@ type (
 		StartToCloseTimeout    time.Duration
 		RetryPolicy            *RetryPolicy
 		Summary                string
+		eventGroups            []EventGroup
 	}
 
 	// ExecuteActivityParams parameters for executing an activity
 	ExecuteActivityParams struct {
 		ExecuteActivityOptions
-		ActivityType     ActivityType
-		Input            *commonpb.Payloads
-		DataConverter    converter.DataConverter    // context-aware DC from ExecuteActivity
-		FailureConverter converter.FailureConverter // context-aware FC from ExecuteActivity
-		Header           *commonpb.Header
+		ActivityType      ActivityType
+		Input             *commonpb.Payloads
+		DataConverter     converter.DataConverter    // context-aware DC from ExecuteActivity
+		FailureConverter  converter.FailureConverter // context-aware FC from ExecuteActivity
+		Header            *commonpb.Header
+		EventGroupMarkers []*sdk.EventGroupMarker
 	}
 
 	// ExecuteLocalActivityParams parameters for executing a local activity
 	ExecuteLocalActivityParams struct {
 		ExecuteLocalActivityOptions
-		ActivityFn       any    // local activity function pointer
-		ActivityType     string // local activity type
-		InputArgs        []any
-		WorkflowInfo     *WorkflowInfo
-		DataConverter    converter.DataConverter    // context-aware DC from ExecuteLocalActivity
-		FailureConverter converter.FailureConverter // context-aware FC from ExecuteLocalActivity
-		Attempt          int32
-		ScheduledTime    time.Time
-		Header           *commonpb.Header
+		ActivityFn        any    // local activity function pointer
+		ActivityType      string // local activity type
+		InputArgs         []any
+		WorkflowInfo      *WorkflowInfo
+		DataConverter     converter.DataConverter    // context-aware DC from ExecuteLocalActivity
+		FailureConverter  converter.FailureConverter // context-aware FC from ExecuteLocalActivity
+		Attempt           int32
+		ScheduledTime     time.Time
+		Header            *commonpb.Header
+		EventGroupMarkers []*sdk.EventGroupMarker
 	}
 
 	// AsyncActivityClient for requesting activity execution
@@ -110,32 +115,35 @@ type (
 	}
 
 	activityEnvironment struct {
-		taskToken              []byte
-		workflowExecution      WorkflowExecution
-		activityID             string
-		activityType           ActivityType
-		serviceInvoker         ServiceInvoker
-		logger                 log.Logger
-		metricsHandler         metrics.Handler
-		isLocalActivity        bool
-		heartbeatTimeout       time.Duration
-		scheduleToCloseTimeout time.Duration
-		startToCloseTimeout    time.Duration
-		deadline               time.Time
-		scheduledTime          time.Time
-		startedTime            time.Time
-		taskQueue              string
-		dataConverter          converter.DataConverter
-		attempt                int32 // starts from 1.
-		heartbeatDetails       *commonpb.Payloads
-		workflowType           *WorkflowType
-		namespace              string
-		workerStopChannel      <-chan struct{}
-		contextPropagators     []ContextPropagator
-		client                 *WorkflowClient
-		priority               *commonpb.Priority
-		retryPolicy            *RetryPolicy
-		activityRunID          string
+		taskToken                 []byte
+		workflowExecution         WorkflowExecution
+		activityID                string
+		activityType              ActivityType
+		serviceInvoker            ServiceInvoker
+		logger                    log.Logger
+		metricsHandler            metrics.Handler
+		isLocalActivity           bool
+		heartbeatTimeout          time.Duration
+		scheduleToCloseTimeout    time.Duration
+		startToCloseTimeout       time.Duration
+		deadline                  time.Time
+		scheduledTime             time.Time
+		startedTime               time.Time
+		taskQueue                 string
+		dataConverter             converter.DataConverter
+		callerFacingDataConverter converter.DataConverter // result and heartbeat details; nil means dataConverter
+		attempt                   int32                   // starts from 1.
+		heartbeatDetails          *commonpb.Payloads
+		workflowType              *WorkflowType
+		namespace                 string
+		workerStopChannel         <-chan struct{}
+		contextPropagators        []ContextPropagator
+		client                    *WorkflowClient
+		priority                  *commonpb.Priority
+		retryPolicy               *RetryPolicy
+		activityRunID             string
+		// nil unless a Nexus handler started this activity
+		nexusSerializationContext *converter.NexusSerializationContext
 	}
 
 	// context.WithValue need this type instead of basic type string to avoid lint error
@@ -363,26 +371,34 @@ func (a *activityEnvironmentInterceptor) GetInfo(ctx context.Context) ActivityIn
 		workflowNamespace = a.env.namespace
 	}
 
+	var nexusSerializationContext *converter.NexusSerializationContext
+	if a.env.nexusSerializationContext != nil {
+		// Copy so callers can't mutate the environment's context.
+		nexusContext := *a.env.nexusSerializationContext
+		nexusSerializationContext = &nexusContext
+	}
+
 	return ActivityInfo{
-		ActivityID:             a.env.activityID,
-		ActivityType:           a.env.activityType,
-		TaskToken:              a.env.taskToken,
-		WorkflowExecution:      a.env.workflowExecution,
-		HeartbeatTimeout:       a.env.heartbeatTimeout,
-		ScheduleToCloseTimeout: a.env.scheduleToCloseTimeout,
-		StartToCloseTimeout:    a.env.startToCloseTimeout,
-		Deadline:               a.env.deadline,
-		ScheduledTime:          a.env.scheduledTime,
-		StartedTime:            a.env.startedTime,
-		TaskQueue:              a.env.taskQueue,
-		Namespace:              a.env.namespace,
-		Attempt:                a.env.attempt,
-		WorkflowType:           a.env.workflowType,
-		WorkflowNamespace:      workflowNamespace,
-		IsLocalActivity:        a.env.isLocalActivity,
-		Priority:               convertFromPBPriority(a.env.priority),
-		RetryPolicy:            a.env.retryPolicy,
-		ActivityRunID:          a.env.activityRunID,
+		ActivityID:                a.env.activityID,
+		ActivityType:              a.env.activityType,
+		TaskToken:                 a.env.taskToken,
+		WorkflowExecution:         a.env.workflowExecution,
+		HeartbeatTimeout:          a.env.heartbeatTimeout,
+		ScheduleToCloseTimeout:    a.env.scheduleToCloseTimeout,
+		StartToCloseTimeout:       a.env.startToCloseTimeout,
+		Deadline:                  a.env.deadline,
+		ScheduledTime:             a.env.scheduledTime,
+		StartedTime:               a.env.startedTime,
+		TaskQueue:                 a.env.taskQueue,
+		Namespace:                 a.env.namespace,
+		Attempt:                   a.env.attempt,
+		WorkflowType:              a.env.workflowType,
+		WorkflowNamespace:         workflowNamespace,
+		IsLocalActivity:           a.env.isLocalActivity,
+		Priority:                  convertFromPBPriority(a.env.priority),
+		RetryPolicy:               a.env.retryPolicy,
+		ActivityRunID:             a.env.activityRunID,
+		NexusSerializationContext: nexusSerializationContext,
 	}
 }
 
@@ -403,7 +419,7 @@ func (a *activityEnvironmentInterceptor) RecordHeartbeat(ctx context.Context, de
 	var err error
 	// We would like to be able to pass in "nil" as part of details(that is no progress to report to)
 	if len(details) > 1 || (len(details) == 1 && details[0] != nil) {
-		data, err = encodeArgs(getDataConverterFromActivityCtx(ctx), details)
+		data, err = encodeArgs(callerFacingDataConverterFromActivityCtx(ctx), details)
 		if err != nil {
 			panic(err)
 		}
@@ -421,7 +437,7 @@ func (a *activityEnvironmentInterceptor) GetHeartbeatDetails(ctx context.Context
 	if a.env.heartbeatDetails == nil {
 		return ErrNoData
 	}
-	encoded := newEncodedValues(a.env.heartbeatDetails, a.env.dataConverter)
+	encoded := newEncodedValues(a.env.heartbeatDetails, callerFacingDataConverterFromActivityCtx(ctx))
 	return encoded.Get(d...)
 }
 

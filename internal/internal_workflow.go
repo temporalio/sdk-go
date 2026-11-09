@@ -18,7 +18,7 @@ import (
 
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
-	"go.temporal.io/api/sdk/v1"
+	sdk "go.temporal.io/api/sdk/v1"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
@@ -196,6 +196,7 @@ type (
 		OnConflictOptions        *OnConflictOptions
 		DataConverter            converter.DataConverter
 		RootDataConverter        converter.DataConverter
+		headerCodec              converter.PayloadCodec
 		RetryPolicy              *commonpb.RetryPolicy
 		Priority                 *commonpb.Priority
 		CronSchedule             string
@@ -206,6 +207,7 @@ type (
 		ParentClosePolicy        enumspb.ParentClosePolicy
 		StaticSummary            string
 		StaticDetails            string
+		eventGroups              []EventGroup
 		signalChannels           map[string]Channel
 		requestedSignalChannels  map[string]*requestedSignalChannel
 		queryHandlers            map[string]*queryHandler
@@ -231,6 +233,7 @@ type (
 		attempt              int32                      // used by test framework to support child workflow retry
 		scheduledTime        time.Time                  // used by test framework to support child workflow retry
 		lastCompletionResult *commonpb.Payloads         // used by test framework to support cron
+		EventGroupMarkers    []*sdk.EventGroupMarker
 	}
 
 	// decodeFutureImpl
@@ -490,6 +493,19 @@ func (f *childWorkflowFutureImpl) SignalChildWorkflow(ctx Context, signalName st
 	return i.SignalChildWorkflow(ctx, childExec.ID, signalName, data)
 }
 
+func (f *childWorkflowFutureImpl) SignalChildWorkflowWithOptions(ctx Context, signalName string, data any, options SignalChildWorkflowOptions) Future {
+	assertNotInReadOnlyState(ctx)
+	var childExec WorkflowExecution
+	if err := f.GetChildWorkflowExecution().Get(ctx, &childExec); err != nil {
+		return f.GetChildWorkflowExecution()
+	}
+
+	i := getWorkflowOutboundInterceptor(ctx)
+	// Put header on context before executing
+	ctx = workflowContextWithNewHeader(ctx)
+	return i.SignalChildWorkflowWithOptions(ctx, childExec.ID, signalName, data, options)
+}
+
 func (f *nexusOperationFutureImpl) GetNexusOperationExecution() Future {
 	return f.executionFuture
 }
@@ -512,6 +528,7 @@ func newWorkflowContext(
 	ctx = WithTaskQueue(ctx, info.TaskQueueName)
 	ctx = WithDataConverter(ctx, env.GetDataConverter())
 	getWorkflowEnvOptions(ctx).RootDataConverter = rootDataConverterFromEnvironment(env)
+	getWorkflowEnvOptions(ctx).headerCodec = headerCodecFromDataConverter(getWorkflowEnvOptions(ctx).RootDataConverter)
 	ctx = withContextPropagators(ctx, env.GetContextPropagators())
 	getActivityOptions(ctx).OriginalTaskQueueName = info.TaskQueueName
 
@@ -1639,16 +1656,43 @@ func GetDataConverterFromWorkflowContext(ctx Context) converter.DataConverter {
 	return WithWorkflowContext(ctx, dataConverter)
 }
 
-// withRootDataConverterSerializationContext applies sc to the worker-configured
-// data converter, before any other serialization context, and only then binds it
-// to the workflow context. Binding first would hand sc to a converter that is no
-// longer serialization context aware, silently dropping it.
+// withRootDataConverterSerializationContext applies sc to the effective root
+// data converter and then binds it to the workflow context.
 func withRootDataConverterSerializationContext(ctx Context, sc converter.SerializationContext) converter.DataConverter {
 	options := getWorkflowEnvOptions(ctx)
-	if options == nil || options.RootDataConverter == nil {
-		return converter.WithDataConverterSerializationContext(GetDataConverterFromWorkflowContext(ctx), sc)
+	var dc converter.DataConverter
+
+	if options != nil && options.RootDataConverter != nil {
+		dc = options.RootDataConverter
+	} else if options != nil && options.DataConverter != nil {
+		dc = options.DataConverter
+	} else {
+		dc = converter.GetDefaultDataConverter()
 	}
-	return WithWorkflowContext(ctx, converter.WithDataConverterSerializationContext(options.RootDataConverter, sc))
+
+	if sc != nil {
+		dc = converter.WithDataConverterSerializationContext(dc, sc)
+	}
+	return WithWorkflowContext(ctx, dc)
+}
+
+func withRootFailureConverterSerializationContext(ctx Context, sc converter.SerializationContext) converter.FailureConverter {
+	env := GetWorkflowEnvironment(ctx)
+	fc := rootFailureConverterFromEnvironment(env)
+	if sc != nil {
+		fc = converter.WithFailureConverterSerializationContext(fc, sc)
+	}
+	return fc
+}
+
+// resultDataConverter returns the data converter for the workflow's result, which is forwarded to
+// the Nexus caller when the workflow was started by a Nexus handler. See serializationContextFor.
+func resultDataConverter(ctx Context) converter.DataConverter {
+	propagated := GetWorkflowEnvironment(ctx).WorkflowInfo().propagatedNexusSerializationContext
+	if propagated == nil {
+		return GetDataConverterFromWorkflowContext(ctx)
+	}
+	return withRootDataConverterSerializationContext(ctx, nexusSerializationContextFromProto(propagated))
 }
 
 func rootDataConverterFromEnvironment(env WorkflowEnvironment) converter.DataConverter {
@@ -1660,8 +1704,7 @@ func rootDataConverterFromEnvironment(env WorkflowEnvironment) converter.DataCon
 	return env.GetDataConverter()
 }
 
-func getRootFailureConverterFromWorkflowContext(ctx Context) converter.FailureConverter {
-	env := GetWorkflowEnvironment(ctx)
+func rootFailureConverterFromEnvironment(env WorkflowEnvironment) converter.FailureConverter {
 	if root, ok := env.(interface {
 		GetRootFailureConverter() converter.FailureConverter
 	}); ok {
@@ -1837,9 +1880,8 @@ func setUpdateHandler(ctx Context, updateName string, handler any, opts UpdateHa
 		return err
 	}
 	eo := getWorkflowEnvOptions(ctx)
-	// Data and Failure converter wrapped with WorkflowSerializationContext in newWorkflowExecutionEventHandler.
+	// Data converter wrapped with WorkflowSerializationContext in newWorkflowExecutionEventHandler.
 	uh.dataConverter = GetWorkflowEnvironment(ctx).GetDataConverter()
-	uh.failureConverter = GetWorkflowEnvironment(ctx).GetFailureConverter()
 	eo.updateHandlers[updateName] = uh
 	if GetWorkflowEnvironment(ctx).TryUse(SDKPriorityUpdateHandling) {
 		GetWorkflowEnvironment(ctx).HandleQueuedUpdates(updateName)

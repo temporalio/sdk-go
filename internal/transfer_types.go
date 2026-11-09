@@ -5,10 +5,11 @@ import (
 	commonconverter "go.temporal.io/sdk/internal/common/converter"
 )
 
-// The default data converter, wrapped so it supports transfer type conversion.
-// For values that don't implement [converter.ValueWithTransferTypeConverter], this
-// behaves the same as [converter.GetDefaultDataConverter].
-var DefaultInternalDataConverter = MakeTransferAware(converter.GetDefaultDataConverter())
+// systemNexusDataConverter is a transfer-aware proto binary converter,
+// used to encode System Nexus requests and responses to/from the server.
+var systemNexusDataConverter = MakeTransferAware(
+	converter.NewCompositeDataConverter(converter.NewProtoPayloadConverter()),
+)
 
 // MakeTransferAware wraps dc to support transfer type conversion. A nil dc uses
 // converter.GetDefaultDataConverter; an already transfer-aware converter is unchanged.

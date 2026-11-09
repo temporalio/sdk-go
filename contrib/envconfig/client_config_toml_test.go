@@ -196,6 +196,67 @@ func TestClientConfigTOMLAdditionalProfileFieldsConflict(t *testing.T) {
 	require.ErrorContains(t, err, "additional field \"address\" in profile \"foo\" conflicts with known profile field")
 }
 
+func TestClientConfigTOMLExt(t *testing.T) {
+	data := `
+[profile.foo]
+address = "my-address"
+
+[profile.foo.ext.first]
+str = "value"
+num = 42
+list = ["a", "b"]
+
+[profile.foo.ext.first.nested]
+deep = true
+
+[profile.foo.ext.second]
+
+[profile.bar.ext.first]
+str = "bar-value"`
+
+	// Strict mode accepts ext tables, and they're not reported as additional fields
+	var conf ClientConfig
+	additional := make(map[string]map[string]any)
+	require.NoError(t, conf.FromTOML([]byte(data), ClientConfigFromTOMLOptions{
+		Strict:                  true,
+		AdditionalProfileFields: additional,
+	}))
+	require.Empty(t, additional)
+	require.Equal(t, map[string]map[string]any{
+		"first": {
+			"str":    "value",
+			"num":    int64(42),
+			"list":   []any{"a", "b"},
+			"nested": map[string]any{"deep": true},
+		},
+		"second": {},
+	}, conf.Profiles["foo"].Ext)
+	require.Equal(t, map[string]map[string]any{"first": {"str": "bar-value"}}, conf.Profiles["bar"].Ext)
+
+	// Non-strict with additional fields doesn't capture ext either
+	conf = ClientConfig{}
+	require.NoError(t, conf.FromTOML([]byte(data), ClientConfigFromTOMLOptions{AdditionalProfileFields: additional}))
+	require.Empty(t, additional)
+
+	// Round trip
+	b, err := conf.ToTOML(ClientConfigToTOMLOptions{})
+	require.NoError(t, err)
+	var newConf ClientConfig
+	require.NoError(t, newConf.FromTOML(b, ClientConfigFromTOMLOptions{Strict: true}))
+	require.Equal(t, conf, newConf)
+
+	// Additional fields can't use ext
+	_, err = conf.ToTOML(ClientConfigToTOMLOptions{
+		AdditionalProfileFields: map[string]map[string]any{"foo": {"ext": map[string]any{}}},
+	})
+	require.ErrorContains(t, err, "conflicts with known profile field")
+
+	// Strict still rejects unknown keys alongside ext
+	err = conf.FromTOML([]byte(data+"\n[profile.foo.tls]\nunknown = 1"), ClientConfigFromTOMLOptions{Strict: true})
+	require.ErrorContains(t, err, "profile.foo.tls.unknown")
+	require.NotContains(t, err.Error(), "ext")
+}
+
 func TestKnownProfileKeysInSync(t *testing.T) {
 	// Extract keys from tomlClientConfigProfile's TOML tags using reflection
 	expected := make(map[string]bool)

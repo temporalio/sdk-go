@@ -88,7 +88,8 @@ var _ ClientPlugin = struct {
 // simpler [go.temporal.io/sdk/temporal.SimplePlugin] instead.
 //
 // All worker plugins must embed [go.temporal.io/sdk/worker.PluginBase]. All
-// plugins must implement Name().
+// plugins must implement Name(). Plugins may also implement Version() string,
+// which worker heartbeats report next to the name.
 //
 // Exposed as: [go.temporal.io/sdk/worker.Plugin]
 type WorkerPlugin interface {
@@ -310,6 +311,10 @@ type SimplePluginOptions struct {
 	// Name is the required name of the plugin.
 	Name string
 
+	// Version is the optional version of the plugin, reported in worker
+	// heartbeats.
+	Version string
+
 	// DataConverter, if set, overrides any user-set or previous-plugin-set data
 	// converter on client or replayer options. Use ConfigureClient or
 	// ConfigureWorkflowReplayer if needing to react to existing options instead
@@ -467,6 +472,8 @@ func (*SimplePlugin) mustEmbedClientPluginBase() {}
 func (*SimplePlugin) mustEmbedWorkerPluginBase() {}
 
 func (s *SimplePlugin) Name() string { return s.options.Name }
+
+func (s *SimplePlugin) Version() string { return s.options.Version }
 
 func (s *SimplePlugin) ConfigureClient(ctx context.Context, options ClientPluginConfigureClientOptions) error {
 	if s.options.DataConverter != nil {

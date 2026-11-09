@@ -691,6 +691,373 @@ func (t *TaskHandlersTestSuite) TestStickyLegacyQueryTaskOnEvictedCache() {
 	params.cache.getWorkflowCache().Delete(task.WorkflowExecution.RunId)
 }
 
+func (t *TaskHandlersTestSuite) TestQueryTaskReplayWithStaleBoundary() {
+	const workflowName = "query-stale-replay-boundary"
+	// Adapted from the timer-to-activity reproduction in https://github.com/temporalio/sdk-go/issues/755.
+	queryWorkflow := func(ctx Context) error {
+		state := "waiting on timer"
+		if err := SetQueryHandler(ctx, "state", func() (string, error) {
+			return state, nil
+		}); err != nil {
+			return err
+		}
+		if err := NewTimer(ctx, 2*time.Minute).Get(ctx, nil); err != nil {
+			return err
+		}
+		state = "waiting on activity"
+		ctx = WithActivityOptions(ctx, ActivityOptions{StartToCloseTimeout: 10 * time.Second})
+		return ExecuteActivity(ctx, "Greeter_Activity").Get(ctx, nil)
+	}
+	t.registry.RegisterWorkflowWithOptions(queryWorkflow, RegisterWorkflowOptions{Name: workflowName})
+
+	events := []*historypb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
+			TaskQueue: &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue},
+		}),
+		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(3),
+		createTestEventWorkflowTaskCompleted(4, &historypb.WorkflowTaskCompletedEventAttributes{ScheduledEventId: 2}),
+		createTestEventTimerStarted(5, 5),
+		createTestEventTimerFired(6, 5),
+		createTestEventWorkflowTaskScheduled(7, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(8),
+		createTestEventWorkflowTaskCompleted(9, &historypb.WorkflowTaskCompletedEventAttributes{ScheduledEventId: 7}),
+		createTestEventActivityTaskScheduled(10, &historypb.ActivityTaskScheduledEventAttributes{
+			ActivityId:   "10",
+			ActivityType: &commonpb.ActivityType{Name: "Greeter_Activity"},
+			TaskQueue:    &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue},
+		}),
+	}
+	for _, tc := range []struct {
+		name                   string
+		sticky                 bool
+		paginated              bool
+		previousStartedEventID int64
+		futureTaskUnknownFlags bool
+		failFuturePage         bool
+		state                  string
+	}{
+		{name: "full history/first task", previousStartedEventID: 3, state: "waiting on timer"},
+		{name: "full history/second task", previousStartedEventID: 8, state: "waiting on activity"},
+		{name: "evicted sticky cache/first task", sticky: true, previousStartedEventID: 3, state: "waiting on timer"},
+		{name: "evicted sticky cache/second task", sticky: true, previousStartedEventID: 8, state: "waiting on activity"},
+		{name: "paginated cache miss/first task", sticky: true, paginated: true, previousStartedEventID: 3, state: "waiting on timer"},
+		{name: "paginated cache miss/second task", sticky: true, paginated: true, previousStartedEventID: 8, state: "waiting on activity"},
+		{name: "ignore future completion metadata", previousStartedEventID: 3, futureTaskUnknownFlags: true, state: "waiting on timer"},
+		{name: "ignore future history page", sticky: true, previousStartedEventID: 3, failFuturePage: true, state: "waiting on timer"},
+	} {
+		t.Run(tc.name, func() {
+			params := t.getTestWorkerExecutionParams()
+			taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
+			task := createWorkflowTaskWithQueries(events[:3], 0, workflowName, nil, false)
+			task.StartedEventId = 3
+			wftask := workflowTask{task: task}
+			wfctx := t.mustWorkflowContextImpl(&wftask, taskHandler)
+			completion, err := taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
+			wfctx.Unlock(err)
+			t.Require().NoError(err)
+			response := completion.rawRequest.(*workflowservice.RespondWorkflowTaskCompletedRequest)
+			t.Require().Len(response.Commands, 1)
+			t.Equal(enumspb.COMMAND_TYPE_START_TIMER, response.Commands[0].GetCommandType())
+
+			params.cache.getWorkflowCache().Delete(task.WorkflowExecution.RunId)
+			// The fetched history must not advance the workflow past the task advertised by the query.
+			queryEvents := events
+			if tc.futureTaskUnknownFlags {
+				queryEvents = append([]*historypb.HistoryEvent(nil), events...)
+				queryEvents[8] = createTestEventWorkflowTaskCompleted(9, &historypb.WorkflowTaskCompletedEventAttributes{
+					ScheduledEventId: 7,
+					SdkMetadata:      &sdk.WorkflowTaskCompletedMetadata{LangUsedFlags: []uint32{^uint32(0)}},
+				})
+			}
+			queryTask := createQueryTask(queryEvents, tc.previousStartedEventID, workflowName, "state")
+			queryTask.WorkflowExecution = task.WorkflowExecution
+			wftask = workflowTask{task: queryTask}
+			pagesLoaded := 0
+			if tc.sticky {
+				queryTask.History = &historypb.History{}
+				wftask.historyIterator = &historyIteratorImpl{
+					iteratorFunc: func(token []byte) (*historypb.History, []byte, error) {
+						pagesLoaded++
+						if tc.failFuturePage {
+							if len(token) == 0 {
+								return &historypb.History{Events: queryEvents[:8]}, []byte("future-page"), nil
+							}
+							return nil, nil, errors.New("query replay fetched history past its boundary")
+						}
+						if tc.paginated {
+							if len(token) == 0 {
+								return &historypb.History{Events: queryEvents[:5]}, []byte("next-page"), nil
+							}
+							return &historypb.History{Events: queryEvents[5:]}, nil, nil
+						}
+						return &historypb.History{Events: queryEvents}, nil, nil
+					},
+				}
+			}
+			wfctx = t.mustWorkflowContextImpl(&wftask, taskHandler)
+			completion, err = taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
+			wfctx.Unlock(err)
+			t.Require().NoError(err)
+			t.verifyQueryResult(completion, tc.state)
+			if tc.paginated {
+				t.Equal(2, pagesLoaded)
+			} else if tc.sticky {
+				t.Equal(1, pagesLoaded)
+			}
+		})
+	}
+}
+
+func (t *TaskHandlersTestSuite) TestQueryTaskReplayWithInProgressWorkflowTask() {
+	const workflowName = "query-in-progress-workflow-task"
+	sideEffectCalls := 0
+	queryWorkflow := func(ctx Context) error {
+		state := "waiting on timer"
+		if err := SetQueryHandler(ctx, "state", func() (string, error) {
+			return state, nil
+		}); err != nil {
+			return err
+		}
+		if err := NewTimer(ctx, 2*time.Minute).Get(ctx, nil); err != nil {
+			return err
+		}
+		var result int
+		if err := SideEffect(ctx, func(Context) interface{} {
+			sideEffectCalls++
+			return 42
+		}).Get(&result); err != nil {
+			return err
+		}
+		state = "after side effect"
+		return NewTimer(ctx, time.Minute).Get(ctx, nil)
+	}
+	t.registry.RegisterWorkflowWithOptions(queryWorkflow, RegisterWorkflowOptions{Name: workflowName})
+	events := []*historypb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
+			TaskQueue: &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue},
+		}),
+		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(3),
+		createTestEventWorkflowTaskCompleted(4, &historypb.WorkflowTaskCompletedEventAttributes{ScheduledEventId: 2}),
+		createTestEventTimerStarted(5, 5),
+		createTestEventTimerFired(6, 5),
+		createTestEventWorkflowTaskScheduled(7, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(8),
+		createTestEventWorkflowTaskCompleted(9, &historypb.WorkflowTaskCompletedEventAttributes{ScheduledEventId: 7}),
+		createTestEventSideEffectMarker(10, 9, 1, 42),
+		createTestEventTimerStarted(11, 11),
+	}
+	for _, tc := range []struct {
+		name                   string
+		eventEnd               int
+		previousStartedEventID int64
+		paginated              bool
+		state                  string
+	}{
+		{name: "scheduled", eventEnd: 7, previousStartedEventID: 3, state: "waiting on timer"},
+		{name: "started", eventEnd: 8, previousStartedEventID: 3, state: "waiting on timer"},
+		{name: "completed after query boundary", eventEnd: 11, previousStartedEventID: 3, state: "waiting on timer"},
+		{name: "completed at query boundary", eventEnd: 11, previousStartedEventID: 8, state: "after side effect"},
+		{name: "marker on next page", eventEnd: 11, previousStartedEventID: 8, paginated: true, state: "after side effect"},
+	} {
+		t.Run(tc.name, func() {
+			task := createQueryTask(nil, tc.previousStartedEventID, workflowName, "state")
+			wftask := workflowTask{
+				task: task,
+				historyIterator: &historyIteratorImpl{
+					iteratorFunc: func(token []byte) (*historypb.History, []byte, error) {
+						if tc.paginated {
+							if len(token) == 0 {
+								return &historypb.History{Events: events[:8]}, []byte("next-page"), nil
+							}
+							return &historypb.History{Events: events[8:tc.eventEnd]}, nil, nil
+						}
+						return &historypb.History{Events: events[:tc.eventEnd]}, nil, nil
+					},
+				},
+			}
+			taskHandler := newWorkflowTaskHandler(t.getTestWorkerExecutionParams(), nil, t.registry)
+			wfctx := t.mustWorkflowContextImpl(&wftask, taskHandler)
+			completion, err := taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
+			wfctx.Unlock(err)
+			t.Require().NoError(err)
+			t.verifyQueryResult(completion, tc.state)
+			t.Zero(sideEffectCalls, "query replay must not execute side effects")
+		})
+	}
+}
+
+func (t *TaskHandlersTestSuite) TestQueryTaskReplayRequiresAdvertisedTask() {
+	const workflowName = "query-replay-requires-advertised-task"
+	workflowCalls, queryCalls := 0, 0
+	queryWorkflow := func(ctx Context) error {
+		workflowCalls++
+		if err := SetQueryHandler(ctx, "state", func() (string, error) {
+			queryCalls++
+			return "waiting", nil
+		}); err != nil {
+			return err
+		}
+		return Await(ctx, func() bool { return false })
+	}
+	t.registry.RegisterWorkflowWithOptions(queryWorkflow, RegisterWorkflowOptions{Name: workflowName})
+	for _, tc := range []struct {
+		name                   string
+		previousStartedEventID int64
+		taskEnd                *historypb.HistoryEvent
+		paginated              bool
+		workflowCalls          int
+		err                    string
+	}{
+		{name: "no completed task", err: "history did not reach workflow task started at event 0"},
+		{
+			name:                   "advertised task missing",
+			previousStartedEventID: 8,
+			taskEnd:                createTestEventWorkflowTaskCompleted(4, &historypb.WorkflowTaskCompletedEventAttributes{ScheduledEventId: 2}),
+			workflowCalls:          1,
+			err:                    "history did not reach workflow task started at event 8",
+		},
+		{
+			name:                   "advertised task missing from paginated cache miss",
+			previousStartedEventID: 8,
+			taskEnd:                createTestEventWorkflowTaskCompleted(4, &historypb.WorkflowTaskCompletedEventAttributes{ScheduledEventId: 2}),
+			paginated:              true,
+			workflowCalls:          1,
+			err:                    "history did not reach workflow task started at event 8",
+		},
+		{name: "advertised task not completed", previousStartedEventID: 3, err: "workflow task started at event 3 has not completed"},
+		{
+			name:                   "advertised task failed",
+			previousStartedEventID: 3,
+			taskEnd:                createTestEventWorkflowTaskFailed(4, &historypb.WorkflowTaskFailedEventAttributes{}),
+			err:                    "workflow task started at event 3 has not completed",
+		},
+	} {
+		t.Run(tc.name, func() {
+			workflowCalls, queryCalls = 0, 0
+			events := []*historypb.HistoryEvent{
+				createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
+					TaskQueue: &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue},
+				}),
+				createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
+				createTestEventWorkflowTaskStarted(3),
+			}
+			if tc.taskEnd != nil {
+				events = append(events, tc.taskEnd)
+			}
+			wftask := workflowTask{task: createQueryTask(events, tc.previousStartedEventID, workflowName, "state")}
+			if tc.paginated {
+				wftask.task.History = &historypb.History{}
+				wftask.historyIterator = &historyIteratorImpl{
+					iteratorFunc: func(token []byte) (*historypb.History, []byte, error) {
+						if len(token) == 0 {
+							return &historypb.History{Events: events[:3]}, []byte("completion"), nil
+						}
+						return &historypb.History{Events: events[3:]}, nil, nil
+					},
+				}
+			}
+			taskHandler := newWorkflowTaskHandler(t.getTestWorkerExecutionParams(), nil, t.registry)
+			wfctx := t.mustWorkflowContextImpl(&wftask, taskHandler)
+			completion, err := taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
+			wfctx.Unlock(err)
+			t.Require().ErrorContains(err, tc.err)
+			t.Nil(completion)
+			t.Equal(tc.workflowCalls, workflowCalls)
+			t.Zero(queryCalls)
+		})
+	}
+}
+
+func (t *TaskHandlersTestSuite) TestQueryTaskReplayDoesNotProcessPendingSignal() {
+	const workflowName = "query-replay-pending-signal"
+	queryWorkflow := func(ctx Context) error {
+		state := "waiting"
+		if err := SetQueryHandler(ctx, "state", func() (string, error) {
+			return state, nil
+		}); err != nil {
+			return err
+		}
+		GetSignalChannel(ctx, "signal").Receive(ctx, nil)
+		state = "received"
+		return Await(ctx, func() bool { return false })
+	}
+	t.registry.RegisterWorkflowWithOptions(queryWorkflow, RegisterWorkflowOptions{Name: workflowName})
+
+	for _, closeEvent := range []struct {
+		name  string
+		event *historypb.HistoryEvent
+	}{
+		{name: "pending"},
+		{
+			name: "terminated",
+			event: &historypb.HistoryEvent{
+				EventId:   7,
+				EventType: enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_TERMINATED,
+				Attributes: &historypb.HistoryEvent_WorkflowExecutionTerminatedEventAttributes{
+					WorkflowExecutionTerminatedEventAttributes: &historypb.WorkflowExecutionTerminatedEventAttributes{},
+				},
+			},
+		},
+		{
+			name: "timed out",
+			event: &historypb.HistoryEvent{
+				EventId:   7,
+				EventType: enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_TIMED_OUT,
+				Attributes: &historypb.HistoryEvent_WorkflowExecutionTimedOutEventAttributes{
+					WorkflowExecutionTimedOutEventAttributes: &historypb.WorkflowExecutionTimedOutEventAttributes{},
+				},
+			},
+		},
+	} {
+		for _, historyMode := range []string{"full history", "cache miss", "paginated cache miss"} {
+			t.Run(closeEvent.name+"/"+historyMode, func() {
+				events := []*historypb.HistoryEvent{
+					createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
+						TaskQueue: &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue},
+					}),
+					createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
+					createTestEventWorkflowTaskStarted(3),
+					createTestEventWorkflowTaskCompleted(4, &historypb.WorkflowTaskCompletedEventAttributes{ScheduledEventId: 2}),
+					createTestEventWorkflowExecutionSignaled(5, "signal"),
+					createTestEventWorkflowTaskScheduled(6, &historypb.WorkflowTaskScheduledEventAttributes{}),
+				}
+				if closeEvent.event != nil {
+					events = append(events, closeEvent.event)
+				}
+				task := createQueryTask(events, 3, workflowName, "state")
+				wftask := workflowTask{task: task}
+				if historyMode != "full history" {
+					task.History = &historypb.History{}
+					wftask.historyIterator = &historyIteratorImpl{
+						iteratorFunc: func(token []byte) (*historypb.History, []byte, error) {
+							if historyMode == "paginated cache miss" {
+								if len(token) == 0 {
+									return &historypb.History{Events: events[:5]}, []byte("next-page"), nil
+								}
+								return &historypb.History{Events: events[5:]}, nil, nil
+							}
+							return &historypb.History{Events: events}, nil, nil
+						},
+					}
+				}
+				params := t.getTestWorkerExecutionParams()
+				taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
+				wfctx := t.mustWorkflowContextImpl(&wftask, taskHandler)
+				completion, err := taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
+				replaying := wfctx.getEventHandler().IsReplaying()
+				wfctx.Unlock(err)
+				t.Require().NoError(err)
+				t.verifyQueryResult(completion, "waiting")
+				t.True(replaying, "query reconstruction must remain replay")
+				t.Nil(params.cache.getWorkflowContext(task.WorkflowExecution.RunId))
+				t.True(wfctx.IsDestroyed())
+			})
+		}
+	}
+}
+
 func (t *TaskHandlersTestSuite) TestWorkflowTask_ActivityTaskScheduled() {
 	// Schedule an activity and see if we complete workflow.
 	taskQueue := "tq1"
@@ -802,12 +1169,13 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_QueryWorkflow_NonSticky() {
 		createTestEventActivityTaskStarted(6, &historypb.ActivityTaskStartedEventAttributes{}),
 		createTestEventActivityTaskCompleted(7, &historypb.ActivityTaskCompletedEventAttributes{ScheduledEventId: 5}),
 		createTestEventWorkflowTaskStarted(8),
-		createTestEventWorkflowExecutionSignaled(9, "test-signal"),
+		createTestEventWorkflowTaskCompleted(9, &historypb.WorkflowTaskCompletedEventAttributes{}),
+		createTestEventWorkflowExecutionSignaled(10, "test-signal"),
 	}
 	params := t.getTestWorkerExecutionParams()
 
-	// query after first workflow task (notice the previousStartEventID is always the last eventID for query task)
-	task := createQueryTask(testEvents[0:3], 3, "HelloWorld_Workflow", queryType)
+	// Query boundaries refer to the last completed workflow task's started event.
+	task := createQueryTask(testEvents[0:5], 3, "HelloWorld_Workflow", queryType)
 	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
 	wftask := workflowTask{task: task}
 	wfctx := t.mustWorkflowContextImpl(&wftask, taskHandler)
@@ -816,7 +1184,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_QueryWorkflow_NonSticky() {
 	t.verifyQueryResult(response, "waiting-activity-result")
 
 	// query after activity task complete but before second workflow task started
-	task = createQueryTask(testEvents[0:7], 7, "HelloWorld_Workflow", queryType)
+	task = createQueryTask(testEvents[0:7], 3, "HelloWorld_Workflow", queryType)
 	taskHandler = newWorkflowTaskHandler(params, nil, t.registry)
 	wftask = workflowTask{task: task}
 	wfctx = t.mustWorkflowContextImpl(&wftask, taskHandler)
@@ -825,7 +1193,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_QueryWorkflow_NonSticky() {
 	t.verifyQueryResult(response, "waiting-activity-result")
 
 	// query after second workflow task
-	task = createQueryTask(testEvents[0:8], 8, "HelloWorld_Workflow", queryType)
+	task = createQueryTask(testEvents[0:9], 8, "HelloWorld_Workflow", queryType)
 	taskHandler = newWorkflowTaskHandler(params, nil, t.registry)
 	wftask = workflowTask{task: task}
 	wfctx = t.mustWorkflowContextImpl(&wftask, taskHandler)
@@ -834,7 +1202,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_QueryWorkflow_NonSticky() {
 	t.verifyQueryResult(response, "done")
 
 	// query after second workflow task with extra events
-	task = createQueryTask(testEvents[0:9], 9, "HelloWorld_Workflow", queryType)
+	task = createQueryTask(testEvents, 8, "HelloWorld_Workflow", queryType)
 	taskHandler = newWorkflowTaskHandler(params, nil, t.registry)
 	wftask = workflowTask{task: task}
 	wfctx = t.mustWorkflowContextImpl(&wftask, taskHandler)
@@ -842,7 +1210,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_QueryWorkflow_NonSticky() {
 	wfctx.Unlock(err)
 	t.verifyQueryResult(response, "done")
 
-	task = createQueryTask(testEvents[0:9], 9, "HelloWorld_Workflow", "invalid-query-type")
+	task = createQueryTask(testEvents, 8, "HelloWorld_Workflow", "invalid-query-type")
 	taskHandler = newWorkflowTaskHandler(params, nil, t.registry)
 	wftask = workflowTask{task: task}
 	wfctx = t.mustWorkflowContextImpl(&wftask, taskHandler)
@@ -864,6 +1232,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_QueryResponseForwardsPollerGrou
 			TaskQueue: &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue},
 		}),
 		createTestEventWorkflowTaskStarted(3),
+		createTestEventWorkflowTaskCompleted(4, &historypb.WorkflowTaskCompletedEventAttributes{ScheduledEventId: 2}),
 	}
 	task := createQueryTask(testEvents, 3, "HelloWorld_Workflow", queryType)
 	task.PollerGroupId = "test-poller-group-42"
@@ -874,7 +1243,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_QueryResponseForwardsPollerGrou
 	response, err := taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
 	wfctx.Unlock(err)
 	t.NoError(err)
-	t.NotNil(response)
+	t.verifyQueryResult(response, "waiting-activity-result")
 
 	queryResp, ok := response.rawRequest.(*workflowservice.RespondQueryTaskCompletedRequest)
 	t.True(ok)
@@ -2062,6 +2431,30 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithError() {
 	heartbeatErr := temporalInvoker.Heartbeat(ctx, nil, false)
 	t.NotNil(heartbeatErr)
 	t.IsType(&serviceerror.NotFound{}, heartbeatErr, "heartbeatErr must be of type NotFound.")
+}
+
+func (t *TaskHandlersTestSuite) TestHeartBeat_DeadlineDoesNotCancelActivity() {
+	mockCtrl := gomock.NewController(t.T())
+	mockService := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
+	deadline := serviceerror.NewDeadlineExceeded("persistence timeout")
+	gomock.InOrder(
+		mockService.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, deadline),
+		mockService.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.RecordActivityTaskHeartbeatResponse{}, nil),
+	)
+
+	ctx, cancel := context.WithCancelCause(t.T().Context())
+	defer cancel(nil)
+	invoker := newServiceInvoker(
+		nil, "Test_Temporal_Invoker", mockService, metrics.NopHandler, cancel,
+		8*time.Second, make(chan struct{}), t.namespace, &atomic.Bool{}, nil, nil)
+	defer invoker.Close(t.T().Context(), false)
+	ctx, err := newActivityContext(ctx, nil, &activityEnvironment{serviceInvoker: invoker, logger: t.logger})
+	t.Require().NoError(err)
+
+	t.ErrorIs(invoker.Heartbeat(ctx, nil, false), deadline)
+	t.Require().NoError(ctx.Err())
+	t.NoError(invoker.Heartbeat(ctx, nil, false))
+	t.NoError(ctx.Err())
 }
 
 func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithNamespaceNotActiveError() {
