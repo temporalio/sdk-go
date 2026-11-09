@@ -68,6 +68,11 @@ to docs, or any other relevant information.
 
 ### :boom: Breaking Changes
 
+- When reconstructing state for a query delivered without any new history, the SDK no longer applies
+  input events, such as signals, that have not been processed by a completed workflow task. Replay stops
+  at the last completed workflow task advertised with the query, even if fetched history has advanced
+  further. This can change query results for closed workflows with pending signals. Reconstruction fails
+  if the advertised completed task is missing from history.
 - `workflow.NewContinueAsNewErrorWithOptions` now calls
   `interceptor.WorkflowOutboundInterceptor.NewContinueAsNewErrorWithOptions`
   directly. It previously went through `NewContinueAsNewError`, then applied
@@ -96,6 +101,8 @@ to docs, or any other relevant information.
   Like polled activities, eager activities now record this metric on receipt, including during worker shutdown.
 - Fixed a data race between dynamic workflow factory re-registration and workflow definition lookup
   in workers and `TestWorkflowEnvironment`.
+- Fixed queries delivered without any new history failing with an invalid state transition when a
+  workflow cache miss fetches history newer than the query task's replay boundary.
 - Fixed premature activity cancellation when a heartbeat RPC returns `DeadlineExceeded`.
   The SDK now preserves Temporal service error codes when deciding whether a heartbeat failure should cancel the activity.
 - Fixed concurrent dev-server CLI downloads failing on Windows when another process has already populated and started the cached executable.

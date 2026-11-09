@@ -13,6 +13,22 @@ or Security.
 
 ### Added
 
+### Changed
+
+### Deprecated
+
+### :boom: Breaking Changes
+
+### Fixed
+
+### Security
+
+## [1.1.0] - 2026-11-09
+
+### Added
+
+- AdditionalProfileFields allows for extra fields at any level of nesting
+  within a profile, rather than just the top level
 - Experimental client config extensions. Extensions implement `ClientConfigExtension`, read their own config from
   `profile.<profile>.ext.<name>` TOML tables (exposed as `ClientConfigProfile.Ext`) and env vars, and are passed via
   `LoadClientOptionsRequest.Extensions` to contribute client plugins to the loaded options. Strict mode does not
@@ -21,3 +37,5 @@ or Security.
 ### Breaking Changes
 
 - Raised the minimum supported Go version from 1.25.4 to 1.26.0.
+- Config files with duplicate array keys now return an error due to a bug fix in BurntSushi/toml v1.6.0.
+
