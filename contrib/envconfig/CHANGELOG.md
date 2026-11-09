@@ -14,7 +14,7 @@ or Security.
 ### Added
 
 - AdditionalProfileFields allows for extra fields at any level of nesting
-within a profile, rather than just the top level
+  within a profile, rather than just the top level
 - Experimental client config extensions. Extensions implement `ClientConfigExtension`, read their own config from
   `profile.<profile>.ext.<name>` TOML tables (exposed as `ClientConfigProfile.Ext`) and env vars, and are passed via
   `LoadClientOptionsRequest.Extensions` to contribute client plugins to the loaded options. Strict mode does not
