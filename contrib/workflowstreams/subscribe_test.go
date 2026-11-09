@@ -11,8 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
-	workflowpb "go.temporal.io/api/workflow/v1"
-	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/temporal"
@@ -34,7 +32,7 @@ type pollStep struct {
 // terminal end, so a test that forgets to break can't spin forever.
 var errStepsExhausted = errors.New("fake: poll steps exhausted")
 
-// fakeSubClient scripts UpdateWorkflow/DescribeWorkflowExecution responses so the
+// fakeSubClient scripts UpdateWorkflow/DescribeWorkflow responses so the
 // Subscribe polling loop can be exercised without a server. Embedding
 // client.Client satisfies the rest of the interface; the unused methods panic if
 // called, which the subscribe tests never do.
@@ -46,10 +44,10 @@ type fakeSubClient struct {
 	idx   int
 	polls []PollInput // PollInput captured per UpdateWorkflow call, in order
 
-	// describeByRun maps a run id to the status DescribeWorkflowExecution reports
+	// describeByRun maps a run id to the status DescribeWorkflow reports
 	// for it. A run not present defaults to COMPLETED, so loops terminate cleanly.
 	describeByRun map[string]enumspb.WorkflowExecutionStatus
-	describeRuns  []string // run ids passed to DescribeWorkflowExecution, in order
+	describeRuns  []string // run ids passed to DescribeWorkflow, in order
 	describeErr   error
 }
 
@@ -68,7 +66,7 @@ func (f *fakeSubClient) UpdateWorkflow(_ context.Context, options client.UpdateW
 	return &fakeUpdateHandle{runID: step.runID, result: step.result, err: step.getErr}, nil
 }
 
-func (f *fakeSubClient) DescribeWorkflowExecution(_ context.Context, _, runID string) (*workflowservice.DescribeWorkflowExecutionResponse, error) {
+func (f *fakeSubClient) DescribeWorkflow(_ context.Context, _, runID string) (*client.WorkflowExecutionDescription, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.describeRuns = append(f.describeRuns, runID)
@@ -79,8 +77,8 @@ func (f *fakeSubClient) DescribeWorkflowExecution(_ context.Context, _, runID st
 	if !ok {
 		status = enumspb.WORKFLOW_EXECUTION_STATUS_COMPLETED
 	}
-	return &workflowservice.DescribeWorkflowExecutionResponse{
-		WorkflowExecutionInfo: &workflowpb.WorkflowExecutionInfo{Status: status},
+	return &client.WorkflowExecutionDescription{
+		WorkflowExecutionMetadata: client.WorkflowExecutionMetadata{Status: status},
 	}, nil
 }
 

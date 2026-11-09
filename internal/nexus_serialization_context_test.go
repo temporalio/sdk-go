@@ -18,11 +18,14 @@ import (
 	failurepb "go.temporal.io/api/failure/v1"
 	historypb "go.temporal.io/api/history/v1"
 	nexuspb "go.temporal.io/api/nexus/v1"
+	protocolpb "go.temporal.io/api/protocol/v1"
+	updatepb "go.temporal.io/api/update/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
 	ilog "go.temporal.io/sdk/internal/log"
+	"go.temporal.io/sdk/internal/protocol"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -118,8 +121,11 @@ func TestNexusSerializationContextInputAndResultIsolation(t *testing.T) {
 
 func TestNexusBackedWorkflowStartSerializationContext(t *testing.T) {
 	service := workflowservicemock.NewMockWorkflowServiceClient(gomock.NewController(t))
-	dataConverter := converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), &serCtxSigningCodec{})
-	client := NewServiceClient(service, nil, ClientOptions{DataConverter: dataConverter})
+	dataConverter := converter.NewCodecDataConverter(
+		converter.GetDefaultDataConverter(), &serCtxSigningCodec{})
+	client := NewServiceClient(service, nil, ClientOptions{
+		DataConverter: dataConverter, ContextPropagators: []ContextPropagator{codecKeysPropagator{NewKeysPropagator([]string{"header"})}},
+	})
 	client.capabilities = &workflowservice.GetSystemInfoResponse_Capabilities{}
 	expectedContext := converter.NexusSerializationContext{Endpoint: "endpoint", Service: "service", Operation: "operation"}
 	service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).
@@ -127,18 +133,23 @@ func TestNexusBackedWorkflowStartSerializationContext(t *testing.T) {
 			require.Equal(t, nexusSerializationContextToProto(expectedContext), request.GetPropagatedNexusSerializationContext())
 			// Only the result goes back to the Nexus caller, so the input uses the workflow context.
 			require.Equal(t, "workflow-id", string(request.GetInput().GetPayloads()[0].GetMetadata()["ctx-signature"]))
+			require.Equal(t, "workflow-id", string(request.GetHeader().GetFields()["header"].GetMetadata()["ctx-signature"]))
 			return &workflowservice.StartWorkflowExecutionResponse{RunId: "run-id"}, nil
 		})
 
-	ctx := ContextWithNexusOperationContext(t.Context(), &NexusOperationContext{nexusSerializationContext: expectedContext})
+	ctx := context.WithValue(ContextWithNexusOperationContext(t.Context(), &NexusOperationContext{nexusSerializationContext: expectedContext}),
+		contextKey("header"), "header")
 	_, err := client.ExecuteWorkflow(ctx, StartWorkflowOptions{ID: "workflow-id", TaskQueue: "task-queue"}, "workflow", "input")
 	require.NoError(t, err)
 }
 
 func TestNexusBackedActivityStartSerializationContext(t *testing.T) {
 	service := workflowservicemock.NewMockWorkflowServiceClient(gomock.NewController(t))
-	dataConverter := converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), &serCtxSigningCodec{})
-	client := NewServiceClient(service, nil, ClientOptions{DataConverter: dataConverter})
+	dataConverter := converter.NewCodecDataConverter(
+		converter.GetDefaultDataConverter(), &serCtxSigningCodec{})
+	client := NewServiceClient(service, nil, ClientOptions{
+		DataConverter: dataConverter, ContextPropagators: []ContextPropagator{codecKeysPropagator{NewKeysPropagator([]string{"header"})}},
+	})
 	client.capabilities = &workflowservice.GetSystemInfoResponse_Capabilities{}
 	expectedContext := converter.NexusSerializationContext{Endpoint: "endpoint", Service: "service", Operation: "operation"}
 	service.EXPECT().StartActivityExecution(gomock.Any(), gomock.Any()).
@@ -146,6 +157,7 @@ func TestNexusBackedActivityStartSerializationContext(t *testing.T) {
 			require.Equal(t, nexusSerializationContextToProto(expectedContext), request.GetPropagatedNexusSerializationContext())
 			// Only the result goes back to the Nexus caller, so the input uses the activity context.
 			require.Equal(t, ":activity", string(request.GetInput().GetPayloads()[0].GetMetadata()["ctx-signature"]))
+			require.Equal(t, ":activity", string(request.GetHeader().GetFields()["header"].GetMetadata()["ctx-signature"]))
 			return &workflowservice.StartActivityExecutionResponse{RunId: "run-id"}, nil
 		})
 	resultPayloads, err := converter.WithDataConverterSerializationContext(dataConverter, expectedContext).ToPayloads("result")
@@ -173,7 +185,8 @@ func TestNexusBackedActivityStartSerializationContext(t *testing.T) {
 			},
 		}, nil)
 
-	ctx := ContextWithNexusOperationContext(t.Context(), &NexusOperationContext{nexusSerializationContext: expectedContext})
+	ctx := context.WithValue(ContextWithNexusOperationContext(t.Context(), &NexusOperationContext{nexusSerializationContext: expectedContext}),
+		contextKey("header"), "header")
 	handle, err := client.ExecuteActivity(ctx, ClientStartActivityOptions{
 		ID: "activity-id", TaskQueue: "task-queue", ScheduleToCloseTimeout: time.Minute,
 	}, "activity", "input")
@@ -297,8 +310,7 @@ func TestNexusBackedActivityDetachedHandleDescribeSerializationContext(t *testin
 	input, err := converter.WithDataConverterSerializationContext(dataConverter,
 		converter.ActivitySerializationContext{ActivityType: "activity"}).ToPayloads("input")
 	require.NoError(t, err)
-	heartbeatDetails, err := converter.WithDataConverterSerializationContext(dataConverter,
-		converter.ActivitySerializationContext{ActivityType: "activity"}).ToPayloads("progress")
+	heartbeatDetails, err := converter.WithDataConverterSerializationContext(dataConverter, context).ToPayloads("progress")
 	require.NoError(t, err)
 	result, err := converter.WithDataConverterSerializationContext(dataConverter, context).ToPayloads("result")
 	require.NoError(t, err)
@@ -393,6 +405,145 @@ func TestNexusBackedWorkflowExecutorInputAndResultSerializationContext(t *testin
 	require.Equal(t, "result", decoded)
 }
 
+func TestNexusBackedUpdateOutcomeSerializationContext(t *testing.T) {
+	nexusContext := converter.NexusSerializationContext{Endpoint: "endpoint", Service: "service", Operation: "operation"}
+	workflowContext := converter.WorkflowSerializationContext{Namespace: "namespace", WorkflowID: "workflow-id"}
+	for _, tc := range []struct {
+		name              string
+		propagated        *nexuspb.PropagatedSerializationContext
+		expectedContext   converter.SerializationContext
+		expectedSignature string
+	}{
+		// A Nexus handler returns the update's outcome to its caller.
+		{name: "nexus-backed", propagated: nexusSerializationContextToProto(nexusContext), expectedContext: nexusContext, expectedSignature: "endpoint:service:operation"},
+		{name: "not nexus-backed", expectedContext: workflowContext, expectedSignature: "workflow-id"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dataConverter := converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), &serCtxSigningCodec{})
+			failureConverter := newNexusCapturingFailureConverter()
+			env := &workflowEnvironmentImpl{
+				sdkFlags:             testSDKFlags,
+				commandsHelper:       newCommandsHelper(),
+				rootDataConverter:    dataConverter,
+				rootFailureConverter: failureConverter,
+				dataConverter:        converter.WithDataConverterSerializationContext(dataConverter, workflowContext),
+				failureConverter:     converter.WithFailureConverterSerializationContext(failureConverter, workflowContext),
+			}
+			startUpdate := func(id string) *updateProtocol {
+				up := newUpdateProtocol(id, func(string, string, *commonpb.Payloads, *commonpb.Header, UpdateCallbacks) {}, env)
+				require.NoError(t, up.HandleMessage(&protocolpb.Message{
+					Id:                 id + "/request",
+					ProtocolInstanceId: id,
+					Body:               protocol.MustMarshalAny(&updatepb.Request{PropagatedNexusSerializationContext: tc.propagated}),
+				}))
+				return up
+			}
+
+			succeeded := startUpdate("succeeded")
+			succeeded.Accept()
+			succeeded.Complete("result", nil)
+			failed := startUpdate("failed")
+			failed.Accept()
+			failed.Complete(nil, errors.New("failed"))
+			startUpdate("rejected").Reject(errors.New("rejected"))
+
+			var response updatepb.Response
+			require.NoError(t, env.outbox[1].msg.GetBody().UnmarshalTo(&response))
+			require.Equal(t, tc.expectedSignature, string(response.GetOutcome().GetSuccess().GetPayloads()[0].GetMetadata()["ctx-signature"]))
+			require.Equal(t, []nexusFailureConversion{
+				{context: tc.expectedContext, direction: "encode"},
+				{context: tc.expectedContext, direction: "encode"},
+			}, failureConverter.captured())
+		})
+	}
+}
+
+func TestNexusBackedUpdateClientSerializationContext(t *testing.T) {
+	service := workflowservicemock.NewMockWorkflowServiceClient(gomock.NewController(t))
+	dataConverter := converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), &serCtxSigningCodec{})
+	client := NewServiceClient(service, nil, ClientOptions{DataConverter: dataConverter})
+	client.capabilities = &workflowservice.GetSystemInfoResponse_Capabilities{}
+	nexusContext := converter.NexusSerializationContext{Endpoint: "endpoint", Service: "service", Operation: "operation"}
+	result, err := converter.WithDataConverterSerializationContext(dataConverter, nexusContext).ToPayloads("result")
+	require.NoError(t, err)
+	updateRef := &updatepb.UpdateRef{WorkflowExecution: &commonpb.WorkflowExecution{WorkflowId: "workflow-id", RunId: "run-id"}, UpdateId: "update-id"}
+	service.EXPECT().UpdateWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, request *workflowservice.UpdateWorkflowExecutionRequest, _ ...grpc.CallOption) (*workflowservice.UpdateWorkflowExecutionResponse, error) {
+			require.Equal(t, nexusSerializationContextToProto(nexusContext), request.GetRequest().GetPropagatedNexusSerializationContext())
+			// The update's arguments are not returned to the Nexus caller, so they use the workflow context.
+			require.Equal(t, "workflow-id", string(request.GetRequest().GetInput().GetArgs().GetPayloads()[0].GetMetadata()["ctx-signature"]))
+			return &workflowservice.UpdateWorkflowExecutionResponse{
+				UpdateRef:                           updateRef,
+				Stage:                               enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_ACCEPTED,
+				PropagatedNexusSerializationContext: nexusSerializationContextToProto(nexusContext),
+			}, nil
+		})
+	service.EXPECT().PollWorkflowExecutionUpdate(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.PollWorkflowExecutionUpdateResponse{
+			Outcome:                             &updatepb.Outcome{Value: &updatepb.Outcome_Success{Success: result}},
+			Stage:                               enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_COMPLETED,
+			UpdateRef:                           updateRef,
+			PropagatedNexusSerializationContext: nexusSerializationContextToProto(nexusContext),
+		}, nil)
+
+	ctx := ContextWithNexusOperationContext(t.Context(), &NexusOperationContext{nexusSerializationContext: nexusContext})
+	handle, err := client.UpdateWorkflow(ctx, UpdateWorkflowOptions{
+		WorkflowID: "workflow-id", UpdateName: "update", Args: []any{"input"}, WaitForStage: WorkflowUpdateStageAccepted,
+	})
+	require.NoError(t, err)
+	var decoded string
+	require.NoError(t, handle.Get(t.Context(), &decoded))
+	require.Equal(t, "result", decoded)
+}
+
+func TestNexusBackedUpdateCompletedResponseSerializationContext(t *testing.T) {
+	service := workflowservicemock.NewMockWorkflowServiceClient(gomock.NewController(t))
+	failureConverter := newNexusCapturingFailureConverter()
+	client := NewServiceClient(service, nil, ClientOptions{FailureConverter: failureConverter})
+	client.capabilities = &workflowservice.GetSystemInfoResponse_Capabilities{}
+	nexusContext := converter.NexusSerializationContext{Endpoint: "endpoint", Service: "service", Operation: "operation"}
+	failure := GetDefaultFailureConverter().ErrorToFailure(NewApplicationError("failed", "FailureType", true, nil))
+	service.EXPECT().UpdateWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.UpdateWorkflowExecutionResponse{
+			UpdateRef:                           &updatepb.UpdateRef{WorkflowExecution: &commonpb.WorkflowExecution{WorkflowId: "workflow-id"}, UpdateId: "update-id"},
+			Stage:                               enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_COMPLETED,
+			Outcome:                             &updatepb.Outcome{Value: &updatepb.Outcome_Failure{Failure: failure}},
+			PropagatedNexusSerializationContext: nexusSerializationContextToProto(nexusContext),
+		}, nil)
+
+	handle, err := client.UpdateWorkflow(t.Context(), UpdateWorkflowOptions{
+		WorkflowID: "workflow-id", UpdateName: "update", WaitForStage: WorkflowUpdateStageCompleted,
+	})
+	require.NoError(t, err)
+	require.Error(t, handle.Get(t.Context(), nil))
+	require.Equal(t, []nexusFailureConversion{{context: nexusContext, direction: "decode"}}, failureConverter.captured())
+}
+
+func TestNexusBackedUpdateCompletedResponseSuccessSerializationContext(t *testing.T) {
+	service := workflowservicemock.NewMockWorkflowServiceClient(gomock.NewController(t))
+	dataConverter := converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), &serCtxSigningCodec{})
+	client := NewServiceClient(service, nil, ClientOptions{DataConverter: dataConverter})
+	client.capabilities = &workflowservice.GetSystemInfoResponse_Capabilities{}
+	nexusContext := converter.NexusSerializationContext{Endpoint: "endpoint", Service: "service", Operation: "operation"}
+	result, err := converter.WithDataConverterSerializationContext(dataConverter, nexusContext).ToPayloads("result")
+	require.NoError(t, err)
+	service.EXPECT().UpdateWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.UpdateWorkflowExecutionResponse{
+			UpdateRef:                           &updatepb.UpdateRef{WorkflowExecution: &commonpb.WorkflowExecution{WorkflowId: "workflow-id"}, UpdateId: "update-id"},
+			Stage:                               enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_COMPLETED,
+			Outcome:                             &updatepb.Outcome{Value: &updatepb.Outcome_Success{Success: result}},
+			PropagatedNexusSerializationContext: nexusSerializationContextToProto(nexusContext),
+		}, nil)
+
+	handle, err := client.UpdateWorkflow(t.Context(), UpdateWorkflowOptions{
+		WorkflowID: "workflow-id", UpdateName: "update", WaitForStage: WorkflowUpdateStageCompleted,
+	})
+	require.NoError(t, err)
+	var decoded string
+	require.NoError(t, handle.Get(t.Context(), &decoded))
+	require.Equal(t, "result", decoded)
+}
+
 func TestNexusBackedWorkflowCompletionFailureSerializationContext(t *testing.T) {
 	nexusContext := converter.NexusSerializationContext{Endpoint: "endpoint", Service: "service", Operation: "operation"}
 	wfInfo := &WorkflowInfo{
@@ -428,73 +579,112 @@ func TestNexusBackedWorkflowCompletionFailureSerializationContext(t *testing.T) 
 
 func TestNexusBackedActivityWorkerSerializationContext(t *testing.T) {
 	nexusContext := converter.NexusSerializationContext{Endpoint: "endpoint", Service: "service", Operation: "operation"}
-	dataConverter := converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), &serCtxSigningCodec{})
-	activityConverter := converter.WithDataConverterSerializationContext(dataConverter,
-		converter.ActivitySerializationContext{ActivityType: "activity"})
-	input, err := activityConverter.ToPayloads("input")
-	require.NoError(t, err)
-	// Heartbeat details recorded through the client use the activity context, so the worker must too.
-	heartbeatDetails, err := activityConverter.ToPayloads("progress")
-	require.NoError(t, err)
-	registry := newRegistry()
-	registry.RegisterActivityWithOptions(func(ctx context.Context, value string) (string, error) {
-		require.Equal(t, "input", value)
-		var progress string
-		require.NoError(t, GetHeartbeatDetails(ctx, &progress))
-		require.Equal(t, "progress", progress)
-		heartbeat, err := getDataConverterFromActivityCtx(ctx).ToPayload("progress")
-		require.NoError(t, err)
-		require.Equal(t, ":activity", string(heartbeat.GetMetadata()["ctx-signature"]))
-		return "result", nil
-	}, RegisterActivityOptions{Name: "activity"})
-	service := workflowservicemock.NewMockWorkflowServiceClient(gomock.NewController(t))
-	ath := &activityTaskHandlerImpl{
-		client:           NewServiceClient(service, nil, ClientOptions{}),
-		namespace:        "namespace",
-		logger:           ilog.NewNopLogger(),
-		metricsHandler:   metrics.NopHandler,
-		registry:         registry,
-		dataConverter:    dataConverter,
-		failureConverter: GetDefaultFailureConverter(),
+	activityContext := converter.ActivitySerializationContext{Namespace: "namespace", ActivityType: "activity", TaskQueue: "task-queue"}
+	for _, tc := range []struct {
+		name                        string
+		propagated                  *nexuspb.PropagatedSerializationContext
+		resultAndHeartbeatContext   converter.SerializationContext
+		resultAndHeartbeatSignature string
+	}{
+		// The result and heartbeat details are returned to the Nexus caller (the server includes the
+		// last heartbeat details in timeout failures), so they use the Nexus context. Input does not.
+		{
+			name:                        "propagated",
+			propagated:                  nexusSerializationContextToProto(nexusContext),
+			resultAndHeartbeatContext:   nexusContext,
+			resultAndHeartbeatSignature: "endpoint:service:operation",
+		},
+		{
+			name:                        "not propagated",
+			resultAndHeartbeatContext:   activityContext,
+			resultAndHeartbeatSignature: ":activity",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dataConverter := converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), &serCtxSigningCodec{})
+			input, err := converter.WithDataConverterSerializationContext(dataConverter, activityContext).ToPayloads("input")
+			require.NoError(t, err)
+			// Details recorded by the previous attempt must decode on retry.
+			previousHeartbeatDetails, err := converter.WithDataConverterSerializationContext(dataConverter,
+				tc.resultAndHeartbeatContext).ToPayloads("previous progress")
+			require.NoError(t, err)
+			registry := newRegistry()
+			registry.RegisterActivityWithOptions(func(ctx context.Context, value string) (string, error) {
+				require.Equal(t, "input", value)
+				var progress string
+				require.NoError(t, GetHeartbeatDetails(ctx, &progress))
+				require.Equal(t, "previous progress", progress)
+				RecordActivityHeartbeat(ctx, "progress")
+				return "result", nil
+			}, RegisterActivityOptions{Name: "activity"})
+			service := workflowservicemock.NewMockWorkflowServiceClient(gomock.NewController(t))
+			var recordedHeartbeatDetails *commonpb.Payloads
+			service.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).
+				DoAndReturn(func(_ context.Context, req *workflowservice.RecordActivityTaskHeartbeatRequest, _ ...grpc.CallOption) (*workflowservice.RecordActivityTaskHeartbeatResponse, error) {
+					recordedHeartbeatDetails = req.GetDetails()
+					return &workflowservice.RecordActivityTaskHeartbeatResponse{}, nil
+				})
+			ath := &activityTaskHandlerImpl{
+				client:           NewServiceClient(service, nil, ClientOptions{}),
+				namespace:        "namespace",
+				logger:           ilog.NewNopLogger(),
+				metricsHandler:   metrics.NopHandler,
+				registry:         registry,
+				dataConverter:    dataConverter,
+				failureConverter: GetDefaultFailureConverter(),
+			}
+			now := timestamppb.Now()
+			completion, err := ath.Execute("task-queue", &workflowservice.PollActivityTaskQueueResponse{
+				TaskToken:                           []byte("task-token"),
+				WorkflowNamespace:                   "namespace",
+				ActivityId:                          "activity-id",
+				ActivityRunId:                       "run-id",
+				ActivityType:                        &commonpb.ActivityType{Name: "activity"},
+				Input:                               input,
+				HeartbeatDetails:                    previousHeartbeatDetails,
+				ScheduledTime:                       now,
+				StartedTime:                         now,
+				ScheduleToCloseTimeout:              durationpb.New(time.Minute),
+				StartToCloseTimeout:                 durationpb.New(time.Minute),
+				HeartbeatTimeout:                    durationpb.New(time.Minute),
+				PropagatedNexusSerializationContext: tc.propagated,
+			})
+			require.NoError(t, err)
+			request, ok := completion.response.(*workflowservice.RespondActivityTaskCompletedRequest)
+			require.True(t, ok)
+			require.Equal(t, tc.resultAndHeartbeatSignature, string(request.GetResult().GetPayloads()[0].GetMetadata()["ctx-signature"]))
+			require.Equal(t, tc.resultAndHeartbeatSignature, string(recordedHeartbeatDetails.GetPayloads()[0].GetMetadata()["ctx-signature"]))
+		})
 	}
-	now := timestamppb.Now()
-	completion, err := ath.Execute("task-queue", &workflowservice.PollActivityTaskQueueResponse{
-		TaskToken:                           []byte("task-token"),
-		WorkflowNamespace:                   "namespace",
-		ActivityId:                          "activity-id",
-		ActivityRunId:                       "run-id",
-		ActivityType:                        &commonpb.ActivityType{Name: "activity"},
-		Input:                               input,
-		HeartbeatDetails:                    heartbeatDetails,
-		ScheduledTime:                       now,
-		StartedTime:                         now,
-		ScheduleToCloseTimeout:              durationpb.New(time.Minute),
-		StartToCloseTimeout:                 durationpb.New(time.Minute),
-		PropagatedNexusSerializationContext: nexusSerializationContextToProto(nexusContext),
-	})
-	require.NoError(t, err)
-	request, ok := completion.response.(*workflowservice.RespondActivityTaskCompletedRequest)
-	require.True(t, ok)
-	// The result is returned to the Nexus caller, so it uses the Nexus context.
-	require.Equal(t, "endpoint:service:operation", string(request.GetResult().GetPayloads()[0].GetMetadata()["ctx-signature"]))
 }
 
 func TestNexusBackedActivityCompletionFailureSerializationContext(t *testing.T) {
 	nexusContext := converter.NexusSerializationContext{Endpoint: "endpoint", Service: "service", Operation: "operation"}
+	dataConverter := converter.NewCodecDataConverter(
+		converter.GetDefaultDataConverter(), &serCtxSigningCodec{})
+	bound := converter.WithDataConverterSerializationContext(dataConverter,
+		converter.ActivitySerializationContext{Namespace: "namespace", ActivityType: "activity", TaskQueue: "task-queue"})
+	header, err := bound.ToPayload("header")
+	require.NoError(t, err)
+	input, err := bound.ToPayloads("input")
+	require.NoError(t, err)
 	failureConverter := newNexusCapturingFailureConverter()
 	registry := newRegistry()
-	registry.RegisterActivityWithOptions(func(context.Context) error {
+	registry.RegisterActivityWithOptions(func(ctx context.Context, value string) error {
+		require.Equal(t, "input", value)
+		require.Equal(t, "header", ctx.Value(contextKey("header")))
 		return errors.New("failed")
 	}, RegisterActivityOptions{Name: "activity"})
 	service := workflowservicemock.NewMockWorkflowServiceClient(gomock.NewController(t))
 	ath := &activityTaskHandlerImpl{
-		client:           NewServiceClient(service, nil, ClientOptions{}),
-		namespace:        "namespace",
-		logger:           ilog.NewNopLogger(),
-		metricsHandler:   metrics.NopHandler,
-		registry:         registry,
-		dataConverter:    converter.GetDefaultDataConverter(),
-		failureConverter: failureConverter,
+		client:             NewServiceClient(service, nil, ClientOptions{DataConverter: dataConverter}),
+		namespace:          "namespace",
+		logger:             ilog.NewNopLogger(),
+		metricsHandler:     metrics.NopHandler,
+		registry:           registry,
+		dataConverter:      dataConverter,
+		failureConverter:   failureConverter,
+		contextPropagators: []ContextPropagator{codecKeysPropagator{NewKeysPropagator([]string{"header"})}},
 	}
 	now := timestamppb.Now()
 	completion, err := ath.Execute("task-queue", &workflowservice.PollActivityTaskQueueResponse{
@@ -508,12 +698,188 @@ func TestNexusBackedActivityCompletionFailureSerializationContext(t *testing.T) 
 		ScheduleToCloseTimeout:              durationpb.New(time.Minute),
 		StartToCloseTimeout:                 durationpb.New(time.Minute),
 		PropagatedNexusSerializationContext: nexusSerializationContextToProto(nexusContext),
+		Header:                              &commonpb.Header{Fields: map[string]*commonpb.Payload{"header": header}},
+		Input:                               input,
 	})
 	require.NoError(t, err)
 	request, ok := completion.response.(*workflowservice.RespondActivityTaskFailedRequest)
 	require.True(t, ok)
 	require.Equal(t, "failed", request.GetFailure().GetMessage())
 	require.Equal(t, []nexusFailureConversion{{context: nexusContext, direction: "encode"}}, failureConverter.captured())
+}
+
+func TestNexusBackedActivityInfoSerializationContext(t *testing.T) {
+	nexusContext := converter.NexusSerializationContext{Endpoint: "endpoint", Service: "service", Operation: "operation"}
+	for _, tc := range []struct {
+		name       string
+		propagated *nexuspb.PropagatedSerializationContext
+		expected   *converter.NexusSerializationContext
+	}{
+		{name: "propagated", propagated: nexusSerializationContextToProto(nexusContext), expected: &nexusContext},
+		{name: "not propagated"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var info ActivityInfo
+			registry := newRegistry()
+			registry.RegisterActivityWithOptions(func(ctx context.Context) error {
+				info = GetActivityInfo(ctx)
+				return nil
+			}, RegisterActivityOptions{Name: "activity"})
+			ath := &activityTaskHandlerImpl{
+				client:           NewServiceClient(workflowservicemock.NewMockWorkflowServiceClient(gomock.NewController(t)), nil, ClientOptions{}),
+				namespace:        "namespace",
+				logger:           ilog.NewNopLogger(),
+				metricsHandler:   metrics.NopHandler,
+				registry:         registry,
+				dataConverter:    converter.GetDefaultDataConverter(),
+				failureConverter: GetDefaultFailureConverter(),
+			}
+			now := timestamppb.Now()
+			_, err := ath.Execute("task-queue", &workflowservice.PollActivityTaskQueueResponse{
+				TaskToken:                           []byte("task-token"),
+				WorkflowNamespace:                   "namespace",
+				ActivityId:                          "activity-id",
+				ActivityRunId:                       "run-id",
+				ActivityType:                        &commonpb.ActivityType{Name: "activity"},
+				ScheduledTime:                       now,
+				StartedTime:                         now,
+				ScheduleToCloseTimeout:              durationpb.New(time.Minute),
+				StartToCloseTimeout:                 durationpb.New(time.Minute),
+				PropagatedNexusSerializationContext: tc.propagated,
+			})
+			require.NoError(t, err)
+			require.Equal(t, tc.expected, info.NexusSerializationContext)
+		})
+	}
+}
+
+// Async completion can't learn the propagated context from the task token, so callers pass the
+// value from ActivityInfo.NexusSerializationContext to encode the result and failure for the Nexus caller.
+func TestAsyncActivityCompletionNexusSerializationContext(t *testing.T) {
+	nexusContext := converter.NexusSerializationContext{Endpoint: "endpoint", Service: "service", Operation: "operation"}
+	activityContext := converter.ActivitySerializationContext{
+		Namespace: "default", WorkflowID: "workflow-id", ActivityType: "activity",
+	}
+	type completeFunc func(*WorkflowClient, *workflowservicemock.MockWorkflowServiceClient,
+		any, error, *converter.NexusSerializationContext, func(*commonpb.Payloads)) error
+	complete := completeFunc(func(client *WorkflowClient, service *workflowservicemock.MockWorkflowServiceClient,
+		result any, err error, nexusContext *converter.NexusSerializationContext, onResult func(*commonpb.Payloads),
+	) error {
+		if err == nil {
+			service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).
+				DoAndReturn(func(_ context.Context, req *workflowservice.RespondActivityTaskCompletedRequest, _ ...grpc.CallOption) (*workflowservice.RespondActivityTaskCompletedResponse, error) {
+					onResult(req.GetResult())
+					return &workflowservice.RespondActivityTaskCompletedResponse{}, nil
+				})
+		} else {
+			service.EXPECT().RespondActivityTaskFailed(gomock.Any(), gomock.Any(), gomock.Any()).
+				Return(&workflowservice.RespondActivityTaskFailedResponse{}, nil)
+		}
+		return client.CompleteActivityWithOptions(t.Context(), CompleteActivityOptions{
+			TaskToken:                 []byte("task-token"),
+			Result:                    result,
+			Err:                       err,
+			WorkflowID:                activityContext.WorkflowID,
+			ActivityType:              activityContext.ActivityType,
+			NexusSerializationContext: nexusContext,
+		})
+	})
+	completeByActivityID := completeFunc(func(client *WorkflowClient, service *workflowservicemock.MockWorkflowServiceClient,
+		result any, err error, nexusContext *converter.NexusSerializationContext, onResult func(*commonpb.Payloads),
+	) error {
+		if err == nil {
+			service.EXPECT().RespondActivityTaskCompletedById(gomock.Any(), gomock.Any(), gomock.Any()).
+				DoAndReturn(func(_ context.Context, req *workflowservice.RespondActivityTaskCompletedByIdRequest, _ ...grpc.CallOption) (*workflowservice.RespondActivityTaskCompletedByIdResponse, error) {
+					onResult(req.GetResult())
+					return &workflowservice.RespondActivityTaskCompletedByIdResponse{}, nil
+				})
+		} else {
+			service.EXPECT().RespondActivityTaskFailedById(gomock.Any(), gomock.Any(), gomock.Any()).
+				Return(&workflowservice.RespondActivityTaskFailedByIdResponse{}, nil)
+		}
+		return client.CompleteActivityByActivityIDWithOptions(t.Context(), CompleteActivityByActivityIDOptions{
+			Namespace:                 activityContext.Namespace,
+			ActivityID:                "activity-id",
+			Result:                    result,
+			Err:                       err,
+			WorkflowID:                activityContext.WorkflowID,
+			ActivityType:              activityContext.ActivityType,
+			NexusSerializationContext: nexusContext,
+		})
+	})
+
+	for _, tc := range []struct {
+		name     string
+		complete completeFunc
+	}{
+		{name: "CompleteActivityWithOptions", complete: complete},
+		{name: "CompleteActivityByActivityIDWithOptions", complete: completeByActivityID},
+	} {
+		for _, contextCase := range []struct {
+			name              string
+			nexusContext      *converter.NexusSerializationContext
+			expectedContext   converter.SerializationContext
+			expectedSignature string
+		}{
+			{name: "nexus context", nexusContext: &nexusContext, expectedContext: nexusContext, expectedSignature: "endpoint:service:operation"},
+			{name: "activity context", expectedContext: activityContext, expectedSignature: "workflow-id:activity"},
+		} {
+			t.Run(tc.name+"/"+contextCase.name+"/result", func(t *testing.T) {
+				service := workflowservicemock.NewMockWorkflowServiceClient(gomock.NewController(t))
+				dataConverter := converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), &serCtxSigningCodec{})
+				client := NewServiceClient(service, nil, ClientOptions{DataConverter: dataConverter})
+				client.capabilities = &workflowservice.GetSystemInfoResponse_Capabilities{}
+				var result *commonpb.Payloads
+				require.NoError(t, tc.complete(client, service, "result", nil, contextCase.nexusContext,
+					func(p *commonpb.Payloads) { result = p }))
+				require.Equal(t, contextCase.expectedSignature, string(result.GetPayloads()[0].GetMetadata()["ctx-signature"]))
+			})
+			t.Run(tc.name+"/"+contextCase.name+"/failure", func(t *testing.T) {
+				service := workflowservicemock.NewMockWorkflowServiceClient(gomock.NewController(t))
+				failureConverter := newNexusCapturingFailureConverter()
+				client := NewServiceClient(service, nil, ClientOptions{FailureConverter: failureConverter})
+				client.capabilities = &workflowservice.GetSystemInfoResponse_Capabilities{}
+				require.NoError(t, tc.complete(client, service, nil, errors.New("failed"), contextCase.nexusContext, nil))
+				require.Equal(t, []nexusFailureConversion{{context: contextCase.expectedContext, direction: "encode"}},
+					failureConverter.captured())
+			})
+		}
+	}
+}
+
+// Client heartbeats can't learn the propagated context from the task token, so callers pass the
+// value from ActivityInfo.NexusSerializationContext to match how the worker decodes the details.
+func TestRecordActivityHeartbeatNexusSerializationContext(t *testing.T) {
+	nexusContext := converter.NexusSerializationContext{Endpoint: "endpoint", Service: "service", Operation: "operation"}
+	for _, tc := range []struct {
+		name              string
+		nexusContext      *converter.NexusSerializationContext
+		expectedSignature string
+	}{
+		{name: "nexus context", nexusContext: &nexusContext, expectedSignature: "endpoint:service:operation"},
+		{name: "activity context", expectedSignature: "workflow-id:activity"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			service := workflowservicemock.NewMockWorkflowServiceClient(gomock.NewController(t))
+			dataConverter := converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), &serCtxSigningCodec{})
+			client := NewServiceClient(service, nil, ClientOptions{DataConverter: dataConverter})
+			client.capabilities = &workflowservice.GetSystemInfoResponse_Capabilities{}
+			var details *commonpb.Payloads
+			service.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).
+				DoAndReturn(func(_ context.Context, req *workflowservice.RecordActivityTaskHeartbeatRequest, _ ...grpc.CallOption) (*workflowservice.RecordActivityTaskHeartbeatResponse, error) {
+					details = req.GetDetails()
+					return &workflowservice.RecordActivityTaskHeartbeatResponse{}, nil
+				})
+			require.NoError(t, client.RecordActivityHeartbeatWithOptions(t.Context(), RecordActivityHeartbeatOptions{
+				TaskToken:                 []byte("task-token"),
+				Details:                   []any{"progress"},
+				WorkflowID:                "workflow-id",
+				ActivityType:              "activity",
+				NexusSerializationContext: tc.nexusContext,
+			}))
+			require.Equal(t, tc.expectedSignature, string(details.GetPayloads()[0].GetMetadata()["ctx-signature"]))
+		})
+	}
 }
 
 type nexusFailureConversion struct {

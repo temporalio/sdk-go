@@ -3,23 +3,12 @@ package envconfig
 import (
 	"bytes"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/BurntSushi/toml"
 )
-
-// knownProfileKeys contains the TOML keys recognized for profile configuration.
-// This must be kept in sync with tomlClientConfigProfile's TOML tags.
-// See TestKnownProfileKeysInSync for validation.
-var knownProfileKeys = map[string]bool{
-	"address":   true,
-	"namespace": true,
-	"api_key":   true,
-	"tls":       true,
-	"codec":     true,
-	"grpc_meta": true,
-	"authority": true,
-}
 
 // ClientConfigToTOMLOptions are options for [ClientConfig.ToTOML].
 type ClientConfigToTOMLOptions struct {
@@ -28,6 +17,9 @@ type ClientConfigToTOMLOptions struct {
 	// If non-nil, these additional fields will be serialized with each profile.
 	// Key is profile name, value is map of field name to field value.
 	AdditionalProfileFields map[string]map[string]any
+	// If true, additional profile fields cannot be added to known profile sections unless
+	// those sections are already present in a corresponding ClientConfigProfile.
+	Strict bool
 }
 
 // ToTOML converts the client config to TOML. Note, this may not be byte-for-byte exactly what may have been set in
@@ -42,27 +34,81 @@ func (c *ClientConfig) ToTOML(options ClientConfigToTOMLOptions) ([]byte, error)
 		return nil, err
 	}
 	var rawConf map[string]any
-	if _, err := toml.Decode(buf.String(), &rawConf); err != nil {
+
+	rawConfMD, err := toml.Decode(buf.String(), &rawConf)
+	if err != nil {
 		return nil, err
 	}
 
-	// Merge additional fields into profiles
-	for profileName, additional := range options.AdditionalProfileFields {
-		profiles, _ := rawConf["profile"].(map[string]any)
-		if profiles == nil {
-			profiles = make(map[string]any)
-			rawConf["profile"] = profiles
+	if len(options.AdditionalProfileFields) > 0 {
+		// Look for recognized fields (at any level) in AdditionalProfileFields
+		buf.Reset()
+		if err := toml.NewEncoder(&buf).Encode(map[string]any{"profile": options.AdditionalProfileFields}); err != nil {
+			return nil, err
 		}
-		profile, _ := profiles[profileName].(map[string]any)
-		if profile == nil {
-			profile = make(map[string]any)
-			profiles[profileName] = profile
+
+		// also re-parse the additional fields as raw to normalize types and match what's in rawConf
+		var rawAdditional map[string]any
+		_, err := toml.Decode(buf.String(), &rawAdditional)
+		if err != nil {
+			return nil, err
 		}
-		for k, v := range additional {
-			if knownProfileKeys[k] {
-				return nil, fmt.Errorf("additional field %q in profile %q conflicts with known profile field", k, profileName)
+
+		var additionalConf tomlClientConfig
+		additionalMD, err := toml.Decode(buf.String(), &additionalConf)
+		if err != nil {
+			return nil, err
+		}
+
+		additionalKeys := additionalMD.Keys()
+		conflicts := make(map[string]toml.Key, len(additionalKeys))
+
+		var strictViolations []string
+
+		// Assume everything is a conflict until proven otherwise
+		for _, key := range additionalKeys {
+			conflicts[key.String()] = key
+		}
+
+		// Undecodable fields are exactly what we want to merge back in
+		for _, key := range additionalMD.Undecoded() {
+			delete(conflicts, key.String())
+		}
+
+		// If there's an additional *nested* field, like profile.default.tls.future, its parent (profile.default.tls) will
+		// show up in keys. As long as that key is a table (or a list of tables), it's not a conflict, although if the parent
+		// isn't already defined, it won't pass the strictness check
+		for keyName, key := range conflicts {
+			// ext is a special case. Any keys within are intended to be handled solely by extensions. We don't put them in
+			// AdditionalProfileFields when parsing, nor should we merge them here.
+			if isExtKey(key) {
+				continue
 			}
-			profile[k] = v
+
+			keyType := additionalMD.Type(key...)
+			if keyType == "Hash" || keyType == "ArrayHash" {
+				// A profile that only contains unmodeled fields is okay
+				if options.Strict && len(key) >= 3 && !rawConfMD.IsDefined(key...) {
+					strictViolations = append(strictViolations, keyName)
+				}
+				// It's possible this key was marked as failing strict checks, but it's not a hard conflict
+				delete(conflicts, keyName)
+			}
+		}
+
+		if len(conflicts) > 0 {
+			names := slices.Sorted(maps.Keys(conflicts))
+			return nil, fmt.Errorf("additional field(s) %s conflict with known profile fields", strings.Join(names, ", "))
+		}
+
+		if len(strictViolations) > 0 {
+			slices.Sort(strictViolations)
+			list := strings.Join(strictViolations, ", ")
+			return nil, fmt.Errorf("known section(s) %s are only defined in AdditionalProfileFields; either set them on their profiles or disable strict mode", list)
+		}
+
+		for _, key := range additionalMD.Undecoded() {
+			copyConfig(rawAdditional, rawConf, key)
 		}
 	}
 
@@ -75,6 +121,7 @@ func (c *ClientConfig) ToTOML(options ClientConfigToTOMLOptions) ([]byte, error)
 	if err := enc.Encode(rawConf); err != nil {
 		return nil, err
 	}
+
 	return out.Bytes(), nil
 }
 
@@ -83,6 +130,7 @@ type ClientConfigFromTOMLOptions struct {
 	Strict bool
 	// If non-nil, populated with additional (unrecognized) profile fields.
 	// Key is profile name, value is map of field name to field value.
+	// Any existing values will be deleted.
 	// This allows callers to preserve custom profile fields without modifying
 	// this package. Note, if Strict is true the additional fields will cause an
 	// error before they can be captured here.
@@ -98,7 +146,7 @@ func (c *ClientConfig) FromTOML(b []byte, options ClientConfigFromTOMLOptions) e
 		return err
 	}
 
-	undecoded := md.Undecoded()
+	undecoded := slices.DeleteFunc(md.Undecoded(), isExtKey)
 	if options.Strict && len(undecoded) > 0 {
 		keys := make([]string, len(undecoded))
 		for i, k := range undecoded {
@@ -106,6 +154,8 @@ func (c *ClientConfig) FromTOML(b []byte, options ClientConfigFromTOMLOptions) e
 		}
 		return fmt.Errorf("key(s) unrecognized: %v", strings.Join(keys, ", "))
 	}
+
+	clear(options.AdditionalProfileFields)
 
 	// If AdditionalProfileFields is requested, extract unknown profile fields.
 	if options.AdditionalProfileFields != nil && len(undecoded) > 0 {
@@ -123,18 +173,65 @@ func (c *ClientConfig) FromTOML(b []byte, options ClientConfigFromTOMLOptions) e
 				continue
 			}
 			profileName := key[1]
-			fieldKey := key[2]
-			if v, ok := rawConf.Profiles[profileName][fieldKey]; ok {
-				if options.AdditionalProfileFields[profileName] == nil {
-					options.AdditionalProfileFields[profileName] = make(map[string]any)
-				}
-				options.AdditionalProfileFields[profileName][fieldKey] = v
+			if options.AdditionalProfileFields[profileName] == nil {
+				options.AdditionalProfileFields[profileName] = make(map[string]any)
 			}
+			copyConfig(rawConf.Profiles[profileName], options.AdditionalProfileFields[profileName], key[2:])
 		}
 	}
 
 	conf.applyToClientConfig(c)
 	return nil
+}
+
+// copyConfig copies the value of key from source to dest, ensuring the appropriate
+// maps and slices in the hierarchy are created. If non-empty, source and dest should
+// be populated via toml.Decode.
+func copyConfig(source, dest map[string]any, key toml.Key) {
+	for i, keyPart := range key {
+		var nextSource, nextDest map[string]any
+
+		switch sourceVal := source[keyPart].(type) {
+		case map[string]any:
+			nextSource = sourceVal
+			nextDest, _ = dest[keyPart].(map[string]any)
+			if nextDest == nil {
+				nextDest = make(map[string]any)
+				dest[keyPart] = nextDest
+			}
+			// no need to do anything more, subkeys will be copied as necessary
+		case []map[string]any:
+			destVal, _ := dest[keyPart].([]map[string]any)
+			if destVal == nil {
+				destVal = make([]map[string]any, 0, len(sourceVal))
+				dest[keyPart] = destVal
+			}
+
+			if i == len(key)-1 {
+				// seeing the list name starts a fresh map
+				destVal = append(destVal, make(map[string]any))
+				dest[keyPart] = destVal
+			} else {
+				// TOML doesn't allow list entries to be defined before the list itself is
+				// defined. We can trust that there will always be at least one entry by the
+				// time this branch is reached.
+				pos := len(destVal) - 1
+				nextDest = destVal[pos]
+				nextSource = sourceVal[pos]
+			}
+		default:
+			// everything else gets copied over
+			dest[keyPart] = sourceVal
+			return
+		}
+		source = nextSource
+		dest = nextDest
+	}
+}
+
+// whether the key is part of an extension's config
+func isExtKey(key toml.Key) bool {
+	return len(key) >= 3 && key[0] == "profile" && key[2] == "ext"
 }
 
 type tomlClientConfig struct {
@@ -165,6 +262,8 @@ type tomlClientConfigProfile struct {
 	Codec     *tomlClientConfigCodec `toml:"codec,omitempty"`
 	GRPCMeta  map[string]string      `toml:"grpc_meta,omitempty"`
 	Authority string                 `toml:"authority,omitempty"`
+	// Note: decoding into map[string]any does not mark nested keys as decoded, see isExtKey.
+	Ext map[string]map[string]any `toml:"ext,omitempty"`
 }
 
 func (c *tomlClientConfigProfile) toClientConfig() *ClientConfigProfile {
@@ -175,6 +274,7 @@ func (c *tomlClientConfigProfile) toClientConfig() *ClientConfigProfile {
 		TLS:       c.TLS.toClientConfig(),
 		Codec:     c.Codec.toClientConfig(),
 		Authority: c.Authority,
+		Ext:       c.Ext,
 	}
 	// gRPC meta keys have to be normalized
 	if len(c.GRPCMeta) > 0 {
@@ -191,6 +291,7 @@ func (c *tomlClientConfigProfile) fromClientConfig(conf *ClientConfigProfile) {
 	c.Namespace = conf.Namespace
 	c.APIKey = conf.APIKey
 	c.Authority = conf.Authority
+	c.Ext = conf.Ext
 	if conf.TLS != nil {
 		c.TLS = &tomlClientConfigTLS{}
 		c.TLS.fromClientConfig(conf.TLS)

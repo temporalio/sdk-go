@@ -205,6 +205,27 @@ func TestInternalErrorRetry(t *testing.T) {
 	require.Equal(t, 1, srv.signalWorkflowInvokeCount())
 }
 
+func TestInternalErrorRetryFromExistingClient(t *testing.T) {
+	srv, err := startTestGRPCServer()
+	require.NoError(t, err)
+	defer srv.Stop()
+	srv.getSystemInfoResponse.Capabilities = &workflowservice.GetSystemInfoResponse_Capabilities{
+		InternalErrorDifferentiation: true,
+	}
+
+	client, err := DialClient(t.Context(), ClientOptions{HostPort: srv.addr})
+	require.NoError(t, err)
+	defer client.Close()
+	require.True(t, client.(*WorkflowClient).excludeInternalFromRetry.Load())
+
+	// A client sharing the connection must share the capability-derived flag too,
+	// otherwise e.g. activity heartbeats on its workers treat Internal as retryable.
+	fromExisting, err := NewClientFromExisting(t.Context(), client, ClientOptions{Namespace: "other"})
+	require.NoError(t, err)
+	defer fromExisting.Close()
+	require.True(t, fromExisting.(*WorkflowClient).excludeInternalFromRetry.Load())
+}
+
 func TestEagerAndLazyClient(t *testing.T) {
 	// Start a server that always returns an error on get system info
 	srv, err := startTestGRPCServer()
