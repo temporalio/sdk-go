@@ -27,6 +27,10 @@ var DefaultTextMapPropagator = propagation.NewCompositeTextMapPropagator(
 
 // TracerOptions are options provided to NewTracingInterceptor or NewTracer.
 type TracerOptions struct {
+	// EncodeHeaders uses the configured client's payload codec for tracing
+	// headers. Defaults to false; other producers' headers are unchanged.
+	EncodeHeaders bool
+
 	// Tracer is the tracer to use. If not set, one is obtained from the global
 	// tracer provider using the name "temporal-sdk-go".
 	Tracer trace.Tracer
@@ -118,6 +122,7 @@ func NewTracingInterceptor(options TracerOptions) (interceptor.Interceptor, erro
 
 func (t *tracer) Options() interceptor.TracerOptions {
 	return interceptor.TracerOptions{
+		EncodeHeaders:           t.options.EncodeHeaders,
 		SpanContextKey:          t.options.SpanContextKey,
 		HeaderKey:               t.options.HeaderKey,
 		DisableSignalTracing:    t.options.DisableSignalTracing,

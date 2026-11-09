@@ -72,6 +72,7 @@ type (
 		metricsHandler           metrics.Handler
 		identity                 string
 		dataConverter            converter.DataConverter
+		headerCodec              converter.PayloadCodec
 		failureConverter         converter.FailureConverter
 		contextPropagators       []ContextPropagator
 		workerPlugins            []WorkerPlugin
@@ -1335,7 +1336,13 @@ func (wc *WorkflowClient) QueryWorkflowWithOptions(ctx context.Context, request 
 	}
 
 	// Set header before interceptor run
-	ctx, err := contextWithHeaderPropagated(ctx, request.Header, wc.contextPropagators)
+	ctx = contextWithNewHeader(ctx)
+	header := request.Header
+	if header != nil {
+		header = proto.Clone(header).(*commonpb.Header)
+	}
+	ctx, err := contextWithHeaderPropagated(ctx, header, wc.contextPropagators,
+		wc.workflowHeaderCodec(request.WorkflowID))
 	if err != nil {
 		return nil, err
 	}
@@ -2219,7 +2226,7 @@ func (w *workflowClientInterceptor) createStartWorkflowRequest(
 	}
 
 	// get workflow headers from the context
-	header, err := headerPropagated(ctx, w.client.contextPropagators)
+	header, err := headerPropagated(ctx, w.client.contextPropagators, w.client.workflowHeaderCodec(workflowID))
 	if err != nil {
 		return nil, err
 	}
@@ -2375,7 +2382,11 @@ func (w *workflowClientInterceptor) UpdateWithStartWorkflow(
 	}
 
 	// Create update request
-	updateReq, err := w.createUpdateWorkflowRequest(ctx, updateInput)
+	headerWorkflowID := updateInput.WorkflowID
+	if headerWorkflowID == "" {
+		headerWorkflowID = startReq.WorkflowId
+	}
+	updateReq, err := w.createUpdateWorkflowRequest(ctx, updateInput, w.client.workflowHeaderCodec(headerWorkflowID))
 	if err != nil {
 		return nil, err
 	}
@@ -2578,7 +2589,7 @@ func (w *workflowClientInterceptor) SignalWorkflow(ctx context.Context, in *Clie
 	}
 
 	// get workflow headers from the context
-	header, err := headerPropagated(ctx, w.client.contextPropagators)
+	header, err := headerPropagated(ctx, w.client.contextPropagators, w.client.workflowHeaderCodec(in.WorkflowID))
 	if err != nil {
 		return err
 	}
@@ -2665,7 +2676,7 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 	}
 
 	// get workflow headers from the context
-	header, err := headerPropagated(ctx, w.client.contextPropagators)
+	header, err := headerPropagated(ctx, w.client.contextPropagators, w.client.workflowHeaderCodec(in.Options.ID))
 	if err != nil {
 		return nil, err
 	}
@@ -2941,7 +2952,7 @@ func (w *workflowClientInterceptor) QueryWorkflow(
 	})
 
 	// get workflow headers from the context
-	header, err := headerPropagated(ctx, w.client.contextPropagators)
+	header, err := headerPropagated(ctx, w.client.contextPropagators, w.client.workflowHeaderCodec(in.WorkflowID))
 	if err != nil {
 		return nil, err
 	}
@@ -3004,7 +3015,7 @@ func (w *workflowClientInterceptor) UpdateWorkflow(
 	in *ClientUpdateWorkflowInput,
 ) (WorkflowUpdateHandle, error) {
 	var resp *workflowservice.UpdateWorkflowExecutionResponse
-	req, err := w.createUpdateWorkflowRequest(ctx, in)
+	req, err := w.createUpdateWorkflowRequest(ctx, in, w.client.workflowHeaderCodec(in.WorkflowID))
 	if err != nil {
 		return nil, err
 	}
@@ -3093,6 +3104,7 @@ func createUpdateWorkflowInput(options *UpdateWorkflowOptions) (*ClientUpdateWor
 func (w *workflowClientInterceptor) createUpdateWorkflowRequest(
 	ctx context.Context,
 	in *ClientUpdateWorkflowInput,
+	headerCodec converter.PayloadCodec,
 ) (*workflowservice.UpdateWorkflowExecutionRequest, error) {
 	dataConverter := WithContext(ctx, w.client.dataConverter)
 	if dataConverter == nil {
@@ -3107,7 +3119,7 @@ func (w *workflowClientInterceptor) createUpdateWorkflowRequest(
 		return nil, err
 	}
 
-	header, err := headerPropagated(ctx, w.client.contextPropagators)
+	header, err := headerPropagated(ctx, w.client.contextPropagators, headerCodec)
 	if err != nil {
 		return nil, err
 	}
