@@ -9,12 +9,12 @@ require (
 	github.com/aws/smithy-go v1.28.4
 	github.com/stretchr/testify v1.10.0
 	go.temporal.io/sdk v1.39.0
-	go.temporal.io/sdk/contrib/envconfig v1.0.2
+	go.temporal.io/sdk/contrib/envconfig v1.1.0
 	google.golang.org/grpc v1.83.2
 )
 
 require (
-	github.com/BurntSushi/toml v1.4.0 // indirect
+	github.com/BurntSushi/toml v1.6.0 // indirect
 	github.com/aws/aws-sdk-go-v2/credentials v1.20.8 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.20.2 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.5.5 // indirect
