@@ -655,7 +655,7 @@ func convertToPBScheduleAction(
 		}
 
 		// get workflow headers from the context
-		header, err := headerPropagated(ctx, client.contextPropagators)
+		header, err := headerPropagated(ctx, client.contextPropagators, client.workflowHeaderCodec(action.ID))
 		if err != nil {
 			return nil, err
 		}

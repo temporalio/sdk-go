@@ -543,16 +543,20 @@ func buildWorkflowScalableTaskPollers(
 
 		return []scalableTaskPoller{normalScalablePoller, stickyScalablePoller}
 	default: // *pollerBehaviorSimpleMaximum
-		return []scalableTaskPoller{
-			newScalableTaskPoller(
-				taskProcessor.createPoller(Mixed, nil),
-				params.Logger,
-				behavior,
-				metrics.PollerTypeWorkflowTask,
-				params.serverSupportsAutoscaling,
-				nil,
-			),
+		mixedScalablePoller := newScalableTaskPoller(
+			taskProcessor.createPoller(Mixed, nil),
+			params.Logger,
+			behavior,
+			metrics.PollerTypeWorkflowTask,
+			params.serverSupportsAutoscaling,
+			nil,
+		)
+		if taskProcessor.stickyCacheSize > 0 {
+			// One pool polls both queues, so the heartbeat's sticky slot reports the same
+			// target. Leaving it unset would pair a real current_pollers with a zero target.
+			mixedScalablePoller.alsoTargetsPollerType = metrics.PollerTypeWorkflowStickyTask
 		}
+		return []scalableTaskPoller{mixedScalablePoller}
 	}
 }
 
@@ -1780,6 +1784,21 @@ func (aw *AggregatedWorker) handleFatalError(err error, hook func(error)) {
 	aw.Stop()
 }
 
+// pollerTargets returns the target poller count per poller type across this worker's pollers.
+func (aw *AggregatedWorker) pollerTargets() map[string]int32 {
+	targets := make(map[string]int32, 4)
+	if aw.workflowWorker != nil {
+		aw.workflowWorker.worker.collectPollerTargets(targets)
+	}
+	if aw.activityWorker != nil {
+		aw.activityWorker.worker.collectPollerTargets(targets)
+	}
+	if aw.nexusWorker != nil {
+		aw.nexusWorker.worker.collectPollerTargets(targets)
+	}
+	return targets
+}
+
 func (aw *AggregatedWorker) registerHeartbeatWorker() error {
 	if aw.client.heartbeatManager == nil {
 		return nil
@@ -2669,7 +2688,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		hostname, _ := os.Hostname()
 		pid := strconv.Itoa(os.Getpid())
 		var previousHeartbeatTime time.Time
-		pluginInfos := collectPluginInfos(client.clientPluginNames, plugins)
+		pluginInfos := collectPluginInfos(client.clientPlugins, plugins)
 		driverInfos := collectStorageDriverInfos(client.storageDriverTypes)
 
 		var prevWorkflowProcessed, prevWorkflowFailed int64
@@ -2723,6 +2742,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 			if aw.nexusWorker != nil {
 				populateOpts.nexusSlotSupplierKind = aw.nexusWorker.worker.slotSupplier.GetSlotSupplierKind()
 			}
+			populateOpts.pollerTargets = aw.pollerTargets()
 			heartbeatTime := time.Now()
 
 			status := enumspb.WORKER_STATUS_RUNNING
@@ -3160,21 +3180,22 @@ func getMemUsage(supplier SysInfoProvider, logger log.Logger) float32 {
 	return float32(mem)
 }
 
-// collectPluginInfos collects plugin names from client and worker plugins,
-// deduplicates them, and returns a slice of PluginInfo for heartbeat reporting.
-func collectPluginInfos(clientPluginNames []string, workerPlugins []WorkerPlugin) []*workerpb.PluginInfo {
-	set := make(map[string]struct{}, len(clientPluginNames)+len(workerPlugins))
-	result := make([]*workerpb.PluginInfo, 0, len(clientPluginNames)+len(workerPlugins))
-	for _, name := range clientPluginNames {
-		if _, found := set[name]; !found {
-			set[name] = struct{}{}
-			result = append(result, &workerpb.PluginInfo{Name: name})
+// collectPluginInfos collects plugin names and versions from client and worker
+// plugins, deduplicates them by name, and returns a slice of PluginInfo for
+// heartbeat reporting.
+func collectPluginInfos(clientPlugins []ClientPlugin, workerPlugins []WorkerPlugin) []*workerpb.PluginInfo {
+	set := make(map[string]struct{}, len(clientPlugins)+len(workerPlugins))
+	result := make([]*workerpb.PluginInfo, 0, len(clientPlugins)+len(workerPlugins))
+	for _, plugin := range clientPlugins {
+		if _, found := set[plugin.Name()]; !found {
+			set[plugin.Name()] = struct{}{}
+			result = append(result, &workerpb.PluginInfo{Name: plugin.Name(), Version: pluginVersion(plugin)})
 		}
 	}
 	for _, plugin := range workerPlugins {
 		if _, found := set[plugin.Name()]; !found {
 			set[plugin.Name()] = struct{}{}
-			result = append(result, &workerpb.PluginInfo{Name: plugin.Name()})
+			result = append(result, &workerpb.PluginInfo{Name: plugin.Name(), Version: pluginVersion(plugin)})
 		}
 	}
 
@@ -3183,6 +3204,16 @@ func collectPluginInfos(clientPluginNames []string, workerPlugins []WorkerPlugin
 	})
 
 	return result
+}
+
+// pluginVersion returns the result of the plugin's Version method, if it has
+// one. Version is not on the plugin interfaces because a default on both plugin
+// bases would be ambiguous for plugins that embed both.
+func pluginVersion(plugin any) string {
+	if p, ok := plugin.(interface{ Version() string }); ok {
+		return p.Version()
+	}
+	return ""
 }
 
 func collectStorageDriverInfos(driverTypes []string) []*workerpb.StorageDriverInfo {

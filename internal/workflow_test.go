@@ -46,6 +46,7 @@ func TestGetChildWorkflowOptions(t *testing.T) {
 		StaticSummary: "child workflow summary",
 		StaticDetails: "child workflow details",
 		Priority:      newPriority(),
+		EventGroups:   []EventGroup{NewEventGroup("child-group")},
 	}
 
 	// Require test options to have non-zero value for each field. This ensures that we update tests (and the
@@ -69,6 +70,7 @@ func TestGetActivityOptions(t *testing.T) {
 		VersioningIntent:       VersioningIntentDefault,
 		Summary:                "activity summary",
 		Priority:               newPriority(),
+		EventGroups:            []EventGroup{NewEventGroup("activity-group")},
 	}
 
 	assertNonZero(t, opts)
@@ -81,6 +83,7 @@ func TestGetLocalActivityOptions(t *testing.T) {
 		StartToCloseTimeout:    time.Hour,
 		RetryPolicy:            newTestRetryPolicy(),
 		Summary:                "local activity summary",
+		EventGroups:            []EventGroup{NewEventGroup("local-activity-group")},
 	}
 
 	assertNonZero(t, opts)

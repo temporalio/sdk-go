@@ -16,6 +16,7 @@ import (
 	failurepb "go.temporal.io/api/failure/v1"
 	historypb "go.temporal.io/api/history/v1"
 	protocolpb "go.temporal.io/api/protocol/v1"
+	sdk "go.temporal.io/api/sdk/v1"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"google.golang.org/protobuf/proto"
@@ -419,13 +420,13 @@ func (wc *workflowEnvironmentImpl) Complete(result *commonpb.Payloads, err error
 
 func (wc *workflowEnvironmentImpl) RequestCancelChildWorkflow(namespace string, workflowID string) {
 	// For cancellation of child workflow only, we do not use cancellation ID and run ID
-	wc.commandsHelper.requestCancelExternalWorkflowExecution(namespace, workflowID, "", "", true)
+	wc.commandsHelper.requestCancelExternalWorkflowExecution(namespace, workflowID, "", "", true, nil)
 }
 
-func (wc *workflowEnvironmentImpl) RequestCancelExternalWorkflow(namespace, workflowID, runID string, callback ResultHandler) {
+func (wc *workflowEnvironmentImpl) RequestCancelExternalWorkflow(namespace, workflowID, runID string, eventGroupMarkers []*sdk.EventGroupMarker, callback ResultHandler) {
 	// for cancellation of external workflow, we have to use cancellation ID and set isChildWorkflowOnly to false
 	cancellationID := wc.GenerateSequenceID()
-	command := wc.commandsHelper.requestCancelExternalWorkflowExecution(namespace, workflowID, runID, cancellationID, false)
+	command := wc.commandsHelper.requestCancelExternalWorkflowExecution(namespace, workflowID, runID, cancellationID, false, eventGroupMarkers)
 	command.setData(&scheduledCancellation{callback: callback})
 }
 
@@ -438,15 +439,16 @@ func (wc *workflowEnvironmentImpl) SignalExternalWorkflow(
 	_ /* THIS IS FOR TEST FRAMEWORK. DO NOT USE HERE. */ any,
 	header *commonpb.Header,
 	childWorkflowOnly bool,
+	eventGroupMarkers []*sdk.EventGroupMarker,
 	callback ResultHandler,
 ) {
 	signalID := wc.GenerateSequenceID()
 	command := wc.commandsHelper.signalExternalWorkflowExecution(namespace, workflowID, runID, signalName, input,
-		header, signalID, childWorkflowOnly)
+		header, signalID, childWorkflowOnly, eventGroupMarkers)
 	command.setData(&scheduledSignal{callback: callback})
 }
 
-func (wc *workflowEnvironmentImpl) UpsertSearchAttributes(attributes map[string]any) error {
+func (wc *workflowEnvironmentImpl) UpsertSearchAttributes(attributes map[string]any, eventGroupMarkers []*sdk.EventGroupMarker) error {
 	// This has to be used in WorkflowEnvironment implementations instead of in Workflow for testsuite mock purpose.
 	attr, err := validateAndSerializeSearchAttributes(attributes)
 	if err != nil {
@@ -461,12 +463,12 @@ func (wc *workflowEnvironmentImpl) UpsertSearchAttributes(attributes map[string]
 		upsertID = wc.GenerateSequenceID()
 	}
 
-	wc.commandsHelper.upsertSearchAttributes(upsertID, attr)
+	wc.commandsHelper.upsertSearchAttributes(upsertID, attr, eventGroupMarkers)
 	wc.updateWorkflowInfoWithSearchAttributes(attr) // this is for getInfo correctness
 	return nil
 }
 
-func (wc *workflowEnvironmentImpl) UpsertTypedSearchAttributes(attributes SearchAttributes) error {
+func (wc *workflowEnvironmentImpl) UpsertTypedSearchAttributes(attributes SearchAttributes, eventGroupMarkers []*sdk.EventGroupMarker) error {
 	rawSearchAttributes, err := serializeTypedSearchAttributes(attributes.untypedValue)
 	if err != nil {
 		return err
@@ -480,7 +482,7 @@ func (wc *workflowEnvironmentImpl) UpsertTypedSearchAttributes(attributes Search
 	for k, v := range rawSearchAttributes.GetIndexedFields() {
 		attr[k] = v
 	}
-	return wc.UpsertSearchAttributes(attr)
+	return wc.UpsertSearchAttributes(attr, eventGroupMarkers)
 }
 
 func (wc *workflowEnvironmentImpl) updateWorkflowInfoWithSearchAttributes(attributes *commonpb.SearchAttributes) {
@@ -513,7 +515,7 @@ func validateAndSerializeSearchAttributes(attributes map[string]any) (*commonpb.
 	return attr, nil
 }
 
-func (wc *workflowEnvironmentImpl) UpsertMemo(memoMap map[string]any) error {
+func (wc *workflowEnvironmentImpl) UpsertMemo(memoMap map[string]any, eventGroupMarkers []*sdk.EventGroupMarker) error {
 	// This has to be used in WorkflowEnvironment implementations instead of in Workflow for testsuite mock purpose.
 	memo, err := validateAndSerializeMemo(memoMap, wc.dataConverter, wc.TryUse(SDKFlagMemoUserDCEncode))
 	if err != nil {
@@ -521,7 +523,7 @@ func (wc *workflowEnvironmentImpl) UpsertMemo(memoMap map[string]any) error {
 	}
 
 	changeID := wc.GenerateSequenceID()
-	wc.commandsHelper.modifyProperties(changeID, memo)
+	wc.commandsHelper.modifyProperties(changeID, memo, eventGroupMarkers)
 	wc.updateWorkflowInfoWithMemo(memo) // this is for getInfo correctness
 	return nil
 }
@@ -618,11 +620,12 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 
 	startMetadata, err := BuildUserMetadata(params.StaticSummary, params.StaticDetails, wc.dataConverter)
 	if err != nil {
+		panicOnCodecWorkflowTaskFailure(err)
 		callback(nil, err)
 		return
 	}
 
-	command, err := wc.commandsHelper.startChildWorkflowExecution(attributes, startMetadata)
+	command, err := wc.commandsHelper.startChildWorkflowExecution(attributes, startMetadata, params.EventGroupMarkers)
 	if _, ok := err.(*childWorkflowExistsWithId); ok {
 		if wc.sdkFlags.tryUse(SDKFlagChildWorkflowErrorExecution, !wc.isReplay) {
 			startedHandler(WorkflowExecution{}, &ChildWorkflowExecutionAlreadyStartedError{})
@@ -666,11 +669,12 @@ func (wc *workflowEnvironmentImpl) ExecuteNexusOperation(params ExecuteNexusOper
 
 	startMetadata, err := BuildUserMetadata(params.options.Summary, "", wc.dataConverter)
 	if err != nil {
+		panicOnCodecWorkflowTaskFailure(err)
 		callback(nil, err)
 		return 0
 	}
 
-	command := wc.commandsHelper.scheduleNexusOperation(seq, scheduleTaskAttr, startMetadata)
+	command := wc.commandsHelper.scheduleNexusOperation(seq, scheduleTaskAttr, startMetadata, params.eventGroupMarkers)
 	failureConverter := params.failureConverter
 	if failureConverter == nil {
 		failureConverter = wc.failureConverter
@@ -829,6 +833,7 @@ func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivityPar
 
 	startMetadata, err := BuildUserMetadata(parameters.Summary, "", wc.dataConverter)
 	if err != nil {
+		panicOnCodecWorkflowTaskFailure(err)
 		callback(nil, err)
 		return ActivityID{}
 	}
@@ -841,7 +846,7 @@ func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivityPar
 	if fc == nil {
 		fc = wc.failureConverter
 	}
-	command := wc.commandsHelper.scheduleActivityTask(parameters.ScheduleID, scheduleTaskAttr, startMetadata)
+	command := wc.commandsHelper.scheduleActivityTask(parameters.ScheduleID, scheduleTaskAttr, startMetadata, parameters.EventGroupMarkers)
 	command.setData(&scheduledActivity{
 		callback:             callback,
 		waitForCancelRequest: parameters.WaitForCancellation,
@@ -914,7 +919,7 @@ func (wc *workflowEnvironmentImpl) Now() time.Time {
 	return wc.currentReplayTime
 }
 
-func (wc *workflowEnvironmentImpl) NewTimer(d time.Duration, options TimerOptions, callback ResultHandler) *TimerID {
+func (wc *workflowEnvironmentImpl) NewTimer(d time.Duration, options TimerOptions, eventGroupMarkers []*sdk.EventGroupMarker, callback ResultHandler) *TimerID {
 	if d < 0 {
 		callback(nil, fmt.Errorf("negative duration provided %v", d))
 		return nil
@@ -929,7 +934,7 @@ func (wc *workflowEnvironmentImpl) NewTimer(d time.Duration, options TimerOption
 	startTimerAttr.TimerId = timerID
 	startTimerAttr.StartToFireTimeout = durationpb.New(d)
 
-	command := wc.commandsHelper.startTimer(startTimerAttr, options, wc.GetDataConverter())
+	command := wc.commandsHelper.startTimer(startTimerAttr, options, wc.GetDataConverter(), eventGroupMarkers)
 	command.setData(&scheduledTimer{callback: callback})
 
 	wc.logger.Debug("NewTimer",
@@ -964,7 +969,7 @@ func validateVersion(changeID string, version, minSupported, maxSupported Versio
 	}
 }
 
-func (wc *workflowEnvironmentImpl) GetVersion(changeID string, minSupported, maxSupported Version) Version {
+func (wc *workflowEnvironmentImpl) GetVersion(changeID string, minSupported, maxSupported Version, eventGroupMarkers []*sdk.EventGroupMarker) Version {
 	if version, ok := wc.changeVersions[changeID]; ok {
 		validateVersion(changeID, version, minSupported, maxSupported)
 		return version
@@ -998,9 +1003,9 @@ func (wc *workflowEnvironmentImpl) GetVersion(changeID string, minSupported, max
 				)
 				updateSearchAttribute = false
 			}
-			wc.commandsHelper.recordVersionMarker(changeID, version, wc.GetDataConverter(), updateSearchAttribute)
+			wc.commandsHelper.recordVersionMarker(changeID, version, wc.GetDataConverter(), updateSearchAttribute, eventGroupMarkers)
 			if updateSearchAttribute {
-				_ = wc.UpsertSearchAttributes(changeVersionSA)
+				_ = wc.UpsertSearchAttributes(changeVersionSA, eventGroupMarkers)
 			}
 		}
 	}
@@ -1060,7 +1065,7 @@ func getChangeVersion(changeID string, version Version) string {
 	return fmt.Sprintf("%s-%v", changeID, version)
 }
 
-func (wc *workflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads, error), callback ResultHandler, summary string) {
+func (wc *workflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads, error), callback ResultHandler, summary string, eventGroupMarkers []*sdk.EventGroupMarker) {
 	sideEffectID := wc.getNextSideEffectID()
 	var result *commonpb.Payloads
 	if wc.isReplay {
@@ -1091,9 +1096,10 @@ func (wc *workflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads, erro
 
 	userMetadata, err := BuildUserMetadata(summary, "", wc.dataConverter)
 	if err != nil {
+		panicOnCodecWorkflowTaskFailure(err)
 		panic(fmt.Sprintf("failed to build user metadata for side effect: %v", err))
 	}
-	wc.commandsHelper.recordSideEffectMarker(sideEffectID, result, wc.dataConverter, userMetadata)
+	wc.commandsHelper.recordSideEffectMarker(sideEffectID, result, wc.dataConverter, userMetadata, eventGroupMarkers)
 
 	callback(result, nil)
 	wc.logger.Debug("SideEffect Marker added", tagSideEffectID, sideEffectID)
@@ -1161,7 +1167,7 @@ func (wc *workflowEnvironmentImpl) lookupMutableSideEffect(id string) *commonpb.
 	return payloads
 }
 
-func (wc *workflowEnvironmentImpl) MutableSideEffect(id string, f func() any, equals func(a, b any) bool, summary string) converter.EncodedValue {
+func (wc *workflowEnvironmentImpl) MutableSideEffect(id string, f func() any, equals func(a, b any) bool, summary string, eventGroupMarkers []*sdk.EventGroupMarker) converter.EncodedValue {
 	wc.mutableSideEffectCallCounter[id]++
 	callCount := wc.mutableSideEffectCallCounter[id]
 
@@ -1172,7 +1178,7 @@ func (wc *workflowEnvironmentImpl) MutableSideEffect(id string, f func() any, eq
 			// recorded on the next task. We have to append the current command
 			// counter to the user-provided ID to avoid duplicates.
 			if wc.mutableSideEffectsRecorded[fmt.Sprintf("%v_%v", id, wc.commandsHelper.getNextID())] {
-				return wc.recordMutableSideEffect(id, callCount, result, summary)
+				return wc.recordMutableSideEffect(id, callCount, result, summary, eventGroupMarkers)
 			}
 			return encodedResult
 		}
@@ -1182,7 +1188,7 @@ func (wc *workflowEnvironmentImpl) MutableSideEffect(id string, f func() any, eq
 			return encodedResult
 		}
 
-		return wc.recordMutableSideEffect(id, callCount, wc.encodeValue(newValue), summary)
+		return wc.recordMutableSideEffect(id, callCount, wc.encodeValue(newValue), summary, eventGroupMarkers)
 	}
 
 	if wc.isReplay {
@@ -1190,7 +1196,7 @@ func (wc *workflowEnvironmentImpl) MutableSideEffect(id string, f func() any, eq
 		panicIllegalState(fmt.Sprintf("[TMPRL1100] Non deterministic workflow code change detected. MutableSideEffect API call doesn't have a correspondent event in the workflow history. MutableSideEffect ID: %s", id))
 	}
 
-	return wc.recordMutableSideEffect(id, callCount, wc.encodeValue(f()), summary)
+	return wc.recordMutableSideEffect(id, callCount, wc.encodeValue(f()), summary, eventGroupMarkers)
 }
 
 func (wc *workflowEnvironmentImpl) isEqualValue(newValue any, encodedOldValue *commonpb.Payloads, equals func(a, b any) bool) bool {
@@ -1237,16 +1243,17 @@ func (wc *workflowEnvironmentImpl) encodeArg(arg any) (*commonpb.Payloads, error
 	return wc.GetDataConverter().ToPayloads(arg)
 }
 
-func (wc *workflowEnvironmentImpl) recordMutableSideEffect(id string, callCountHint int, data *commonpb.Payloads, summary string) converter.EncodedValue {
+func (wc *workflowEnvironmentImpl) recordMutableSideEffect(id string, callCountHint int, data *commonpb.Payloads, summary string, eventGroupMarkers []*sdk.EventGroupMarker) converter.EncodedValue {
 	details, err := encodeArgs(wc.GetDataConverter(), []any{id, data})
 	if err != nil {
 		panic(err)
 	}
 	userMetadata, err := BuildUserMetadata(summary, "", wc.dataConverter)
 	if err != nil {
+		panicOnCodecWorkflowTaskFailure(err)
 		panic(fmt.Sprintf("failed to build user metadata for mutable side effect: %v", err))
 	}
-	wc.commandsHelper.recordMutableSideEffectMarker(id, callCountHint, details, wc.dataConverter, userMetadata)
+	wc.commandsHelper.recordMutableSideEffectMarker(id, callCountHint, details, wc.dataConverter, userMetadata, eventGroupMarkers)
 	if wc.mutableSideEffect[id] == nil {
 		wc.mutableSideEffect[id] = make(map[int]*commonpb.Payloads)
 	}
@@ -1824,7 +1831,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleLocalActivityMarker(details 
 		if err != nil {
 			return err
 		}
-		weh.commandsHelper.recordLocalActivityMarker(lamd.ActivityID, details, failure, startMetadata)
+		weh.commandsHelper.recordLocalActivityMarker(lamd.ActivityID, details, failure, startMetadata, la.params.EventGroupMarkers)
 		if la.pastFirstWFT {
 			weh.completedLaAttemptsThisWFT += la.attemptsThisWFT
 		}
@@ -1851,7 +1858,8 @@ func (weh *workflowExecutionEventHandlerImpl) handleLocalActivityMarker(details 
 	return nil
 }
 
-func (weh *workflowExecutionEventHandlerImpl) ProcessLocalActivityResult(lar *localActivityResult) error {
+func (weh *workflowExecutionEventHandlerImpl) ProcessLocalActivityResult(lar *localActivityResult) (err error) {
+	defer recoverCodecWorkflowTaskFailure(&err)
 	details := make(map[string]*commonpb.Payloads)
 
 	// convert local activity result and error to marker data

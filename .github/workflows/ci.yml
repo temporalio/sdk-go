@@ -40,11 +40,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-intel, macos-arm, windows-latest]
+        os: [ubuntu-latest, macos-arm, windows-latest]
         go-version: ["oldstable", "stable"]
         include:
-          - os: macos-intel
-            runsOn: macos-15-intel
           - os: macos-arm
             runsOn: macos-15
     permissions:
@@ -91,11 +89,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-intel, macos-arm, windows-latest]
+        os: [ubuntu-latest, macos-arm, windows-latest]
         go-version: ["oldstable", "stable"]
         include:
-          - os: macos-intel
-            runsOn: macos-15-intel
           - os: macos-arm
             runsOn: macos-15
     permissions:
@@ -142,11 +138,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-intel, macos-arm, windows-latest]
+        os: [ubuntu-latest, macos-arm, windows-latest]
         go-version: ["oldstable", "stable"]
         include:
-          - os: macos-intel
-            runsOn: macos-15-intel
           - os: macos-arm
             runsOn: macos-15
     permissions:
@@ -225,6 +219,9 @@ jobs:
           DISABLE_NEXUS_SERIALIZATION_CONTEXT_TESTS: "1"
           # TODO(antlai-temporal): Remove this flag once server 1.27 released.
           DISABLE_SERVER_1_27_TESTS: "1"
+          # TODO: Remove this flag once samples-server's pinned Temporal server supports
+          # Event Groups (>= 1.32.0-162).
+          DISABLE_EVENT_GROUPS_TESTS: "1"
           DISABLE_STANDALONE_ACTIVITY_TESTS: "1"
           DISABLE_STANDALONE_NEXUS_TESTS: "1"
           DISABLE_NEXUS_SDK_ERGONOMICS_TESTS: "1"
@@ -308,7 +305,7 @@ jobs:
           TEMPORAL_CLIENT_CLOUD_API_VERSION: v0.19.1
       - name: Integration tests against cloud
         timeout-minutes: 50
-        run: go run . integration-test -envconfig -cloud -p 1 -packages . -timeout 45m
+        run: go run . integration-test -module test -envconfig -cloud -p 1 -packages . -timeout 45m
         working-directory: ./internal/cmd/build
         env:
           TEST_LOG_ARTIFACT_NAME: ${{ github.job }}-${{ matrix.go-version }}-fips-${{ matrix.fips }}
@@ -354,12 +351,13 @@ jobs:
     name: Required PR Checks
     # Without always(), this job would be skipped when a dependency fails, and GitHub
     # treats a skipped required check as passing.
-    if: always()
+    if: ${{ always() && github.event_name == 'pull_request' }}
     needs:
       - check
       - unit-test
       - integ-test
       - integ-test-cache
+      - cloud-test
       - features-test
     runs-on: ubuntu-latest
     steps:

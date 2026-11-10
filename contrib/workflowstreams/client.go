@@ -261,19 +261,19 @@ func (c *Client) followContinueAsNew(ctx context.Context, runID string) bool {
 	if !c.followCAN {
 		return false
 	}
-	desc, err := c.c.DescribeWorkflowExecution(ctx, c.workflowID, runID)
+	desc, err := c.c.DescribeWorkflow(ctx, c.workflowID, runID)
 	if err != nil {
 		return false
 	}
-	return desc.GetWorkflowExecutionInfo().GetStatus() == enumspb.WORKFLOW_EXECUTION_STATUS_CONTINUED_AS_NEW
+	return desc.Status == enumspb.WORKFLOW_EXECUTION_STATUS_CONTINUED_AS_NEW
 }
 
 func (c *Client) isTerminal(ctx context.Context, runID string) bool {
-	desc, err := c.c.DescribeWorkflowExecution(ctx, c.workflowID, runID)
+	desc, err := c.c.DescribeWorkflow(ctx, c.workflowID, runID)
 	if err != nil {
 		return false
 	}
-	switch desc.GetWorkflowExecutionInfo().GetStatus() {
+	switch desc.Status {
 	case enumspb.WORKFLOW_EXECUTION_STATUS_COMPLETED,
 		enumspb.WORKFLOW_EXECUTION_STATUS_FAILED,
 		enumspb.WORKFLOW_EXECUTION_STATUS_CANCELED,

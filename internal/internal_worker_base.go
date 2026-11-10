@@ -13,7 +13,9 @@ import (
 
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
+	sdk "go.temporal.io/api/sdk/v1"
 	"go.temporal.io/api/serviceerror"
+	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -67,13 +69,14 @@ type (
 	}
 
 	ExecuteNexusOperationParams struct {
-		client           NexusClient
-		operation        string
-		input            *commonpb.Payload
-		options          NexusOperationOptions
-		nexusHeader      map[string]string
-		dataConverter    converter.DataConverter
-		failureConverter converter.FailureConverter
+		client            NexusClient
+		operation         string
+		input             *commonpb.Payload
+		options           NexusOperationOptions
+		nexusHeader       map[string]string
+		dataConverter     converter.DataConverter
+		failureConverter  converter.FailureConverter
+		eventGroupMarkers []*sdk.EventGroupMarker
 	}
 )
 
@@ -106,14 +109,14 @@ type (
 		AsyncActivityClient
 		LocalActivityClient
 		WorkflowTimerClient
-		SideEffect(f func() (*commonpb.Payloads, error), callback ResultHandler, summary string)
-		GetVersion(changeID string, minSupported, maxSupported Version) Version
+		SideEffect(f func() (*commonpb.Payloads, error), callback ResultHandler, summary string, eventGroupMarkers []*sdk.EventGroupMarker)
+		GetVersion(changeID string, minSupported, maxSupported Version, eventGroupMarkers []*sdk.EventGroupMarker) Version
 		WorkflowInfo() *WorkflowInfo
 		TypedSearchAttributes() SearchAttributes
 		Complete(result *commonpb.Payloads, err error)
 		RegisterCancelHandler(handler func())
 		RequestCancelChildWorkflow(namespace, workflowID string)
-		RequestCancelExternalWorkflow(namespace, workflowID, runID string, callback ResultHandler)
+		RequestCancelExternalWorkflow(namespace, workflowID, runID string, eventGroupMarkers []*sdk.EventGroupMarker, callback ResultHandler)
 		ExecuteChildWorkflow(params ExecuteWorkflowParams, callback ResultHandler, startedHandler func(r WorkflowExecution, e error))
 		ExecuteNexusOperation(params ExecuteNexusOperationParams, callback func(*commonpb.Payload, error), startedHandler func(token string, e error)) int64
 		RequestCancelNexusOperation(seq int64)
@@ -133,6 +136,7 @@ type (
 			arg any,
 			header *commonpb.Header,
 			childWorkflowOnly bool,
+			eventGroupMarkers []*sdk.EventGroupMarker,
 			callback ResultHandler,
 		)
 		RegisterQueryHandler(
@@ -142,15 +146,15 @@ type (
 			handler func(string, string, *commonpb.Payloads, *commonpb.Header, UpdateCallbacks),
 		)
 		IsReplaying() bool
-		MutableSideEffect(id string, f func() any, equals func(a, b any) bool, summary string) converter.EncodedValue
+		MutableSideEffect(id string, f func() any, equals func(a, b any) bool, summary string, eventGroupMarkers []*sdk.EventGroupMarker) converter.EncodedValue
 		GetDataConverter() converter.DataConverter
 		GetFailureConverter() converter.FailureConverter
 		AddSession(sessionInfo *SessionInfo)
 		RemoveSession(sessionID string)
 		GetContextPropagators() []ContextPropagator
-		UpsertSearchAttributes(attributes map[string]any) error
-		UpsertTypedSearchAttributes(attributes SearchAttributes) error
-		UpsertMemo(memoMap map[string]any) error
+		UpsertSearchAttributes(attributes map[string]any, eventGroupMarkers []*sdk.EventGroupMarker) error
+		UpsertTypedSearchAttributes(attributes SearchAttributes, eventGroupMarkers []*sdk.EventGroupMarker) error
+		UpsertMemo(memoMap map[string]any, eventGroupMarkers []*sdk.EventGroupMarker) error
 		GetRegistry() *registry
 		// QueueUpdate request of type name
 		QueueUpdate(name string, f func())
@@ -203,6 +207,12 @@ type (
 		taskPoller        taskPoller
 		pollerAutoscaler  *pollerAutoscaler
 		autoscalingRunner *autoscalingTaskPollerRunner
+
+		// targetPollers is an autoscaling pool's live target, or a fixed pool's
+		// configured size. The poll request and the heartbeat read the same supplier.
+		targetPollers func() int32
+
+		alsoTargetsPollerType string
 	}
 
 	// baseWorkerOptions options to configure base worker.
@@ -232,6 +242,8 @@ type (
 	baseWorker struct {
 		options         baseWorkerOptions
 		isWorkerStarted bool
+		// pollerTargets records each pool's target by poller type for the heartbeat.
+		pollerTargets *pollerTargetTracker
 		// stopCh is created by newBaseWorker and closed by baseWorker.Stop().
 		// It is internal to baseWorker and stops its poller, dispatcher, autoscaler,
 		// and throttling/backoff loops.
@@ -414,6 +426,7 @@ func newBaseWorker(
 		taskLimiterContext:       taskLimiterCtx,
 		taskLimiterContextCancel: taskLimiterCancel,
 		sessionTokenBucket:       options.sessionTokenBucket,
+		pollerTargets:            &pollerTargetTracker{},
 	}
 	// Set secondary retrier as resource exhausted
 	bw.retrier.SetSecondaryRetryPolicy(pollResourceExhaustedRetryPolicy)
@@ -421,6 +434,7 @@ func newBaseWorker(
 		bw.pollLimiter = rate.NewLimiter(rate.Limit(options.pollerRate), 1)
 	}
 	bw.validatePollers(options.taskPollers)
+	bw.trackPollerTargets(options.taskPollers)
 
 	return bw
 }
@@ -432,6 +446,29 @@ func (bw *baseWorker) initializeTaskPollers(taskPollers []scalableTaskPoller) {
 	}
 	bw.options.taskPollers = taskPollers
 	bw.validatePollers(taskPollers)
+	bw.trackPollerTargets(taskPollers)
+}
+
+// trackPollerTargets records every pool's target, keyed by poller type, for the heartbeat.
+func (bw *baseWorker) trackPollerTargets(taskPollers []scalableTaskPoller) {
+	for _, tw := range taskPollers {
+		bw.pollerTargets.record(tw.taskPollerType, tw.targetPollers)
+		if tw.alsoTargetsPollerType != "" {
+			bw.pollerTargets.record(tw.alsoTargetsPollerType, tw.targetPollers)
+		}
+	}
+}
+
+// collectPollerTargets adds this worker's target for each poller type it runs. Types it
+// does not run are left absent, not zero, so merging workers cannot clobber a real target.
+func (bw *baseWorker) collectPollerTargets(targets map[string]int32) {
+	if bw.pollerTargets == nil {
+		return
+	}
+	bw.pollerTargets.targets.Range(func(k, v any) bool {
+		targets[k.(string)] = v.(func() int32)()
+		return true
+	})
 }
 
 func (bw *baseWorker) validatePollers(taskPollers []scalableTaskPoller) {
@@ -972,6 +1009,10 @@ func newPollerAutoscaler(options pollerAutoscalerOptions) *pollerAutoscaler {
 	return psr
 }
 
+func (prh *pollerAutoscaler) targetPollers() int32 {
+	return int32(prh.target.Load())
+}
+
 func (prh *pollerAutoscaler) handleTask(task taskForWorker) {
 	if !task.isEmpty() {
 		prh.ingestedThisPeriod.Add(1)
@@ -1280,8 +1321,18 @@ func newScalablePollerWithTarget(
 				targetChanged(target)
 			}
 		}
+		tw.targetPollers = tw.pollerAutoscaler.targetPollers
 	case *pollerBehaviorSimpleMaximum:
 		tw.pollerCount = p.maximumNumberOfPollers
+		target := int32(p.maximumNumberOfPollers)
+		tw.targetPollers = func() int32 { return target }
+	}
+	if reporter, ok := poller.(pollerPoolInfoReporter); ok && tw.targetPollers != nil {
+		targetPollers := tw.targetPollers
+		// A fresh message per call keeps in-flight requests from sharing mutable state.
+		reporter.setPollerPoolInfo(func() *taskqueuepb.PollerPoolInfo {
+			return &taskqueuepb.PollerPoolInfo{TargetPollers: targetPollers()}
+		})
 	}
 	return tw
 }
