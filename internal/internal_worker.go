@@ -252,7 +252,7 @@ type (
 
 		workerInstanceKey string
 
-		workerControlTaskQueue   string
+		namespaceWorker          *sharedNamespaceWorker
 		pollerGroupSnapshotStore *pollerGroupSnapshotStore
 
 		activityCancellationCallbacks *activityCancellationCallbacks
@@ -2485,10 +2485,10 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	// should take a pointer to this struct and wait for it to be populated when the worker is run.
 	var capabilities workflowservice.GetSystemInfoResponse_Capabilities
 	var activityCancellationCallbacks *activityCancellationCallbacks
+	var namespaceWorker *sharedNamespaceWorker
 	if client.heartbeatManager != nil {
-		activityCancellationCallbacks = client.heartbeatManager.
-			sharedNamespaceWorkerFor(client.namespace).
-			activityCancellationCallbacks
+		namespaceWorker = client.heartbeatManager.sharedNamespaceWorkerFor(client.namespace)
+		activityCancellationCallbacks = namespaceWorker.activityCancellationCallbacks
 	}
 
 	baseMetricsHandler := client.metricsHandler.WithTags(metrics.TaskQueueTags(taskQueue))
@@ -2574,7 +2574,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		capabilities:                     &capabilities,
 		pollTimeTracker:                  &pollTimeTracker{},
 		workerInstanceKey:                workerInstanceKey,
-		workerControlTaskQueue:           workerControlTaskQueue(client.namespace, client.workerGroupingKey),
+		namespaceWorker:                  namespaceWorker,
 		pollerGroupSnapshotStore:         newPollerGroupSnapshotStore(),
 		activityCancellationCallbacks:    activityCancellationCallbacks,
 		workerPollCompleteOnShutdown:     workerPollCompleteOnShutdown,
