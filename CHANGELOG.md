@@ -22,6 +22,20 @@ to docs, or any other relevant information.
 
 ### Added
 
+### Changed
+
+### Deprecated
+
+### :boom: Breaking Changes
+
+### Fixed
+
+### Security
+
+## [1.51.0] - 2026-11-10
+
+### Added
+
 - Added `client.Options.RPCTimeout` to configure the default RPC timeout cap,
   including raising it above 10 seconds. Shorter caller deadlines still take
   precedence, and calls with dedicated timeouts (such as long polls) are unchanged.
@@ -125,8 +139,6 @@ to docs, or any other relevant information.
   was only half the caller's context deadline - now it uses the entire deadline, up to a maximum
   of ten seconds. RPCs with timeout overrides, like long-poll RPCs, are unchanged.
 - Query tracing now always records inbound spans when serving queries, regardless of `IsReplaying` state.
-
-### Security
 
 ## [1.50.0] - 2026-10-15
 
