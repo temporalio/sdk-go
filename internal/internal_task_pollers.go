@@ -84,6 +84,7 @@ type (
 	// basePoller is the base class for all poller implementations
 	basePoller struct {
 		metricsHandler metrics.Handler // base metric handler used for rpc calls
+		rpcTimeout     time.Duration
 		stopC          <-chan struct{}
 		// The worker's build ID, either as defined by the user or automatically set
 		workerBuildID string
@@ -209,6 +210,7 @@ type (
 		maxEventID     int64
 		metricsHandler metrics.Handler
 		taskQueue      string
+		rpcTimeout     time.Duration
 	}
 
 	// retrievingHistoryIterator wraps a HistoryIterator and applies the inbound
@@ -414,7 +416,7 @@ func (bp *basePoller) doPoll(pollFunc func(ctx context.Context) (taskForWorker, 
 	var result taskForWorker
 
 	doneC := make(chan struct{})
-	ctx, cancel := newGRPCContext(context.Background(), grpcTimeout(pollTaskServiceTimeOut), grpcLongPoll(true))
+	ctx, cancel := newGRPCContext(context.Background(), bp.rpcTimeout, grpcTimeout(pollTaskServiceTimeOut), grpcLongPoll(true))
 
 	go func() {
 		result, err = pollFunc(ctx)
@@ -474,6 +476,7 @@ func newWorkflowTaskProcessor(
 	return &workflowTaskProcessor{
 		basePoller: basePoller{
 			metricsHandler:               params.MetricsHandler,
+			rpcTimeout:                   params.RPCTimeout,
 			stopC:                        params.WorkerStopChannel,
 			workerBuildID:                params.getBuildID(),
 			useBuildIDVersioning:         params.UseBuildIDForVersioning,
@@ -993,7 +996,7 @@ func (wtp *workflowTaskProcessor) newWorkflowTaskReportGRPCContext(
 	ctx context.Context,
 	task *workflowservice.PollWorkflowTaskQueueResponse,
 ) (context.Context, context.CancelFunc) {
-	return newGRPCContext(ctx, grpcMetricsHandler(
+	return newGRPCContext(ctx, wtp.rpcTimeout, grpcMetricsHandler(
 		wtp.metricsHandler.WithTags(metrics.RPCTags(task.GetWorkflowType().GetName(),
 			metrics.NoneTagValue, metrics.NoneTagValue))),
 		defaultGrpcRetryParameters(ctx))
@@ -1669,6 +1672,7 @@ func (wtp *workflowTaskPoller) toWorkflowTask(response *workflowservice.PollWork
 				maxEventID:     response.GetStartedEventId(),
 				metricsHandler: wtp.metricsHandler,
 				taskQueue:      wtp.taskQueueName,
+				rpcTimeout:     wtp.rpcTimeout,
 			},
 			inboundVisitor: wtp.inboundPayloadVisitor,
 			storageParams:  wtp.storageParams,
@@ -1688,6 +1692,7 @@ func (wtp *workflowTaskProcessor) toWorkflowTask(response *workflowservice.PollW
 				maxEventID:     response.GetStartedEventId(),
 				metricsHandler: wtp.metricsHandler,
 				taskQueue:      wtp.taskQueueName,
+				rpcTimeout:     wtp.rpcTimeout,
 			},
 			inboundVisitor: wtp.inboundPayloadVisitor,
 			storageParams:  wtp.storageParams,
@@ -1705,6 +1710,7 @@ func (h *historyIteratorImpl) GetNextPage() (*historypb.History, error) {
 			h.maxEventID,
 			h.metricsHandler,
 			h.taskQueue,
+			h.rpcTimeout,
 		)
 	}
 
@@ -1746,10 +1752,11 @@ func newGetHistoryPageFunc(
 	lastEventID int64,
 	metricsHandler metrics.Handler,
 	taskQueue string,
+	rpcTimeout time.Duration,
 ) func(nextPageToken []byte) (*historypb.History, []byte, error) {
 	return func(nextPageToken []byte) (*historypb.History, []byte, error) {
 		var resp *workflowservice.GetWorkflowExecutionHistoryResponse
-		grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsHandler(
+		grpcCtx, cancel := newGRPCContext(ctx, rpcTimeout, grpcMetricsHandler(
 			metricsHandler.WithTags(metrics.RPCTags(metrics.NoneTagValue, metrics.NoneTagValue, taskQueue))),
 			defaultGrpcRetryParameters(ctx))
 		defer cancel()
@@ -1799,6 +1806,7 @@ func newActivityTaskPoller(
 	return &activityTaskPoller{
 		basePoller: basePoller{
 			metricsHandler:               params.MetricsHandler,
+			rpcTimeout:                   params.RPCTimeout,
 			stopC:                        params.WorkerStopChannel,
 			workerBuildID:                params.getBuildID(),
 			useBuildIDVersioning:         params.UseBuildIDForVersioning,
@@ -1954,7 +1962,7 @@ func (atp *activityTaskPoller) ProcessTask(task any) error {
 	}
 
 	rpcMetricsHandler := atp.metricsHandler.WithTags(metrics.RPCTags(workflowType, activityType, metrics.NoneTagValue))
-	reportErr := reportActivityComplete(context.Background(), atp.service, request, rpcMetricsHandler)
+	reportErr := reportActivityComplete(context.Background(), atp.service, request, rpcMetricsHandler, atp.rpcTimeout)
 	if reportErr != nil {
 		traceLog(func() {
 			atp.logger.Debug("reportActivityComplete failed", tagError, reportErr)
@@ -1975,6 +1983,7 @@ func reportActivityComplete(
 	service workflowservice.WorkflowServiceClient,
 	request any,
 	rpcMetricsHandler metrics.Handler,
+	rpcTimeout time.Duration,
 ) error {
 	if request == nil {
 		// nothing to report
@@ -1984,18 +1993,18 @@ func reportActivityComplete(
 	var reportErr error
 	switch rqst := request.(type) {
 	case *workflowservice.RespondActivityTaskCanceledRequest:
-		grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsHandler(rpcMetricsHandler),
+		grpcCtx, cancel := newGRPCContext(ctx, rpcTimeout, grpcMetricsHandler(rpcMetricsHandler),
 			defaultGrpcRetryParameters(ctx))
 		defer cancel()
 		_, err := service.RespondActivityTaskCanceled(grpcCtx, rqst)
 		reportErr = err
 	case *workflowservice.RespondActivityTaskFailedRequest:
-		grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsHandler(rpcMetricsHandler), defaultGrpcRetryParameters(ctx))
+		grpcCtx, cancel := newGRPCContext(ctx, rpcTimeout, grpcMetricsHandler(rpcMetricsHandler), defaultGrpcRetryParameters(ctx))
 		defer cancel()
 		_, err := service.RespondActivityTaskFailed(grpcCtx, rqst)
 		reportErr = err
 	case *workflowservice.RespondActivityTaskCompletedRequest:
-		grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsHandler(rpcMetricsHandler),
+		grpcCtx, cancel := newGRPCContext(ctx, rpcTimeout, grpcMetricsHandler(rpcMetricsHandler),
 			defaultGrpcRetryParameters(ctx))
 		defer cancel()
 		_, err := service.RespondActivityTaskCompleted(grpcCtx, rqst)
@@ -2009,6 +2018,7 @@ func reportActivityCompleteByID(
 	service workflowservice.WorkflowServiceClient,
 	request any,
 	rpcMetricsHandler metrics.Handler,
+	rpcTimeout time.Duration,
 ) error {
 	if request == nil {
 		// nothing to report
@@ -2018,19 +2028,19 @@ func reportActivityCompleteByID(
 	var reportErr error
 	switch request := request.(type) {
 	case *workflowservice.RespondActivityTaskCanceledByIdRequest:
-		grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsHandler(rpcMetricsHandler),
+		grpcCtx, cancel := newGRPCContext(ctx, rpcTimeout, grpcMetricsHandler(rpcMetricsHandler),
 			defaultGrpcRetryParameters(ctx))
 		defer cancel()
 		_, err := service.RespondActivityTaskCanceledById(grpcCtx, request)
 		reportErr = err
 	case *workflowservice.RespondActivityTaskFailedByIdRequest:
-		grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsHandler(rpcMetricsHandler),
+		grpcCtx, cancel := newGRPCContext(ctx, rpcTimeout, grpcMetricsHandler(rpcMetricsHandler),
 			defaultGrpcRetryParameters(ctx))
 		defer cancel()
 		_, err := service.RespondActivityTaskFailedById(grpcCtx, request)
 		reportErr = err
 	case *workflowservice.RespondActivityTaskCompletedByIdRequest:
-		grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsHandler(rpcMetricsHandler),
+		grpcCtx, cancel := newGRPCContext(ctx, rpcTimeout, grpcMetricsHandler(rpcMetricsHandler),
 			defaultGrpcRetryParameters(ctx))
 		defer cancel()
 		_, err := service.RespondActivityTaskCompletedById(grpcCtx, request)

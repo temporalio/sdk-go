@@ -616,7 +616,7 @@ func (wc *WorkflowClient) ListNexusOperations(ctx context.Context, options Clien
 }
 
 func (wc *WorkflowClient) getListNexusOperationsPage(ctx context.Context, request *workflowservice.ListNexusOperationExecutionsRequest) (*workflowservice.ListNexusOperationExecutionsResponse, error) {
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, wc.rpcTimeout, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 
 	return wc.WorkflowService().ListNexusOperationExecutions(grpcCtx, request)
@@ -628,7 +628,7 @@ func (wc *WorkflowClient) CountNexusOperations(ctx context.Context, options Clie
 		return nil, err
 	}
 
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, wc.rpcTimeout, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 
 	request := &workflowservice.CountNexusOperationExecutionsRequest{
@@ -727,7 +727,7 @@ func (w *workflowClientInterceptor) ExecuteNexusOperation(
 		return nil, err
 	}
 
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, w.client.rpcTimeout, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 
 	resp, err := w.client.WorkflowService().StartNexusOperationExecution(grpcCtx, request)
@@ -772,7 +772,7 @@ func (w *workflowClientInterceptor) PollNexusOperationResult(
 
 	var resp *workflowservice.PollNexusOperationExecutionResponse
 	for resp.GetOutcome() == nil {
-		grpcCtx, cancel := newGRPCContext(ctx, grpcLongPoll(true), grpcTimeout(pollNexusOperationTimeout), defaultGrpcRetryParameters(ctx))
+		grpcCtx, cancel := newGRPCContext(ctx, w.client.rpcTimeout, grpcLongPoll(true), grpcTimeout(pollNexusOperationTimeout), defaultGrpcRetryParameters(ctx))
 		var err error
 		resp, err = w.client.WorkflowService().PollNexusOperationExecution(grpcCtx, request)
 		cancel()
@@ -808,7 +808,7 @@ func (w *workflowClientInterceptor) DescribeNexusOperation(
 	ctx context.Context,
 	in *ClientDescribeNexusOperationInput,
 ) (*ClientDescribeNexusOperationOutput, error) {
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, w.client.rpcTimeout, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 
 	request := &workflowservice.DescribeNexusOperationExecutionRequest{
@@ -889,7 +889,7 @@ func (w *workflowClientInterceptor) CancelNexusOperation(
 	ctx context.Context,
 	in *ClientCancelNexusOperationInput,
 ) error {
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, w.client.rpcTimeout, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 
 	request := &workflowservice.RequestCancelNexusOperationExecutionRequest{
@@ -908,7 +908,7 @@ func (w *workflowClientInterceptor) TerminateNexusOperation(
 	ctx context.Context,
 	in *ClientTerminateNexusOperationInput,
 ) error {
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, w.client.rpcTimeout, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 
 	request := &workflowservice.TerminateNexusOperationExecutionRequest{

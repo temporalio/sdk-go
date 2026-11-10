@@ -111,7 +111,7 @@ func testActivityHeartbeatResourceID(t *testing.T) {
 			ctx, cancel := context.WithCancelCause(t.Context())
 			defer cancel(nil)
 			invoker := newServiceInvoker([]byte("test-token"), "test-identity", service, metrics.NopHandler, cancel,
-				1*time.Second, make(chan struct{}), "test-namespace", &atomic.Bool{}, nil, GetDefaultFailureConverter())
+				1*time.Second, make(chan struct{}), "test-namespace", &atomic.Bool{}, nil, GetDefaultFailureConverter(), 0)
 
 			// Only the activity environment creation varies
 			activityCtx, _ := newActivityContext(ctx, nil, tc.createActivityEnv(invoker))
