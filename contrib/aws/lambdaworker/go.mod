@@ -7,7 +7,7 @@ require (
 	github.com/nexus-rpc/sdk-go v0.7.0
 	github.com/stretchr/testify v1.10.0
 	go.temporal.io/sdk v1.39.0
-	go.temporal.io/sdk/contrib/aws/secretsmanager v0.0.0-00010101000000-000000000000
+	go.temporal.io/sdk/contrib/aws/secretsmanager v0.1.0
 	go.temporal.io/sdk/contrib/envconfig v1.1.0
 )
 
