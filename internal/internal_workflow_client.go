@@ -86,6 +86,7 @@ type (
 		namespaceDataLock        sync.RWMutex
 		eagerDispatcher          *eagerWorkflowDispatcher
 		getSystemInfoTimeout     time.Duration
+		rpcTimeout               time.Duration
 		workerHeartbeatInterval  time.Duration
 		workerGroupingKey        string
 		sdkName                  string
@@ -114,6 +115,7 @@ type (
 		metricsHandler   metrics.Handler
 		logger           log.Logger
 		identity         string
+		rpcTimeout       time.Duration
 	}
 
 	// WorkflowRun represents a started non child workflow
@@ -512,7 +514,7 @@ func (wc *WorkflowClient) getWorkflowExecutionHistory(ctx context.Context, rpcMe
 		return nil, err
 	}
 
-	grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsHandler(rpcMetricsHandler), grpcLongPoll(isLongPoll), defaultGrpcRetryParameters(ctx), func(builder *grpcContextBuilder) {
+	grpcCtx, cancel := newGRPCContext(ctx, wc.rpcTimeout, grpcMetricsHandler(rpcMetricsHandler), grpcLongPoll(isLongPoll), defaultGrpcRetryParameters(ctx), func(builder *grpcContextBuilder) {
 		if isLongPoll {
 			builder.Timeout = defaultGetHistoryTimeout
 		}
@@ -595,7 +597,7 @@ func (wc *WorkflowClient) CompleteActivityWithOptions(ctx context.Context, opts 
 			return err
 		}
 	}
-	return reportActivityComplete(ctx, wc.workflowService, request, wc.metricsHandler)
+	return reportActivityComplete(ctx, wc.workflowService, request, wc.metricsHandler, wc.rpcTimeout)
 }
 
 // CompleteActivityByID reports workflow activity completed. Similar to CompleteActivity
@@ -657,7 +659,7 @@ func (wc *WorkflowClient) CompleteActivityByIDWithOptions(ctx context.Context, o
 			return err
 		}
 	}
-	return reportActivityCompleteByID(ctx, wc.workflowService, request, wc.metricsHandler)
+	return reportActivityCompleteByID(ctx, wc.workflowService, request, wc.metricsHandler, wc.rpcTimeout)
 }
 
 // CompleteActivityByActivityID reports standalone activity completed. Similar to CompleteActivity
@@ -717,7 +719,7 @@ func (wc *WorkflowClient) CompleteActivityByActivityIDWithOptions(ctx context.Co
 			return err
 		}
 	}
-	return reportActivityCompleteByID(ctx, wc.workflowService, request, wc.metricsHandler)
+	return reportActivityCompleteByID(ctx, wc.workflowService, request, wc.metricsHandler, wc.rpcTimeout)
 }
 
 // RecordActivityHeartbeat records heartbeat for an activity.
@@ -761,7 +763,7 @@ func (wc *WorkflowClient) RecordActivityHeartbeatWithOptions(ctx context.Context
 	if err := visitProtoPayloads(ctx, wc.newOutboundPayloadVisitor(), request, 0); err != nil {
 		return err
 	}
-	return recordActivityHeartbeat(ctx, wc.workflowService, wc.metricsHandler, request)
+	return recordActivityHeartbeat(ctx, wc.workflowService, wc.metricsHandler, request, wc.rpcTimeout)
 }
 
 // RecordActivityHeartbeatByID records heartbeat for an activity.
@@ -808,7 +810,7 @@ func (wc *WorkflowClient) RecordActivityHeartbeatByIDWithOptions(ctx context.Con
 	if err := visitProtoPayloads(ctx, wc.newOutboundPayloadVisitor(), byIDRequest, 0); err != nil {
 		return err
 	}
-	return recordActivityHeartbeatByID(ctx, wc.workflowService, wc.metricsHandler, byIDRequest)
+	return recordActivityHeartbeatByID(ctx, wc.workflowService, wc.metricsHandler, byIDRequest, wc.rpcTimeout)
 }
 
 // ListClosedWorkflow gets closed workflow executions based on request filters
@@ -825,7 +827,7 @@ func (wc *WorkflowClient) ListClosedWorkflow(ctx context.Context, request *workf
 	if request.GetNamespace() == "" {
 		request.Namespace = wc.namespace
 	}
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, wc.rpcTimeout, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 	response, err := wc.workflowService.ListClosedWorkflowExecutions(grpcCtx, request)
 	if err != nil {
@@ -848,7 +850,7 @@ func (wc *WorkflowClient) ListOpenWorkflow(ctx context.Context, request *workflo
 	if request.GetNamespace() == "" {
 		request.Namespace = wc.namespace
 	}
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, wc.rpcTimeout, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 	response, err := wc.workflowService.ListOpenWorkflowExecutions(grpcCtx, request)
 	if err != nil {
@@ -866,7 +868,7 @@ func (wc *WorkflowClient) ListWorkflow(ctx context.Context, request *workflowser
 	if request.GetNamespace() == "" {
 		request.Namespace = wc.namespace
 	}
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, wc.rpcTimeout, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 	response, err := wc.workflowService.ListWorkflowExecutions(grpcCtx, request)
 	if err != nil {
@@ -896,7 +898,7 @@ func (wc *WorkflowClient) ListArchivedWorkflow(ctx context.Context, request *wor
 			}
 		}
 	}
-	grpcCtx, cancel := newGRPCContext(ctx, grpcTimeout(timeout), defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, wc.rpcTimeout, grpcTimeout(timeout), defaultGrpcRetryParameters(ctx))
 	defer cancel()
 	response, err := wc.workflowService.ListArchivedWorkflowExecutions(grpcCtx, request)
 	if err != nil {
@@ -916,7 +918,7 @@ func (wc *WorkflowClient) ScanWorkflow(ctx context.Context, request *workflowser
 	if request.GetNamespace() == "" {
 		request.Namespace = wc.namespace
 	}
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, wc.rpcTimeout, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 	//lint:ignore SA1019 the server API was deprecated.
 	response, err := wc.workflowService.ScanWorkflowExecutions(grpcCtx, request)
@@ -935,7 +937,7 @@ func (wc *WorkflowClient) CountWorkflow(ctx context.Context, request *workflowse
 	if request.GetNamespace() == "" {
 		request.Namespace = wc.namespace
 	}
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, wc.rpcTimeout, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 	response, err := wc.workflowService.CountWorkflowExecutions(grpcCtx, request)
 	if err != nil {
@@ -950,7 +952,7 @@ func (wc *WorkflowClient) GetSearchAttributes(ctx context.Context) (*workflowser
 		return nil, err
 	}
 
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, wc.rpcTimeout, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 	response, err := wc.workflowService.GetSearchAttributes(grpcCtx, &workflowservice.GetSearchAttributesRequest{})
 	if err != nil {
@@ -979,7 +981,7 @@ func (wc *WorkflowClient) DescribeWorkflowExecution(ctx context.Context, workflo
 			RunId:      runID,
 		},
 	}
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, wc.rpcTimeout, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 	response, err := wc.workflowService.DescribeWorkflowExecution(grpcCtx, request)
 	if err != nil {
@@ -1389,7 +1391,7 @@ func (wc *WorkflowClient) DescribeTaskQueue(ctx context.Context, taskQueue strin
 		TaskQueueType: taskQueueType,
 	}
 
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, wc.rpcTimeout, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 	resp, err := wc.workflowService.DescribeTaskQueue(grpcCtx, request)
 	if err != nil {
@@ -1411,7 +1413,7 @@ func (wc *WorkflowClient) ResetWorkflowExecution(ctx context.Context, request *w
 		request.RequestId = uuid.NewString()
 	}
 
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, wc.rpcTimeout, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 	resp, err := wc.workflowService.ResetWorkflowExecution(grpcCtx, request)
 	if err != nil {
@@ -1435,7 +1437,7 @@ func (wc *WorkflowClient) UpdateWorkerBuildIdCompatibility(ctx context.Context, 
 	}
 	request.Namespace = wc.namespace
 
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, wc.rpcTimeout, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 	_, err = wc.workflowService.UpdateWorkerBuildIdCompatibility(grpcCtx, request)
 	return err
@@ -1450,7 +1452,7 @@ func (wc *WorkflowClient) GetWorkerBuildIdCompatibility(ctx context.Context, opt
 		return nil, err
 	}
 
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, wc.rpcTimeout, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 
 	request := &workflowservice.GetWorkerBuildIdCompatibilityRequest{
@@ -1472,7 +1474,7 @@ func (wc *WorkflowClient) GetWorkerTaskReachability(ctx context.Context, options
 		return nil, err
 	}
 
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, wc.rpcTimeout, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 
 	request := &workflowservice.GetWorkerTaskReachabilityRequest{
@@ -1499,7 +1501,7 @@ func (wc *WorkflowClient) UpdateWorkflowExecutionOptions(ctx context.Context, re
 		return WorkflowExecutionOptions{}, err
 	}
 
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, wc.rpcTimeout, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 
 	requestMsg, err := request.validateAndConvertToProto(wc.namespace)
@@ -1531,7 +1533,7 @@ func (wc *WorkflowClient) DescribeTaskQueueEnhanced(ctx context.Context, options
 		return TaskQueueDescription{}, err
 	}
 
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, wc.rpcTimeout, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 	resp, err := wc.workflowService.DescribeTaskQueue(grpcCtx, request)
 	if err != nil {
@@ -1560,7 +1562,7 @@ func (wc *WorkflowClient) UpdateWorkerVersioningRules(ctx context.Context, optio
 		return nil, err
 	}
 
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, wc.rpcTimeout, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 	resp, err := wc.workflowService.UpdateWorkerVersioningRules(grpcCtx, request)
 	if err != nil {
@@ -1580,7 +1582,7 @@ func (wc *WorkflowClient) GetWorkerVersioningRules(ctx context.Context, options 
 		return nil, err
 	}
 
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, wc.rpcTimeout, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 
 	resp, err := wc.workflowService.GetWorkerVersioningRules(grpcCtx, request)
@@ -1716,7 +1718,7 @@ func (wc *WorkflowClient) loadCapabilities(ctx context.Context) (*workflowservic
 	}
 
 	// Fetch the capabilities
-	grpcCtx, cancel := newGRPCContext(ctx, grpcTimeout(wc.getSystemInfoTimeout))
+	grpcCtx, cancel := newGRPCContext(ctx, wc.rpcTimeout, grpcTimeout(wc.getSystemInfoTimeout))
 	defer cancel()
 	resp, err := wc.workflowService.GetSystemInfo(grpcCtx, &workflowservice.GetSystemInfoRequest{})
 	if err != nil && !isUnknownMethodUnimplemented(err) {
@@ -1757,7 +1759,7 @@ func (wc *WorkflowClient) loadNamespaceData(metricsHandler metrics.Handler) (nam
 		return *cached, nil
 	}
 
-	grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsHandler(metricsHandler), defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, wc.rpcTimeout, grpcMetricsHandler(metricsHandler), defaultGrpcRetryParameters(ctx))
 	defer cancel()
 	resp, err := wc.workflowService.DescribeNamespace(grpcCtx, &workflowservice.DescribeNamespaceRequest{Namespace: wc.namespace})
 	var unimplemented *serviceerror.Unimplemented
@@ -1816,7 +1818,7 @@ func (wc *WorkflowClient) recordWorkerHeartbeat(ctx context.Context, request *wo
 		return nil, err
 	}
 
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, wc.rpcTimeout, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 	resp, err := wc.workflowService.RecordWorkerHeartbeat(grpcCtx, request)
 	if err != nil {
@@ -1865,7 +1867,7 @@ func (wc *WorkflowClient) newOutboundPayloadVisitor() PayloadVisitor {
 //   - serviceerror.Internal
 //   - serviceerror.Unavailable
 func (nc *namespaceClient) Register(ctx context.Context, request *workflowservice.RegisterNamespaceRequest) error {
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, nc.rpcTimeout, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 	var err error
 	_, err = nc.workflowService.RegisterNamespace(grpcCtx, request)
@@ -1886,7 +1888,7 @@ func (nc *namespaceClient) Describe(ctx context.Context, namespace string) (*wor
 		Namespace: namespace,
 	}
 
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, nc.rpcTimeout, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 	response, err := nc.workflowService.DescribeNamespace(grpcCtx, request)
 	if err != nil {
@@ -1902,7 +1904,7 @@ func (nc *namespaceClient) Describe(ctx context.Context, namespace string) (*wor
 //   - serviceerror.Internal
 //   - serviceerror.Unavailable
 func (nc *namespaceClient) Update(ctx context.Context, request *workflowservice.UpdateNamespaceRequest) error {
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, nc.rpcTimeout, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 	_, err := nc.workflowService.UpdateNamespace(grpcCtx, request)
 	return err
@@ -2299,7 +2301,7 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 		return nil, err
 	}
 
-	grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsHandler(
+	grpcCtx, cancel := newGRPCContext(ctx, w.client.rpcTimeout, grpcMetricsHandler(
 		w.client.metricsHandler.WithTags(metrics.RPCTags(in.WorkflowType, metrics.NoneTagValue, in.Options.TaskQueue))),
 		defaultGrpcRetryParameters(ctx))
 	defer cancel()
@@ -2480,6 +2482,7 @@ func (w *workflowClientInterceptor) updateWithStartWorkflow(
 		multiResp, err := func() (*workflowservice.ExecuteMultiOperationResponse, error) {
 			grpcCtx, cancel := newGRPCContext(
 				ctx,
+				w.client.rpcTimeout,
 				grpcTimeout(pollUpdateTimeout),
 				grpcLongPoll(true),
 				grpcMetricsHandler(rpcMetricsHandler),
@@ -2624,7 +2627,7 @@ func (w *workflowClientInterceptor) SignalWorkflow(ctx context.Context, in *Clie
 		return err
 	}
 
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, w.client.rpcTimeout, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 	response, err := w.client.workflowService.SignalWorkflowExecution(grpcCtx, request)
 	if err != nil {
@@ -2740,7 +2743,7 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 	var response *workflowservice.SignalWithStartWorkflowExecutionResponse
 
 	// Start creating workflow request.
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, w.client.rpcTimeout, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 
 	response, err = w.client.workflowService.SignalWithStartWorkflowExecution(grpcCtx, signalWithStartRequest)
@@ -2814,7 +2817,7 @@ func (w *workflowClientInterceptor) CancelWorkflow(ctx context.Context, in *Clie
 		FirstExecutionRunId: in.FirstExecutionRunID,
 		Reason:              in.Reason,
 	}
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, w.client.rpcTimeout, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 	_, err := w.client.workflowService.RequestCancelWorkflowExecution(grpcCtx, request)
 	return err
@@ -2851,7 +2854,7 @@ func (w *workflowClientInterceptor) TerminateWorkflow(ctx context.Context, in *C
 		return err
 	}
 
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, w.client.rpcTimeout, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 
 	_, err = w.client.workflowService.TerminateWorkflowExecution(grpcCtx, request)
@@ -2871,7 +2874,7 @@ func (w *workflowClientInterceptor) DescribeWorkflow(
 		},
 	}
 
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, w.client.rpcTimeout, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 	resp, err := w.client.workflowService.DescribeWorkflowExecution(grpcCtx, req)
 	if err != nil {
@@ -2987,7 +2990,7 @@ func (w *workflowClientInterceptor) QueryWorkflow(
 		return nil, err
 	}
 
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, w.client.rpcTimeout, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 
 	resp, err := w.client.workflowService.QueryWorkflow(grpcCtx, req)
@@ -3032,7 +3035,7 @@ func (w *workflowClientInterceptor) UpdateWorkflow(
 	for {
 		var err error
 		resp, err = func() (*workflowservice.UpdateWorkflowExecutionResponse, error) {
-			grpcCtx, cancel := newGRPCContext(ctx, grpcTimeout(pollUpdateTimeout), grpcLongPoll(true), defaultGrpcRetryParameters(ctx))
+			grpcCtx, cancel := newGRPCContext(ctx, w.client.rpcTimeout, grpcTimeout(pollUpdateTimeout), grpcLongPoll(true), defaultGrpcRetryParameters(ctx))
 			defer cancel()
 
 			return w.client.workflowService.UpdateWorkflowExecution(grpcCtx, req)
@@ -3173,6 +3176,7 @@ func (w *workflowClientInterceptor) PollWorkflowUpdate(
 	for {
 		ctx, cancel := newGRPCContext(
 			parentCtx,
+			w.client.rpcTimeout,
 			grpcLongPoll(true),
 			grpcTimeout(pollUpdateTimeout),
 		)

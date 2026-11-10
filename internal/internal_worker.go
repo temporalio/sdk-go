@@ -139,6 +139,8 @@ type (
 		// Namespace name.
 		Namespace string
 
+		RPCTimeout time.Duration
+
 		// Task queue name to poll.
 		TaskQueue string
 
@@ -374,6 +376,7 @@ func newWorkflowTaskWorkerInternal(
 	var service workflowservice.WorkflowServiceClient
 	if client != nil {
 		service = client.workflowService
+		params.RPCTimeout = client.rpcTimeout
 	}
 	// Generate stickyUUID here so it can be stored in workflowWorker for ShutdownWorker call
 	stickyUUID := uuid.NewString()
@@ -655,6 +658,7 @@ func newActivityWorker(
 	var service workflowservice.WorkflowServiceClient
 	if client != nil {
 		service = client.workflowService
+		params.RPCTimeout = client.rpcTimeout
 	}
 	workerStopChannel := make(chan struct{}, 1)
 	params.WorkerStopChannel = getReadOnlyChannel(workerStopChannel)
@@ -1828,7 +1832,7 @@ func (aw *AggregatedWorker) sendShutdownWorkerRPC() {
 	aw.shuttingDown.Store(true)
 
 	ctx := context.Background()
-	grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsHandler(aw.executionParams.MetricsHandler))
+	grpcCtx, cancel := newGRPCContext(ctx, aw.client.rpcTimeout, grpcMetricsHandler(aw.executionParams.MetricsHandler))
 	defer cancel()
 
 	var heartbeat *workerpb.WorkerHeartbeat
@@ -2532,6 +2536,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	workerPollCompleteOnShutdown := &atomic.Bool{}
 	workerParams := workerExecutionParameters{
 		Namespace:                        client.namespace,
+		RPCTimeout:                       client.rpcTimeout,
 		TaskQueue:                        taskQueue,
 		Tuner:                            options.Tuner,
 		WorkerActivitiesPerSecond:        options.WorkerActivitiesPerSecond,

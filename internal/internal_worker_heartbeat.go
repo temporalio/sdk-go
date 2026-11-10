@@ -346,6 +346,7 @@ func (hw *sharedNamespaceWorker) pollWorkerCommandTask(
 	rpcMetricsHandler := hw.metricsHandler.WithTags(metrics.TaskQueueTags(hw.workerControlTaskQueue))
 	grpcCtx, cancel := newGRPCContext(
 		hw.workerCtx,
+		hw.client.rpcTimeout,
 		grpcMetricsHandler(rpcMetricsHandler),
 		grpcLongPoll(true),
 		grpcTimeout(pollTaskServiceTimeOut),
@@ -406,6 +407,7 @@ func (hw *sharedNamespaceWorker) handleWorkerCommandTask(task *workflowservice.P
 
 	grpcCtx, cancel := newGRPCContext(
 		context.Background(),
+		hw.client.rpcTimeout,
 		grpcMetricsHandler(hw.metricsHandler),
 		defaultGrpcRetryParameters(context.Background()),
 	)

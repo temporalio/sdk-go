@@ -142,7 +142,7 @@ func (w *workflowClientInterceptor) CreateSchedule(ctx context.Context, in *Sche
 		return nil, err
 	}
 
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, w.client.rpcTimeout, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 
 	_, err = w.client.workflowService.CreateSchedule(grpcCtx, startRequest)
@@ -184,7 +184,7 @@ func (sc *scheduleClient) GetHandle(ctx context.Context, scheduleID string) Sche
 
 func (sc *scheduleClient) List(ctx context.Context, options ScheduleListOptions) (ScheduleListIterator, error) {
 	paginate := func(nextToken []byte) (*workflowservice.ListSchedulesResponse, error) {
-		grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+		grpcCtx, cancel := newGRPCContext(ctx, sc.workflowClient.rpcTimeout, defaultGrpcRetryParameters(ctx))
 		defer cancel()
 		request := &workflowservice.ListSchedulesRequest{
 			Namespace:       sc.workflowClient.namespace,
@@ -233,7 +233,7 @@ func (scheduleHandle *scheduleHandleImpl) Delete(ctx context.Context) error {
 		ScheduleId: scheduleHandle.ID,
 		Identity:   scheduleHandle.client.identity,
 	}
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, scheduleHandle.client.rpcTimeout, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 	_, err := scheduleHandle.client.workflowService.DeleteSchedule(grpcCtx, request)
 	return err
@@ -249,14 +249,14 @@ func (scheduleHandle *scheduleHandleImpl) Backfill(ctx context.Context, options 
 		Identity:  scheduleHandle.client.identity,
 		RequestId: uuid.NewString(),
 	}
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, scheduleHandle.client.rpcTimeout, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 	_, err := scheduleHandle.client.workflowService.PatchSchedule(grpcCtx, request)
 	return err
 }
 
 func (scheduleHandle *scheduleHandleImpl) Update(ctx context.Context, options ScheduleUpdateOptions) error {
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, scheduleHandle.client.rpcTimeout, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 	ctx = contextWithNewHeader(ctx)
 
@@ -325,7 +325,7 @@ func (scheduleHandle *scheduleHandleImpl) Describe(ctx context.Context) (*Schedu
 		Namespace:  scheduleHandle.client.namespace,
 		ScheduleId: scheduleHandle.ID,
 	}
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, scheduleHandle.client.rpcTimeout, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 	describeResponse, err := scheduleHandle.client.workflowService.DescribeSchedule(grpcCtx, request)
 	if err != nil {
@@ -347,7 +347,7 @@ func (scheduleHandle *scheduleHandleImpl) Trigger(ctx context.Context, options S
 		Identity:  scheduleHandle.client.identity,
 		RequestId: uuid.NewString(),
 	}
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, scheduleHandle.client.rpcTimeout, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 	_, err := scheduleHandle.client.workflowService.PatchSchedule(grpcCtx, request)
 	return err
@@ -367,7 +367,7 @@ func (scheduleHandle *scheduleHandleImpl) Pause(ctx context.Context, options Sch
 		Identity:  scheduleHandle.client.identity,
 		RequestId: uuid.NewString(),
 	}
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, scheduleHandle.client.rpcTimeout, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 	_, err := scheduleHandle.client.workflowService.PatchSchedule(grpcCtx, request)
 	return err
@@ -387,7 +387,7 @@ func (scheduleHandle *scheduleHandleImpl) Unpause(ctx context.Context, options S
 		Identity:  scheduleHandle.client.identity,
 		RequestId: uuid.NewString(),
 	}
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, scheduleHandle.client.rpcTimeout, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 	_, err := scheduleHandle.client.workflowService.PatchSchedule(grpcCtx, request)
 	return err

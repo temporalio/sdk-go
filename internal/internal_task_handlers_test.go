@@ -3146,7 +3146,7 @@ func TestHeartBeat_NoError(t *testing.T) {
 
 		temporalInvoker := newServiceInvoker(
 			nil, "Test_Temporal_Invoker", mockService, metrics.NopHandler, func(error) {}, heartbeatThrottleInterval,
-			make(chan struct{}), testNamespace, &atomic.Bool{}, nil, nil,
+			make(chan struct{}), testNamespace, &atomic.Bool{}, nil, nil, 0,
 		)
 		defer temporalInvoker.Close(t.Context(), false)
 
@@ -3181,7 +3181,7 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithError() {
 
 	temporalInvoker := newServiceInvoker(
 		nil, "Test_Temporal_Invoker", mockService, metrics.NopHandler, func(err error) {}, 0,
-		make(chan struct{}), t.namespace, &atomic.Bool{}, nil, nil)
+		make(chan struct{}), t.namespace, &atomic.Bool{}, nil, nil, 0)
 
 	ctx, err := newActivityContext(context.Background(), nil, &activityEnvironment{serviceInvoker: temporalInvoker, logger: t.logger})
 	t.NoError(err)
@@ -3204,7 +3204,7 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_DeadlineDoesNotCancelActivity() {
 	defer cancel(nil)
 	invoker := newServiceInvoker(
 		nil, "Test_Temporal_Invoker", mockService, metrics.NopHandler, cancel,
-		8*time.Second, make(chan struct{}), t.namespace, &atomic.Bool{}, nil, nil)
+		8*time.Second, make(chan struct{}), t.namespace, &atomic.Bool{}, nil, nil, 0)
 	defer invoker.Close(t.T().Context(), false)
 	ctx, err := newActivityContext(ctx, nil, &activityEnvironment{serviceInvoker: invoker, logger: t.logger})
 	t.Require().NoError(err)
@@ -3226,7 +3226,7 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithNamespaceNotActiveE
 
 	temporalInvoker := newServiceInvoker(
 		nil, "Test_Temporal_Invoker", mockService, metrics.NopHandler, cancelHandler,
-		0, make(chan struct{}), t.namespace, &atomic.Bool{}, nil, nil)
+		0, make(chan struct{}), t.namespace, &atomic.Bool{}, nil, nil, 0)
 
 	ctx, err := newActivityContext(context.Background(), nil, &activityEnvironment{serviceInvoker: temporalInvoker, logger: t.logger})
 	t.NoError(err)
@@ -3981,6 +3981,7 @@ func TestHistoryIteratorMaxEventID(t *testing.T) {
 			3,
 			metrics.NopHandler,
 			"test-task-queue",
+			0,
 		),
 	}
 

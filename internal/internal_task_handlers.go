@@ -2221,6 +2221,7 @@ type temporalInvoker struct {
 	identity       string
 	service        workflowservice.WorkflowServiceClient
 	metricsHandler metrics.Handler
+	rpcTimeout     time.Duration
 	taskToken      []byte
 	// cancelHandler is called when the activity is canceled by a heartbeat response
 	// or worker command.
@@ -2331,7 +2332,7 @@ func (i *temporalInvoker) internalHeartBeat(ctx context.Context, details *common
 		err = heartbeatVisitorError{visitErr}
 		i.cancelHandler(err)
 	} else {
-		err = recordActivityHeartbeat(ctx, i.service, i.metricsHandler, request)
+		err = recordActivityHeartbeat(ctx, i.service, i.metricsHandler, request, i.rpcTimeout)
 	}
 
 	switch err.(type) {
@@ -2384,6 +2385,9 @@ func (i *temporalInvoker) Close(ctx context.Context, flushBufferedHeartbeat bool
 }
 
 func (i *temporalInvoker) GetClient(options ClientOptions) Client {
+	if options.RPCTimeout == 0 {
+		options.RPCTimeout = i.rpcTimeout
+	}
 	return NewServiceClient(i.service, nil, options)
 }
 
@@ -2399,6 +2403,7 @@ func newServiceInvoker(
 	excludeInternalFromRetry *atomic.Bool,
 	outboundPayloadVisitor PayloadVisitor,
 	failureConverter converter.FailureConverter,
+	rpcTimeout time.Duration,
 ) ServiceInvoker {
 	return &temporalInvoker{
 		taskToken:                 taskToken,
@@ -2413,6 +2418,7 @@ func newServiceInvoker(
 		excludeInternalFromRetry:  excludeInternalFromRetry,
 		outboundPayloadVisitor:    outboundPayloadVisitor,
 		failureConverter:          failureConverter,
+		rpcTimeout:                rpcTimeout,
 	}
 }
 
@@ -2471,7 +2477,8 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 	heartbeatThrottleInterval := ath.getHeartbeatThrottleInterval(t.GetHeartbeatTimeout().AsDuration())
 	invoker := newServiceInvoker(
 		t.TaskToken, ath.identity, ath.client.workflowService, ath.metricsHandler, cancel, heartbeatThrottleInterval,
-		ath.workerStopCh, ath.namespace, ath.client.excludeInternalFromRetry, ath.outboundPayloadVisitor, failureConverter)
+		ath.workerStopCh, ath.namespace, ath.client.excludeInternalFromRetry, ath.outboundPayloadVisitor, failureConverter,
+		ath.client.rpcTimeout)
 
 	workflowType := t.WorkflowType.GetName()
 	activityType := t.ActivityType.GetName()
@@ -2709,9 +2716,10 @@ func getActivityResourceIdFromCtx(ctx context.Context) string {
 
 func recordActivityHeartbeat(ctx context.Context, service workflowservice.WorkflowServiceClient, metricsHandler metrics.Handler,
 	request *workflowservice.RecordActivityTaskHeartbeatRequest,
+	rpcTimeout time.Duration,
 ) error {
 	var heartbeatResponse *workflowservice.RecordActivityTaskHeartbeatResponse
-	grpcCtx, cancel := newGRPCContext(ctx,
+	grpcCtx, cancel := newGRPCContext(ctx, rpcTimeout,
 		grpcMetricsHandler(metricsHandler),
 		defaultGrpcRetryParameters(ctx))
 	defer cancel()
@@ -2731,9 +2739,10 @@ func recordActivityHeartbeat(ctx context.Context, service workflowservice.Workfl
 
 func recordActivityHeartbeatByID(ctx context.Context, service workflowservice.WorkflowServiceClient, metricsHandler metrics.Handler,
 	request *workflowservice.RecordActivityTaskHeartbeatByIdRequest,
+	rpcTimeout time.Duration,
 ) error {
 	var heartbeatResponse *workflowservice.RecordActivityTaskHeartbeatByIdResponse
-	grpcCtx, cancel := newGRPCContext(ctx,
+	grpcCtx, cancel := newGRPCContext(ctx, rpcTimeout,
 		grpcMetricsHandler(metricsHandler),
 		defaultGrpcRetryParameters(ctx))
 	defer cancel()

@@ -22,6 +22,9 @@ to docs, or any other relevant information.
 
 ### Added
 
+- Added `client.Options.RPCTimeout` to configure the default RPC timeout cap,
+  including raising it above 10 seconds. Shorter caller deadlines still take
+  precedence, and calls with dedicated timeouts (such as long polls) are unchanged.
 - `converter.WorkflowTaskFailureError`: an opt-in error a `PayloadCodec` can return
   from `Encode` or `Decode` on a workflow-side payload path to fail the current
   Workflow Task rather than the Workflow Execution, so the server retries the task and
