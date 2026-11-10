@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -19,7 +18,7 @@ func newTestApp(t *testing.T) app {
 		api: apiDir(filepath.Join(root, "api")),
 		tmp: buildDir(filepath.Join(root, "build")),
 	}
-	for _, dir := range []string{a.api.witDir(), a.sdk.witOverridesDir(), string(a.tmp)} {
+	for _, dir := range []string{a.api.witDir(), string(a.tmp)} {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			t.Fatal(err)
 		}
@@ -103,30 +102,21 @@ func TestCheckGeneratedFacadeIsOutOfDate(t *testing.T) {
 // WIT STAGING
 // -----------------------------------------------------------------------------
 
-func TestStageWitFilesWithOverrides(t *testing.T) {
+func TestStageWitFiles(t *testing.T) {
 	a := newTestApp(t)
-	upstream := filepath.Join(a.api.witDir(), "service.wit")
-	unchanged := filepath.Join(a.api.witDir(), "unchanged.wit")
-	override := filepath.Join(a.sdk.witOverridesDir(), "service.wit")
+	upstream := filepath.Join(a.api.witDir(), "workflowservice", "v1", "workflow-service.wit")
+	dependency := filepath.Join(a.api.witDir(), "deps", "nexus-temporal-types", "model.wit")
 	writeTestFile(t, upstream, "upstream")
-	writeTestFile(t, unchanged, "unchanged")
-	writeTestFile(t, override, "override")
-	writeTestFile(t, filepath.Join(a.sdk.witOverridesDir(), "nested", "new.wit"), "new")
-	writeTestFile(t, filepath.Join(a.sdk.witOverridesDir(), ".gitkeep"), "")
+	writeTestFile(t, dependency, "dependency")
 
-	if err := a.stageWitFilesWithOverrides(); err != nil {
+	if err := a.stageWitFiles(); err != nil {
 		t.Fatal(err)
 	}
 
-	requireTestFile(t, filepath.Join(a.tmp.witDir(), "service.wit"), "override")
-	requireTestFile(t, filepath.Join(a.tmp.witDir(), "unchanged.wit"), "unchanged")
-	requireTestFile(t, filepath.Join(a.tmp.witDir(), "nested", "new.wit"), "new")
-	if _, err := os.Stat(filepath.Join(a.tmp.witDir(), ".gitkeep")); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("staged .gitkeep: %v, want not found", err)
-	}
+	requireTestFile(t, a.tmp.witFile(), "upstream")
+	requireTestFile(t, filepath.Join(a.tmp.witDepsDir(), "nexus-temporal-types", "model.wit"), "dependency")
 	requireTestFile(t, upstream, "upstream")
-	requireTestFile(t, unchanged, "unchanged")
-	requireTestFile(t, override, "override")
+	requireTestFile(t, dependency, "dependency")
 }
 
 // -----------------------------------------------------------------------------

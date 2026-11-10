@@ -11,11 +11,14 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
+	"go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/contrib/opentelemetry"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/interceptor"
 	"go.temporal.io/sdk/temporal"
@@ -215,6 +218,11 @@ func (i *systemNexusTestWorkflowOutbound) SignalWithStartWorkflow(
 	if options.Priority == nil {
 		options.Priority = &temporal.Priority{PriorityKey: 2}
 	}
+	payload, err := converter.GetDefaultDataConverter().ToPayload("from interceptor")
+	if err != nil {
+		panic(err)
+	}
+	interceptor.WorkflowHeader(ctx)["interceptor-header"] = payload
 	return i.Next.SignalWithStartWorkflow(ctx, options, id, signal, signalArg, workflowType, args...)
 }
 
@@ -548,4 +556,53 @@ func (ts *SystemNexusTestSuite) TestWorkflowSignalWithStartWithCron() {
 	request := ts.signalWithStartRequestFromHistory(ctx, callerID)
 	ts.Equal("@every 1s", request.GetCronSchedule())
 	ts.Nil(request.GetWorkflowStartDelay())
+}
+
+// TestWorkflowSignalWithStartTracing checks that signal-with-start creates
+// an outbound span and propagates it as the callee workflow's parent.
+func (ts *SystemNexusTestSuite) TestWorkflowSignalWithStartTracing() {
+	ctx, cancel := context.WithTimeout(ts.T().Context(), 30*time.Second)
+	defer cancel()
+
+	recorder := tracetest.NewSpanRecorder()
+	provider := trace.NewTracerProvider(trace.WithSpanProcessor(recorder))
+	defer func() { ts.NoError(provider.Shutdown(ctx)) }()
+	tracingInterceptor, err := opentelemetry.NewTracingInterceptor(opentelemetry.TracerOptions{
+		Tracer: provider.Tracer("system-nexus"),
+	})
+	ts.NoError(err)
+	c, err := ts.newDefaultClient(func(options *client.Options) {
+		options.Interceptors = []interceptor.ClientInterceptor{tracingInterceptor}
+	})
+	ts.NoError(err)
+	defer c.Close()
+	queue := ts.taskQueueName + "-tracing"
+	w := worker.New(c, queue, worker.Options{})
+	w.RegisterWorkflow(SignalAndStartOnce)
+	w.RegisterWorkflow(ReceiveSignalRepeatedly)
+	ts.NoError(w.Start())
+	defer w.Stop()
+
+	calleeID := ts.workflowID("callee")
+	run, err := c.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
+		ID: ts.workflowID("caller"), TaskQueue: queue,
+	}, SignalAndStartOnce, calleeID)
+	ts.NoError(err)
+	var calleeRunID string
+	ts.NoError(run.Get(ctx, &calleeRunID))
+	ts.NoError(c.GetWorkflow(ctx, calleeID, calleeRunID).Get(ctx, nil))
+
+	var outboundSpan, calleeSpan trace.ReadOnlySpan
+	for _, span := range recorder.Ended() {
+		switch span.Name() {
+		case "SignalWithStartWorkflow:ReceiveSignalRepeatedly":
+			outboundSpan = span
+		case "RunWorkflow:ReceiveSignalRepeatedly":
+			calleeSpan = span
+		}
+	}
+	ts.NotNil(outboundSpan)
+	ts.NotNil(calleeSpan)
+	ts.Equal(outboundSpan.SpanContext().TraceID(), calleeSpan.SpanContext().TraceID())
+	ts.Equal(outboundSpan.SpanContext().SpanID(), calleeSpan.Parent().SpanID())
 }

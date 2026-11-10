@@ -6,7 +6,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io/fs"
 	"log"
 	"os"
 	"os/exec"
@@ -52,10 +51,6 @@ func newSDKDir() (sdkDir, error) {
 	}
 	root := filepath.Clean(filepath.Join(filepath.Dir(file), "../../.."))
 	return sdkDir(root), nil
-}
-
-func (d sdkDir) witOverridesDir() string {
-	return filepath.Join(string(d), filepath.FromSlash("internal/cmd/system-nexus-gen/wit-overrides"))
 }
 
 // apiDir is a path to the go.temporal.io/api module directory
@@ -184,7 +179,7 @@ func (a app) run() (err error) {
 		err = errors.Join(err, cleanupErr)
 	}()
 
-	if err := a.stageWitFilesWithOverrides(); err != nil {
+	if err := a.stageWitFiles(); err != nil {
 		return fmt.Errorf("staging WIT files: %w", err)
 	}
 
@@ -236,38 +231,12 @@ func (a app) updateGeneratedFiles() error {
 	return nil
 }
 
-// stageWitFilesWithOverrides copies WIT files from api-go into the build directory,
-// then overwrites them with any WIT files found in the wit-overrides directory.
-func (a app) stageWitFilesWithOverrides() error {
+func (a app) stageWitFiles() error {
 	err := os.CopyFS(a.tmp.witDir(), os.DirFS(a.api.witDir()))
 	if err != nil {
 		return fmt.Errorf("copying from api-go: %w", err)
 	}
-
-	return filepath.WalkDir(a.sdk.witOverridesDir(), func(path string, entry fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		relative, err := filepath.Rel(a.sdk.witOverridesDir(), path)
-		if err != nil {
-			return err
-		}
-		dst := filepath.Join(a.tmp.witDir(), relative)
-		if entry.IsDir() {
-			return os.MkdirAll(dst, 0o700)
-		}
-		if filepath.Ext(path) != ".wit" {
-			return nil
-		}
-		contents, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		if err := os.WriteFile(dst, contents, 0o600); err != nil {
-			return err
-		}
-		return nil
-	})
+	return nil
 }
 
 // genProtoDescriptors generates a proto descriptor set for the workflowservice API.
