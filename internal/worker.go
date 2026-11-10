@@ -405,15 +405,21 @@ type (
 		// See DisableEagerActivities for a description of eager activity execution.
 		MaxConcurrentEagerActivityExecutionSize int
 
-		// Optional: Disable allowing workflow and activity functions that are
-		// registered with custom names from being able to be called with their
-		// function references.
+		// Optional: Disable the mapping from workflow and activity function short
+		// names to custom registered names. This does not reject function references:
+		// they still resolve to their short names and can select a different function
+		// registered under that name.
 		//
 		// Users are strongly recommended to set this as true if they register any
-		// workflow or activity functions with custom names. By leaving this as
-		// false, the historical default, ambiguity can occur between function names
-		// and aliased names when not using string names when executing child
-		// workflow or activities.
+		// workflow or activity functions with custom names, and to invoke those
+		// functions using their registered string names. For example, if Activity is
+		// registered with Name: "MyActivity", call ExecuteActivity(ctx, "MyActivity", ...).
+		// With the historical default of false, even string names can be redirected
+		// if they match another function's short name.
+		//
+		// Changing this option or the names used by existing workflows can change
+		// command names and break replay. Keep the original settings when replaying
+		// existing histories and use workflow versioning when changing workflow code.
 		DisableRegistrationAliasing bool
 
 		// Assign a BuildID to this worker. This replaces the deprecated binary checksum concept,
