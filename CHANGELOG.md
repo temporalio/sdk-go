@@ -22,6 +22,12 @@ to docs, or any other relevant information.
 
 ### Added
 
+- `converter.WorkflowTaskFailureError`: an opt-in error a `PayloadCodec` can return
+  from `Encode` or `Decode` on a workflow-side payload path to fail the current
+  Workflow Task rather than the Workflow Execution, so the server retries the task and
+  a transient codec failure can recover while the execution stays open. See the
+  `WorkflowTaskFailureError` docs for the honored paths, exclusions, and retry
+  guidance.
 - Added opt-in `EncodeHeaders` tracing options and `workflow.CodecContextPropagator` for header
   codec processing using the configured client's codec. Only opted-in producers' output is encoded;
   user-supplied wire-ready headers are unchanged. Receiving consumers use private decoded views.
@@ -47,6 +53,10 @@ to docs, or any other relevant information.
   standalone activities they start, which use it for payloads returned to the Nexus caller: results,
   failures, and standalone activity heartbeat details. When completing or heartbeating such an
   activity from a client, pass `activity.Info.NexusSerializationContext` in the options.
+- Poller pools now report their poller target to the server on each poll and in the worker
+  heartbeat: the current target for autoscaling pools, the configured maximum for fixed-size pools.
+  Server will use this count for load balancing pollers between workers, and for
+  creating a per-worker poller count metric
 
 ### Changed
 

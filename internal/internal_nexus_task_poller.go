@@ -107,6 +107,7 @@ func (ntp *nexusTaskPoller) poll(
 			ntp.workerDeploymentVersion,
 		),
 		WorkerInstanceKey: ntp.workerInstanceKey,
+		PollerPoolInfo:    ntp.getPollerPoolInfo(),
 	}
 
 	request.PollerGroupId = lease.groupIDOrEmpty()

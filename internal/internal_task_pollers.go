@@ -103,6 +103,12 @@ type (
 		pollerGroupSnapshotStore *pollerGroupSnapshotStore
 		// Server cancels polls on shutdown
 		workerPollCompleteOnShutdown *atomic.Bool
+		// Pool state attached to each poll request. Set by newScalablePollerWithTarget.
+		pollerPoolInfo func() *taskqueuepb.PollerPoolInfo
+	}
+
+	pollerPoolInfoReporter interface {
+		setPollerPoolInfo(func() *taskqueuepb.PollerPoolInfo)
 	}
 
 	// numPollerMetric tracks the number of active pollers and publishes a metric on it.
@@ -254,6 +260,17 @@ type (
 		stopCh <-chan struct{}
 	}
 )
+
+func (bp *basePoller) setPollerPoolInfo(f func() *taskqueuepb.PollerPoolInfo) {
+	bp.pollerPoolInfo = f
+}
+
+func (bp *basePoller) getPollerPoolInfo() *taskqueuepb.PollerPoolInfo {
+	if bp.pollerPoolInfo == nil {
+		return nil
+	}
+	return bp.pollerPoolInfo()
+}
 
 func newNumPollerMetric(metricsHandler metrics.Handler, pollerType string) *numPollerMetric {
 	if heartbeatHandler, isHeartbeat := metricsHandler.(*heartbeatMetricsHandler); isHeartbeat {
@@ -1526,6 +1543,7 @@ func (wtp *workflowTaskPoller) getPollRequestForKind(queueKind enumspb.TaskQueue
 		),
 		WorkerInstanceKey:      wtp.workerInstanceKey,
 		WorkerControlTaskQueue: wtp.workerControlTaskQueue,
+		PollerPoolInfo:         wtp.getPollerPoolInfo(),
 	}
 	if wtp.getCapabilities().BuildIdBasedVersioning {
 		//lint:ignore SA1019 ignore deprecated versioning APIs
@@ -1842,6 +1860,7 @@ func (atp *activityTaskPoller) poll(
 		),
 		WorkerInstanceKey:      atp.workerInstanceKey,
 		WorkerControlTaskQueue: atp.workerControlTaskQueue,
+		PollerPoolInfo:         atp.getPollerPoolInfo(),
 	}
 
 	request.PollerGroupId = lease.groupIDOrEmpty()
