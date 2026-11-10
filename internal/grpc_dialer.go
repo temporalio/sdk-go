@@ -9,7 +9,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	grpc_retry "github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/retry"
 	"go.temporal.io/api/proxy"
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/sdk/internal/common/metrics"
@@ -150,8 +149,7 @@ func requiredInterceptors(
 		errorInterceptor,
 		// Report aggregated metrics for the call, this is done outside of the retry loop.
 		metrics.NewGRPCInterceptor(clientOptions.MetricsHandler, "", clientOptions.DisableErrorCodeMetricTags),
-		// By default the grpc retry interceptor *is disabled*, preventing accidental use of retries.
-		// We add call options for retry configuration based on the values present in the context.
+		// Retry calls when retry configuration is present in the context.
 		retry.NewRetryOptionsInterceptor(excludeInternalFromRetry),
 	}
 	switch clientOptions.ConnectionOptions.GrpcCompression.(type) {
@@ -160,8 +158,6 @@ func requiredInterceptors(
 	}
 	interceptors = append(
 		interceptors,
-		// Performs retries *IF* retry options are set for the call.
-		grpc_retry.UnaryClientInterceptor(),
 		// Prevents retrying grpc message too large errors, while allowing retries of other resource exhausted errors.
 		retry.GrpcMessageTooLargeErrorInterceptor,
 		// Report metrics for every call made to the server.
