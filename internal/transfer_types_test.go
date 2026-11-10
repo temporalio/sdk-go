@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/golang/mock/gomock"
+	"github.com/google/uuid"
 	"github.com/nexus-rpc/sdk-go/nexus"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -24,7 +25,6 @@ import (
 	commonconverter "go.temporal.io/sdk/internal/common/converter"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
-	"github.com/google/uuid"
 )
 
 // -- BASIC TESTS ----------------------------------------------------
@@ -796,9 +796,11 @@ func TestSystemNexusMock(t *testing.T) {
 
 	env.ExecuteWorkflow(func(ctx Context) (string, error) {
 		var output systemNexusModel
-		err := NewSystemNexusClient(service).
-			ExecuteOperation(ctx, operation, input, NexusOperationOptions{}).
-			Get(ctx, &output)
+		err := getWorkflowEnvironmentInterceptor(ctx).ExecuteNexusOperation(ctx, ExecuteNexusOperationInput{
+			Client:    NewSystemNexusClient(service),
+			Operation: operation,
+			Input:     input,
+		}).Get(ctx, &output)
 		return output.Value, err
 	})
 	require.True(t, env.IsWorkflowCompleted())
