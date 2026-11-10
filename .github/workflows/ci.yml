@@ -357,6 +357,7 @@ jobs:
       - unit-test
       - integ-test
       - integ-test-cache
+      - cloud-test
       - features-test
     runs-on: ubuntu-latest
     steps:
