@@ -27,9 +27,7 @@ jobs:
       - name: Install nexgen
         run: |
           rustup toolchain install 1.96.0 --profile minimal
-          cargo +1.96.0 install --locked --features advanced \
-            --git https://github.com/temporalio/nexgen \
-            --rev 4f696eab9f68aab109517125bc2540ae27bddd94 nexgen
+          cargo +1.96.0 install --locked --features advanced --version 0.2.12 nexgen
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
       - name: Check generated files
