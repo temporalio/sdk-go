@@ -1,4 +1,4 @@
-package opentelemetry
+package opentelemetry_test
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 	"github.com/nexus-rpc/sdk-go/nexus"
 	"go.opentelemetry.io/otel"
 	sdkactivity "go.temporal.io/sdk/activity"
+	temporalotel "go.temporal.io/sdk/contrib/opentelemetry-v2"
 	"go.temporal.io/sdk/workflow"
 )
 
@@ -23,21 +24,21 @@ const (
 )
 
 func validateUpdate(ctx workflow.Context) error {
-	tracer := Tracer("validatorTracer")
+	tracer := temporalotel.Tracer("validatorTracer")
 	_, span := tracer.Start(ctx, "validate start")
 	span.End()
 	return nil
 }
 
 func handleQuery(ctx workflow.Context) (string, error) {
-	tracer := Tracer("queryTracer")
+	tracer := temporalotel.Tracer("queryTracer")
 	_, span := tracer.Start(ctx, "query start")
 	span.End()
 	return "ok", nil
 }
 
 func handleUpdate(ctx workflow.Context) error {
-	tracer := Tracer("updateTracer")
+	tracer := temporalotel.Tracer("updateTracer")
 	_, span := tracer.Start(ctx, "update start")
 	span.End()
 	return nil
@@ -65,8 +66,8 @@ func tracerWorkflow(ctx workflow.Context, end bool) error {
 		workflow.GetSignalChannel(ctx, tracerTestSignalName).Receive(ctx, nil)
 	}
 
-	processorTracer := Tracer("processorTracer")
-	recorderTracer := Tracer("recorderTracer")
+	processorTracer := temporalotel.Tracer("processorTracer")
+	recorderTracer := temporalotel.Tracer("recorderTracer")
 
 	// The context given to ContinueAsNew decides the next run's parent span.
 	// The workflow context keeps the next run out from under this run's spans.
@@ -89,7 +90,7 @@ func tracerWorkflow(ctx workflow.Context, end bool) error {
 // its user span's context to ContinueAsNew, so the continued run parents under
 // that span rather than starting its own tree.
 func chainedContinueAsNewWorkflow(ctx workflow.Context, finalRun bool) error {
-	ctx, span := Tracer("chainedContinueAsNewWorkflow").Start(ctx, "chained-span")
+	ctx, span := temporalotel.Tracer("chainedContinueAsNewWorkflow").Start(ctx, "chained-span")
 	defer span.End()
 
 	if finalRun {
@@ -100,8 +101,8 @@ func chainedContinueAsNewWorkflow(ctx workflow.Context, finalRun bool) error {
 }
 
 func tracerResetWorkflow(ctx workflow.Context) error {
-	processorTracer := Tracer("processorTracer")
-	recorderTracer := Tracer("recorderTracer")
+	processorTracer := temporalotel.Tracer("processorTracer")
+	recorderTracer := temporalotel.Tracer("recorderTracer")
 
 	ctx, beginProcessingSpan := processorTracer.Start(ctx, "process start")
 	beginProcessingSpan.End()
@@ -115,13 +116,13 @@ func tracerResetWorkflow(ctx workflow.Context) error {
 }
 
 func tracerResetLateSourceWorkflow(ctx workflow.Context) error {
-	processorTracer := Tracer("processorTracer")
+	processorTracer := temporalotel.Tracer("processorTracer")
 	ctx, beginProcessingSpan := processorTracer.Start(ctx, "process start")
 	beginProcessingSpan.End()
 
 	workflow.GetSignalChannel(ctx, tracerTestSignalName).Receive(ctx, nil)
 
-	recorderTracer := Tracer("recorderTracer")
+	recorderTracer := temporalotel.Tracer("recorderTracer")
 	_, recordingResultsSpan := recorderTracer.Start(ctx, "record results")
 	recordingResultsSpan.End()
 
@@ -129,8 +130,8 @@ func tracerResetLateSourceWorkflow(ctx workflow.Context) error {
 }
 
 func tracerResetDuringSpan(ctx workflow.Context) error {
-	processorTracer := Tracer("processorTracer")
-	recorderTracer := Tracer("recorderTracer")
+	processorTracer := temporalotel.Tracer("processorTracer")
+	recorderTracer := temporalotel.Tracer("recorderTracer")
 
 	ctx, beginProcessingSpan := processorTracer.Start(ctx, "process start")
 	ctx, recordingResultsSpan := recorderTracer.Start(ctx, "record results")
@@ -144,7 +145,7 @@ func tracerResetDuringSpan(ctx workflow.Context) error {
 }
 
 func tracerWorkflowTaskRetry(ctx workflow.Context) error {
-	_, span := Tracer("test").Start(ctx, "workflow-task-retry-span")
+	_, span := temporalotel.Tracer("test").Start(ctx, "workflow-task-retry-span")
 	span.End()
 
 	panic("intentional workflow task failure")
@@ -176,7 +177,7 @@ func asyncCompletionWorkflow(ctx workflow.Context) error {
 }
 
 func handleComprehensiveQuery(ctx workflow.Context) (string, error) {
-	tracer := Tracer("comprehensiveWorkflow")
+	tracer := temporalotel.Tracer("comprehensiveWorkflow")
 	ctx, span := tracer.Start(ctx, "query-handler-span")
 	defer span.End()
 	_, child := tracer.Start(ctx, "query-handler-child-span")
@@ -185,7 +186,7 @@ func handleComprehensiveQuery(ctx workflow.Context) (string, error) {
 }
 
 func handleComprehensiveUpdate(ctx workflow.Context) error {
-	tracer := Tracer("comprehensiveWorkflow")
+	tracer := temporalotel.Tracer("comprehensiveWorkflow")
 	ctx, span := tracer.Start(ctx, "update-handler-span")
 	defer span.End()
 	_, child := tracer.Start(ctx, "update-handler-child-span")
@@ -194,7 +195,7 @@ func handleComprehensiveUpdate(ctx workflow.Context) error {
 }
 
 func validateComprehensiveUpdate(ctx workflow.Context) error {
-	tracer := Tracer("comprehensiveWorkflow")
+	tracer := temporalotel.Tracer("comprehensiveWorkflow")
 	ctx, span := tracer.Start(ctx, "validate-update-span")
 	defer span.End()
 	_, child := tracer.Start(ctx, "validate-update-span-child")
@@ -203,7 +204,7 @@ func validateComprehensiveUpdate(ctx workflow.Context) error {
 }
 
 func externalWorkflowWithSignal(ctx workflow.Context) error {
-	_, span := Tracer("externalWorkflowWithSignal").Start(ctx, "external-workflow-with-signal-span")
+	_, span := temporalotel.Tracer("externalWorkflowWithSignal").Start(ctx, "external-workflow-with-signal-span")
 	defer span.End()
 
 	workflow.GetSignalChannel(ctx, "externalSignal").Receive(ctx, nil)
@@ -211,7 +212,7 @@ func externalWorkflowWithSignal(ctx workflow.Context) error {
 }
 
 func childWorkflowWithSignal(ctx workflow.Context) error {
-	_, span := Tracer("childWorkflowWithSignal").Start(ctx, "child-workflow-with-signal-span")
+	_, span := temporalotel.Tracer("childWorkflowWithSignal").Start(ctx, "child-workflow-with-signal-span")
 	defer span.End()
 
 	workflow.GetSignalChannel(ctx, "childSignal").Receive(ctx, nil)
@@ -219,19 +220,19 @@ func childWorkflowWithSignal(ctx workflow.Context) error {
 }
 
 func nexusHandlerWorkflow(ctx workflow.Context, _ nexus.NoValue) (nexus.NoValue, error) {
-	_, span := Tracer("workflowWithNexusHandler").Start(ctx, "workflow-with-nexus-handler-span")
+	_, span := temporalotel.Tracer("workflowWithNexusHandler").Start(ctx, "workflow-with-nexus-handler-span")
 	defer span.End()
 	return nil, nil
 }
 
 func nexusCancelHandlerWorkflow(ctx workflow.Context, _ nexus.NoValue) (nexus.NoValue, error) {
-	_, span := Tracer("nexusCancelHandlerWorkflow").Start(ctx, "nexus-cancel-handler-span")
+	_, span := temporalotel.Tracer("nexusCancelHandlerWorkflow").Start(ctx, "nexus-cancel-handler-span")
 	defer span.End()
 	return nil, workflow.Await(ctx, func() bool { return false })
 }
 
 func comprehensiveWorkflow(ctx workflow.Context, finalRun bool) error {
-	tracer := Tracer("comprehensiveWorkflow")
+	tracer := temporalotel.Tracer("comprehensiveWorkflow")
 	_, span := tracer.Start(ctx, "comprehensive-outbound-workflow-span")
 	defer span.End()
 
@@ -317,7 +318,7 @@ func unservedWorkflow(workflow.Context) error {
 }
 
 func signalWithStartTarget(ctx workflow.Context) error {
-	_, span := Tracer("signalWithStartTarget").Start(ctx, "signal-with-start-target-span")
+	_, span := temporalotel.Tracer("signalWithStartTarget").Start(ctx, "signal-with-start-target-span")
 	defer span.End()
 
 	workflow.GetSignalChannel(ctx, "startSignal").Receive(ctx, nil)
@@ -325,7 +326,7 @@ func signalWithStartTarget(ctx workflow.Context) error {
 }
 
 func updateTargetWorkflow(ctx workflow.Context) error {
-	_, span := Tracer("updateTargetWorkflow").Start(ctx, "update-target-workflow-span")
+	_, span := temporalotel.Tracer("updateTargetWorkflow").Start(ctx, "update-target-workflow-span")
 	defer span.End()
 
 	if err := workflow.SetUpdateHandler(ctx, "doUpdate", handleUpdate); err != nil {

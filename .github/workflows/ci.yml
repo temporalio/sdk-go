@@ -305,7 +305,7 @@ jobs:
           TEMPORAL_CLIENT_CLOUD_API_VERSION: v0.19.1
       - name: Integration tests against cloud
         timeout-minutes: 50
-        run: go run . integration-test -envconfig -cloud -p 1 -packages . -timeout 45m
+        run: go run . integration-test -module test -envconfig -cloud -p 1 -packages . -timeout 45m
         working-directory: ./internal/cmd/build
         env:
           TEST_LOG_ARTIFACT_NAME: ${{ github.job }}-${{ matrix.go-version }}-fips-${{ matrix.fips }}
