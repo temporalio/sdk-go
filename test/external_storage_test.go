@@ -1102,6 +1102,163 @@ func (s *ExternalStorageTestSuite) TestTargetContext_UpdateSchedule() {
 	}, ctxs[0].Target)
 }
 
+func (s *ExternalStorageTestSuite) createStoredSchedule(ctx context.Context) client.ScheduleHandle {
+	handle, err := s.client.ScheduleClient().Create(ctx, client.ScheduleOptions{
+		ID:   "ext-retained-schedule-" + uuid.NewString(),
+		Spec: client.ScheduleSpec{},
+		Action: &client.ScheduleWorkflowAction{
+			ID:                  "ext-retained-schedule-wf-" + uuid.NewString(),
+			Workflow:            extStoreTargetWorkflow,
+			Args:                []any{oversized(72)},
+			Memo:                map[string]any{"memo": oversized(72)},
+			TaskQueue:           s.taskQueueName,
+			WorkflowTaskTimeout: 5 * time.Second,
+			StaticSummary:       oversized(1),
+			StaticDetails:       oversized(2),
+		},
+	})
+	s.NoError(err)
+	return handle
+}
+
+func (s *ExternalStorageTestSuite) TestScheduleUpdate_RetainedPayloadsNotStoredAgain() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	handle := s.createStoredSchedule(ctx)
+	defer func() { _ = handle.Delete(ctx) }()
+	before, err := handle.Describe(ctx)
+	s.NoError(err)
+	beforeAction := before.Schedule.Action.(*client.ScheduleWorkflowAction)
+	storesBefore, _ := s.driver.getStoreCounts()
+
+	for range 2 {
+		s.NoError(handle.Update(ctx, client.ScheduleUpdateOptions{
+			DoUpdate: func(input client.ScheduleUpdateInput) (*client.ScheduleUpdate, error) {
+				input.Description.Schedule.State.Note = "changed"
+				return &client.ScheduleUpdate{Schedule: &input.Description.Schedule}, nil
+			},
+		}))
+	}
+
+	storesAfter, _ := s.driver.getStoreCounts()
+	s.Equal(storesBefore, storesAfter)
+	after, err := handle.Describe(ctx)
+	s.NoError(err)
+	afterAction := after.Schedule.Action.(*client.ScheduleWorkflowAction)
+	s.True(proto.Equal(beforeAction.Args[0].(*commonpb.Payload), afterAction.Args[0].(*commonpb.Payload)))
+	s.True(proto.Equal(beforeAction.Memo["memo"].(*commonpb.Payload), afterAction.Memo["memo"].(*commonpb.Payload)))
+	s.Equal(oversized(1), afterAction.StaticSummary)
+	s.Equal(oversized(2), afterAction.StaticDetails)
+}
+
+func (s *ExternalStorageTestSuite) TestScheduleUpdate_ChangedSummaryStored() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	handle := s.createStoredSchedule(ctx)
+	defer func() { _ = handle.Delete(ctx) }()
+	storesBefore, _ := s.driver.getStoreCounts()
+
+	s.NoError(handle.Update(ctx, client.ScheduleUpdateOptions{
+		DoUpdate: func(input client.ScheduleUpdateInput) (*client.ScheduleUpdate, error) {
+			input.Description.Schedule.Action.(*client.ScheduleWorkflowAction).StaticSummary = oversized(3)
+			return &client.ScheduleUpdate{Schedule: &input.Description.Schedule}, nil
+		},
+	}))
+
+	storesAfter, _ := s.driver.getStoreCounts()
+	s.Equal(storesBefore+1, storesAfter)
+	after, err := handle.Describe(ctx)
+	s.NoError(err)
+	afterAction := after.Schedule.Action.(*client.ScheduleWorkflowAction)
+	s.Equal(oversized(3), afterAction.StaticSummary)
+	s.Equal(oversized(2), afterAction.StaticDetails)
+}
+
+func (s *ExternalStorageTestSuite) TestScheduleUpdate_ChangedArgsAndMemoStoredInPlace() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	handle, err := s.client.ScheduleClient().Create(ctx, client.ScheduleOptions{
+		ID:   "ext-retained-schedule-" + uuid.NewString(),
+		Spec: client.ScheduleSpec{},
+		Action: &client.ScheduleWorkflowAction{
+			ID:                  "ext-retained-schedule-wf-" + uuid.NewString(),
+			Workflow:            "extStoreTargetWorkflow",
+			Args:                []any{oversized(72), "small"},
+			Memo:                map[string]any{"kept": oversized(72)},
+			TaskQueue:           s.taskQueueName,
+			WorkflowTaskTimeout: 5 * time.Second,
+		},
+	})
+	s.NoError(err)
+	defer func() { _ = handle.Delete(ctx) }()
+	before, err := handle.Describe(ctx)
+	s.NoError(err)
+	beforeAction := before.Schedule.Action.(*client.ScheduleWorkflowAction)
+	s.driver.resetStoreContexts()
+
+	s.NoError(handle.Update(ctx, client.ScheduleUpdateOptions{
+		DoUpdate: func(input client.ScheduleUpdateInput) (*client.ScheduleUpdate, error) {
+			action := input.Description.Schedule.Action.(*client.ScheduleWorkflowAction)
+			action.Args[1] = oversized(73)
+			action.Memo["added"] = oversized(74)
+			return &client.ScheduleUpdate{Schedule: &input.Description.Schedule}, nil
+		},
+	}))
+
+	// One store call for the changed argument and one for the added memo entry.
+	s.Len(s.driver.getStoreContexts(), 2)
+	after, err := handle.Describe(ctx)
+	s.NoError(err)
+	afterAction := after.Schedule.Action.(*client.ScheduleWorkflowAction)
+	s.Len(afterAction.Args, 2)
+	s.True(proto.Equal(beforeAction.Args[0].(*commonpb.Payload), afterAction.Args[0].(*commonpb.Payload)))
+	s.True(proto.Equal(beforeAction.Memo["kept"].(*commonpb.Payload), afterAction.Memo["kept"].(*commonpb.Payload)))
+	for _, p := range []*commonpb.Payload{afterAction.Args[1].(*commonpb.Payload), afterAction.Memo["added"].(*commonpb.Payload)} {
+		s.Equal("temporal.api.sdk.v1.ExternalStorageReference", string(p.GetMetadata()["messageType"]))
+	}
+}
+
+func (s *ExternalStorageTestSuite) TestScheduleUpdate_StoredArgsWithoutStorage() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	handle, err := s.client.ScheduleClient().Create(ctx, client.ScheduleOptions{
+		ID:   "ext-retained-schedule-" + uuid.NewString(),
+		Spec: client.ScheduleSpec{},
+		Action: &client.ScheduleWorkflowAction{
+			ID:                  "ext-retained-schedule-wf-" + uuid.NewString(),
+			Workflow:            extStoreTargetWorkflow,
+			Args:                []any{oversized(72)},
+			TaskQueue:           s.taskQueueName,
+			WorkflowTaskTimeout: 5 * time.Second,
+		},
+	})
+	s.NoError(err)
+	defer func() { _ = handle.Delete(ctx) }()
+	before, err := handle.Describe(ctx)
+	s.NoError(err)
+
+	noStorageClient, err := s.newDefaultClient()
+	s.NoError(err)
+	defer noStorageClient.Close()
+	s.NoError(noStorageClient.ScheduleClient().GetHandle(ctx, handle.GetID()).Update(ctx, client.ScheduleUpdateOptions{
+		DoUpdate: func(input client.ScheduleUpdateInput) (*client.ScheduleUpdate, error) {
+			input.Description.Schedule.State.Note = "changed"
+			return &client.ScheduleUpdate{Schedule: &input.Description.Schedule}, nil
+		},
+	}))
+
+	after, err := handle.Describe(ctx)
+	s.NoError(err)
+	s.Equal("changed", after.Schedule.State.Note)
+	s.True(proto.Equal(
+		before.Schedule.Action.(*client.ScheduleWorkflowAction).Args[0].(*commonpb.Payload),
+		after.Schedule.Action.(*client.ScheduleWorkflowAction).Args[0].(*commonpb.Payload)))
+}
+
 func extStoreTargetStandaloneActivity(_ context.Context, _ string) (string, error) {
 	return oversized(72), nil
 }

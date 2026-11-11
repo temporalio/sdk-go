@@ -40,6 +40,9 @@ to docs, or any other relevant information.
 
 - Workers no longer advertise a worker control task queue unless worker heartbeats and commands
   are supported and the shared namespace command poller is running.
+- `ScheduleHandle.Describe` and `ScheduleHandle.Update` now retrieve an externally stored schedule action
+  summary and details instead of failing to decode them. `ScheduleHandle.Update` sends unchanged action
+  arguments, memo, summary, and details back as they were described rather than storing them again.
 
 ### Security
 
