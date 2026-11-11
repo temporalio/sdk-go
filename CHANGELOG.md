@@ -22,6 +22,10 @@ to docs, or any other relevant information.
 
 ### Added
 
+- Added `StartWorkflowInput` to `interceptor.ClientUpdateWithStartWorkflowInput`, so client
+  interceptors can inspect and modify the start options, workflow type, and arguments of an
+  update-with-start call without reflection.
+
 ### Changed
 
 ### Deprecated

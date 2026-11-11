@@ -1666,6 +1666,7 @@ func (wc *WorkflowClient) UpdateWithStartWorkflow(
 	return wc.interceptor.UpdateWithStartWorkflow(ctx, &ClientUpdateWithStartWorkflowInput{
 		UpdateOptions:          &options.UpdateOptions,
 		StartWorkflowOperation: startOp,
+		StartWorkflowInput:     startOp.input,
 	})
 }
 
@@ -2373,7 +2374,12 @@ func (w *workflowClientInterceptor) UpdateWithStartWorkflow(
 	if err := startOp.markExecuted(); err != nil {
 		return nil, fmt.Errorf("%w: %w", errInvalidWithStartWorkflowOperation, err)
 	}
-	startReq, err := w.createStartWorkflowRequest(ctx, startOp.input)
+	// Interceptors that build a fresh input without StartWorkflowInput fall back to the operation's own input.
+	startInput := in.StartWorkflowInput
+	if startInput == nil {
+		startInput = startOp.input
+	}
+	startReq, err := w.createStartWorkflowRequest(ctx, startInput)
 	if err != nil {
 		return nil, err
 	}
@@ -2397,20 +2403,20 @@ func (w *workflowClientInterceptor) UpdateWithStartWorkflow(
 	}
 
 	iterFn := func(fnCtx context.Context, fnRunID string, onSerializationContext func(converter.NexusSerializationContext)) HistoryEventIterator {
-		metricsHandler := w.client.metricsHandler.WithTags(metrics.RPCTags(startOp.input.WorkflowType,
-			metrics.NoneTagValue, startOp.input.Options.TaskQueue))
-		return w.client.getWorkflowHistory(fnCtx, startOp.input.Options.ID, fnRunID, true,
+		metricsHandler := w.client.metricsHandler.WithTags(metrics.RPCTags(startInput.WorkflowType,
+			metrics.NoneTagValue, startInput.Options.TaskQueue))
+		return w.client.getWorkflowHistory(fnCtx, startInput.Options.ID, fnRunID, true,
 			enumspb.HISTORY_EVENT_FILTER_TYPE_CLOSE_EVENT, metricsHandler, onSerializationContext)
 	}
 	startWfCtx := serializationContextFor(converter.WorkflowSerializationContext{
 		Namespace:  w.client.namespace,
-		WorkflowID: startOp.input.Options.ID,
+		WorkflowID: startInput.Options.ID,
 	}, startReq.GetPropagatedNexusSerializationContext())
 	onStart := func(startResp *workflowservice.StartWorkflowExecutionResponse) {
 		runID := startResp.RunId
 		startOp.set(&workflowRunImpl{
-			workflowType:        startOp.input.WorkflowType,
-			workflowID:          startOp.input.Options.ID,
+			workflowType:        startInput.WorkflowType,
+			workflowID:          startInput.Options.ID,
 			firstExecutionRunID: startResp.GetFirstExecutionRunId(),
 			currentRunID:        func() string { return runID },
 			resultRunID:         runID,
@@ -2422,8 +2428,8 @@ func (w *workflowClientInterceptor) UpdateWithStartWorkflow(
 		}, nil)
 	}
 
-	metricsHandler := w.client.metricsHandler.WithTags(metrics.RPCTags(startOp.input.WorkflowType,
-		metrics.NoneTagValue, startOp.input.Options.TaskQueue))
+	metricsHandler := w.client.metricsHandler.WithTags(metrics.RPCTags(startInput.WorkflowType,
+		metrics.NoneTagValue, startInput.Options.TaskQueue))
 
 	updateResp, err := w.updateWithStartWorkflow(ctx, startReq, updateReq, onStart, metricsHandler)
 	if err != nil {

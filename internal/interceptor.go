@@ -610,6 +610,13 @@ type ClientUpdateWithStartWorkflowInput struct {
 	UpdateOptions *UpdateWorkflowOptions
 	// StartWorkflowOperation is the operation to start the workflow.
 	StartWorkflowOperation WithStartWorkflowOperation
+	// StartWorkflowInput holds the options, workflow type, and arguments of
+	// StartWorkflowOperation, in the same form ExecuteWorkflow interceptors
+	// receive. Interceptors may modify it in place or replace it; the SDK uses
+	// the value present when the call reaches the end of the interceptor chain.
+	// If nil, the SDK uses the input originally captured by
+	// StartWorkflowOperation.
+	StartWorkflowInput *ClientExecuteWorkflowInput
 }
 
 // ClientPollWorkflowUpdateInput is the input to
