@@ -13,6 +13,20 @@ or Security.
 
 ### Added
 
+### Changed
+
+### Deprecated
+
+### :boom: Breaking Changes
+
+### Fixed
+
+### Security
+
+## [0.2.0] - 2026-11-10
+
+### Added
+
 - Client credentials can be loaded from AWS Secrets Manager. `RunWorker` now
   loads client options with the `go.temporal.io/sdk/contrib/aws/secretsmanager`
   envconfig extension, so the API key and TLS cert/key/CA can be configured as
@@ -22,3 +36,4 @@ or Security.
 ### Breaking Changes
 
 - Raised the minimum supported Go version from 1.25.4 to 1.26.0.
+
