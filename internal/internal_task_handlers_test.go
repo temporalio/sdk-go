@@ -3449,14 +3449,27 @@ func (t *TaskHandlersTestSuite) TestActivityFailurePreservedWhenWorkerShutsDownB
 	}
 
 	res, err := activityHandler.Execute(taskqueue, pats)
-	t.Require().NoError(err)
-	t.Require().True(visited, "outbound payload visitor was not called")
-	t.Require().NoError(res.failureErr)
+	tt := t.T()
+	if err != nil {
+		tt.Fatalf("Execute() error = %v", err)
+	}
+	if !visited {
+		tt.Fatal("outbound payload visitor was not called")
+	}
+	if res.failureErr != nil {
+		tt.Fatalf("Execute() failureErr = %v, want nil", res.failureErr)
+	}
 	failed, ok := res.response.(*workflowservice.RespondActivityTaskFailedRequest)
-	t.Require().True(ok, "unexpected response type %T", res.response)
+	if !ok {
+		tt.Fatalf("Execute() response type = %T, want *RespondActivityTaskFailedRequest", res.response)
+	}
 	appInfo := failed.Failure.GetApplicationFailureInfo()
-	t.Equal("SessionWorkerShutdown", appInfo.GetType())
-	t.True(appInfo.GetNonRetryable())
+	if got, want := appInfo.GetType(), "SessionWorkerShutdown"; got != want {
+		tt.Errorf("failure type = %q, want %q", got, want)
+	}
+	if !appInfo.GetNonRetryable() {
+		tt.Error("failure is retryable, want non-retryable")
+	}
 }
 
 func (t *TaskHandlersTestSuite) TestActivityCancellationUsesIsCanceledError() {
