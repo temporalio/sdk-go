@@ -132,6 +132,7 @@ type (
 		workflowTaskHandler WorkflowTaskHandler
 		activityTaskHandler ActivityTaskHandler
 		slotSupplier        SlotSupplier
+		workerType          string
 	}
 
 	// workerExecutionParameters defines worker configure/execution options.
@@ -595,9 +596,11 @@ func newSessionWorker(client *WorkflowClient, params workerExecutionParameters, 
 	// Disable versioning for activity worker within session, but still send deployment name for debug purpose
 	params.DeploymentOptions.UseVersioning = false
 	params.UseBuildIDForVersioning = false
+	// Session workers share the ordinary activity worker's metrics handler, so they need their own worker types.
 	activityWorker := newActivityWorker(client, params,
 		&workerOverrides{
 			slotSupplier: params.Tuner.GetSessionActivitySlotSupplier(),
+			workerType:   "SessionActivityWorker",
 		}, env, nil)
 
 	params.ActivityTaskPollerBehavior = NewPollerBehaviorSimpleMaximum(
@@ -611,7 +614,7 @@ func newSessionWorker(client *WorkflowClient, params workerExecutionParameters, 
 	params.UseBuildIDForVersioning = useBuildIDForVersioning
 	// Although we have session token bucket to limit session size across creation
 	// and recreation, we also limit it here for creation only
-	overrides := &workerOverrides{}
+	overrides := &workerOverrides{workerType: "SessionCreationWorker"}
 	overrides.slotSupplier, _ = NewFixedSizeSlotSupplier(maxConcurrentSessionExecutionSize)
 	creationWorker := newActivityWorker(client, params, overrides, env, sessionEnvironment.GetTokenBucket())
 
@@ -679,12 +682,16 @@ func newActivityWorker(
 	} else {
 		slotSupplier = params.Tuner.GetActivityTaskSlotSupplier()
 	}
+	workerType := "ActivityWorker"
+	if overrides != nil && overrides.workerType != "" {
+		workerType = overrides.workerType
+	}
 	bwo := baseWorkerOptions{
 		pollerRate:                   defaultPollerRate,
 		slotSupplier:                 slotSupplier,
 		maxTaskPerSecond:             params.WorkerActivitiesPerSecond,
 		taskProcessor:                poller,
-		workerType:                   "ActivityWorker",
+		workerType:                   workerType,
 		identity:                     params.Identity,
 		buildId:                      params.getBuildID(),
 		logger:                       params.Logger,
