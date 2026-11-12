@@ -2861,6 +2861,62 @@ func (s *WorkflowTestSuiteUnitTest) Test_SignalExternalWorkflow() {
 	s.NoError(env.GetWorkflowError())
 }
 
+type signalExternalArg struct{ N int }
+
+type signalExternalUndecodableArg struct{ N int }
+
+func (*signalExternalUndecodableArg) UnmarshalJSON([]byte) error {
+	return errors.New("cannot decode")
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_SignalExternalWorkflow_MockGetsArgAsSent() {
+	sendAndCapture := func(arg any, afterSend func()) any {
+		var seen any
+		env := s.NewTestWorkflowEnvironment()
+		env.OnSignalExternalWorkflow(mock.Anything, "target", "", "sig", mock.Anything).Return(
+			func(namespace, workflowID, runID, signalName string, arg any) error {
+				seen = arg
+				return nil
+			}).Once()
+		env.ExecuteWorkflow(func(ctx Context) error {
+			f := SignalExternalWorkflow(ctx, "target", "", "sig", arg)
+			afterSend()
+			return f.Get(ctx, nil)
+		})
+		s.True(env.IsWorkflowCompleted())
+		s.NoError(env.GetWorkflowError())
+		return seen
+	}
+
+	s.Run("data changed after send", func() {
+		sent := &signalExternalArg{N: 1}
+		seen := sendAndCapture(sent, func() { sent.N = 2 })
+		got, ok := seen.(*signalExternalArg)
+		s.Require().True(ok, "the mock got %T, not the type the workflow sent", seen)
+		s.Equal(1, got.N, "the mock saw a value the workflow never sent")
+		s.NotSame(sent, got, "the mock shares memory with the workflow, which races with the workflow")
+	})
+
+	s.Run("byte slice changed after send", func() {
+		sent := []byte("x")
+		seen := sendAndCapture(sent, func() { sent[0] = 'y' })
+		got, ok := seen.([]byte)
+		s.Require().True(ok, "the mock got %T, not the type the workflow sent", seen)
+		s.Equal("x", string(got), "the mock saw bytes the workflow never sent")
+	})
+
+	s.Run("nil arg", func() {
+		seen := sendAndCapture(nil, func() {})
+		s.Nil(seen, "a nil signal arg must reach the mock as nil")
+	})
+
+	s.Run("payload that does not decode", func() {
+		sent := &signalExternalUndecodableArg{N: 1}
+		seen := sendAndCapture(sent, func() {})
+		s.Same(sent, seen, "an arg that does not decode must reach the mock unchanged, as before")
+	})
+}
+
 func (s *WorkflowTestSuiteUnitTest) Test_CancelChildWorkflow() {
 	childWorkflowFn := func(ctx Context) error {
 		var err error

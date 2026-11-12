@@ -19,6 +19,7 @@ import (
 	"github.com/robfig/cron"
 	"github.com/stretchr/testify/mock"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -2888,8 +2889,9 @@ func (env *testWorkflowEnvironmentImpl) SignalExternalWorkflow(
 	// so it can block and wait on the requested delay time (if configured). If we run it in main thread, and the mock
 	// configured to delay, it will block the main loop which stops the world.
 	env.runningCount++
+	sent := env.decodeSignalArg(input, arg)
 	go func() {
-		args := []any{namespace, workflowID, runID, signalName, arg}
+		args := []any{namespace, workflowID, runID, signalName, sent}
 		// below call will panic if mock is not properly setup.
 		mockRet := env.workflowMock.MethodCalled(mockMethodForSignalExternalWorkflow, args...)
 		m := &mockWrapper{name: mockMethodForSignalExternalWorkflow, fn: mockFnSignalExternalWorkflow}
@@ -2904,6 +2906,23 @@ func (env *testWorkflowEnvironmentImpl) SignalExternalWorkflow(
 			env.runningCount--
 		}, true)
 	}()
+}
+
+// decodeSignalArg returns the signal argument decoded from a copy of its
+// payload, so the mock sees the data as it was sent and shares no memory with
+// the workflow. It returns arg itself when arg is nil or the payload does not
+// decode with the root data converter.
+func (env *testWorkflowEnvironmentImpl) decodeSignalArg(input *commonpb.Payloads, arg any) any {
+	if arg == nil {
+		return nil
+	}
+	// The byte slice converter puts the caller's slice in the payload as is.
+	input = proto.Clone(input).(*commonpb.Payloads)
+	valuePtr := reflect.New(reflect.TypeOf(arg))
+	if err := decodeArg(env.GetRootDataConverter(), input, valuePtr.Interface()); err != nil {
+		return arg
+	}
+	return valuePtr.Elem().Interface()
 }
 
 func (env *testWorkflowEnvironmentImpl) ExecuteChildWorkflow(params ExecuteWorkflowParams, callback ResultHandler, startedHandler func(r WorkflowExecution, e error)) {
