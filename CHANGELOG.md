@@ -30,6 +30,12 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- Fixed a data race in `TestWorkflowEnvironment` when a workflow changes the data it passed to
+  `SignalExternalWorkflow` before the `OnSignalExternalWorkflow` mock reads it. The mock now gets a
+  copy decoded from the sent payload, as activity mocks do, so it matches on the decoded value: a
+  value that does not survive the data converter unchanged, such as a `time.Time` with a monotonic
+  clock reading, no longer matches an expected argument built from the original.
+
 ### Security
 
 ## [1.51.0] - 2026-11-10
