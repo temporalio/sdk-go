@@ -22,6 +22,20 @@ to docs, or any other relevant information.
 
 ### Added
 
+### Changed
+
+### Deprecated
+
+### :boom: Breaking Changes
+
+### Fixed
+
+### Security
+
+## [1.51.0] - 2026-11-10
+
+### Added
+
 - Added `client.Options.RPCTimeout` to configure the default RPC timeout cap,
   including raising it above 10 seconds. Shorter caller deadlines still take
   precedence, and calls with dedicated timeouts (such as long polls) are unchanged.
@@ -31,11 +45,11 @@ to docs, or any other relevant information.
   a transient codec failure can recover while the execution stays open. See the
   `WorkflowTaskFailureError` docs for the honored paths, exclusions, and retry
   guidance.
+- Added experimental `SignalWithStartWorkflow` API to the `workflow` package.
 - Added opt-in `EncodeHeaders` tracing options and `workflow.CodecContextPropagator` for header
   codec processing using the configured client's codec. Only opted-in producers' output is encoded;
   user-supplied wire-ready headers are unchanged. Receiving consumers use private decoded views.
   Custom converter wrappers can expose codec stages through `converter.PayloadCodecProvider`.
-
 - Added experimental Event Groups support: `workflow.NewEventGroup`, `workflow.WithEventGroups`,
   and `EventGroups` on workflow command options. Update handlers get an implicit group. Signal
   handlers do not.
@@ -127,8 +141,6 @@ to docs, or any other relevant information.
   was only half the caller's context deadline - now it uses the entire deadline, up to a maximum
   of ten seconds. RPCs with timeout overrides, like long-poll RPCs, are unchanged.
 - Query tracing now always records inbound spans when serving queries, regardless of `IsReplaying` state.
-
-### Security
 
 ## [1.50.0] - 2026-10-15
 

@@ -392,8 +392,9 @@ func Header(ctx context.Context) map[string]*commonpb.Payload {
 // WorkflowInboundInterceptor.ExecuteWorkflow,
 // WorkflowOutboundInterceptor.ExecuteActivity,
 // WorkflowOutboundInterceptor.ExecuteLocalActivity,
-// WorkflowOutboundInterceptor.ExecuteChildWorkflow, and
-// WorkflowOutboundInterceptor.NewContinueAsNewError.
+// WorkflowOutboundInterceptor.ExecuteChildWorkflow,
+// WorkflowOutboundInterceptor.NewContinueAsNewError, and
+// WorkflowOutboundInterceptor.SignalWithStartWorkflow.
 func WorkflowHeader(ctx workflow.Context) map[string]*commonpb.Payload {
 	return internal.WorkflowHeader(ctx)
 }
