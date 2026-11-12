@@ -208,15 +208,11 @@ func NewTransferTypeConverter[T any]() DataConverter {
 }
 `,
 		"internal/root.go": `package internal
-// DataConverter is the root converter.
-//
 // Exposed as: [go.temporal.io/sdk/converter.RootConverter]
 type DataConverter interface {}
 `,
 		"internal/common/converter/converter.go": `package converter
-// DataConverter converts payloads.
 type DataConverter interface {}
-// NewTransferTypeConverter creates a converter.
 func NewTransferTypeConverter[T any]() DataConverter { return nil }
 `,
 	}

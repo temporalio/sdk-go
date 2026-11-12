@@ -259,8 +259,6 @@ func processPublic(file *os.File) (map[string]string, error) {
 	return publicToInternal, nil
 }
 
-// Internal names include their package path relative to internal, so identically
-// named declarations in different internal packages cannot receive each other's links.
 type internalPackages map[string]string
 
 func pairsForPackage(pairs map[string]map[string]string, path string) map[string]map[string]string {
