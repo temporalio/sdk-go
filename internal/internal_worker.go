@@ -255,6 +255,9 @@ type (
 		workerControlTaskQueue   string
 		pollerGroupSnapshotStore *pollerGroupSnapshotStore
 
+		sdkName    string
+		sdkVersion string
+
 		activityCancellationCallbacks *activityCancellationCallbacks
 
 		workerPollCompleteOnShutdown *atomic.Bool
@@ -2575,6 +2578,8 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		pollTimeTracker:                  &pollTimeTracker{},
 		workerInstanceKey:                workerInstanceKey,
 		workerControlTaskQueue:           workerControlTaskQueue(client.namespace, client.workerGroupingKey),
+		sdkName:                          client.sdkName,
+		sdkVersion:                       client.sdkVersion,
 		pollerGroupSnapshotStore:         newPollerGroupSnapshotStore(),
 		activityCancellationCallbacks:    activityCancellationCallbacks,
 		workerPollCompleteOnShutdown:     workerPollCompleteOnShutdown,

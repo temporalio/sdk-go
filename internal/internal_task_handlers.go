@@ -3,6 +3,7 @@ package internal
 // All code in this file is private to the package.
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -146,6 +147,8 @@ type (
 		deadlockDetectionTimeout  time.Duration
 		capabilities              *workflowservice.GetSystemInfoResponse_Capabilities
 		workerControlTaskQueue    string
+		sdkName                   string
+		sdkVersion                string
 	}
 
 	activityCancellationCallbacks struct {
@@ -613,6 +616,8 @@ func newWorkflowTaskHandler(params workerExecutionParameters, ppMgr pressurePoin
 		deadlockDetectionTimeout:  params.DeadlockDetectionTimeout,
 		capabilities:              params.capabilities,
 		workerControlTaskQueue:    params.workerControlTaskQueue,
+		sdkName:                   cmp.Or(params.sdkName, SDKName),
+		sdkVersion:                cmp.Or(params.sdkVersion, SDKVersion),
 	}
 }
 
@@ -1172,13 +1177,13 @@ ProcessEvents:
 			taskMessages = append(taskMessages, admittedUpdates...)
 			msgs = indexMessagesByEventID(taskMessages)
 			taskMessages = []*protocolpb.Message{}
-			if eventHandler.sdkVersion != SDKVersion {
+			if eventHandler.sdkVersion != w.wth.sdkVersion {
 				eventHandler.sdkVersionUpdated = true
-				eventHandler.sdkVersion = SDKVersion
+				eventHandler.sdkVersion = w.wth.sdkVersion
 			}
-			if eventHandler.sdkName != SDKName {
+			if eventHandler.sdkName != w.wth.sdkName {
 				eventHandler.sdkNameUpdated = true
-				eventHandler.sdkName = SDKName
+				eventHandler.sdkName = w.wth.sdkName
 			}
 		}
 

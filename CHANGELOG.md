@@ -30,6 +30,9 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- `client.Options.SdkName` and `client.Options.SdkVersion` now also apply to the
+  SDK metadata of workflow task completions, not only to worker heartbeats.
+
 ### Security
 
 ## [1.51.0] - 2026-11-10
