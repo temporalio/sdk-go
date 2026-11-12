@@ -1021,15 +1021,15 @@ type (
 		// NOTE: Experimental
 		WorkerHeartbeatInterval time.Duration
 
-		// SdkName overrides the SDK name reported in worker heartbeats. When empty,
+		// SdkName overrides the SDK name reported in worker heartbeats and workflow task completions. When empty,
 		// the built-in SDKName ("temporal-go") is used. This is intended for SDKs that
 		// embed the Go SDK to run another language (e.g. roadrunner-temporal for PHP),
-		// so heartbeats report the wrapping SDK instead of temporal-go.
+		// so the server records the wrapping SDK instead of temporal-go.
 		//
 		// NOTE: Experimental
 		SdkName string
 
-		// SdkVersion overrides the SDK version reported in worker heartbeats. When empty,
+		// SdkVersion overrides the SDK version reported in worker heartbeats and workflow task completions. When empty,
 		// the built-in SDKVersion is used. See SdkName.
 		//
 		// NOTE: Experimental

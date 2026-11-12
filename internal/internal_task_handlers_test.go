@@ -748,6 +748,39 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_BinaryChecksum() {
 	t.Equal(getBinaryChecksum(), checksums[2])
 }
 
+func (t *TaskHandlersTestSuite) TestRespondsToWFTWithSdkMetadata() {
+	testCases := []struct {
+		name            string
+		sdkName         string
+		sdkVersion      string
+		expectedName    string
+		expectedVersion string
+	}{
+		{name: "default", expectedName: SDKName, expectedVersion: SDKVersion},
+		{name: "override", sdkName: "temporal-php", sdkVersion: "2.19.0", expectedName: "temporal-php", expectedVersion: "2.19.0"},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func() {
+			testEvents := []*historypb.HistoryEvent{
+				createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue}}),
+			}
+			task := createWorkflowTask(testEvents, 0, "HelloWorld_Workflow")
+			params := t.getTestWorkerExecutionParams()
+			params.sdkName = tc.sdkName
+			params.sdkVersion = tc.sdkVersion
+			taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
+			wftask := workflowTask{task: task}
+			wfctx := t.mustWorkflowContextImpl(&wftask, taskHandler)
+			request, err := taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
+			wfctx.Unlock(err)
+			t.NoError(err)
+			response := request.rawRequest.(*workflowservice.RespondWorkflowTaskCompletedRequest)
+			t.Equal(tc.expectedName, response.GetSdkMetadata().GetSdkName())
+			t.Equal(tc.expectedVersion, response.GetSdkMetadata().GetSdkVersion())
+		})
+	}
+}
+
 func (t *TaskHandlersTestSuite) TestRespondsToWFTWithWorkerBinaryID() {
 	taskQueue := "tq1"
 	workerBuildID := "yaaaay"
