@@ -659,6 +659,8 @@ func (e *TestWorkflowEnvironment) OnUpsertMemo(attributes any) *MockCallWrapper 
 // Parameter service must be Nexus service (*nexus.Service) or service name (string).
 // Parameter operation must be Nexus operation (nexus.RegisterableOperation), Nexus operation
 // reference (nexus.OperationReference), or operation name (string).
+// To mock a name served by the service's dynamic operation handler, pass a nexus.OperationReference.
+// The mock then replaces the dynamic handler for that name.
 // You must call Return() with appropriate parameters on the returned *MockCallWrapper instance.
 // The first parameter of Return() is the result of type nexus.HandlerStartOperationResult[T], ie.,
 // it must be *nexus.HandlerStartOperationResultSync[T] or *nexus.HandlerStartOperationResultAsync.
