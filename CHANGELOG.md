@@ -30,6 +30,11 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- Session workers: the session activity worker and the session creation worker now report
+  `worker_type="SessionActivityWorker"` and `worker_type="SessionCreationWorker"`. Previously both reported
+  `ActivityWorker` on the same task queue, so their `temporal_worker_task_slots_available` and
+  `temporal_worker_task_slots_used` gauges overwrote the ordinary activity worker's values.
+
 ### Security
 
 ## [1.51.0] - 2026-11-10

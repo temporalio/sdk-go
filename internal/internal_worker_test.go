@@ -4082,3 +4082,33 @@ func (s *internalWorkerTestSuite) TestRegisterMultipleDynamicWorkflow() {
 	require.Error(s.T(), err)
 	require.Contains(s.T(), err.Error(), "dynamic activity already registered")
 }
+
+func TestSessionWorkerSlotGaugesUseDistinctWorkerTypes(t *testing.T) {
+	handler := metrics.NewCapturingHandler()
+	tuner, err := NewFixedSizeTuner(FixedSizeTunerOptions{
+		NumWorkflowSlots:      1,
+		NumActivitySlots:      1,
+		NumLocalActivitySlots: 1,
+	})
+	require.NoError(t, err)
+	params := workerExecutionParameters{
+		TaskQueue:         "task-queue",
+		MetricsHandler:    handler,
+		Tuner:             tuner,
+		BackgroundContext: t.Context(),
+	}
+	newActivityWorker(nil, params, nil, newRegistry(), nil)
+	newSessionWorker(nil, params, newRegistry(), 1000)
+
+	workerTypes := map[string]int{}
+	for _, gauge := range handler.Gauges() {
+		if gauge.Name == metrics.WorkerTaskSlotsAvailable {
+			workerTypes[gauge.Tags[metrics.WorkerTypeTagName]]++
+		}
+	}
+	require.Equal(t, map[string]int{
+		"ActivityWorker":        1,
+		"SessionActivityWorker": 1,
+		"SessionCreationWorker": 1,
+	}, workerTypes)
+}
