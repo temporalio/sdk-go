@@ -22,6 +22,11 @@ to docs, or any other relevant information.
 
 ### Added
 
+- **Experimental**: `converter.StorageDriverStoreContext` and
+  `converter.StorageDriverSelectContext` have a `Namespace` field holding the
+  namespace of the client or worker performing the operation. It is set even
+  when there is no `Target`, such as for a heartbeat addressed only by task token.
+
 ### Changed
 
 ### Deprecated

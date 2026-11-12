@@ -2524,7 +2524,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	}
 
 	payloadLimitVisitor, setErrorLimits := newPayloadLimitsVisitor(client.payloadWarningLimits, logger)
-	workerStorageParams := client.storageParams.WithOwnDriverOperationLimit().WithLogger(logger)
+	workerStorageParams := client.storageParams.WithOwnDriverOperationLimit().WithLogger(logger).WithNamespace(client.namespace)
 
 	cache, cacheLease := NewWorkerCache()
 	constructionComplete := false

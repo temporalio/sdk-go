@@ -69,8 +69,8 @@ v0/ns/<namespace>/wt/<workflow-type>/wi/<workflow-id>/ri/<run-id>/d/sha256/<hash
 # Standalone Activity payload
 v0/ns/<namespace>/at/<activity-type>/ai/<activity-id>/ri/<run-id>/d/sha256/<hash>
 
-# Unknown context (fallback)
-v0/d/sha256/<hash>
+# No target: namespace of the client or worker
+v0/ns/<namespace>/d/sha256/<hash>
 ```
 
 Characters outside S3's safe set (alphanumerics and `!-_.*'()`) are percent-encoded per byte of their UTF-8 representation. Empty segments are replaced with `null`.
