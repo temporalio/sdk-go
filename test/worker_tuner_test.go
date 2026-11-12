@@ -140,7 +140,7 @@ func (ts *WorkerTunerTestSuite) TestResourceBasedSmallSlots() {
 	}
 }
 
-func (ts *WorkerTunerTestSuite) TestGetSlotUsage() {
+func (ts *WorkerTunerTestSuite) TestGetInfo() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
@@ -161,9 +161,9 @@ func (ts *WorkerTunerTestSuite) TestGetSlotUsage() {
 		return workflow.ExecuteActivity(ctx, "SlotUsageBlockingActivity").Get(ctx, nil)
 	}, workflow.RegisterOptions{Name: "SlotUsageWorkflow"})
 
-	usage, err := worker.GetSlotUsage(myWorker)
+	info, err := worker.GetInfo(myWorker)
 	ts.NoError(err)
-	ts.Equal(worker.SlotUsage{}, usage)
+	ts.Equal(worker.Info{}, info)
 
 	ts.NoError(myWorker.Start())
 	defer myWorker.Stop()
@@ -177,8 +177,9 @@ func (ts *WorkerTunerTestSuite) TestGetSlotUsage() {
 	case <-ctx.Done():
 		ts.FailNow("activity did not start")
 	}
-	usage, err = worker.GetSlotUsage(myWorker)
+	info, err = worker.GetInfo(myWorker)
 	ts.NoError(err)
+	usage := info.SlotUsage
 	ts.Equal(1, usage.Activity.UsedSlots)
 	ts.False(usage.Activity.UsedSlotsLastChanged.Before(startedAt))
 	ts.False(usage.Workflow.UsedSlotsLastChanged.Before(startedAt))
@@ -189,12 +190,14 @@ func (ts *WorkerTunerTestSuite) TestGetSlotUsage() {
 
 	// Slots are released asynchronously after task completions are sent to the server.
 	ts.Eventually(func() bool {
-		usage, err := worker.GetSlotUsage(myWorker)
+		info, err := worker.GetInfo(myWorker)
+		usage := info.SlotUsage
 		return err == nil && usage.Workflow.UsedSlots == 0 && usage.Activity.UsedSlots == 0 &&
 			usage.LocalActivity.UsedSlots == 0 && usage.Nexus.UsedSlots == 0
 	}, 10*time.Second, 50*time.Millisecond)
-	usage, err = worker.GetSlotUsage(myWorker)
+	info, err = worker.GetInfo(myWorker)
 	ts.NoError(err)
+	usage = info.SlotUsage
 	ts.False(usage.Activity.UsedSlotsLastChanged.Before(releasedAt))
 	ts.False(usage.Workflow.UsedSlotsLastChanged.Before(releasedAt))
 }

@@ -1355,7 +1355,7 @@ type AggregatedWorker struct {
 	sessionWorker  *sessionWorker
 	nexusWorker    *nexusWorker
 	// The Nexus worker's slot supplier. Unlike the other workers, nexusWorker is created during
-	// start rather than at construction, so SlotUsage reads this atomic instead of nexusWorker to
+	// start rather than at construction, so slotUsage reads this atomic instead of nexusWorker to
 	// avoid a data race when called concurrently with start.
 	nexusSlotSupplier atomic.Pointer[trackingSlotSupplier]
 	logger            log.Logger

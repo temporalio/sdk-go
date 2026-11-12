@@ -55,7 +55,7 @@ func TestTrackingSlotSupplierUsage(t *testing.T) {
 
 func TestAggregatedWorkerSlotUsage(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		require.Equal(t, SlotUsage{}, (&AggregatedWorker{}).SlotUsage())
+		require.Equal(t, WorkerInfo{}, (&AggregatedWorker{}).Info())
 
 		workflowSlots := newTestTrackingSlotSupplier(t, 2)
 		localActivitySlots := newTestTrackingSlotSupplier(t, 2)
@@ -94,9 +94,9 @@ func TestAggregatedWorkerSlotUsage(t *testing.T) {
 			Workflow:      SlotKindUsage{UsedSlots: 1, UsedSlotsLastChanged: start},
 			Activity:      SlotKindUsage{UsedSlots: 3, UsedSlotsLastChanged: start.Add(2 * time.Second)},
 			LocalActivity: SlotKindUsage{UsedSlots: 1, UsedSlotsLastChanged: start},
-		}, aw.SlotUsage())
+		}, aw.Info().SlotUsage)
 
 		aw.nexusSlotSupplier.Store(nexusSlots)
-		require.Equal(t, SlotKindUsage{UsedSlots: 1, UsedSlotsLastChanged: start}, aw.SlotUsage().Nexus)
+		require.Equal(t, SlotKindUsage{UsedSlots: 1, UsedSlotsLastChanged: start}, aw.Info().SlotUsage.Nexus)
 	})
 }

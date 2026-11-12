@@ -2,6 +2,26 @@ package internal
 
 import "time"
 
+// WorkerInfo is a point-in-time snapshot of a worker's state. Each field is read independently, so
+// the snapshot is not atomic across fields.
+//
+// NOTE: Experimental
+//
+// Exposed as: [go.temporal.io/sdk/worker.Info]
+type WorkerInfo struct {
+	// Fields are computed on every call to Info, which callers may poll frequently, so they should
+	// be cheap to read.
+
+	// SlotUsage is the worker's task slot usage.
+	SlotUsage SlotUsage
+}
+
+// Info returns a snapshot of the worker's state. It is safe to call concurrently with any other
+// worker method, including before Start and after Stop.
+func (aw *AggregatedWorker) Info() WorkerInfo {
+	return WorkerInfo{SlotUsage: aw.slotUsage()}
+}
+
 // SlotUsage is a point-in-time snapshot of a worker's task slot usage, broken down by task kind.
 // Each task kind is read independently, so the snapshot is not atomic across task kinds.
 //
@@ -47,10 +67,8 @@ func (u SlotKindUsage) add(other SlotKindUsage) SlotKindUsage {
 	}
 }
 
-// SlotUsage returns a snapshot of the worker's task slot usage. It is safe to call concurrently
-// with any other worker method, including before Start and after Stop. Task kinds whose workers
-// have not been created yet, such as Nexus before Start, report zero usage.
-func (aw *AggregatedWorker) SlotUsage() SlotUsage {
+// Task kinds whose workers have not been created yet, such as Nexus before Start, report zero usage.
+func (aw *AggregatedWorker) slotUsage() SlotUsage {
 	var u SlotUsage
 	if aw.workflowWorker != nil {
 		u.Workflow = aw.workflowWorker.worker.slotSupplier.usage()
