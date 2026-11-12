@@ -172,6 +172,7 @@ type sharedNamespaceWorker struct {
 
 	activityCancellationCallbacks *activityCancellationCallbacks
 	workerCommandsSupported       bool
+	workerCommandsRunning         atomic.Bool
 	workerControlTaskQueue        string
 	workerInstanceKey             string
 	metricsHandler                metrics.Handler
@@ -184,6 +185,14 @@ type sharedNamespaceWorker struct {
 	// after the heartbeat loop exits. stop() waits on it before returning.
 	stoppedC chan struct{}
 	started  atomic.Bool
+}
+
+// Only advertise the queue while its command poller is running.
+func (hw *sharedNamespaceWorker) controlTaskQueue() string {
+	if hw == nil || !hw.workerCommandsRunning.Load() {
+		return ""
+	}
+	return hw.workerControlTaskQueue
 }
 
 func (hw *sharedNamespaceWorker) run() {
@@ -278,6 +287,8 @@ func (hw *sharedNamespaceWorker) runWorkerCommands() {
 	)
 	var pollWG sync.WaitGroup
 	defer pollWG.Wait()
+	hw.workerCommandsRunning.Store(true)
+	defer hw.workerCommandsRunning.Store(false)
 
 	for {
 		if hw.workerCtx.Err() != nil {

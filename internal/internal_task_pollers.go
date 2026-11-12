@@ -98,8 +98,8 @@ type (
 		pollTimeTracker *pollTimeTracker
 		// Unique identifier for worker
 		workerInstanceKey string
-		// Per-client queue used by the server to send worker commands.
-		workerControlTaskQueue string
+		// Shared worker receiving commands from the server.
+		namespaceWorker *sharedNamespaceWorker
 		// Shared snapshot for this worker's task queue.
 		pollerGroupSnapshotStore *pollerGroupSnapshotStore
 		// Server cancels polls on shutdown
@@ -484,7 +484,7 @@ func newWorkflowTaskProcessor(
 			capabilities:                 params.capabilities,
 			pollTimeTracker:              params.pollTimeTracker,
 			workerInstanceKey:            params.workerInstanceKey,
-			workerControlTaskQueue:       params.workerControlTaskQueue,
+			namespaceWorker:              params.namespaceWorker,
 			pollerGroupSnapshotStore:     params.pollerGroupSnapshotStore,
 			workerPollCompleteOnShutdown: params.workerPollCompleteOnShutdown,
 		},
@@ -1545,7 +1545,7 @@ func (wtp *workflowTaskPoller) getPollRequestForKind(queueKind enumspb.TaskQueue
 			wtp.workerDeploymentVersion,
 		),
 		WorkerInstanceKey:      wtp.workerInstanceKey,
-		WorkerControlTaskQueue: wtp.workerControlTaskQueue,
+		WorkerControlTaskQueue: wtp.namespaceWorker.controlTaskQueue(),
 		PollerPoolInfo:         wtp.getPollerPoolInfo(),
 	}
 	if wtp.getCapabilities().BuildIdBasedVersioning {
@@ -1814,7 +1814,7 @@ func newActivityTaskPoller(
 			capabilities:                 params.capabilities,
 			pollTimeTracker:              params.pollTimeTracker,
 			workerInstanceKey:            params.workerInstanceKey,
-			workerControlTaskQueue:       params.workerControlTaskQueue,
+			namespaceWorker:              params.namespaceWorker,
 			pollerGroupSnapshotStore:     params.pollerGroupSnapshotStore,
 			workerPollCompleteOnShutdown: params.workerPollCompleteOnShutdown,
 		},
@@ -1867,7 +1867,7 @@ func (atp *activityTaskPoller) poll(
 			atp.workerDeploymentVersion,
 		),
 		WorkerInstanceKey:      atp.workerInstanceKey,
-		WorkerControlTaskQueue: atp.workerControlTaskQueue,
+		WorkerControlTaskQueue: atp.namespaceWorker.controlTaskQueue(),
 		PollerPoolInfo:         atp.getPollerPoolInfo(),
 	}
 
