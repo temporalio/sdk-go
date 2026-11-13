@@ -22,6 +22,12 @@ to docs, or any other relevant information.
 
 ### Added
 
+- Warn about workflow and activity registration alias collisions and prefixed
+  activity methods whose references resolve to different names. Warnings include
+  the resolved names and instructions for using explicit registered names. Existing
+  name resolution is unchanged. Clarify that `DisableRegistrationAliasing`
+  does not reject function references or prevent short-name collisions.
+
 ### Changed
 
 ### Deprecated

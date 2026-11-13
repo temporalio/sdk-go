@@ -93,6 +93,10 @@ type (
 		// worker.Options.DisableRegistrationAliasing at the worker level to prevent
 		// ambiguity between string names and function references. Also users should
 		// always use this string name when executing this activity.
+		//
+		// For a struct registered with Name: "Prefix_", invoke its DoWork method as
+		// ExecuteActivity(ctx, "Prefix_DoWork", ...). Struct registration does not
+		// create aliases from method names to prefixed names.
 		Name string
 		// DisableAlreadyRegisteredCheck disables the check for already registered activities.
 		DisableAlreadyRegisteredCheck bool

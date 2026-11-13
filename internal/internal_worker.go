@@ -763,10 +763,13 @@ type registry struct {
 	dynamicActivity               activity
 	_                             DynamicRegisterActivityOptions
 	interceptors                  []WorkerInterceptor
+	logger                        log.Logger
+	registrationWarnings          map[string]struct{}
 }
 
 type registryOptions struct {
 	disableAliasing bool
+	logger          log.Logger
 }
 
 func (r *registry) RegisterWorkflow(af any) {
@@ -777,6 +780,7 @@ func (r *registry) RegisterWorkflowWithOptions(
 	wf any,
 	options RegisterWorkflowOptions,
 ) {
+	defer r.warnRegistrationAliasing()
 	// Support direct registration of WorkflowDefinition
 	factory, ok := wf.(WorkflowDefinitionFactory)
 	if ok {
@@ -859,6 +863,7 @@ func (r *registry) RegisterActivityWithOptions(
 	af any,
 	options RegisterActivityOptions,
 ) {
+	defer r.warnRegistrationAliasing()
 	// Support direct registration of activity
 	a, ok := af.(activity)
 	if ok {
@@ -940,7 +945,9 @@ func (r *registry) registerActivityStructWithOptions(aStruct any, options Regist
 				return fmt.Errorf("activity type \"%v\" is already registered", registerName)
 			}
 		}
-		r.activityFuncMap[registerName] = &activityExecutor{name: registerName, fn: methodValue.Interface()}
+		r.activityFuncMap[registerName] = &activityExecutor{
+			name: registerName, fn: methodValue.Interface(), registrationFn: method.Func.Interface(),
+		}
 		count++
 	}
 	if count == 0 {
@@ -1199,17 +1206,96 @@ func validateFnFormat(fnType reflect.Type, isWorkflow, isDynamic bool) error {
 func newRegistry() *registry { return newRegistryWithOptions(registryOptions{}) }
 
 func newRegistryWithOptions(options registryOptions) *registry {
+	if options.logger == nil {
+		options.logger = ilog.NewDefaultLogger()
+	}
 	r := &registry{
 		workflowFuncMap:               make(map[string]any),
 		workflowVersioningBehaviorMap: make(map[string]VersioningBehavior),
 		activityFuncMap:               make(map[string]activity),
 		nexusServices:                 make(map[string]*nexus.Service),
+		logger:                        options.logger,
+		registrationWarnings:          make(map[string]struct{}),
 	}
 	if !options.disableAliasing {
 		r.workflowAliasMap = make(map[string]string)
 		r.activityAliasMap = make(map[string]string)
 	}
 	return r
+}
+
+// Registration diagnostics must not change name resolution: existing histories
+// can depend on alias collisions. Log outside the registry lock because loggers
+// are supplied by callers.
+func (r *registry) warnRegistrationAliasing() {
+	r.Lock()
+	activities := make(map[string]any, len(r.activityFuncMap))
+	for name, activity := range r.activityFuncMap {
+		if executor, ok := activity.(*activityExecutor); ok {
+			activities[name] = executor.fn
+			if executor.registrationFn != nil {
+				activities[name] = executor.registrationFn
+			}
+		}
+	}
+	warnings := registrationAliasWarnings("activity", activities, r.activityAliasMap)
+	warnings = append(warnings, registrationAliasWarnings("workflow", r.workflowFuncMap, r.workflowAliasMap)...)
+	var newWarnings []string
+	for _, warning := range warnings {
+		if _, warned := r.registrationWarnings[warning]; !warned {
+			r.registrationWarnings[warning] = struct{}{}
+			newWarnings = append(newWarnings, warning)
+		}
+	}
+	r.Unlock()
+	for _, warning := range newWarnings {
+		r.logger.Warn(warning)
+	}
+}
+
+func registrationAliasWarnings(kind string, functions map[string]any, aliases map[string]string) []string {
+	names := make([]string, 0, len(functions))
+	for name := range functions {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	var warnings []string
+	for _, name := range names {
+		if alias, ok := aliases[name]; ok && alias != name {
+			warnings = append(warnings, fmt.Sprintf(
+				"Registered %s name %q is redirected by registration aliasing to %q. Set worker.Options.DisableRegistrationAliasing to true and invoke workflows and activities using their registered string names.",
+				kind, name, alias))
+		}
+		fn := functions[name]
+		if fn == nil || reflect.TypeOf(fn).Kind() != reflect.Func {
+			continue
+		}
+		shortName, _ := getFunctionName(fn)
+		resolved := shortName
+		if alias, ok := aliases[shortName]; ok {
+			resolved = alias
+		}
+		if resolved == name {
+			continue
+		}
+		// With aliasing disabled, using a function reference for a custom name is
+		// already unsupported. Only warn if it could silently select another registration.
+		if aliases == nil {
+			if _, exists := functions[resolved]; !exists {
+				continue
+			}
+		}
+		fullName := runtime.FuncForPC(reflect.ValueOf(fn).Pointer()).Name()
+		warning := fmt.Sprintf("Calling %s function %q by reference resolves to %q instead of its registered name %q. ",
+			kind, fullName, resolved, name)
+		if alias, ok := aliases[name]; ok && alias != name {
+			warning += "Set worker.Options.DisableRegistrationAliasing to true and invoke workflows and activities using their registered string names."
+		} else {
+			warning += fmt.Sprintf("Invoke this %s using the registered string name %q instead of the function reference.", kind, name)
+		}
+		warnings = append(warnings, warning)
+	}
+	return warnings
 }
 
 // Wrapper to execute workflow functions.
@@ -1256,6 +1342,9 @@ type activityExecutor struct {
 	fn               any
 	skipInterceptors bool
 	dynamic          bool
+	// Reflection creates bound method wrappers without the original method name.
+	// Keep the unbound method for registration diagnostics only.
+	registrationFn any
 }
 
 func (ae *activityExecutor) ActivityType() ActivityType {
@@ -2633,7 +2722,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	processTestTags(&options, &workerParams)
 
 	// worker specific registry
-	registry := newRegistryWithOptions(registryOptions{disableAliasing: options.DisableRegistrationAliasing})
+	registry := newRegistryWithOptions(registryOptions{disableAliasing: options.DisableRegistrationAliasing, logger: workerParams.Logger})
 	// Build set of interceptors using the applicable client ones first (being
 	// careful not to append to the existing slice)
 	registry.interceptors = make([]WorkerInterceptor, 0, len(client.workerInterceptors)+len(options.Interceptors))
