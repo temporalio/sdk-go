@@ -1,10 +1,12 @@
 package determinism_test
 
 import (
+	"go/types"
 	"regexp"
 	"testing"
 
 	"go.temporal.io/sdk/contrib/tools/workflowcheck/determinism"
+	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/analysistest"
 )
 
@@ -28,4 +30,21 @@ func Test(t *testing.T) {
 		}).NewAnalyzer(),
 		"a",
 	)
+}
+
+func TestRunWithoutSourceFiles(t *testing.T) {
+	pass := &analysis.Pass{
+		Pkg: types.NewPackage("unsafe", "unsafe"),
+		ExportPackageFact: func(analysis.Fact) {
+			t.Fatal("unexpected fact export for package without source files")
+		},
+	}
+
+	result, err := determinism.NewChecker(determinism.Config{}).Run(pass)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result) != 0 {
+		t.Fatalf("expected no facts for source-less package, got %v", result)
+	}
 }
