@@ -94,10 +94,12 @@ func (w *workflowClientInterceptor) CreateSchedule(ctx context.Context, in *Sche
 
 	// Only send an initial patch if we need to.
 	var initialPatch *schedulepb.SchedulePatch
-	if in.Options.TriggerImmediately || len(in.Options.ScheduleBackfill) > 0 {
+	if in.Options.TriggerImmediately || len(in.Options.ScheduleBackfill) > 0 ||
+		in.Options.TimeSkippingConfig != nil {
 		initialPatch = &schedulepb.SchedulePatch{
 			TriggerImmediately: triggerImmediately,
 			BackfillRequest:    backfillRequests,
+			TimeSkippingConfig: in.Options.TimeSkippingConfig.toProto(),
 		}
 	}
 
@@ -353,6 +355,22 @@ func (scheduleHandle *scheduleHandleImpl) Trigger(ctx context.Context, options S
 	return err
 }
 
+func (scheduleHandle *scheduleHandleImpl) SetTimeSkippingConfig(ctx context.Context, options ScheduleSetTimeSkippingConfigOptions) error {
+	request := &workflowservice.PatchScheduleRequest{
+		Namespace:  scheduleHandle.client.namespace,
+		ScheduleId: scheduleHandle.ID,
+		Patch: &schedulepb.SchedulePatch{
+			TimeSkippingConfig: options.Config.toProto(),
+		},
+		Identity:  scheduleHandle.client.identity,
+		RequestId: uuid.NewString(),
+	}
+	grpcCtx, cancel := newGRPCContext(ctx, scheduleHandle.client.rpcTimeout, defaultGrpcRetryParameters(ctx))
+	defer cancel()
+	_, err := scheduleHandle.client.workflowService.PatchSchedule(grpcCtx, request)
+	return err
+}
+
 func (scheduleHandle *scheduleHandleImpl) Pause(ctx context.Context, options SchedulePauseOptions) error {
 	pauseNote := "Paused via Go SDK"
 	if options.Note != "" {
@@ -533,6 +551,7 @@ func scheduleDescriptionFromPB(
 			NextActionTimes:               nextActionTimes,
 			CreatedAt:                     describeResponse.Info.GetCreateTime().AsTime(),
 			LastUpdateAt:                  describeResponse.Info.GetUpdateTime().AsTime(),
+			TimeSkippingInfo:              timeSkippingInfoFromProto(describeResponse.Info.GetTimeSkippingInfo()),
 		},
 		Memo:                  describeResponse.Memo,
 		SearchAttributes:      searchAttributes,

@@ -32,6 +32,11 @@ type (
 	WorkflowExecutionOptions struct {
 		// If set, it takes precedence over the Versioning Behavior provided with code annotations.
 		VersioningOverride VersioningOverride
+
+		// Time-skipping (v2) configuration for this execution.
+		//
+		// NOTE: Experimental
+		TimeSkippingConfig *TimeSkippingConfig
 	}
 
 	// WorkflowExecutionOptionsChanges describes changes to the options of a workflow execution in
@@ -41,6 +46,32 @@ type (
 	WorkflowExecutionOptionsChanges struct {
 		// If non-nil, change the versioning override.
 		VersioningOverride *VersioningOverrideChange
+
+		// If non-nil, change the time skipping configuration.
+		//
+		// NOTE: Experimental
+		TimeSkippingConfig *TimeSkippingConfigChange
+	}
+
+	// TimeSkippingConfigChange sets or clears an execution's time skipping
+	// configuration when used with [WorkflowExecutionOptionsChanges].
+	//
+	// NOTE: Experimental
+	TimeSkippingConfigChange struct {
+		// Set the configuration if non-nil. If nil, clear any configuration
+		// previously set.
+		Value *TimeSkippingConfig
+	}
+
+	// pollWorkflowTimeSkippingRequest is a request for PollWorkflowFastForward.
+	//
+	// NOTE: Experimental
+	pollWorkflowTimeSkippingRequest struct {
+		// ID of the workflow.
+		WorkflowID string
+		// Required. Identifies the fast-forward to wait for. Must match the
+		// FastForwardConfig id set in the execution's TimeSkippingConfig.
+		FastForwardID string
 	}
 
 	// VersioningOverrideChange sets or removes a versioning override when used with
@@ -114,6 +145,7 @@ func (*OneTimeVersioningOverride) behavior() VersioningBehavior {
 // Mapping WorkflowExecutionOptions field names to proto ones.
 var workflowExecutionOptionsMap map[string]string = map[string]string{
 	"VersioningOverride": "versioning_override",
+	"TimeSkippingConfig": "time_skipping_config",
 }
 
 func generateWorkflowExecutionOptionsPaths(mask []string) []string {
@@ -229,6 +261,7 @@ func versioningOverrideFromProto(versioningOverride *workflowpb.VersioningOverri
 func workflowExecutionOptionsToProto(options WorkflowExecutionOptions) *workflowpb.WorkflowExecutionOptions {
 	return &workflowpb.WorkflowExecutionOptions{
 		VersioningOverride: VersioningOverrideToProto(options.VersioningOverride),
+		TimeSkippingConfig: options.TimeSkippingConfig.toProto(),
 	}
 }
 
@@ -238,6 +271,10 @@ func workflowExecutionOptionsChangesToProto(changes WorkflowExecutionOptionsChan
 	if changes.VersioningOverride != nil {
 		mask = append(mask, "VersioningOverride")
 		options.VersioningOverride = changes.VersioningOverride.Value
+	}
+	if changes.TimeSkippingConfig != nil {
+		mask = append(mask, "TimeSkippingConfig")
+		options.TimeSkippingConfig = changes.TimeSkippingConfig.Value
 	}
 	return workflowExecutionOptionsToProto(options), workflowExecutionOptionsMaskToProto(mask)
 }
@@ -251,6 +288,7 @@ func workflowExecutionOptionsFromProtoUpdateResponse(response *workflowservice.U
 
 	return WorkflowExecutionOptions{
 		VersioningOverride: versioningOverrideFromProto(versioningOverride),
+		TimeSkippingConfig: timeSkippingConfigFromProto(response.GetWorkflowExecutionOptions().GetTimeSkippingConfig()),
 	}
 }
 
@@ -263,7 +301,8 @@ func (r *UpdateWorkflowExecutionOptionsRequest) validateAndConvertToProto(namesp
 		return nil, errors.New("missing workflow id argument")
 	}
 
-	if r.WorkflowExecutionOptionsChanges.VersioningOverride == nil {
+	if r.WorkflowExecutionOptionsChanges.VersioningOverride == nil &&
+		r.WorkflowExecutionOptionsChanges.TimeSkippingConfig == nil {
 		return nil, errors.New("update with no changes")
 	}
 
