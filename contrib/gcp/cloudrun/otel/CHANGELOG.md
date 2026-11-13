@@ -12,6 +12,13 @@
 
 ### Security
 
+## [0.1.1] - 2026-11-13
+
+### Fixed
+
+- Require `otlpworker v0.1.1` to prevent resource schema conflicts during
+  provider construction with OpenTelemetry SDK v1.45.0.
+
 ## [0.1.0] - 2026-09-29
 
 ### Added
