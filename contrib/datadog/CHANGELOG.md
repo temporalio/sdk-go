@@ -13,6 +13,20 @@ or Security.
 
 ### Added
 
+### Changed
+
+### Deprecated
+
+### :boom: Breaking Changes
+
+### Fixed
+
+### Security
+
+## [0.7.0] - 2026-11-13
+
+### Added
+
 - `tracing.TracerOptions.EncodeHeaders` opts tracing headers into processing using the configured
   client's payload codec. Defaults to false; application-supplied headers are unchanged.
 
