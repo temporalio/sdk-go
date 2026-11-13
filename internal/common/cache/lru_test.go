@@ -59,6 +59,29 @@ func TestLRUWithTTL(t *testing.T) {
 	})
 }
 
+func TestLRUPinnedTTL(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		const ttl = 100 * time.Millisecond
+		cache := New(1, &Options{
+			TTL: ttl,
+			Pin: true,
+		})
+		value, err := cache.PutIfNotExist("A", "foo")
+		assert.NoError(t, err)
+		assert.Equal(t, "foo", value)
+
+		time.Sleep(ttl + time.Nanosecond)
+		// An in-use pinned entry remains accessible after its TTL.
+		assert.Equal(t, "foo", cache.Get("A"))
+		cache.Release("A")
+		cache.Release("A")
+
+		// The released entry must expire before Get pins it again.
+		assert.Nil(t, cache.Get("A"))
+		assert.Equal(t, 0, cache.Size())
+	})
+}
+
 func TestLRUCacheConcurrentAccess(t *testing.T) {
 	cache := NewLRU(5)
 	values := map[string]string{
