@@ -93,6 +93,8 @@ to docs, or any other relevant information.
   `NexusClient.GetWorkflowClient()` in a Temporal operation handler now reuse the operation's request
   ID, so a retried Nexus task no longer delivers the same signal twice. Signals sent through
   `temporalnexus.GetClient` keep an independent request ID per call and are not deduplicated.
+- `converter.NewZlibCodec` now reuses zlib writers and readers instead of allocating a new
+  compressor (about 1 MB) for every payload. Encoded output is unchanged.
 
 ### Deprecated
 

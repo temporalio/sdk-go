@@ -2,14 +2,20 @@ package converter
 
 import (
 	"bytes"
+	"compress/flate"
+	"compress/zlib"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"hash/adler32"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	commonpb "go.temporal.io/api/common/v1"
 	"google.golang.org/protobuf/proto"
@@ -448,4 +454,132 @@ func TestCodecDataConverter_ToPayload_EncodeError(t *testing.T) {
 	require.EqualError(err, "some encode error")
 	// Also assert that the original payload is returned on error.
 	require.True(proto.Equal(originalPayload, payload))
+}
+
+func zlibTestPayloads() []*commonpb.Payload {
+	return []*commonpb.Payload{
+		{},
+		{Metadata: map[string][]byte{MetadataEncoding: []byte("json/plain")}, Data: []byte(`"small"`)},
+		{Data: bytes.Repeat([]byte("compressible "), 10_000)},
+		{Data: bytes.Repeat([]byte{0, 1, 2, 3, 4, 5, 6, 7}, 1)},
+	}
+}
+
+func TestZlibCodecReuseMatchesFreshWriter(t *testing.T) {
+	for _, alwaysEncode := range []bool{true, false} {
+		codec := NewZlibCodec(ZlibCodecOptions{AlwaysEncode: alwaysEncode})
+		// Repeat so pooled writers and readers are reused across payload sizes.
+		for range 3 {
+			for _, p := range zlibTestPayloads() {
+				b, err := proto.Marshal(p)
+				require.NoError(t, err)
+				var expected bytes.Buffer
+				w := zlib.NewWriter(&expected)
+				_, err = w.Write(b)
+				require.NoError(t, err)
+				require.NoError(t, w.Close())
+
+				encoded, err := codec.Encode([]*commonpb.Payload{p})
+				require.NoError(t, err)
+				if expected.Len() < len(b) || alwaysEncode {
+					require.Equal(t, "binary/zlib", string(encoded[0].Metadata[MetadataEncoding]))
+					require.Equal(t, expected.Bytes(), encoded[0].Data)
+				} else {
+					require.Same(t, p, encoded[0])
+				}
+
+				decoded, err := codec.Decode(encoded)
+				require.NoError(t, err)
+				require.True(t, proto.Equal(p, decoded[0]))
+			}
+		}
+	}
+}
+
+func TestZlibCodecDecodeErrorDoesNotAffectLaterDecodes(t *testing.T) {
+	codec := NewZlibCodec(ZlibCodecOptions{AlwaysEncode: true})
+	payload := &commonpb.Payload{Data: bytes.Repeat([]byte("compressible "), 1_000)}
+	encoded, err := codec.Encode([]*commonpb.Payload{payload})
+	require.NoError(t, err)
+	data := encoded[0].Data
+
+	corrupt := bytes.Clone(data)
+	corrupt[len(corrupt)-1] ^= 0xff
+	for _, bad := range [][]byte{nil, []byte("not zlib"), data[:len(data)/2], corrupt} {
+		in := []*commonpb.Payload{{Metadata: map[string][]byte{MetadataEncoding: []byte("binary/zlib")}, Data: bad}}
+		out, err := codec.Decode(in)
+		require.Error(t, err)
+		require.Equal(t, in, out)
+
+		decoded, err := codec.Decode(encoded)
+		require.NoError(t, err)
+		require.True(t, proto.Equal(payload, decoded[0]))
+	}
+}
+
+func TestZlibCodecConcurrentUse(t *testing.T) {
+	codec := NewZlibCodec(ZlibCodecOptions{AlwaysEncode: true})
+	payloads := zlibTestPayloads()
+	var wg sync.WaitGroup
+	for range 16 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range 100 {
+				p := payloads[i%len(payloads)]
+				encoded, err := codec.Encode([]*commonpb.Payload{p})
+				if !assert.NoError(t, err) {
+					return
+				}
+				decoded, err := codec.Decode(encoded)
+				if !assert.NoError(t, err) || !assert.True(t, proto.Equal(p, decoded[0])) {
+					return
+				}
+			}
+		}()
+	}
+	wg.Wait()
+}
+
+func BenchmarkZlibCodecEncode(b *testing.B) {
+	codec := NewZlibCodec(ZlibCodecOptions{AlwaysEncode: true})
+	payloads := []*commonpb.Payload{{Data: []byte(`{"id":"abc","amount":"12.34"}`)}}
+	b.ReportAllocs()
+	for b.Loop() {
+		if _, err := codec.Encode(payloads); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func TestZlibCodecDecodeCannotReadPreviousPayload(t *testing.T) {
+	codec := NewZlibCodec(ZlibCodecOptions{AlwaysEncode: true})
+	secret := &commonpb.Payload{Data: []byte("previous payload secret 0123456789 previous payload secret")}
+	encoded, err := codec.Encode([]*commonpb.Payload{secret})
+	require.NoError(t, err)
+	secretBytes, err := proto.Marshal(secret)
+	require.NoError(t, err)
+
+	// A zlib stream whose deflate data back-references bytes from before its
+	// own start, i.e. from whatever history a reused reader might still hold.
+	var deflated bytes.Buffer
+	fw, err := flate.NewWriterDict(&deflated, flate.BestCompression, secretBytes)
+	require.NoError(t, err)
+	_, err = fw.Write(secretBytes)
+	require.NoError(t, err)
+	require.NoError(t, fw.Close())
+	crafted := append([]byte{0x78, 0x9c}, deflated.Bytes()...)
+	crafted = binary.BigEndian.AppendUint32(crafted, adler32.Checksum(secretBytes))
+	attack := []*commonpb.Payload{{Metadata: map[string][]byte{MetadataEncoding: []byte("binary/zlib")}, Data: crafted}}
+	_, err = NewZlibCodec(ZlibCodecOptions{}).Decode(attack)
+	require.Error(t, err, "crafted stream must depend on prior history")
+
+	for range 3 {
+		decoded, err := codec.Decode(encoded)
+		require.NoError(t, err)
+		require.True(t, proto.Equal(secret, decoded[0]))
+
+		_, err = codec.Decode(attack)
+		require.Error(t, err)
+	}
 }
