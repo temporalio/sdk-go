@@ -365,7 +365,7 @@ func (scheduleHandle *scheduleHandleImpl) SetTimeSkippingConfig(ctx context.Cont
 		Identity:  scheduleHandle.client.identity,
 		RequestId: uuid.NewString(),
 	}
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, scheduleHandle.client.rpcTimeout, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 	_, err := scheduleHandle.client.workflowService.PatchSchedule(grpcCtx, request)
 	return err
