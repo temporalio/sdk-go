@@ -2011,7 +2011,7 @@ func NewWorkflowReplayer(options WorkflowReplayerOptions) (*WorkflowReplayer, er
 		contextPropagators:          options.ContextPropagators,
 		enableLoggingInReplay:       options.EnableLoggingInReplay,
 		disableDeadlockDetection:    options.DisableDeadlockDetection,
-		inboundPayloadVisitor:       extstore.NewExternalRetrievalVisitor(storageParams),
+		inboundPayloadVisitor:       newInboundPayloadVisitor(options.DataConverter, storageParams),
 		storageParams:               storageParams,
 		workflowExecutionResults:    make(map[string]*commonpb.Payloads),
 		workflowReplayerInstanceKey: workflowReplayerInstanceKey,
@@ -2245,6 +2245,7 @@ func (aw *WorkflowReplayer) replayWorkflowHistoryRoot(
 		},
 		inboundVisitor: aw.inboundPayloadVisitor,
 		storageParams:  aw.storageParams,
+		dataConverter:  aw.dataConverter,
 	}
 	cache, cacheLease := newWorkerCache(&sharedWorkerCache{}, &sync.Mutex{}, 0)
 	defer cacheLease.release()
@@ -2277,7 +2278,10 @@ func (aw *WorkflowReplayer) replayWorkflowHistoryRoot(
 	}
 	// Resolve externally stored payloads in the history before passing to the
 	// task handler. This mirrors what processWorkflowTask does for live workers.
-	if err := visitProtoPayloads(context.Background(), aw.inboundPayloadVisitor, task, 0); err != nil {
+	referenceContexts := newWorkflowReferenceContexts(
+		namespace, task.WorkflowExecution.GetWorkflowId(), task.WorkflowType.GetName())
+	inboundPayloadVisitor := newWorkflowTaskInboundVisitor(aw.inboundPayloadVisitor, aw.dataConverter, referenceContexts)
+	if err := visitProtoPayloads(context.Background(), inboundPayloadVisitor, task, 0); err != nil {
 		return err
 	}
 
@@ -2580,9 +2584,9 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		workerPollCompleteOnShutdown:     workerPollCompleteOnShutdown,
 		serverSupportsAutoscaling:        &atomic.Bool{},
 		workflowTaskCompletionPagination: &workflowTaskCompletionPaginationConfig{},
-		inboundPayloadVisitor:            extstore.NewExternalRetrievalVisitor(workerStorageParams),
+		inboundPayloadVisitor:            newInboundPayloadVisitor(client.dataConverter, workerStorageParams),
 		outboundPayloadVisitor: newCompositePayloadVisitor(
-			extstore.NewExternalStorageVisitor(workerStorageParams),
+			newOutboundStorageVisitor(client.dataConverter, workerStorageParams),
 			payloadLimitVisitor,
 		),
 		storageParams: workerStorageParams,

@@ -12,6 +12,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	commonpb "go.temporal.io/api/common/v1"
+	sdkpb "go.temporal.io/api/sdk/v1"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/extstore"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -130,6 +131,26 @@ func makeStorageRef(t *testing.T, driverName, key string) *commonpb.Payload {
 	}
 }
 
+func makeEncodedStorageRef(t *testing.T, codec converter.PayloadCodec, driverName, key string) *commonpb.Payload {
+	t.Helper()
+	data, err := protojson.Marshal(&sdkpb.ExternalStorageReference{
+		DriverName: driverName,
+		ClaimData:  map[string]string{"key": key},
+	})
+	require.NoError(t, err)
+	ref := &commonpb.Payload{
+		Metadata: map[string][]byte{
+			converter.MetadataEncoding:    []byte("json/protobuf"),
+			converter.MetadataMessageType: []byte("temporal.api.sdk.v1.ExternalStorageReference"),
+		},
+		Data: data,
+	}
+	encoded, err := codec.Encode([]*commonpb.Payload{ref})
+	require.NoError(t, err)
+	encoded[0].Metadata["__temporal_external_storage_reference"] = []byte("true")
+	return encoded[0]
+}
+
 func makePayload(t *testing.T, value string) *commonpb.Payload {
 	t.Helper()
 	p, err := converter.GetDefaultDataConverter().ToPayload(value)
@@ -217,26 +238,21 @@ func TestRouting_MountedAtPrefix(t *testing.T) {
 // /decode
 // ---------------------------------------------------------------------------
 
-func TestDecode_AppliesPostThenPreCodecs(t *testing.T) {
-	preCodec := &appendCodec{encodingSuffix: ".pre", marker: 'P'}
-	postCodec := &appendCodec{encodingSuffix: ".post", marker: 'O'}
+func TestDecode_AppliesCodecs(t *testing.T) {
+	codec := &appendCodec{encodingSuffix: ".enc", marker: 'E'}
 	h, err := converter.NewPayloadHTTPHandler(converter.PayloadHTTPHandlerOptions{
-		PreStorageCodecs:  []converter.PayloadCodec{preCodec},
-		PostStorageCodecs: []converter.PayloadCodec{postCodec},
+		Codecs: []converter.PayloadCodec{codec},
 	})
 	require.NoError(t, err)
 
 	p := makePayload(t, "hello")
-	originalEncoding := encoding(p)
-	preEncoded, err := preCodec.Encode([]*commonpb.Payload{p})
-	require.NoError(t, err)
-	postEncoded, err := postCodec.Encode(preEncoded)
+	encoded, err := codec.Encode([]*commonpb.Payload{p})
 	require.NoError(t, err)
 
-	rr := servePost(t, h, "/decode", createRequest(t, postEncoded[0]))
+	rr := servePost(t, h, "/decode", createRequest(t, encoded[0]))
 	result := getPayloads(t, rr)
 	require.Len(t, result, 1)
-	require.Equal(t, originalEncoding, encoding(result[0]))
+	require.True(t, proto.Equal(p, result[0]))
 }
 
 func TestDecode_NoDrivers_StorageRefFails(t *testing.T) {
@@ -260,33 +276,18 @@ func TestDecode_NoDrivers_MixedBatch_StorageRefFails(t *testing.T) {
 	require.Contains(t, rr.Body.String(), "no storage driver is configured")
 }
 
-func TestDecode_RoundTrip(t *testing.T) {
-	preCodec := &appendCodec{encodingSuffix: ".pre", marker: 'P'}
-	postCodec := &appendCodec{encodingSuffix: ".post", marker: 'O'}
+func TestDecode_EncodedRefWithoutCodecFails(t *testing.T) {
+	driver := newMemDriver("drv")
 	h, err := converter.NewPayloadHTTPHandler(converter.PayloadHTTPHandlerOptions{
-		PreStorageCodecs:  []converter.PayloadCodec{preCodec},
-		PostStorageCodecs: []converter.PayloadCodec{postCodec},
+		ExternalStorage: converter.ExternalStorage{Drivers: []converter.StorageDriver{driver}},
 	})
 	require.NoError(t, err)
 
-	originals := []*commonpb.Payload{
-		makePayload(t, "first"),
-		makePayload(t, "second"),
-	}
-
-	preEncoded, err := preCodec.Encode(originals)
-	require.NoError(t, err)
-	postEncoded, err := postCodec.Encode(preEncoded)
-	require.NoError(t, err)
-
-	rr := servePost(t, h, "/decode", createRequest(t, postEncoded...))
-	decoded := getPayloads(t, rr)
-	require.Len(t, decoded, 2)
-
-	for i := range originals {
-		require.True(t, proto.Equal(originals[i], decoded[i]),
-			"payload %d: encode→decode should be identity", i)
-	}
+	codec := &appendCodec{encodingSuffix: ".enc", marker: 'E'}
+	ref := makeEncodedStorageRef(t, codec, "drv", "k1")
+	rr := servePost(t, h, "/decode", createRequest(t, ref))
+	require.Equal(t, http.StatusBadRequest, rr.Code)
+	require.Contains(t, rr.Body.String(), "[TMPRL1106]")
 }
 
 // ---------------------------------------------------------------------------
@@ -294,18 +295,16 @@ func TestDecode_RoundTrip(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestDecode_PreserveStorageRefs_AllRefs(t *testing.T) {
-	postCodec := &appendCodec{encodingSuffix: ".post", marker: 'O'}
+	codec := &appendCodec{encodingSuffix: ".enc", marker: 'E'}
 	h, err := converter.NewPayloadHTTPHandler(converter.PayloadHTTPHandlerOptions{
-		PostStorageCodecs: []converter.PayloadCodec{postCodec},
+		Codecs: []converter.PayloadCodec{codec},
 	})
 	require.NoError(t, err)
 
-	ref1 := makeStorageRef(t, "drv", "k1")
-	ref2 := makeStorageRef(t, "drv", "k2")
-	postWrapped, err := postCodec.Encode([]*commonpb.Payload{ref1, ref2})
-	require.NoError(t, err)
+	ref1 := makeEncodedStorageRef(t, codec, "drv", "k1")
+	ref2 := makeEncodedStorageRef(t, codec, "drv", "k2")
 
-	rr := servePost(t, h, "/decode?preserveStorageRefs=true", createRequest(t, postWrapped...))
+	rr := servePost(t, h, "/decode?preserveStorageRefs=true", createRequest(t, ref1, ref2))
 	result := getPayloads(t, rr)
 	require.Len(t, result, 2)
 	require.True(t, extstore.IsStorageReference(result[0]))
@@ -313,72 +312,59 @@ func TestDecode_PreserveStorageRefs_AllRefs(t *testing.T) {
 }
 
 func TestDecode_PreserveStorageRefs_NoRefs(t *testing.T) {
-	preCodec := &appendCodec{encodingSuffix: ".pre", marker: 'P'}
-	postCodec := &appendCodec{encodingSuffix: ".post", marker: 'O'}
+	codec := &appendCodec{encodingSuffix: ".enc", marker: 'E'}
 	h, err := converter.NewPayloadHTTPHandler(converter.PayloadHTTPHandlerOptions{
-		PreStorageCodecs:  []converter.PayloadCodec{preCodec},
-		PostStorageCodecs: []converter.PayloadCodec{postCodec},
+		Codecs: []converter.PayloadCodec{codec},
 	})
 	require.NoError(t, err)
 
 	p := makePayload(t, "hello")
-	originalEncoding := encoding(p)
-	preEncoded, err := preCodec.Encode([]*commonpb.Payload{p})
-	require.NoError(t, err)
-	postEncoded, err := postCodec.Encode(preEncoded)
+	encoded, err := codec.Encode([]*commonpb.Payload{p})
 	require.NoError(t, err)
 
-	rr := servePost(t, h, "/decode?preserveStorageRefs=true", createRequest(t, postEncoded[0]))
+	rr := servePost(t, h, "/decode?preserveStorageRefs=true", createRequest(t, encoded[0]))
 	result := getPayloads(t, rr)
 	require.Len(t, result, 1)
-	require.Equal(t, originalEncoding, encoding(result[0]))
+	require.True(t, proto.Equal(p, result[0]))
 }
 
 func TestDecode_PreserveStorageRefs_MixedBatch(t *testing.T) {
-	preCodec := &appendCodec{encodingSuffix: ".pre", marker: 'P'}
-	postCodec := &appendCodec{encodingSuffix: ".post", marker: 'O'}
+	codec := &appendCodec{encodingSuffix: ".enc", marker: 'E'}
 	h, err := converter.NewPayloadHTTPHandler(converter.PayloadHTTPHandlerOptions{
-		PreStorageCodecs:  []converter.PayloadCodec{preCodec},
-		PostStorageCodecs: []converter.PayloadCodec{postCodec},
+		Codecs: []converter.PayloadCodec{codec},
 	})
 	require.NoError(t, err)
 
 	// Interleaved [ref, regular, ref, regular] to exercise ordering preservation.
-	ref1 := makeStorageRef(t, "drv", "k1")
-	ref2 := makeStorageRef(t, "drv", "k2")
 	regular1 := makePayload(t, "first")
 	regular2 := makePayload(t, "second")
-	originalEncoding1 := encoding(regular1)
-	originalEncoding2 := encoding(regular2)
-
-	preEncoded, err := preCodec.Encode([]*commonpb.Payload{regular1, regular2})
+	encodedRegulars, err := codec.Encode([]*commonpb.Payload{regular1, regular2})
 	require.NoError(t, err)
-	postEncoded, err := postCodec.Encode([]*commonpb.Payload{ref1, preEncoded[0], ref2, preEncoded[1]})
-	require.NoError(t, err)
+	ref1 := makeEncodedStorageRef(t, codec, "drv", "k1")
+	ref2 := makeEncodedStorageRef(t, codec, "drv", "k2")
 
-	rr := servePost(t, h, "/decode?preserveStorageRefs=true", createRequest(t, postEncoded...))
+	rr := servePost(t, h, "/decode?preserveStorageRefs=true",
+		createRequest(t, ref1, encodedRegulars[0], ref2, encodedRegulars[1]))
 	result := getPayloads(t, rr)
 	require.Len(t, result, 4)
 	require.True(t, extstore.IsStorageReference(result[0]))
-	require.Equal(t, originalEncoding1, encoding(result[1]))
+	require.True(t, proto.Equal(regular1, result[1]))
 	require.True(t, extstore.IsStorageReference(result[2]))
-	require.Equal(t, originalEncoding2, encoding(result[3]))
+	require.True(t, proto.Equal(regular2, result[3]))
 }
 
 func TestDecode_PreserveStorageRefs_CaseInsensitive(t *testing.T) {
-	postCodec := &appendCodec{encodingSuffix: ".post", marker: 'O'}
+	codec := &appendCodec{encodingSuffix: ".enc", marker: 'E'}
 	h, err := converter.NewPayloadHTTPHandler(converter.PayloadHTTPHandlerOptions{
-		PostStorageCodecs: []converter.PayloadCodec{postCodec},
+		Codecs: []converter.PayloadCodec{codec},
 	})
 	require.NoError(t, err)
 
-	ref := makeStorageRef(t, "drv", "k1")
-	postWrapped, err := postCodec.Encode([]*commonpb.Payload{ref})
-	require.NoError(t, err)
+	ref := makeEncodedStorageRef(t, codec, "drv", "k1")
 
 	for _, val := range []string{"TRUE", "True", "tRuE"} {
 		t.Run(val, func(t *testing.T) {
-			rr := servePost(t, h, "/decode?preserveStorageRefs="+val, createRequest(t, postWrapped[0]))
+			rr := servePost(t, h, "/decode?preserveStorageRefs="+val, createRequest(t, ref))
 			result := getPayloads(t, rr)
 			require.Len(t, result, 1)
 			require.True(t, extstore.IsStorageReference(result[0]))
@@ -386,24 +372,51 @@ func TestDecode_PreserveStorageRefs_CaseInsensitive(t *testing.T) {
 	}
 }
 
-// TestDecode_PreserveStorageRefs_False verifies that preserveStorageRefs=false
-// behaves the same as omitting the parameter — retrieval is performed.
-func TestDecode_PreserveStorageRefs_False(t *testing.T) {
-	preCodec := &appendCodec{encodingSuffix: ".pre", marker: 'P'}
-	driver := newMemDriver("drv")
-
-	stored := makePayload(t, "stored-value")
-	preEncoded, err := preCodec.Encode([]*commonpb.Payload{stored})
-	require.NoError(t, err)
-	driver.data["k1"] = proto.Clone(preEncoded[0]).(*commonpb.Payload)
-
+func TestDecode_PreserveStorageRefs_NoStorageConfigured(t *testing.T) {
+	codec := &appendCodec{encodingSuffix: ".enc", marker: 'E'}
 	h, err := converter.NewPayloadHTTPHandler(converter.PayloadHTTPHandlerOptions{
-		PreStorageCodecs: []converter.PayloadCodec{preCodec},
-		ExternalStorage:  converter.ExternalStorage{Drivers: []converter.StorageDriver{driver}},
+		Codecs: []converter.PayloadCodec{codec},
 	})
 	require.NoError(t, err)
 
-	ref := makeStorageRef(t, "drv", "k1")
+	ref := makeEncodedStorageRef(t, codec, "drv", "k1")
+	rr := servePost(t, h, "/decode?preserveStorageRefs=true", createRequest(t, ref))
+	result := getPayloads(t, rr)
+	require.Len(t, result, 1)
+	require.True(t, extstore.IsStorageReference(result[0]))
+}
+
+func TestDecode_EncodedRef_NoStorageConfiguredFails(t *testing.T) {
+	codec := &appendCodec{encodingSuffix: ".enc", marker: 'E'}
+	h, err := converter.NewPayloadHTTPHandler(converter.PayloadHTTPHandlerOptions{
+		Codecs: []converter.PayloadCodec{codec},
+	})
+	require.NoError(t, err)
+
+	ref := makeEncodedStorageRef(t, codec, "drv", "k1")
+	rr := servePost(t, h, "/decode", createRequest(t, ref))
+	require.Equal(t, http.StatusBadRequest, rr.Code)
+	require.Contains(t, rr.Body.String(), "[TMPRL1105]")
+}
+
+// TestDecode_PreserveStorageRefs_False verifies that preserveStorageRefs=false
+// behaves the same as omitting the parameter — retrieval is performed.
+func TestDecode_PreserveStorageRefs_False(t *testing.T) {
+	codec := &appendCodec{encodingSuffix: ".enc", marker: 'E'}
+	driver := newMemDriver("drv")
+
+	stored := makePayload(t, "stored-value")
+	encoded, err := codec.Encode([]*commonpb.Payload{stored})
+	require.NoError(t, err)
+	driver.data["k1"] = proto.Clone(encoded[0]).(*commonpb.Payload)
+
+	h, err := converter.NewPayloadHTTPHandler(converter.PayloadHTTPHandlerOptions{
+		Codecs:          []converter.PayloadCodec{codec},
+		ExternalStorage: converter.ExternalStorage{Drivers: []converter.StorageDriver{driver}},
+	})
+	require.NoError(t, err)
+
+	ref := makeEncodedStorageRef(t, codec, "drv", "k1")
 	rr := servePost(t, h, "/decode?preserveStorageRefs=false", createRequest(t, ref))
 	result := getPayloads(t, rr)
 	require.Len(t, result, 1)
@@ -415,26 +428,32 @@ func TestDecode_PreserveStorageRefs_False(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestDownload_SingleRef(t *testing.T) {
-	preCodec := &appendCodec{encodingSuffix: ".pre", marker: 'P'}
+	codec := &appendCodec{encodingSuffix: ".enc", marker: 'E'}
 	driver := newMemDriver("testdrv")
 
 	storedPayload := makePayload(t, "stored-value")
-	preEncoded, err := preCodec.Encode([]*commonpb.Payload{storedPayload})
+	encoded, err := codec.Encode([]*commonpb.Payload{storedPayload})
 	require.NoError(t, err)
-	driver.data["my-key"] = proto.Clone(preEncoded[0]).(*commonpb.Payload)
+	driver.data["my-key"] = proto.Clone(encoded[0]).(*commonpb.Payload)
 
 	h, err := converter.NewPayloadHTTPHandler(converter.PayloadHTTPHandlerOptions{
-		PreStorageCodecs: []converter.PayloadCodec{preCodec},
-		ExternalStorage:  converter.ExternalStorage{Drivers: []converter.StorageDriver{driver}},
+		Codecs:          []converter.PayloadCodec{codec},
+		ExternalStorage: converter.ExternalStorage{Drivers: []converter.StorageDriver{driver}},
 	})
 	require.NoError(t, err)
 
-	ref := makeStorageRef(t, "testdrv", "my-key")
-	rr := servePost(t, h, "/download", createRequest(t, ref))
-	result := getPayloads(t, rr)
-	require.Len(t, result, 1)
-	require.True(t, proto.Equal(storedPayload, result[0]),
-		"expected %v, got %v", storedPayload, result[0])
+	// An unencoded reference written before references were encoded, and an
+	// encoded one, both download.
+	for _, ref := range []*commonpb.Payload{
+		makeStorageRef(t, "testdrv", "my-key"),
+		makeEncodedStorageRef(t, codec, "testdrv", "my-key"),
+	} {
+		rr := servePost(t, h, "/download", createRequest(t, ref))
+		result := getPayloads(t, rr)
+		require.Len(t, result, 1)
+		require.True(t, proto.Equal(storedPayload, result[0]),
+			"expected %v, got %v", storedPayload, result[0])
+	}
 }
 
 func TestDownload_MultipleRefs(t *testing.T) {
@@ -547,10 +566,10 @@ func TestEncode_NoCodecsNoStorage(t *testing.T) {
 	require.True(t, proto.Equal(p, result[0]))
 }
 
-func TestEncode_PreStorageCodecsOnly(t *testing.T) {
-	preCodec := &appendCodec{encodingSuffix: ".pre", marker: 'P'}
+func TestEncode_CodecsOnly(t *testing.T) {
+	codec := &appendCodec{encodingSuffix: ".enc", marker: 'E'}
 	h, err := converter.NewPayloadHTTPHandler(converter.PayloadHTTPHandlerOptions{
-		PreStorageCodecs: []converter.PayloadCodec{preCodec},
+		Codecs: []converter.PayloadCodec{codec},
 	})
 	require.NoError(t, err)
 
@@ -558,38 +577,8 @@ func TestEncode_PreStorageCodecsOnly(t *testing.T) {
 	rr := servePost(t, h, "/encode", createRequest(t, p))
 	result := getPayloads(t, rr)
 	require.Len(t, result, 1)
-	require.True(t, strings.HasSuffix(encoding(result[0]), ".pre"))
-}
-
-func TestEncode_PostStorageCodecsOnly(t *testing.T) {
-	postCodec := &appendCodec{encodingSuffix: ".post", marker: 'O'}
-	h, err := converter.NewPayloadHTTPHandler(converter.PayloadHTTPHandlerOptions{
-		PostStorageCodecs: []converter.PayloadCodec{postCodec},
-	})
-	require.NoError(t, err)
-
-	p := makePayload(t, "hello")
-	rr := servePost(t, h, "/encode", createRequest(t, p))
-	result := getPayloads(t, rr)
-	require.Len(t, result, 1)
-	require.True(t, strings.HasSuffix(encoding(result[0]), ".post"))
-}
-
-func TestEncode_PreAndPostCodecs(t *testing.T) {
-	preCodec := &appendCodec{encodingSuffix: ".pre", marker: 'P'}
-	postCodec := &appendCodec{encodingSuffix: ".post", marker: 'O'}
-	h, err := converter.NewPayloadHTTPHandler(converter.PayloadHTTPHandlerOptions{
-		PreStorageCodecs:  []converter.PayloadCodec{preCodec},
-		PostStorageCodecs: []converter.PayloadCodec{postCodec},
-	})
-	require.NoError(t, err)
-
-	p := makePayload(t, "hello")
-	rr := servePost(t, h, "/encode", createRequest(t, p))
-	result := getPayloads(t, rr)
-	require.Len(t, result, 1)
-	// Pre runs first, post runs second — ".pre.post" is the expected final suffix.
-	require.True(t, strings.HasSuffix(encoding(result[0]), ".pre.post"))
+	require.True(t, strings.HasSuffix(encoding(result[0]), ".enc"))
+	require.False(t, extstore.HasReferenceMarker(result[0]))
 }
 
 func TestEncode_WithExternalStorage(t *testing.T) {
@@ -607,17 +596,46 @@ func TestEncode_WithExternalStorage(t *testing.T) {
 	result := getPayloads(t, rr)
 	require.Len(t, result, 1)
 	require.True(t, extstore.IsStorageReference(result[0]))
+	require.Equal(t, extstore.WriteEncodedReferences, extstore.HasReferenceMarker(result[0]))
 	require.Len(t, driver.data, 1)
 }
 
+func TestEncode_WithCodecsAndExternalStorage(t *testing.T) {
+	codec := &appendCodec{encodingSuffix: ".enc", marker: 'E'}
+	driver := newMemDriver("drv")
+	h, err := converter.NewPayloadHTTPHandler(converter.PayloadHTTPHandlerOptions{
+		Codecs: []converter.PayloadCodec{codec},
+		ExternalStorage: converter.ExternalStorage{
+			Drivers:              []converter.StorageDriver{driver},
+			PayloadSizeThreshold: 1, // store everything
+		},
+	})
+	require.NoError(t, err)
+
+	rr := servePost(t, h, "/encode", createRequest(t, makePayload(t, "hello")))
+	result := getPayloads(t, rr)
+	require.Len(t, result, 1)
+
+	require.Len(t, driver.data, 1)
+	for _, stored := range driver.data {
+		require.True(t, strings.HasSuffix(encoding(stored), ".enc"))
+	}
+	require.Len(t, result[0].GetExternalPayloads(), 1)
+	if extstore.WriteEncodedReferences {
+		require.True(t, strings.HasSuffix(encoding(result[0]), ".enc"))
+		require.True(t, extstore.HasReferenceMarker(result[0]))
+	} else {
+		require.True(t, extstore.IsStorageReference(result[0]))
+		require.False(t, extstore.HasReferenceMarker(result[0]))
+	}
+}
+
 func TestEncode_DecodeRoundTrip(t *testing.T) {
-	preCodec := &appendCodec{encodingSuffix: ".pre", marker: 'P'}
-	postCodec := &appendCodec{encodingSuffix: ".post", marker: 'O'}
+	codec := &appendCodec{encodingSuffix: ".enc", marker: 'E'}
 	driver := newMemDriver("drv")
 
 	h, err := converter.NewPayloadHTTPHandler(converter.PayloadHTTPHandlerOptions{
-		PreStorageCodecs:  []converter.PayloadCodec{preCodec},
-		PostStorageCodecs: []converter.PayloadCodec{postCodec},
+		Codecs: []converter.PayloadCodec{codec},
 		ExternalStorage: converter.ExternalStorage{
 			Drivers:              []converter.StorageDriver{driver},
 			PayloadSizeThreshold: 1,

@@ -3,6 +3,7 @@ package extstore
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync/atomic"
 	"time"
@@ -256,6 +257,18 @@ const metadataEncodingProtoJSON = "json/protobuf"
 // SDK versions. Retained solely for backward-compatible reads.
 const metadataEncodingStorageRefLegacy = "json/external-storage-reference"
 
+var errStorageNotConfigured = errors.New("[TMPRL1105] Externally stored payload encountered but no storage driver is configured")
+
+// WriteEncodedReferences controls whether new storage references are marked and
+// encoded with the payload codecs. Reading marked references ships first, so
+// every worker can read them before any worker writes them. Enable once that
+// release has had time to roll out.
+const WriteEncodedReferences = false
+
+// metadataReferenceMarker marks every storage reference payload, so a reference
+// can be recognized even after a codec has encoded it.
+const metadataReferenceMarker = "__temporal_external_storage_reference"
+
 // legacyStorageReference is the old wire format retained for backward compatibility
 // with payloads written by earlier prerelease SDK versions.
 type legacyStorageReference struct {
@@ -282,7 +295,7 @@ func storageReferenceToPayload(ref *sdkpb.ExternalStorageReference, storedSizeBy
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal storage reference: %w", err)
 	}
-	return &commonpb.Payload{
+	p := &commonpb.Payload{
 		Metadata: map[string][]byte{
 			metadataEncoding:    []byte(metadataEncodingProtoJSON),
 			metadataMessageType: []byte(externalStorageReferenceMessageType),
@@ -291,7 +304,11 @@ func storageReferenceToPayload(ref *sdkpb.ExternalStorageReference, storedSizeBy
 		ExternalPayloads: []*commonpb.Payload_ExternalPayloadDetails{
 			{SizeBytes: storedSizeBytes},
 		},
-	}, nil
+	}
+	if WriteEncodedReferences {
+		p.Metadata[metadataReferenceMarker] = []byte("true")
+	}
+	return p, nil
 }
 
 // payloadToStorageReference decodes a storage reference from a payload.
@@ -355,7 +372,7 @@ func (v *externalRetrievalVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloa
 		// No storage drivers configured at all — fail immediately with a clear error
 		// rather than passing through an unresolved reference.
 		if len(v.params.driverMap) == 0 {
-			return nil, fmt.Errorf("[TMPRL1105] Externally stored payload encountered but no storage driver is configured")
+			return nil, errStorageNotConfigured
 		}
 
 		ref, err := payloadToStorageReference(p)
