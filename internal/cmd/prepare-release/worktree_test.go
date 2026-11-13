@@ -342,36 +342,37 @@ func TestPushBranch(t *testing.T) {
 
 func TestOpenDraftPR(t *testing.T) {
 	a, eff := newMockApp(app{target: sdkTarget(), version: semver{1, 2, 3}}, func(cmd string) (string, error) {
-		if cmd == `gh pr create --draft --base main --head release --label skip-changelog --title "Prepare release 1.2.3" --body "Prepare release 1.2.3"` {
+		if cmd == `gh pr create --draft --base main --head release --label skip-changelog --title "Prepare release 1.2.3" --body-file /worktree/prepare-release-pr.md` {
 			return "https://example.com/pr\n", nil
 		}
 		return "", nil
 	})
 
-	_, err := a.worktreeAt("/worktree", "release").openDraftPR()
+	_, err := a.worktreeAt("/worktree", "release").openDraftPR("PR body")
 	if err != nil {
 		t.Fatal(err)
 	}
+	testEqual(t, eff.files[filepath.Join("/worktree", "prepare-release-pr.md")], "PR body")
 	testEqual(t, eff.output.String(), `
-		      $ gh pr create --draft --base main --head release --label skip-changelog --title "Prepare release 1.2.3" --body "Prepare release 1.2.3"
+		      $ gh pr create --draft --base main --head release --label skip-changelog --title "Prepare release 1.2.3" --body-file /worktree/prepare-release-pr.md
 		      Draft PR: https://example.com/pr
 	`)
 }
 
 func TestOpenDraftPRForContribModule(t *testing.T) {
 	a, eff := newMockApp(app{target: contribEnvconfig(t), version: semver{1, 2, 3}}, func(cmd string) (string, error) {
-		if cmd == `gh pr create --draft --base main --head release --label skip-changelog --title "Prepare contrib/envconfig release 1.2.3" --body "Prepare contrib/envconfig release 1.2.3"` {
+		if cmd == `gh pr create --draft --base main --head release --label skip-changelog --title "Prepare contrib/envconfig release 1.2.3" --body-file /worktree/prepare-release-pr.md` {
 			return "https://example.com/pr\n", nil
 		}
 		return "", nil
 	})
 
-	_, err := a.worktreeAt("/worktree", "release").openDraftPR()
+	_, err := a.worktreeAt("/worktree", "release").openDraftPR("PR body")
 	if err != nil {
 		t.Fatal(err)
 	}
 	testEqual(t, eff.output.String(), `
-		      $ gh pr create --draft --base main --head release --label skip-changelog --title "Prepare contrib/envconfig release 1.2.3" --body "Prepare contrib/envconfig release 1.2.3"
+		      $ gh pr create --draft --base main --head release --label skip-changelog --title "Prepare contrib/envconfig release 1.2.3" --body-file /worktree/prepare-release-pr.md
 		      Draft PR: https://example.com/pr
 	`)
 }

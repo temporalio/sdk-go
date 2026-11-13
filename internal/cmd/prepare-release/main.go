@@ -15,6 +15,7 @@ import (
 )
 
 const usage = "usage: prepare-release [--release-date YYYY-MM-DD] [--stop-before-push] [MODULE] VERSION\n" +
+	"       prepare-release contrib-check\n" +
 	"optional argument MODULE is a slash-separated path to a contrib module directory like 'contrib/envconfig'; " +
 	"omit MODULE to release the Go SDK"
 
@@ -44,6 +45,17 @@ func main() {
 }
 
 func run(out, errOut io.Writer, args []string) error {
+	if len(args) > 0 && args[0] == "contrib-check" {
+		if len(args) != 1 {
+			return errors.New("contrib-check takes no arguments; usage: prepare-release contrib-check")
+		}
+		root, err := repoRoot()
+		if err != nil {
+			return err
+		}
+		a := app{out: out, eff: realWorld{out: io.Discard}, repoRoot: root}
+		return a.checkContrib()
+	}
 	a, err := newApp(out, errOut, args)
 	if err != nil {
 		return err
@@ -160,11 +172,15 @@ func (app *app) prepareRelease() (retErr error) {
 	}
 
 	printLine(app.out, "[4/5] Publish draft PR and draft release")
+	prBody, err := worktree.draftPRBody()
+	if err != nil {
+		return err
+	}
 	err = worktree.pushBranch()
 	if err != nil {
 		return err
 	}
-	prURL, err := worktree.openDraftPR()
+	prURL, err := worktree.openDraftPR(prBody)
 	if err != nil {
 		return err
 	}
