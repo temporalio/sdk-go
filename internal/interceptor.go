@@ -216,6 +216,8 @@ type RequestCancelNexusOperationInput struct {
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.WorkflowOutboundInterceptor]
 type WorkflowOutboundInterceptor interface {
+	systemnexus_workflowOutboundInterceptor
+
 	// Go intercepts workflow.Go.
 	Go(ctx Context, name string, f func(ctx Context)) Context
 

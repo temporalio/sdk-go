@@ -11,6 +11,29 @@ permissions:
   actions: read
 
 jobs:
+  check-generated:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          submodules: recursive
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+
+      - name: Install nexgen
+        run: |
+          rustup toolchain install 1.96.0 --profile minimal
+          cargo +1.96.0 install --locked --features advanced --version 0.2.12 nexgen
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+      - name: Check generated files
+        run: go run . generate -check
+        working-directory: ./internal/cmd/build
+
   check:
     strategy:
       fail-fast: false
@@ -305,7 +328,7 @@ jobs:
           TEMPORAL_CLIENT_CLOUD_API_VERSION: v0.19.1
       - name: Integration tests against cloud
         timeout-minutes: 50
-        run: go run . integration-test -envconfig -cloud -p 1 -packages . -timeout 45m
+        run: go run . integration-test -module test -envconfig -cloud -p 1 -packages . -timeout 45m
         working-directory: ./internal/cmd/build
         env:
           TEST_LOG_ARTIFACT_NAME: ${{ github.job }}-${{ matrix.go-version }}-fips-${{ matrix.fips }}
@@ -357,6 +380,7 @@ jobs:
       - unit-test
       - integ-test
       - integ-test-cache
+      - cloud-test
       - features-test
     runs-on: ubuntu-latest
     steps:

@@ -972,6 +972,17 @@ type (
 		// default: no extra options
 		ConnectionOptions ConnectionOptions
 
+		// RPCTimeout limits the duration of an SDK RPC, including retries. A shorter
+		// deadline on the call's context takes precedence. This can be raised to
+		// allow RPCs to take longer than the default 10 seconds.
+		//
+		// Calls with dedicated timeouts, such as long polls and GetSystemInfo, are
+		// not affected. This does not apply to direct calls on WorkflowService or
+		// OperatorService.
+		//
+		// Zero uses the default of 10 seconds. Negative values are not allowed.
+		RPCTimeout time.Duration
+
 		// Optional: HeadersProvider will be invoked on every outgoing gRPC request and gives user ability to
 		// set custom request headers. This can be used to set auth headers for example.
 		HeadersProvider HeadersProvider
@@ -1580,6 +1591,10 @@ func newClient(ctx context.Context, options ClientOptions, existing Client) (Cli
 		return nil, fmt.Errorf("cannot set both TLS and TLSDisabled in ConnectionOptions")
 	}
 
+	if options.RPCTimeout < 0 {
+		return nil, fmt.Errorf("RPCTimeout must not be negative: %v", options.RPCTimeout)
+	}
+
 	if options.Credentials != nil {
 		if err := options.Credentials.applyToOptions(&options.ConnectionOptions); err != nil {
 			return nil, err
@@ -1768,6 +1783,7 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 			workersByTaskQueue: make(map[string]map[eagerWorker]struct{}),
 		},
 		getSystemInfoTimeout:    options.ConnectionOptions.GetSystemInfoTimeout,
+		rpcTimeout:              options.RPCTimeout,
 		workerHeartbeatInterval: heartbeatInterval,
 		workerGroupingKey:       uuid.NewString(),
 		sdkName:                 sdkName,
@@ -1823,6 +1839,10 @@ func (op *withStartWorkflowOperationImpl) set(workflowRun WorkflowRun, err error
 //
 // Exposed as: [go.temporal.io/sdk/client.NewNamespaceClient]
 func NewNamespaceClient(options ClientOptions) (NamespaceClient, error) {
+	if options.RPCTimeout < 0 {
+		return nil, fmt.Errorf("RPCTimeout must not be negative: %v", options.RPCTimeout)
+	}
+
 	// Initialize root tags
 	if options.MetricsHandler == nil {
 		options.MetricsHandler = metrics.NopHandler
@@ -1852,6 +1872,7 @@ func newNamespaceServiceClient(workflowServiceClient workflowservice.WorkflowSer
 		metricsHandler:   options.MetricsHandler,
 		logger:           options.Logger,
 		identity:         options.Identity,
+		rpcTimeout:       options.RPCTimeout,
 	}
 }
 

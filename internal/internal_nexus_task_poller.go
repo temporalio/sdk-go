@@ -48,6 +48,7 @@ func newNexusTaskPoller(
 	return &nexusTaskPoller{
 		basePoller: basePoller{
 			metricsHandler:               params.MetricsHandler,
+			rpcTimeout:                   params.RPCTimeout,
 			stopC:                        params.WorkerStopChannel,
 			workerBuildID:                params.getBuildID(),
 			useBuildIDVersioning:         params.UseBuildIDForVersioning,
@@ -107,6 +108,7 @@ func (ntp *nexusTaskPoller) poll(
 			ntp.workerDeploymentVersion,
 		),
 		WorkerInstanceKey: ntp.workerInstanceKey,
+		PollerPoolInfo:    ntp.getPollerPoolInfo(),
 	}
 
 	request.PollerGroupId = lease.groupIDOrEmpty()
@@ -281,7 +283,7 @@ func (ntp *nexusTaskPoller) reportCompletion(
 	// No workflow or activity tags to report.
 	// Task queue expected to be empty for Respond*Task... requests.
 	rpcMetricsHandler := ntp.metricsHandler.WithTags(metrics.RPCTags(metrics.NoneTagValue, metrics.NoneTagValue, metrics.NoneTagValue))
-	ctx, cancel := newGRPCContext(ctx, grpcMetricsHandler(rpcMetricsHandler),
+	ctx, cancel := newGRPCContext(ctx, ntp.rpcTimeout, grpcMetricsHandler(rpcMetricsHandler),
 		defaultGrpcRetryParameters(ctx))
 	defer cancel()
 

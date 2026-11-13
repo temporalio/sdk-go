@@ -41,11 +41,37 @@ to docs, or any other relevant information.
   clock so the actions in that window run back-to-back. `GetScheduleTimeSkippingInfo` and
   `GetScheduleCurrentTime` observe it, and `PollScheduleFastForward` waits on a
   fast-forward issued previously. Schedules only support bounded time skipping.
+### Changed
+
+### Deprecated
+
+### :boom: Breaking Changes
+
+### Fixed
+
+- Workers no longer advertise a worker control task queue unless worker heartbeats and commands
+  are supported and the shared namespace command poller is running.
+
+### Security
+
+## [1.51.0] - 2026-11-10
+
+### Added
+
+- Added `client.Options.RPCTimeout` to configure the default RPC timeout cap,
+  including raising it above 10 seconds. Shorter caller deadlines still take
+  precedence, and calls with dedicated timeouts (such as long polls) are unchanged.
+- `converter.WorkflowTaskFailureError`: an opt-in error a `PayloadCodec` can return
+  from `Encode` or `Decode` on a workflow-side payload path to fail the current
+  Workflow Task rather than the Workflow Execution, so the server retries the task and
+  a transient codec failure can recover while the execution stays open. See the
+  `WorkflowTaskFailureError` docs for the honored paths, exclusions, and retry
+  guidance.
+- Added experimental `SignalWithStartWorkflow` API to the `workflow` package.
 - Added opt-in `EncodeHeaders` tracing options and `workflow.CodecContextPropagator` for header
   codec processing using the configured client's codec. Only opted-in producers' output is encoded;
   user-supplied wire-ready headers are unchanged. Receiving consumers use private decoded views.
   Custom converter wrappers can expose codec stages through `converter.PayloadCodecProvider`.
-
 - Added experimental Event Groups support: `workflow.NewEventGroup`, `workflow.WithEventGroups`,
   and `EventGroups` on workflow command options. Update handlers get an implicit group. Signal
   handlers do not.
@@ -66,9 +92,15 @@ to docs, or any other relevant information.
   standalone activities they start, which use it for payloads returned to the Nexus caller: results,
   failures, and standalone activity heartbeat details. When completing or heartbeating such an
   activity from a client, pass `activity.Info.NexusSerializationContext` in the options.
+- Poller pools now report their poller target to the server on each poll and in the worker
+  heartbeat: the current target for autoscaling pools, the configured maximum for fixed-size pools.
+  Server will use this count for load balancing pollers between workers, and for
+  creating a per-worker poller count metric
 
 ### Changed
 
+- Existing gRPC retries now honor positive `google.rpc.RetryInfo` delays on `ResourceExhausted` responses as a
+  minimum wait. Retries are skipped when the delay cannot fit before the call deadline.
 - `WorkflowTaskPollerBehavior`, `ActivityTaskPollerBehavior`, and `NexusTaskPollerBehavior` worker
   options are no longer marked experimental.
 - **Experimental**: `SignalWorkflow` and `SignalWithStartWorkflow` called through
@@ -83,6 +115,11 @@ to docs, or any other relevant information.
 
 ### :boom: Breaking Changes
 
+- When reconstructing state for a query delivered without any new history, the SDK no longer applies
+  input events, such as signals, that have not been processed by a completed workflow task. Replay stops
+  at the last completed workflow task advertised with the query, even if fetched history has advanced
+  further. This can change query results for closed workflows with pending signals. Reconstruction fails
+  if the advertised completed task is missing from history.
 - `workflow.NewContinueAsNewErrorWithOptions` now calls
   `interceptor.WorkflowOutboundInterceptor.NewContinueAsNewErrorWithOptions`
   directly. It previously went through `NewContinueAsNewError`, then applied
@@ -111,6 +148,8 @@ to docs, or any other relevant information.
   Like polled activities, eager activities now record this metric on receipt, including during worker shutdown.
 - Fixed a data race between dynamic workflow factory re-registration and workflow definition lookup
   in workers and `TestWorkflowEnvironment`.
+- Fixed queries delivered without any new history failing with an invalid state transition when a
+  workflow cache miss fetches history newer than the query task's replay boundary.
 - Fixed premature activity cancellation when a heartbeat RPC returns `DeadlineExceeded`.
   The SDK now preserves Temporal service error codes when deciding whether a heartbeat failure should cancel the activity.
 - Fixed concurrent dev-server CLI downloads failing on Windows when another process has already populated and started the cached executable.
@@ -122,8 +161,6 @@ to docs, or any other relevant information.
   was only half the caller's context deadline - now it uses the entire deadline, up to a maximum
   of ten seconds. RPCs with timeout overrides, like long-poll RPCs, are unchanged.
 - Query tracing now always records inbound spans when serving queries, regardless of `IsReplaying` state.
-
-### Security
 
 ## [1.50.0] - 2026-10-15
 

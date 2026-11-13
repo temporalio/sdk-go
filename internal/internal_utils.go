@@ -27,8 +27,6 @@ const (
 	defaultRPCTimeout = 10 * time.Second
 	// minRPCTimeout is minimum gRPC call timeout allowed.
 	minRPCTimeout = 1 * time.Second
-	// maxRPCTimeout is maximum gRPC call timeout allowed (should not be less than defaultRPCTimeout).
-	maxRPCTimeout = 10 * time.Second
 
 	temporalPrefix      = "__temporal_"
 	temporalPrefixError = "__temporal_ is a reserved prefix"
@@ -110,18 +108,9 @@ func defaultGrpcRetryParameters(ctx context.Context) func(builder *grpcContextBu
 }
 
 // newGRPCContext - Get context for gRPC calls.
-func newGRPCContext(ctx context.Context, options ...func(builder *grpcContextBuilder)) (context.Context, context.CancelFunc) {
-	rpcTimeout := defaultRPCTimeout
-
-	now := time.Now()
-	if deadline, ok := ctx.Deadline(); ok && deadline.After(now) {
-		rpcTimeout = deadline.Sub(now)
-		// Make sure to not set rpc timeout lower than minRPCTimeout
-		if rpcTimeout < minRPCTimeout {
-			rpcTimeout = minRPCTimeout
-		} else if rpcTimeout > maxRPCTimeout {
-			rpcTimeout = maxRPCTimeout
-		}
+func newGRPCContext(ctx context.Context, rpcTimeout time.Duration, options ...func(builder *grpcContextBuilder)) (context.Context, context.CancelFunc) {
+	if rpcTimeout == 0 {
+		rpcTimeout = defaultRPCTimeout
 	}
 
 	builder := &grpcContextBuilder{

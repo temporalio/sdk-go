@@ -145,7 +145,7 @@ type (
 		cache                     *WorkerCache
 		deadlockDetectionTimeout  time.Duration
 		capabilities              *workflowservice.GetSystemInfoResponse_Capabilities
-		workerControlTaskQueue    string
+		namespaceWorker           *sharedNamespaceWorker
 	}
 
 	activityCancellationCallbacks struct {
@@ -226,6 +226,7 @@ type (
 
 	finishedTask struct {
 		isFailed       bool
+		isCompleted    bool
 		binaryChecksum string
 		flags          []sdkFlag
 		sdkVersion     string
@@ -282,6 +283,10 @@ func (eh *history) IsReplayEvent(event *historypb.HistoryEvent) bool {
 	return event.GetEventId() <= eh.workflowTask.task.GetPreviousStartedEventId() || isCommandEvent(event.GetEventType())
 }
 
+func (eh *history) isBeyondQueryReplayBoundary(eventID int64) bool {
+	return eh.workflowTask.task.Query != nil && eventID > eh.workflowTask.task.GetPreviousStartedEventId()
+}
+
 // isNextWorkflowTaskFailed checks if the workflow task failed or completed. If it did complete returns some information
 // on the completed workflow task.
 func (eh *history) isNextWorkflowTaskFailed() (task finishedTask, err error) {
@@ -318,6 +323,7 @@ func (eh *history) isNextWorkflowTaskFailed() (task finishedTask, err error) {
 		}
 		return finishedTask{
 			isFailed:       isFailed,
+			isCompleted:    nextEventType == enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED,
 			binaryChecksum: binaryChecksum,
 			flags:          flags,
 			sdkName:        nextEvent.GetWorkflowTaskCompletedEventAttributes().GetSdkMetadata().GetSdkName(),
@@ -390,7 +396,7 @@ func (eh *history) nextTask() (*preparedTask, error) {
 	var markers []*historypb.HistoryEvent
 	var acceptedMsgs []*protocolpb.Message
 	var buildID *string
-	if len(result) > 0 {
+	if len(result) > 0 && !eh.isBeyondQueryReplayBoundary(result[len(result)-1].GetEventId()) {
 		nextTaskEvents, err := eh.prepareTask()
 		if err != nil {
 			return nil, err
@@ -485,10 +491,21 @@ OrderEvents:
 
 		switch event.GetEventType() {
 		case enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED:
+			// Read ahead for the query's last task's markers without inspecting a later task's completion.
+			if eh.isBeyondQueryReplayBoundary(eventID) {
+				eh.currentIndex++
+				taskEvents.events = append(taskEvents.events, event)
+				break OrderEvents
+			}
 			finishedTask, err1 := eh.isNextWorkflowTaskFailed()
 			if err1 != nil {
 				err := err1
 				return nil, err
+			}
+			if eh.workflowTask.task.Query != nil && eventID == eh.workflowTask.task.GetPreviousStartedEventId() &&
+				!finishedTask.isCompleted {
+				return nil, fmt.Errorf("cannot replay query %q: workflow task started at event %d has not completed",
+					eh.workflowTask.task.Query.GetQueryType(), eventID)
 			}
 			if !finishedTask.isFailed {
 				eh.binaryChecksum = finishedTask.binaryChecksum
@@ -595,7 +612,7 @@ func newWorkflowTaskHandler(params workerExecutionParameters, ppMgr pressurePoin
 		cache:                     params.cache,
 		deadlockDetectionTimeout:  params.DeadlockDetectionTimeout,
 		capabilities:              params.capabilities,
-		workerControlTaskQueue:    params.workerControlTaskQueue,
+		namespaceWorker:           params.namespaceWorker,
 	}
 }
 
@@ -1097,6 +1114,8 @@ func (w *workflowExecutionContextImpl) ProcessWorkflowTask(workflowTask *workflo
 	eventHandler.sdkFlags.markSDKFlagsSent()
 
 	w.workflowInfo.currentTaskBuildID = w.wth.workerBuildID
+	// Cache-hit queries already have state; reconstructed queries must reach the advertised completed task.
+	queryReplayBoundaryReached := task.Query == nil || len(task.History.Events) == 0
 ProcessEvents:
 	for {
 		nextTask, err := reorderedHistory.nextTask()
@@ -1111,7 +1130,12 @@ ProcessEvents:
 		nextTaskBuildId := nextTask.buildID
 		admittedUpdates := nextTask.admittedMsgs
 
-		// Peak ahead to confirm there are no more events
+		if len(reorderedEvents) > 0 &&
+			reorderedHistory.isBeyondQueryReplayBoundary(reorderedEvents[len(reorderedEvents)-1].GetEventId()) {
+			break ProcessEvents
+		}
+
+		// Peek ahead to confirm there are no more events.
 		isLastWFTForPartialWFE := len(reorderedEvents) > 0 &&
 			reorderedEvents[len(reorderedEvents)-1].EventType == enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED &&
 			len(reorderedHistory.next) == 0 &&
@@ -1233,6 +1257,10 @@ ProcessEvents:
 			if err != nil {
 				return nil, err
 			}
+			if event.GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED &&
+				event.GetEventId() == task.GetPreviousStartedEventId() {
+				queryReplayBoundaryReached = true
+			}
 			if w.isWorkflowCompleted && !shouldForceReplayCheck() {
 				break ProcessEvents
 			}
@@ -1268,6 +1296,10 @@ ProcessEvents:
 			}
 			eventHandler.outbox = nil
 		}
+		// Apply the target task's markers before stopping, without requesting a later batch.
+		if task.Query != nil && queryReplayBoundaryReached {
+			break ProcessEvents
+		}
 	}
 
 	if partialHistory && curReplayCmdsIndex != -1 {
@@ -1277,6 +1309,11 @@ ProcessEvents:
 	if metricsTimer != nil {
 		metricsTimer.Record(time.Since(start))
 		metricsTimer = nil
+	}
+
+	if !queryReplayBoundaryReached && w.err == nil {
+		return nil, fmt.Errorf("cannot replay query %q: history did not reach workflow task started at event %d",
+			task.Query.GetQueryType(), task.GetPreviousStartedEventId())
 	}
 
 	// Non-deterministic error could happen in 2 different places:
@@ -1310,9 +1347,18 @@ func (w *workflowExecutionContextImpl) applyWorkflowPanicPolicy(workflowTask *wo
 	task := workflowTask.task
 
 	if workflowError == nil && w.err != nil {
+		// Checked before the panic policy so both policies fail the task.
+		if codecErr, ok := codecWorkflowTaskFailureFrom(w.err); ok {
+			return nil, codecErr
+		}
 		if panicErr, ok := w.err.(*workflowPanicError); ok {
 			workflowError = panicErr
 		}
+	}
+
+	// Local activity result processing errors arrive as workflowError.
+	if codecErr, ok := codecWorkflowTaskFailureFrom(workflowError); ok {
+		return nil, codecErr
 	}
 
 	if workflowError != nil {
@@ -1349,6 +1395,11 @@ func (w *workflowExecutionContextImpl) applyWorkflowPanicPolicy(workflowTask *wo
 		}
 	}
 
+	return w.completeWorkflowTaskOrCodecFailure(workflowTask)
+}
+
+func (w *workflowExecutionContextImpl) completeWorkflowTaskOrCodecFailure(workflowTask *workflowTask) (completion *workflowTaskCompletion, err error) {
+	defer recoverCodecWorkflowTaskFailure(&err)
 	return w.CompleteWorkflowTask(workflowTask, true), nil
 }
 
@@ -2029,7 +2080,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 			wth.useBuildIDForVersioning,
 			wth.workerDeploymentVersion,
 		),
-		WorkerControlTaskQueue: wth.workerControlTaskQueue,
+		WorkerControlTaskQueue: wth.namespaceWorker.controlTaskQueue(),
 	}
 	if wth.capabilities != nil && wth.capabilities.BuildIdBasedVersioning {
 		//lint:ignore SA1019 ignore deprecated versioning APIs
@@ -2170,6 +2221,7 @@ type temporalInvoker struct {
 	identity       string
 	service        workflowservice.WorkflowServiceClient
 	metricsHandler metrics.Handler
+	rpcTimeout     time.Duration
 	taskToken      []byte
 	// cancelHandler is called when the activity is canceled by a heartbeat response
 	// or worker command.
@@ -2280,7 +2332,7 @@ func (i *temporalInvoker) internalHeartBeat(ctx context.Context, details *common
 		err = heartbeatVisitorError{visitErr}
 		i.cancelHandler(err)
 	} else {
-		err = recordActivityHeartbeat(ctx, i.service, i.metricsHandler, request)
+		err = recordActivityHeartbeat(ctx, i.service, i.metricsHandler, request, i.rpcTimeout)
 	}
 
 	switch err.(type) {
@@ -2333,6 +2385,9 @@ func (i *temporalInvoker) Close(ctx context.Context, flushBufferedHeartbeat bool
 }
 
 func (i *temporalInvoker) GetClient(options ClientOptions) Client {
+	if options.RPCTimeout == 0 {
+		options.RPCTimeout = i.rpcTimeout
+	}
 	return NewServiceClient(i.service, nil, options)
 }
 
@@ -2348,6 +2403,7 @@ func newServiceInvoker(
 	excludeInternalFromRetry *atomic.Bool,
 	outboundPayloadVisitor PayloadVisitor,
 	failureConverter converter.FailureConverter,
+	rpcTimeout time.Duration,
 ) ServiceInvoker {
 	return &temporalInvoker{
 		taskToken:                 taskToken,
@@ -2362,6 +2418,7 @@ func newServiceInvoker(
 		excludeInternalFromRetry:  excludeInternalFromRetry,
 		outboundPayloadVisitor:    outboundPayloadVisitor,
 		failureConverter:          failureConverter,
+		rpcTimeout:                rpcTimeout,
 	}
 }
 
@@ -2420,7 +2477,8 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 	heartbeatThrottleInterval := ath.getHeartbeatThrottleInterval(t.GetHeartbeatTimeout().AsDuration())
 	invoker := newServiceInvoker(
 		t.TaskToken, ath.identity, ath.client.workflowService, ath.metricsHandler, cancel, heartbeatThrottleInterval,
-		ath.workerStopCh, ath.namespace, ath.client.excludeInternalFromRetry, ath.outboundPayloadVisitor, failureConverter)
+		ath.workerStopCh, ath.namespace, ath.client.excludeInternalFromRetry, ath.outboundPayloadVisitor, failureConverter,
+		ath.client.rpcTimeout)
 
 	workflowType := t.WorkflowType.GetName()
 	activityType := t.ActivityType.GetName()
@@ -2658,9 +2716,10 @@ func getActivityResourceIdFromCtx(ctx context.Context) string {
 
 func recordActivityHeartbeat(ctx context.Context, service workflowservice.WorkflowServiceClient, metricsHandler metrics.Handler,
 	request *workflowservice.RecordActivityTaskHeartbeatRequest,
+	rpcTimeout time.Duration,
 ) error {
 	var heartbeatResponse *workflowservice.RecordActivityTaskHeartbeatResponse
-	grpcCtx, cancel := newGRPCContext(ctx,
+	grpcCtx, cancel := newGRPCContext(ctx, rpcTimeout,
 		grpcMetricsHandler(metricsHandler),
 		defaultGrpcRetryParameters(ctx))
 	defer cancel()
@@ -2680,9 +2739,10 @@ func recordActivityHeartbeat(ctx context.Context, service workflowservice.Workfl
 
 func recordActivityHeartbeatByID(ctx context.Context, service workflowservice.WorkflowServiceClient, metricsHandler metrics.Handler,
 	request *workflowservice.RecordActivityTaskHeartbeatByIdRequest,
+	rpcTimeout time.Duration,
 ) error {
 	var heartbeatResponse *workflowservice.RecordActivityTaskHeartbeatByIdResponse
-	grpcCtx, cancel := newGRPCContext(ctx,
+	grpcCtx, cancel := newGRPCContext(ctx, rpcTimeout,
 		grpcMetricsHandler(metricsHandler),
 		defaultGrpcRetryParameters(ctx))
 	defer cancel()

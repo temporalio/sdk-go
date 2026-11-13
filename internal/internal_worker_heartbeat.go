@@ -172,6 +172,7 @@ type sharedNamespaceWorker struct {
 
 	activityCancellationCallbacks *activityCancellationCallbacks
 	workerCommandsSupported       bool
+	workerCommandsRunning         atomic.Bool
 	workerControlTaskQueue        string
 	workerInstanceKey             string
 	metricsHandler                metrics.Handler
@@ -184,6 +185,14 @@ type sharedNamespaceWorker struct {
 	// after the heartbeat loop exits. stop() waits on it before returning.
 	stoppedC chan struct{}
 	started  atomic.Bool
+}
+
+// Only advertise the queue while its command poller is running.
+func (hw *sharedNamespaceWorker) controlTaskQueue() string {
+	if hw == nil || !hw.workerCommandsRunning.Load() {
+		return ""
+	}
+	return hw.workerControlTaskQueue
 }
 
 func (hw *sharedNamespaceWorker) run() {
@@ -278,6 +287,8 @@ func (hw *sharedNamespaceWorker) runWorkerCommands() {
 	)
 	var pollWG sync.WaitGroup
 	defer pollWG.Wait()
+	hw.workerCommandsRunning.Store(true)
+	defer hw.workerCommandsRunning.Store(false)
 
 	for {
 		if hw.workerCtx.Err() != nil {
@@ -346,6 +357,7 @@ func (hw *sharedNamespaceWorker) pollWorkerCommandTask(
 	rpcMetricsHandler := hw.metricsHandler.WithTags(metrics.TaskQueueTags(hw.workerControlTaskQueue))
 	grpcCtx, cancel := newGRPCContext(
 		hw.workerCtx,
+		hw.client.rpcTimeout,
 		grpcMetricsHandler(rpcMetricsHandler),
 		grpcLongPoll(true),
 		grpcTimeout(pollTaskServiceTimeOut),
@@ -406,6 +418,7 @@ func (hw *sharedNamespaceWorker) handleWorkerCommandTask(task *workflowservice.P
 
 	grpcCtx, cancel := newGRPCContext(
 		context.Background(),
+		hw.client.rpcTimeout,
 		grpcMetricsHandler(hw.metricsHandler),
 		defaultGrpcRetryParameters(context.Background()),
 	)
@@ -443,6 +456,19 @@ func (hw *sharedNamespaceWorker) stop() {
 
 	close(hw.stopC)
 	<-hw.stoppedC
+}
+
+// pollerTargetTracker holds each poller type's target supplier, read live by the heartbeat.
+// A type that never registers is reported as 0, which the proto defines as unknown.
+type pollerTargetTracker struct {
+	targets sync.Map // pollerType (string) -> func() int32
+}
+
+func (p *pollerTargetTracker) record(pollerType string, target func() int32) {
+	if p == nil || pollerType == "" || target == nil {
+		return
+	}
+	p.targets.Store(pollerType, target)
 }
 
 // pollTimeTracker tracks the last successful poll time for each poller type.

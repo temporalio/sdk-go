@@ -139,6 +139,8 @@ type (
 		// Namespace name.
 		Namespace string
 
+		RPCTimeout time.Duration
+
 		// Task queue name to poll.
 		TaskQueue string
 
@@ -250,7 +252,7 @@ type (
 
 		workerInstanceKey string
 
-		workerControlTaskQueue   string
+		namespaceWorker          *sharedNamespaceWorker
 		pollerGroupSnapshotStore *pollerGroupSnapshotStore
 
 		activityCancellationCallbacks *activityCancellationCallbacks
@@ -374,6 +376,7 @@ func newWorkflowTaskWorkerInternal(
 	var service workflowservice.WorkflowServiceClient
 	if client != nil {
 		service = client.workflowService
+		params.RPCTimeout = client.rpcTimeout
 	}
 	// Generate stickyUUID here so it can be stored in workflowWorker for ShutdownWorker call
 	stickyUUID := uuid.NewString()
@@ -543,16 +546,20 @@ func buildWorkflowScalableTaskPollers(
 
 		return []scalableTaskPoller{normalScalablePoller, stickyScalablePoller}
 	default: // *pollerBehaviorSimpleMaximum
-		return []scalableTaskPoller{
-			newScalableTaskPoller(
-				taskProcessor.createPoller(Mixed, nil),
-				params.Logger,
-				behavior,
-				metrics.PollerTypeWorkflowTask,
-				params.serverSupportsAutoscaling,
-				nil,
-			),
+		mixedScalablePoller := newScalableTaskPoller(
+			taskProcessor.createPoller(Mixed, nil),
+			params.Logger,
+			behavior,
+			metrics.PollerTypeWorkflowTask,
+			params.serverSupportsAutoscaling,
+			nil,
+		)
+		if taskProcessor.stickyCacheSize > 0 {
+			// One pool polls both queues, so the heartbeat's sticky slot reports the same
+			// target. Leaving it unset would pair a real current_pollers with a zero target.
+			mixedScalablePoller.alsoTargetsPollerType = metrics.PollerTypeWorkflowStickyTask
 		}
+		return []scalableTaskPoller{mixedScalablePoller}
 	}
 }
 
@@ -651,6 +658,7 @@ func newActivityWorker(
 	var service workflowservice.WorkflowServiceClient
 	if client != nil {
 		service = client.workflowService
+		params.RPCTimeout = client.rpcTimeout
 	}
 	workerStopChannel := make(chan struct{}, 1)
 	params.WorkerStopChannel = getReadOnlyChannel(workerStopChannel)
@@ -1780,6 +1788,21 @@ func (aw *AggregatedWorker) handleFatalError(err error, hook func(error)) {
 	aw.Stop()
 }
 
+// pollerTargets returns the target poller count per poller type across this worker's pollers.
+func (aw *AggregatedWorker) pollerTargets() map[string]int32 {
+	targets := make(map[string]int32, 4)
+	if aw.workflowWorker != nil {
+		aw.workflowWorker.worker.collectPollerTargets(targets)
+	}
+	if aw.activityWorker != nil {
+		aw.activityWorker.worker.collectPollerTargets(targets)
+	}
+	if aw.nexusWorker != nil {
+		aw.nexusWorker.worker.collectPollerTargets(targets)
+	}
+	return targets
+}
+
 func (aw *AggregatedWorker) registerHeartbeatWorker() error {
 	if aw.client.heartbeatManager == nil {
 		return nil
@@ -1809,7 +1832,7 @@ func (aw *AggregatedWorker) sendShutdownWorkerRPC() {
 	aw.shuttingDown.Store(true)
 
 	ctx := context.Background()
-	grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsHandler(aw.executionParams.MetricsHandler))
+	grpcCtx, cancel := newGRPCContext(ctx, aw.client.rpcTimeout, grpcMetricsHandler(aw.executionParams.MetricsHandler))
 	defer cancel()
 
 	var heartbeat *workerpb.WorkerHeartbeat
@@ -2462,10 +2485,10 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	// should take a pointer to this struct and wait for it to be populated when the worker is run.
 	var capabilities workflowservice.GetSystemInfoResponse_Capabilities
 	var activityCancellationCallbacks *activityCancellationCallbacks
+	var namespaceWorker *sharedNamespaceWorker
 	if client.heartbeatManager != nil {
-		activityCancellationCallbacks = client.heartbeatManager.
-			sharedNamespaceWorkerFor(client.namespace).
-			activityCancellationCallbacks
+		namespaceWorker = client.heartbeatManager.sharedNamespaceWorkerFor(client.namespace)
+		activityCancellationCallbacks = namespaceWorker.activityCancellationCallbacks
 	}
 
 	baseMetricsHandler := client.metricsHandler.WithTags(metrics.TaskQueueTags(taskQueue))
@@ -2513,6 +2536,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	workerPollCompleteOnShutdown := &atomic.Bool{}
 	workerParams := workerExecutionParameters{
 		Namespace:                        client.namespace,
+		RPCTimeout:                       client.rpcTimeout,
 		TaskQueue:                        taskQueue,
 		Tuner:                            options.Tuner,
 		WorkerActivitiesPerSecond:        options.WorkerActivitiesPerSecond,
@@ -2550,7 +2574,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		capabilities:                     &capabilities,
 		pollTimeTracker:                  &pollTimeTracker{},
 		workerInstanceKey:                workerInstanceKey,
-		workerControlTaskQueue:           workerControlTaskQueue(client.namespace, client.workerGroupingKey),
+		namespaceWorker:                  namespaceWorker,
 		pollerGroupSnapshotStore:         newPollerGroupSnapshotStore(),
 		activityCancellationCallbacks:    activityCancellationCallbacks,
 		workerPollCompleteOnShutdown:     workerPollCompleteOnShutdown,
@@ -2723,6 +2747,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 			if aw.nexusWorker != nil {
 				populateOpts.nexusSlotSupplierKind = aw.nexusWorker.worker.slotSupplier.GetSlotSupplierKind()
 			}
+			populateOpts.pollerTargets = aw.pollerTargets()
 			heartbeatTime := time.Now()
 
 			status := enumspb.WORKER_STATUS_RUNNING

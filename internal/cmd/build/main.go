@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -72,11 +73,13 @@ func newBuilder() *builder {
 
 func (b *builder) run() error {
 	if len(os.Args) < 2 {
-		return fmt.Errorf("missing command name, 'check', 'integration-test', or 'unit-test' required")
+		return fmt.Errorf("missing command name: use 'check', 'generate', 'integration-test', 'unit-test', or 'merge-coverage-files'")
 	}
 	switch os.Args[1] {
 	case "check":
 		return b.check()
+	case "generate":
+		return b.generate(os.Args[2:])
 	case "integration-test":
 		return b.integrationTest()
 	case "merge-coverage-files":
@@ -84,7 +87,7 @@ func (b *builder) run() error {
 	case "unit-test":
 		return b.unitTest()
 	default:
-		return fmt.Errorf("unrecognized command %q, 'check', 'integration-test', or 'unit-test' required", os.Args[1])
+		return fmt.Errorf("unrecognized command %q: use 'check', 'generate', 'integration-test', 'unit-test', or 'merge-coverage-files'", os.Args[1])
 	}
 }
 
@@ -94,13 +97,6 @@ func (b *builder) check() error {
 		return fmt.Errorf("failed finding modules to check: %w", err)
 	}
 
-	// Runs first because it takes seconds, so a go.temporal.io/api bump that adds an unclassified
-	// payload field is reported before the slower linters.
-	if err := b.runCmd(b.cmdFromRoot(
-		"go", "run", "./internal/cmd/payload-limit-gen", "-check", "-out", "internal/payloadlimits/validator_gen.go",
-	)); err != nil {
-		return fmt.Errorf("payload limit validator check failed: %w", err)
-	}
 	// Run go vet
 	if err := b.runCmdInDirs(moduleDirs, "go", "vet", "./..."); err != nil {
 		return fmt.Errorf("go vet failed: %w", err)
@@ -164,6 +160,37 @@ func (b *builder) check() error {
 			return fmt.Errorf("testsuiteassertions check failed in %s: %w", moduleDir, err)
 		}
 	}
+	return nil
+}
+
+func (b *builder) generate(args []string) error {
+	flags := flag.NewFlagSet("generate", flag.ContinueOnError)
+	check := flags.Bool("check", false, "check that generated files are up-to-date without modifying them")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 {
+		return fmt.Errorf("generate: unexpected arguments: %s", strings.Join(flags.Args(), " "))
+	}
+
+	// Run payload limit generator
+	cmd := []string{"go", "run", "./internal/cmd/payload-limit-gen", "-out", "internal/payloadlimits/validator_gen.go"}
+	if *check {
+		cmd = append(cmd, "-check")
+	}
+	if err := b.runCmd(b.cmdFromRoot(cmd...)); err != nil {
+		return fmt.Errorf("payload limit validator: %w", err)
+	}
+
+	// Run nexgen, the System Nexus API generator
+	cmd = []string{"go", "run", "./internal/cmd/system-nexus-gen"}
+	if *check {
+		cmd = append(cmd, "-check")
+	}
+	if err := b.runCmd(b.cmdFromRoot(cmd...)); err != nil {
+		return fmt.Errorf("system nexus generator: %w", err)
+	}
+
 	return nil
 }
 
@@ -235,7 +262,7 @@ func findUnitModuleDirs(root fs.FS) ([]string, error) {
 	// Integration tests have their own command and server setup.
 	unitModuleDirs := make([]string, 0, len(moduleDirs))
 	for _, moduleDir := range moduleDirs {
-		if moduleDir == integrationTestModuleDir || strings.HasPrefix(moduleDir, integrationTestModuleDir+"/") {
+		if isIntegrationTestModuleDir(moduleDir) {
 			continue
 		}
 		unitModuleDirs = append(unitModuleDirs, moduleDir)
@@ -243,9 +270,25 @@ func findUnitModuleDirs(root fs.FS) ([]string, error) {
 	return unitModuleDirs, nil
 }
 
+func isIntegrationTestModuleDir(moduleDir string) bool {
+	if moduleDir == integrationTestModuleDir || strings.HasPrefix(moduleDir, integrationTestModuleDir+"/") {
+		return true
+	}
+	if !strings.HasPrefix(moduleDir, "contrib/") {
+		return false
+	}
+	for dir := moduleDir; dir != "."; dir = path.Dir(dir) {
+		if path.Base(dir) == integrationTestModuleDir {
+			return true
+		}
+	}
+	return false
+}
+
 func (b *builder) integrationTest() error {
 	// Supports some flags
 	flagSet := flag.NewFlagSet("integration-test", flag.ContinueOnError)
+	moduleFlag := flagSet.String("module", "", "Run only this integration test module relative to the repository root (default: all)")
 	runFlag := flagSet.String("run", "", "Passed to go test as -run")
 	pFlag := flagSet.String("p", "", "Passed to go test as -p")
 	packagesFlag := flagSet.String("packages", "./...", "Packages passed to go test")
@@ -264,7 +307,23 @@ func (b *builder) integrationTest() error {
 	if *cloudFlag && !*envConfigFlag {
 		return fmt.Errorf("-cloud requires -envconfig")
 	}
-	testOutput, err := b.prepareTestOutput(*testOutputFlags, "go-test.log")
+	moduleDirs, err := findModuleDirs(os.DirFS(b.rootDir))
+	if err != nil {
+		return fmt.Errorf("failed finding integration test modules: %w", err)
+	}
+	integrationModuleDirs := make([]string, 0, len(moduleDirs))
+	for _, moduleDir := range moduleDirs {
+		if isIntegrationTestModuleDir(moduleDir) && (*moduleFlag == "" || moduleDir == *moduleFlag) {
+			integrationModuleDirs = append(integrationModuleDirs, moduleDir)
+		}
+	}
+	if len(integrationModuleDirs) == 0 {
+		return fmt.Errorf("no integration test modules found matching %q; expected test/ modules at the repository root or under contrib/", *moduleFlag)
+	}
+	if *moduleFlag != "" && *moduleFlag != integrationTestModuleDir && (*envConfigFlag || *cloudFlag) {
+		return fmt.Errorf("integration test module %q manages its own server and does not support -envconfig or -cloud", *moduleFlag)
+	}
+	output, err := b.prepareTestOutput(*testOutputFlags, "go-test.log")
 	if err != nil {
 		return err
 	}
@@ -281,28 +340,8 @@ func (b *builder) integrationTest() error {
 			log.Printf("Failed closing combined test log: %v", err)
 		}
 	}()
-	testOutput.combinedLogPath = combinedLogPath
-	testOutput.combinedWriter = &lockedWriter{writer: combinedLog}
-	rerunArgs := []string{"go", "run", ".", "integration-test"}
-	if *devServerFlag {
-		rerunArgs = append(rerunArgs, "-dev-server")
-	}
-	if *envConfigFlag {
-		rerunArgs = append(rerunArgs, "-envconfig")
-	}
-	if *cloudFlag {
-		rerunArgs = append(rerunArgs, "-cloud")
-	}
-	if *pFlag != "" {
-		rerunArgs = append(rerunArgs, "-p", *pFlag)
-	}
-	if *packagesFlag != "./..." {
-		rerunArgs = append(rerunArgs, "-packages", *packagesFlag)
-	}
-	if *timeoutFlag != "15m" {
-		rerunArgs = append(rerunArgs, "-timeout", *timeoutFlag)
-	}
-	testOutput.rerunCommand = formatShellCommand(rerunArgs)
+	output.combinedLogPath = combinedLogPath
+	output.combinedWriter = &lockedWriter{writer: combinedLog}
 
 	// Also accept coverage file as env var
 	if env := strings.TrimSpace(os.Getenv("TEMPORAL_COVERAGE_FILE")); *coverageFileFlag == "" && env != "" {
@@ -316,137 +355,172 @@ func (b *builder) integrationTest() error {
 		}
 	}
 
-	customKeyField := temporal.NewSearchAttributeKeyKeyword("CustomKeywordField")
-	customStringField := temporal.NewSearchAttributeKeyString("CustomStringField")
-	searchAttributes := temporal.NewSearchAttributes(
-		customKeyField.ValueSet("Keyword"),
-		customStringField.ValueSet("Text"),
-	)
+	runModule := func(moduleDir string, testOutput testOutput) error {
+		rootModule := moduleDir == integrationTestModuleDir
+		rerunArgs := []string{"go", "run", ".", "integration-test"}
+		rerunArgs = append(rerunArgs, "-module", moduleDir)
+		if *devServerFlag && rootModule {
+			rerunArgs = append(rerunArgs, "-dev-server")
+		}
+		if *envConfigFlag && rootModule {
+			rerunArgs = append(rerunArgs, "-envconfig")
+		}
+		if *cloudFlag && rootModule {
+			rerunArgs = append(rerunArgs, "-cloud")
+		}
+		if *pFlag != "" {
+			rerunArgs = append(rerunArgs, "-p", *pFlag)
+		}
+		if *packagesFlag != "./..." {
+			rerunArgs = append(rerunArgs, "-packages", *packagesFlag)
+		}
+		if *timeoutFlag != "15m" {
+			rerunArgs = append(rerunArgs, "-timeout", *timeoutFlag)
+		}
+		testOutput.rerunCommand = formatShellCommand(rerunArgs)
 
-	// Start dev server if wanted
-	if *devServerFlag {
-		devServerLogPath, err := b.prepareLogPath(testOutputFlags.logDir, "dev-server.log")
-		if err != nil {
-			return err
-		}
-		devServerLog, err := os.OpenFile(devServerLogPath, os.O_WRONLY|os.O_APPEND, 0666)
-		if err != nil {
-			return fmt.Errorf("failed opening dev server log %q: %w", devServerLogPath, err)
-		}
-		defer func() {
-			if err := devServerLog.Close(); err != nil {
-				log.Printf("Failed closing dev server log: %v", err)
-			}
-		}()
-		testOutput.serverLogPath = devServerLogPath
-		devServerLogWriter := &lockedWriter{writer: devServerLog}
-		devServerStdout, devServerStderr := testOutput.writers(
-			io.MultiWriter(devServerLogWriter, testOutput.combinedWriter),
-			nil,
+		customKeyField := temporal.NewSearchAttributeKeyKeyword("CustomKeywordField")
+		customStringField := temporal.NewSearchAttributeKeyString("CustomStringField")
+		searchAttributes := temporal.NewSearchAttributes(
+			customKeyField.ValueSet("Keyword"),
+			customStringField.ValueSet("Text"),
 		)
-		devServerLogger := sdklog.NewStructuredLogger(slog.New(slog.NewTextHandler(devServerStdout, nil)))
-		devServer, err := testsuite.StartDevServer(context.Background(), testsuite.DevServerOptions{
-			CachedDownload: testsuite.CachedDownload{
-				Version: "v1.9.3-nexus-serialization-context",
-			},
-			ClientOptions: &client.Options{
-				HostPort:  "127.0.0.1:7233",
-				Namespace: "integration-test-namespace",
-				Logger:    devServerLogger,
-			},
-			DBFilename:       "temporal.sqlite",
-			LogLevel:         "warn",
-			SearchAttributes: searchAttributes,
-			Stdout:           devServerStdout,
-			Stderr:           devServerStderr,
-			ExtraArgs: []string{
-				"--sqlite-pragma", "journal_mode=WAL",
-				"--sqlite-pragma", "synchronous=OFF",
-				"--dynamic-config-value", "frontend.enableExecuteMultiOperation=true",
-				"--dynamic-config-value", "frontend.enableUpdateWorkflowExecution=true",
-				"--dynamic-config-value", "frontend.enableUpdateWorkflowExecutionAsyncAccepted=true",
-				"--dynamic-config-value", "frontend.workerVersioningRuleAPIs=true",
-				"--dynamic-config-value", "frontend.workerVersioningDataAPIs=true",
-				"--dynamic-config-value", "frontend.workerVersioningWorkflowAPIs=true",
-				"--dynamic-config-value", "system.enableActivityEagerExecution=true",
-				"--dynamic-config-value", "system.enableEagerWorkflowStart=true",
-				"--dynamic-config-value", "system.forceSearchAttributesCacheRefreshOnRead=true",
-				"--dynamic-config-value", "worker.buildIdScavengerEnabled=true",
-				"--dynamic-config-value", "worker.removableBuildIdDurationSinceDefault=1",
-				"--dynamic-config-value", "system.enableDeployments=true",
-				"--dynamic-config-value", "system.enableDeploymentVersions=true",
-				"--dynamic-config-value", "matching.wv.VersionDrainageStatusVisibilityGracePeriod=10",
-				"--dynamic-config-value", "matching.wv.VersionDrainageStatusRefreshInterval=1",
-				"--dynamic-config-value", "matching.useNewMatcher=true",
-				"--dynamic-config-value", "frontend.activityAPIsEnabled=true",
-				"--dynamic-config-value", "frontend.enableCancelWorkerPollsOnShutdown=true",
-				// Matching fan-out poll cancellation can drop a query dispatched while a stopped worker's polls are canceled
-				"--dynamic-config-value", "frontend.enableMatchingFanOutForPollCancellation=false",
-				"--http-port", "7243", // Nexus tests use the HTTP port directly
-				"--dynamic-config-value", `callback.allowedAddresses=[{"Pattern":"*","AllowInsecure":true}]`, // SDK tests use arbitrary callback URLs, permit that on the server
-				"--dynamic-config-value", `system.refreshNexusEndpointsMinWait="0s"`, // Make Nexus tests faster
-				"--dynamic-config-value", `component.nexusoperations.recordCancelRequestCompletionEvents=true`, // Defaults to false until after OSS 1.28 is released
-				"--dynamic-config-value", `history.enableRequestIdRefLinks=true`,
-				"--dynamic-config-value", `component.nexusoperations.useSystemCallbackURL=false`,
-				"--dynamic-config-value", `component.nexusoperations.callback.endpoint.template="http://localhost:7243/namespaces/{{.NamespaceName}}/nexus/callback"`,
-				"--dynamic-config-value", "nexusoperation.enableStandalone=true",
-				"--dynamic-config-value", "history.enableChasm=true",
-				"--dynamic-config-value", "history.enableSignalWithStartFromWorkflow=true",
-				"--dynamic-config-value", "history.enableCHASMCallbacks=true",
-				"--dynamic-config-value", "frontend.ListWorkersEnabled=true",
-				"--dynamic-config-value", "activity.startDelayEnabled=true",
-				"--dynamic-config-value", "history.enableUpdateCallbacks=true",
-				"--dynamic-config-value", "activity.enableCallbacks=true",
-				"--dynamic-config-value", "history.enableWorkflowTaskCompletionPagination=true",
-				// Pagination clears the gRPC request limit, but the recombined completion still
-				// persists as one transaction, so raise the persistence limit above it.
-				"--dynamic-config-value", "system.transactionSizeLimit=33554432",
-			},
-		})
-		if err != nil {
-			startErr := fmt.Errorf("failed starting dev server: %w", err)
-			if testOutput.consoleOutput == testConsoleOutputFailures {
-				if reportErr := writeTestSetupFailureReport(testOutput.stderr, startErr, testOutput); reportErr != nil {
-					log.Printf("Failed writing test setup failure report: %v", reportErr)
-				}
+
+		// Start dev server if wanted
+		if *devServerFlag && rootModule {
+			devServerLogPath, err := b.prepareLogPath(testOutputFlags.logDir, "dev-server.log")
+			if err != nil {
+				return err
 			}
-			return startErr
+			devServerLog, err := os.OpenFile(devServerLogPath, os.O_WRONLY|os.O_APPEND, 0666)
+			if err != nil {
+				return fmt.Errorf("failed opening dev server log %q: %w", devServerLogPath, err)
+			}
+			defer func() {
+				if err := devServerLog.Close(); err != nil {
+					log.Printf("Failed closing dev server log: %v", err)
+				}
+			}()
+			testOutput.serverLogPath = devServerLogPath
+			devServerLogWriter := &lockedWriter{writer: devServerLog}
+			devServerStdout, devServerStderr := testOutput.writers(
+				io.MultiWriter(devServerLogWriter, testOutput.combinedWriter),
+				nil,
+			)
+			devServerLogger := sdklog.NewStructuredLogger(slog.New(slog.NewTextHandler(devServerStdout, nil)))
+			devServer, err := testsuite.StartDevServer(context.Background(), testsuite.DevServerOptions{
+				CachedDownload: testsuite.CachedDownload{
+					Version: "v1.9.3-nexus-serialization-context",
+				},
+				ClientOptions: &client.Options{
+					HostPort:  "127.0.0.1:7233",
+					Namespace: "integration-test-namespace",
+					Logger:    devServerLogger,
+				},
+				DBFilename:       "temporal.sqlite",
+				LogLevel:         "warn",
+				SearchAttributes: searchAttributes,
+				Stdout:           devServerStdout,
+				Stderr:           devServerStderr,
+				ExtraArgs: []string{
+					"--sqlite-pragma", "journal_mode=WAL",
+					"--sqlite-pragma", "synchronous=OFF",
+					"--dynamic-config-value", "frontend.enableExecuteMultiOperation=true",
+					"--dynamic-config-value", "frontend.enableUpdateWorkflowExecution=true",
+					"--dynamic-config-value", "frontend.enableUpdateWorkflowExecutionAsyncAccepted=true",
+					"--dynamic-config-value", "frontend.workerVersioningRuleAPIs=true",
+					"--dynamic-config-value", "frontend.workerVersioningDataAPIs=true",
+					"--dynamic-config-value", "frontend.workerVersioningWorkflowAPIs=true",
+					"--dynamic-config-value", "system.enableActivityEagerExecution=true",
+					"--dynamic-config-value", "system.enableEagerWorkflowStart=true",
+					"--dynamic-config-value", "system.forceSearchAttributesCacheRefreshOnRead=true",
+					"--dynamic-config-value", "worker.buildIdScavengerEnabled=true",
+					"--dynamic-config-value", "worker.removableBuildIdDurationSinceDefault=1",
+					"--dynamic-config-value", "system.enableDeployments=true",
+					"--dynamic-config-value", "system.enableDeploymentVersions=true",
+					"--dynamic-config-value", "matching.wv.VersionDrainageStatusVisibilityGracePeriod=10",
+					"--dynamic-config-value", "matching.wv.VersionDrainageStatusRefreshInterval=1",
+					"--dynamic-config-value", "matching.useNewMatcher=true",
+					"--dynamic-config-value", "frontend.activityAPIsEnabled=true",
+					"--dynamic-config-value", "frontend.enableCancelWorkerPollsOnShutdown=true",
+					// Matching fan-out poll cancellation can drop a query dispatched while a stopped worker's polls are canceled
+					"--dynamic-config-value", "frontend.enableMatchingFanOutForPollCancellation=false",
+					"--http-port", "7243", // Nexus tests use the HTTP port directly
+					"--dynamic-config-value", `callback.allowedAddresses=[{"Pattern":"*","AllowInsecure":true}]`, // SDK tests use arbitrary callback URLs, permit that on the server
+					"--dynamic-config-value", `system.refreshNexusEndpointsMinWait="0s"`, // Make Nexus tests faster
+					"--dynamic-config-value", `component.nexusoperations.recordCancelRequestCompletionEvents=true`, // Defaults to false until after OSS 1.28 is released
+					"--dynamic-config-value", `history.enableRequestIdRefLinks=true`,
+					"--dynamic-config-value", `component.nexusoperations.useSystemCallbackURL=false`,
+					"--dynamic-config-value", `component.nexusoperations.callback.endpoint.template="http://localhost:7243/namespaces/{{.NamespaceName}}/nexus/callback"`,
+					"--dynamic-config-value", "nexusoperation.enableStandalone=true",
+					"--dynamic-config-value", "history.enableChasm=true",
+					"--dynamic-config-value", "history.enableSignalWithStartFromWorkflow=true",
+					"--dynamic-config-value", "history.enableCHASMCallbacks=true",
+					"--dynamic-config-value", "frontend.ListWorkersEnabled=true",
+					"--dynamic-config-value", "activity.startDelayEnabled=true",
+					"--dynamic-config-value", "history.enableUpdateCallbacks=true",
+					"--dynamic-config-value", "activity.enableCallbacks=true",
+					"--dynamic-config-value", "history.enableWorkflowTaskCompletionPagination=true",
+					// Pagination clears the gRPC request limit, but the recombined completion still
+					// persists as one transaction, so raise the persistence limit above it.
+					"--dynamic-config-value", "system.transactionSizeLimit=33554432",
+				},
+			})
+			if err != nil {
+				startErr := fmt.Errorf("failed starting dev server: %w", err)
+				if testOutput.consoleOutput == testConsoleOutputFailures {
+					if reportErr := writeTestSetupFailureReport(testOutput.stderr, startErr, testOutput); reportErr != nil {
+						log.Printf("Failed writing test setup failure report: %v", reportErr)
+					}
+				}
+				return startErr
+			}
+			defer func() { _ = devServer.Stop() }()
 		}
-		defer func() { _ = devServer.Stop() }()
-	}
 
-	// Run integration test
-	args := []string{"go", "test", "-json", "-count", "1", "-race", "-v", "-timeout", *timeoutFlag}
-	env := append(os.Environ(), "DISABLE_SERVER_1_25_TESTS=1")
-	if *runFlag != "" {
-		args = append(args, "-run", *runFlag)
-	}
-	if *pFlag != "" {
-		args = append(args, "-p", *pFlag)
-	}
-	if *coverageFileFlag != "" {
-		args = append(args, "-coverprofile="+filepath.Join(b.rootDir, coverageDir, *coverageFileFlag), "-coverpkg=./...")
-	}
-	args = append(args, strings.Fields(*packagesFlag)...)
-	if *devServerFlag {
-		args = append(args, "--", "-using-cli-dev-server")
-		env = append(env, "TEMPORAL_NAMESPACE=integration-test-namespace")
-	}
-	if *envConfigFlag {
-		env = append(env, "TEMPORAL_TEST_ENV_CONFIG_SERVER=true")
-	}
-	if *cloudFlag {
-		env = append(env, "TEMPORAL_IS_CLOUD_TESTS=true")
-	}
-	// Must run in test dir
-	cmd := b.cmdFromRoot(args...)
-	cmd.Dir = filepath.Join(cmd.Dir, "test")
-	cmd.Env = env
-	if err := b.runTestCmd(cmd, testOutput); err != nil {
-		return fmt.Errorf("integration test failed: %w", err)
-	}
+		// Run integration test
+		args := []string{"go", "test", "-json", "-count", "1", "-race", "-v", "-timeout", *timeoutFlag}
+		env := append(os.Environ(), "DISABLE_SERVER_1_25_TESTS=1")
+		if *runFlag != "" {
+			args = append(args, "-run", *runFlag)
+		}
+		if *pFlag != "" {
+			args = append(args, "-p", *pFlag)
+		}
+		if *coverageFileFlag != "" {
+			coverageFile := *coverageFileFlag
+			if !rootModule {
+				coverageFile = filepath.Join(filepath.Dir(coverageFile), strings.ReplaceAll(moduleDir, "/", "-")+"-"+filepath.Base(coverageFile))
+			}
+			args = append(args, "-coverprofile="+filepath.Join(b.rootDir, coverageDir, coverageFile), "-coverpkg=./...")
+		}
+		args = append(args, strings.Fields(*packagesFlag)...)
+		if *devServerFlag && rootModule {
+			args = append(args, "--", "-using-cli-dev-server")
+			env = append(env, "TEMPORAL_NAMESPACE=integration-test-namespace")
+		}
+		if *envConfigFlag && rootModule {
+			env = append(env, "TEMPORAL_TEST_ENV_CONFIG_SERVER=true")
+		}
+		if *cloudFlag && rootModule {
+			env = append(env, "TEMPORAL_IS_CLOUD_TESTS=true")
+		}
+		cmd := b.cmdFromRoot(args...)
+		cmd.Dir = filepath.Join(cmd.Dir, filepath.FromSlash(moduleDir))
+		cmd.Env = env
+		if err := b.runTestCmd(cmd, testOutput); err != nil {
+			return fmt.Errorf("integration test failed in module %q: %w", moduleDir, err)
+		}
 
-	return nil
+		return nil
+	}
+	var failures []error
+	for _, moduleDir := range integrationModuleDirs {
+		if err := runModule(moduleDir, output); err != nil {
+			failures = append(failures, err)
+		}
+	}
+	return errors.Join(failures...)
 }
 
 func (b *builder) mergeCoverageFiles() error {

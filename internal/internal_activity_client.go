@@ -779,14 +779,14 @@ func (wc *WorkflowClient) ListActivities(ctx context.Context, options ClientList
 }
 
 func (wc *WorkflowClient) getListActivitiesPage(ctx context.Context, request *workflowservice.ListActivityExecutionsRequest) (*workflowservice.ListActivityExecutionsResponse, error) {
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, wc.rpcTimeout, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 
 	return wc.WorkflowService().ListActivityExecutions(grpcCtx, request)
 }
 
 func (wc *WorkflowClient) CountActivities(ctx context.Context, options ClientCountActivitiesOptions) (*ClientCountActivitiesResult, error) {
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, wc.rpcTimeout, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 
 	request := &workflowservice.CountActivityExecutionsRequest{
@@ -885,7 +885,7 @@ func (w *workflowClientInterceptor) ExecuteActivity(
 		return nil, err
 	}
 
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, w.client.rpcTimeout, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 
 	resp, err := w.client.WorkflowService().StartActivityExecution(grpcCtx, request)
@@ -977,7 +977,7 @@ func (w *workflowClientInterceptor) PollActivityResult(
 
 	var resp *workflowservice.PollActivityExecutionResponse
 	for resp.GetOutcome() == nil {
-		grpcCtx, cancel := newGRPCContext(ctx, grpcLongPoll(true), grpcTimeout(pollActivityTimeout), defaultGrpcRetryParameters(ctx))
+		grpcCtx, cancel := newGRPCContext(ctx, w.client.rpcTimeout, grpcLongPoll(true), grpcTimeout(pollActivityTimeout), defaultGrpcRetryParameters(ctx))
 		var err error
 		resp, err = w.client.WorkflowService().PollActivityExecution(grpcCtx, request)
 		cancel()
@@ -1011,7 +1011,7 @@ func (w *workflowClientInterceptor) DescribeActivity(
 	ctx context.Context,
 	in *ClientDescribeActivityInput,
 ) (*ClientDescribeActivityOutput, error) {
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, w.client.rpcTimeout, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 
 	request := &workflowservice.DescribeActivityExecutionRequest{
@@ -1096,7 +1096,7 @@ func (w *workflowClientInterceptor) CancelActivity(
 	ctx context.Context,
 	in *ClientCancelActivityInput,
 ) error {
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, w.client.rpcTimeout, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 
 	request := &workflowservice.RequestCancelActivityExecutionRequest{
@@ -1115,7 +1115,7 @@ func (w *workflowClientInterceptor) PauseActivity(
 	ctx context.Context,
 	in *ClientPauseActivityInput,
 ) error {
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, w.client.rpcTimeout, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 
 	request := &workflowservice.PauseActivityExecutionRequest{
@@ -1135,7 +1135,7 @@ func (w *workflowClientInterceptor) UnpauseActivity(
 	ctx context.Context,
 	in *ClientUnpauseActivityInput,
 ) error {
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, w.client.rpcTimeout, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 
 	request := &workflowservice.UnpauseActivityExecutionRequest{
@@ -1242,7 +1242,7 @@ func (w *workflowClientInterceptor) UpdateActivityOptions(
 		return nil, fmt.Errorf("invalid field mask for ActivityOptions: %w", err)
 	}
 
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, w.client.rpcTimeout, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 
 	request := &workflowservice.UpdateActivityExecutionOptionsRequest{
@@ -1269,7 +1269,7 @@ func (w *workflowClientInterceptor) TerminateActivity(
 	ctx context.Context,
 	in *ClientTerminateActivityInput,
 ) error {
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, w.client.rpcTimeout, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 
 	request := &workflowservice.TerminateActivityExecutionRequest{

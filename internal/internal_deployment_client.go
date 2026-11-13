@@ -153,7 +153,7 @@ func (dc *deploymentClient) List(ctx context.Context, options DeploymentListOpti
 		if dc.workflowClient.namespace == "" {
 			return nil, errors.New("missing namespace argument")
 		}
-		grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+		grpcCtx, cancel := newGRPCContext(ctx, dc.workflowClient.rpcTimeout, defaultGrpcRetryParameters(ctx))
 		defer cancel()
 		request := &workflowservice.ListDeploymentsRequest{
 			Namespace:     dc.workflowClient.namespace,
@@ -197,7 +197,7 @@ func (dc *deploymentClient) Describe(ctx context.Context, options DeploymentDesc
 		Namespace:  dc.workflowClient.namespace,
 		Deployment: deploymentToProto(options.Deployment),
 	}
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, dc.workflowClient.rpcTimeout, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 
 	resp, err := dc.workflowClient.workflowService.DescribeDeployment(grpcCtx, request)
@@ -223,7 +223,7 @@ func (dc *deploymentClient) GetReachability(ctx context.Context, options Deploym
 		Namespace:  dc.workflowClient.namespace,
 		Deployment: deploymentToProto(options.Deployment),
 	}
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, dc.workflowClient.rpcTimeout, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 
 	resp, err := dc.workflowClient.workflowService.GetDeploymentReachability(grpcCtx, request)
@@ -249,7 +249,7 @@ func (dc *deploymentClient) GetCurrent(ctx context.Context, options DeploymentGe
 		Namespace:  dc.workflowClient.namespace,
 		SeriesName: options.SeriesName,
 	}
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, dc.workflowClient.rpcTimeout, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 
 	resp, err := dc.workflowClient.workflowService.GetCurrentDeployment(grpcCtx, request)
@@ -276,7 +276,7 @@ func (dc *deploymentClient) SetCurrent(ctx context.Context, options DeploymentSe
 		Identity:       dc.workflowClient.identity,
 		UpdateMetadata: deploymentMetadataUpdateToProto(dc.workflowClient.dataConverter, options.MetadataUpdate),
 	}
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, dc.workflowClient.rpcTimeout, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 
 	resp, err := dc.workflowClient.workflowService.SetCurrentDeployment(grpcCtx, request)
