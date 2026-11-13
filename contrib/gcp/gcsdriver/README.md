@@ -53,8 +53,8 @@ v0/ns/<namespace>/wt/<workflow-type>/wi/<workflow-id>/ri/<run-id>/d/sha256/<hash
 # Standalone Activity payload
 v0/ns/<namespace>/at/<activity-type>/ai/<activity-id>/ri/<run-id>/d/sha256/<hash>
 
-# Unknown context (fallback)
-v0/d/sha256/<hash>
+# No target: namespace of the client or worker
+v0/ns/<namespace>/d/sha256/<hash>
 ```
 
 Characters outside GCS's safe set are percent-encoded per byte of their UTF-8 representation. GCS forbids carriage-return, line-feed, and the literal segments `.` and `..`, and strongly recommends avoiding `# [ ] * ? : " < > |` and control characters; those characters plus `/` and `%` are encoded, leaving all other Unicode intact. Empty segments are replaced with `null`. See the [GCS object naming documentation](https://cloud.google.com/storage/docs/objects#naming) for details.

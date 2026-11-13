@@ -93,6 +93,11 @@ type StorageDriverStoreContext struct {
 	// being stored. Use a type switch on [StorageDriverWorkflowInfo] and
 	// [StorageDriverActivityInfo] to access the concrete values.
 	Target StorageDriverTargetInfo
+	// Namespace is the namespace of the client or worker performing the
+	// operation. It is set whether or not Target is, so drivers that partition
+	// by namespace have a key when there is no target. When Target is set,
+	// drivers should prefer the namespace from Target. Empty when unknown.
+	Namespace string
 	// Limiter limits the concurrent operations this driver performs.
 	Limiter StorageDriverLimiter[*commonpb.Payload]
 }
@@ -120,6 +125,11 @@ type StorageDriverSelectContext struct {
 	// being stored. Use a type switch on [StorageDriverWorkflowInfo] and
 	// [StorageDriverActivityInfo] to access the concrete values.
 	Target StorageDriverTargetInfo
+	// Namespace is the namespace of the client or worker performing the
+	// operation. It is set whether or not Target is, so selectors that choose
+	// by namespace have a key when there is no target. When Target is set,
+	// selectors should prefer the namespace from Target. Empty when unknown.
+	Namespace string
 }
 
 // StorageDriverRetrieveContext carries context passed to StorageDriver.Retrieve

@@ -22,6 +22,11 @@ to docs, or any other relevant information.
 
 ### Added
 
+- **Experimental**: `converter.StorageDriverStoreContext` and
+  `converter.StorageDriverSelectContext` have a `Namespace` field holding the
+  namespace of the client or worker performing the operation, so drivers and
+  selectors can partition by namespace even when there is no `Target`.
+
 ### Changed
 
 ### Deprecated

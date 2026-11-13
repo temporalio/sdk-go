@@ -173,7 +173,7 @@ func TestStore_SinglePayload(t *testing.T) {
 	data, _ := proto.Marshal(p)
 	h := sha256.Sum256(data)
 	expectedDigest := hex.EncodeToString(h[:])
-	assert.Equal(t, "v0/d/sha256/"+expectedDigest, claims[0].ClaimData["key"])
+	assert.Equal(t, "v0/ns/null/d/sha256/"+expectedDigest, claims[0].ClaimData["key"])
 	assert.Equal(t, expectedDigest, claims[0].ClaimData["hash_value"])
 }
 
@@ -470,7 +470,38 @@ func TestRetrieve_ClaimMissingHashValue(t *testing.T) {
 // --- Key generation tests ---
 
 func TestObjectKey_NoTarget(t *testing.T) {
-	assert.Equal(t, "v0/d/sha256/abc123", objectKey(nil, "abc123"))
+	assert.Equal(t, "v0/ns/null/d/sha256/abc123", objectKey(nil, "", "abc123"))
+}
+
+func TestObjectKey_NoTargetWithNamespace(t *testing.T) {
+	assert.Equal(t, "v0/ns/my%2Fns/d/sha256/abc123", objectKey(nil, "my/ns", "abc123"))
+}
+
+func TestObjectKey_TargetNamespaceOverridesAmbient(t *testing.T) {
+	workflowTarget := converter.StorageDriverWorkflowInfo{
+		Namespace:    "target-ns",
+		WorkflowType: "MyWorkflow",
+		WorkflowID:   "wf-123",
+		RunID:        "run-456",
+	}
+	assert.Equal(t,
+		"v0/ns/target-ns/wt/MyWorkflow/wi/wf-123/ri/run-456/d/sha256/abc123",
+		objectKey(workflowTarget, "ambient-ns", "abc123"),
+	)
+	activityTarget := converter.StorageDriverActivityInfo{
+		Namespace:    "target-ns",
+		ActivityType: "MyActivity",
+		ActivityID:   "act-789",
+		RunID:        "run-abc",
+	}
+	assert.Equal(t,
+		"v0/ns/target-ns/at/MyActivity/ai/act-789/ri/run-abc/d/sha256/abc123",
+		objectKey(activityTarget, "ambient-ns", "abc123"),
+	)
+	assert.Equal(t,
+		"v0/ns/null/wt/null/wi/null/ri/null/d/sha256/abc123",
+		objectKey(converter.StorageDriverWorkflowInfo{}, "ambient-ns", "abc123"),
+	)
 }
 
 func TestObjectKey_WorkflowInfo(t *testing.T) {
@@ -482,7 +513,7 @@ func TestObjectKey_WorkflowInfo(t *testing.T) {
 	}
 	assert.Equal(t,
 		"v0/ns/default/wt/MyWorkflow/wi/wf-123/ri/run-456/d/sha256/abc123",
-		objectKey(target, "abc123"),
+		objectKey(target, "", "abc123"),
 	)
 }
 
@@ -495,7 +526,7 @@ func TestObjectKey_ActivityInfo(t *testing.T) {
 	}
 	assert.Equal(t,
 		"v0/ns/default/at/MyActivity/ai/act-789/ri/run-abc/d/sha256/abc123",
-		objectKey(target, "abc123"),
+		objectKey(target, "", "abc123"),
 	)
 }
 
@@ -507,7 +538,7 @@ func TestObjectKey_WorkflowInfo_EmptyFields(t *testing.T) {
 	}
 	assert.Equal(t,
 		"v0/ns/my-ns/wt/null/wi/null/ri/null/d/sha256/abc123",
-		objectKey(target, "abc123"),
+		objectKey(target, "", "abc123"),
 	)
 }
 
@@ -518,7 +549,7 @@ func TestObjectKey_ActivityInfo_EmptyFields(t *testing.T) {
 	}
 	assert.Equal(t,
 		"v0/ns/my-ns/at/null/ai/null/ri/null/d/sha256/abc123",
-		objectKey(target, "abc123"),
+		objectKey(target, "", "abc123"),
 	)
 }
 
@@ -530,7 +561,7 @@ func TestObjectKey_WorkflowInfo_SpecialChars(t *testing.T) {
 		WorkflowID:   "wf id+1",
 		RunID:        "run=abc",
 	}
-	key := objectKey(target, "abc123")
+	key := objectKey(target, "", "abc123")
 	assert.Equal(t,
 		"v0/ns/my%20namespace/wt/my%2Fworkflow/wi/wf%20id%2B1/ri/run%3Dabc/d/sha256/abc123",
 		key,
@@ -544,7 +575,7 @@ func TestObjectKey_PreservesS3SafeSpecialChars(t *testing.T) {
 	}
 	assert.Equal(t,
 		"v0/ns/ns1/wt/null/wi/!-_.*'()/ri/null/d/sha256/abc123",
-		objectKey(target, "abc123"),
+		objectKey(target, "", "abc123"),
 	)
 }
 
@@ -555,7 +586,7 @@ func TestObjectKey_EscapesTilde(t *testing.T) {
 	}
 	assert.Equal(t,
 		"v0/ns/ns1/wt/null/wi/wf%7E1/ri/null/d/sha256/abc123",
-		objectKey(target, "abc123"),
+		objectKey(target, "", "abc123"),
 	)
 }
 
@@ -566,7 +597,7 @@ func TestObjectKey_EscapesNonASCIIAsUTF8Bytes(t *testing.T) {
 	}
 	assert.Equal(t,
 		"v0/ns/ns1/wt/null/wi/caf%C3%A9/ri/null/d/sha256/abc123",
-		objectKey(target, "abc123"),
+		objectKey(target, "", "abc123"),
 	)
 }
 
@@ -579,7 +610,7 @@ func TestObjectKey_WorkflowSpecExample(t *testing.T) {
 	}
 	assert.Equal(t,
 		"v0/ns/payments%20prod/wt/ChargeWorkflow/wi/order%2B123%3Dabc/ri/3f1d6c7a-8b2e-4f7a-9d0a-87a6f95e4d31/d/sha256/abc123",
-		objectKey(target, "abc123"),
+		objectKey(target, "", "abc123"),
 	)
 }
 
@@ -592,7 +623,7 @@ func TestObjectKey_ActivitySpecExample(t *testing.T) {
 	}
 	assert.Equal(t,
 		"v0/ns/payments%20prod/at/Capture%2FCharge/ai/activity%20id%2B42/ri/9e1d1fd9-2f8a-4c40-93e2-731f31b9268b/d/sha256/abc123",
-		objectKey(target, "abc123"),
+		objectKey(target, "", "abc123"),
 	)
 }
 
