@@ -37,6 +37,9 @@ to docs, or any other relevant information.
 
 - Workers no longer advertise a worker control task queue unless worker heartbeats and commands
   are supported and the shared namespace command poller is running.
+- Activity results and failures (for example, a non-retryable `SessionWorkerShutdown` failure)
+  are no longer replaced with a retryable `context canceled` failure when outbound payload
+  processing runs while the worker is shutting down.
 
 ### Security
 
