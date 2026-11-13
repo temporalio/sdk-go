@@ -56,6 +56,13 @@
 // plus the worker stop timeout (default 7s). A minimum of 1 minute is recommended. If the timeout
 // is too short, the worker may be terminated before it can complete in-progress tasks.
 //
+// # Idle Shutdown
+//
+// By default, each invocation polls for tasks until shortly before the invocation deadline. Set
+// [Options.IdleTimeout], or the TEMPORAL_SERVERLESS_WORKER_IDLE_TIMEOUT environment variable, to
+// shut down early once the worker has had no tasks of any kind in progress for that long, plus up
+// to 20% random jitter. This feature is experimental.
+//
 // # Observability
 //
 // Observability (metrics, tracing) is opt-in. Set [Options.ClientOptions] fields directly

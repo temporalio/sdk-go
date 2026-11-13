@@ -40,6 +40,18 @@ type Options struct {
 	// and any shutdown hooks (e.g. telemetry flushes).
 	ShutdownDeadlineBuffer time.Duration
 
+	// IdleTimeout, if positive, makes each invocation shut down early once the worker has had no
+	// tasks in progress for this long, instead of polling until the invocation deadline. Each
+	// invocation extends the timeout by a random amount of up to 20%, so that workers that go idle
+	// together don't all shut down at once. Idle tracking only begins once the worker starts.
+	//
+	// Must be 0 (disabled) or at least 5s. Pre-populated from the
+	// TEMPORAL_SERVERLESS_WORKER_IDLE_TIMEOUT environment variable, as a whole number of seconds
+	// (e.g. "120"), if set; otherwise 0.
+	//
+	// NOTE: Experimental
+	IdleTimeout time.Duration
+
 	registrations []func(worker.Registry)
 	shutdownFuncs []func(context.Context) error
 }
