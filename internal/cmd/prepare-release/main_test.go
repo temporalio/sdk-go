@@ -125,7 +125,10 @@ func TestPrepareEverything(t *testing.T) {
 			testEqual(t, eff.files[filepath.Join(eff.tempDir, "CHANGELOG.md")], updatedChangelog)
 			testEqual(t, eff.files[filepath.Join(eff.tempDir, "go.mod")], goMod)
 			testEqual(t, eff.files[filepath.Join(eff.tempDir, "internal", "version.go")], updatedVersionGo)
-		case `gh pr create --draft --base main --head chore/release-1.48.0 --label skip-changelog --title "Prepare release 1.48.0" --body "Prepare release 1.48.0"`:
+		case `gh pr create --draft --base main --head chore/release-1.48.0 --label skip-changelog --title "Prepare release 1.48.0" --body-file /tmp/prepare-go-release-123456/prepare-release-pr.md`:
+			testEqual(t, eff.files[filepath.Join(eff.tempDir, "prepare-release-pr.md")],
+				"Prepare release 1.48.0\n\n### Contrib packages with changes since their last release:\n\n**NOTE:** Dependency-only changes (go.mod and go.sum) are excluded. These updates may still require a contrib release.\n\n"+
+					"Consider releasing these packages after this Go SDK release.\n\nNone.")
 			return "https://github.com/temporalio/sdk-go/pull/123\n", nil
 		case `gh release create v1.48.0 --draft --title v1.48.0 --notes-file /tmp/prepare-go-release-123456/prepare-release-notes.md --generate-notes`:
 			testEqual(t, eff.files[filepath.Join(eff.tempDir, "prepare-release-notes.md")], "## Highlights\n\n### Fixed\n\n- A fix.\n")
@@ -151,8 +154,10 @@ func TestPrepareEverything(t *testing.T) {
 		`+eff.tempDir+`: git log -1 "--format=%s (%h)"
 		`+eff.tempDir+`: git tag --list v*
 		`+eff.tempDir+`: git commit -m "Prepare release 1.48.0" -- CHANGELOG.md internal/version.go
+		`+eff.tempDir+`: git tag --list contrib/*
+		`+eff.tempDir+`: git ls-tree -r --name-only -z HEAD -- contrib/
 		`+eff.tempDir+`: git push --set-upstream origin chore/release-1.48.0
-		`+eff.tempDir+`: gh pr create --draft --base main --head chore/release-1.48.0 --label skip-changelog --title "Prepare release 1.48.0" --body "Prepare release 1.48.0"
+		`+eff.tempDir+`: gh pr create --draft --base main --head chore/release-1.48.0 --label skip-changelog --title "Prepare release 1.48.0" --body-file /tmp/prepare-go-release-123456/prepare-release-pr.md
 		`+eff.tempDir+`: gh release create v1.48.0 --draft --title v1.48.0 --notes-file `+eff.tempDir+`/prepare-release-notes.md --generate-notes
 		/repo: git worktree remove --force `+eff.tempDir,
 	)
@@ -170,8 +175,10 @@ func TestPrepareEverything(t *testing.T) {
 		[3/5] Commit release files
 		      $ git commit -m "Prepare release 1.48.0" -- CHANGELOG.md internal/version.go
 		[4/5] Publish draft PR and draft release
+		      $ git tag --list contrib/*
+		      $ git ls-tree -r --name-only -z HEAD -- contrib/
 		      $ git push --set-upstream origin chore/release-1.48.0
-		      $ gh pr create --draft --base main --head chore/release-1.48.0 --label skip-changelog --title "Prepare release 1.48.0" --body "Prepare release 1.48.0"
+		      $ gh pr create --draft --base main --head chore/release-1.48.0 --label skip-changelog --title "Prepare release 1.48.0" --body-file /tmp/prepare-go-release-123456/prepare-release-pr.md
 		      Draft PR: https://github.com/temporalio/sdk-go/pull/123
 		      Release notes: /tmp/prepare-go-release-123456/prepare-release-notes.md
 		      $ gh release create v1.48.0 --draft --title v1.48.0 --notes-file /tmp/prepare-go-release-123456/prepare-release-notes.md --generate-notes
@@ -256,7 +263,8 @@ func TestPrepareEverythingForContribModule(t *testing.T) {
 		case `git commit -m "Prepare contrib/envconfig release 1.0.3" -- contrib/envconfig/CHANGELOG.md`:
 			testEqual(t, eff.files[changelogPath], updatedChangelog)
 			testEqual(t, eff.files[goModPath], goMod)
-		case `gh pr create --draft --base main --head chore/release-contrib-envconfig-1.0.3 --label skip-changelog --title "Prepare contrib/envconfig release 1.0.3" --body "Prepare contrib/envconfig release 1.0.3"`:
+		case `gh pr create --draft --base main --head chore/release-contrib-envconfig-1.0.3 --label skip-changelog --title "Prepare contrib/envconfig release 1.0.3" --body-file /tmp/prepare-go-release-123456/prepare-release-pr.md`:
+			testEqual(t, eff.files[filepath.Join(eff.tempDir, "prepare-release-pr.md")], "Prepare contrib/envconfig release 1.0.3")
 			return "https://github.com/temporalio/sdk-go/pull/123\n", nil
 		case `gh release create contrib/envconfig/v1.0.3 --draft --title contrib/envconfig/v1.0.3 --notes-file /tmp/prepare-go-release-123456/prepare-release-notes.md --latest=false`:
 			testEqual(t, eff.files[filepath.Join(eff.tempDir, "prepare-release-notes.md")], "## Highlights\n\n### Added\n\n- A feature.\n")
@@ -280,7 +288,7 @@ func TestPrepareEverythingForContribModule(t *testing.T) {
 		`+eff.tempDir+`: git tag --list contrib/envconfig/v*
 		`+eff.tempDir+`: git commit -m "Prepare contrib/envconfig release 1.0.3" -- contrib/envconfig/CHANGELOG.md
 		`+eff.tempDir+`: git push --set-upstream origin chore/release-contrib-envconfig-1.0.3
-		`+eff.tempDir+`: gh pr create --draft --base main --head chore/release-contrib-envconfig-1.0.3 --label skip-changelog --title "Prepare contrib/envconfig release 1.0.3" --body "Prepare contrib/envconfig release 1.0.3"
+		`+eff.tempDir+`: gh pr create --draft --base main --head chore/release-contrib-envconfig-1.0.3 --label skip-changelog --title "Prepare contrib/envconfig release 1.0.3" --body-file /tmp/prepare-go-release-123456/prepare-release-pr.md
 		`+eff.tempDir+`: gh release create contrib/envconfig/v1.0.3 --draft --title contrib/envconfig/v1.0.3 --notes-file `+eff.tempDir+`/prepare-release-notes.md --latest=false
 		/repo: git worktree remove --force `+eff.tempDir,
 	)
@@ -299,7 +307,7 @@ func TestPrepareEverythingForContribModule(t *testing.T) {
 		      $ git commit -m "Prepare contrib/envconfig release 1.0.3" -- contrib/envconfig/CHANGELOG.md
 		[4/5] Publish draft PR and draft release
 		      $ git push --set-upstream origin chore/release-contrib-envconfig-1.0.3
-		      $ gh pr create --draft --base main --head chore/release-contrib-envconfig-1.0.3 --label skip-changelog --title "Prepare contrib/envconfig release 1.0.3" --body "Prepare contrib/envconfig release 1.0.3"
+		      $ gh pr create --draft --base main --head chore/release-contrib-envconfig-1.0.3 --label skip-changelog --title "Prepare contrib/envconfig release 1.0.3" --body-file /tmp/prepare-go-release-123456/prepare-release-pr.md
 		      Draft PR: https://github.com/temporalio/sdk-go/pull/123
 		      Release notes: /tmp/prepare-go-release-123456/prepare-release-notes.md
 		      $ gh release create contrib/envconfig/v1.0.3 --draft --title contrib/envconfig/v1.0.3 --notes-file /tmp/prepare-go-release-123456/prepare-release-notes.md --latest=false
@@ -412,6 +420,32 @@ func TestPrepareReleaseValidatesBeforePushingBranch(t *testing.T) {
 		      Worktree: /tmp/prepare-go-release-123456
 		      HEAD: Initial commit (abc123)
 	`)
+}
+
+func TestPrepareReleaseHistoryFailureBeforePush(t *testing.T) {
+	failure := errors.New("history unavailable")
+	a, eff := newMockApp(app{target: sdkTarget(), version: semver{1, 2, 3}}, func(cmd string) (string, error) {
+		switch cmd {
+		case "git tag --list v*":
+			return "v1.2.2\n", nil
+		case "git tag --list contrib/*":
+			return "", failure
+		}
+		return "", nil
+	})
+	eff.files[filepath.Join(mockTempDir, "go.mod")] = "module go.temporal.io/sdk\n"
+	eff.files[filepath.Join(mockTempDir, "CHANGELOG.md")] = "## [Unreleased]\n\n### Fixed\n\n- A fix.\n"
+	eff.files[filepath.Join(mockTempDir, "internal", "version.go")] = "SDKVersion = \"1.2.2\"\n"
+
+	err := a.prepareRelease()
+	if !errors.Is(err, failure) {
+		t.Fatalf("expected history failure, got %v", err)
+	}
+	for _, command := range []string{"git push", "gh pr create", "gh release create"} {
+		if strings.Contains(eff.commands.String(), command) {
+			t.Fatalf("unexpected publication after history failure: %s", eff.commands.String())
+		}
+	}
 }
 
 func TestPrepareReleaseLeavesWorktreeAfterFailure(t *testing.T) {

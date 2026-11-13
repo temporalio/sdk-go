@@ -181,13 +181,17 @@ func (w *worktree) pushBranch() error {
 	return nil
 }
 
-func (w *worktree) openDraftPR() (string, error) {
+func (w *worktree) openDraftPR(body string) (string, error) {
+	bodyPath := filepath.Join(w.worktreeRoot, "prepare-release-pr.md")
+	if err := w.eff.writeFile(bodyPath, body); err != nil {
+		return "", fmt.Errorf("write PR body to %s: %w", bodyPath, err)
+	}
 	url, err := w.eff.runCommand(w.worktreeRoot, "gh", "pr", "create", "--draft",
 		"--base", "main",
 		"--head", w.branch,
 		"--label", "skip-changelog",
 		"--title", w.target.releaseCommitMessage(w.version),
-		"--body", w.target.releaseCommitMessage(w.version))
+		"--body-file", bodyPath)
 	if err != nil {
 		return "", fmt.Errorf("create draft PR: %w", err)
 	}
