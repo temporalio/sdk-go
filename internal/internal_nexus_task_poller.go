@@ -183,7 +183,8 @@ func (ntp *nexusTaskPoller) ProcessTask(task any) error {
 	// before the handler consumes them. A Nexus task carries at most one input and
 	// one result payload, so payload visits are unconcurrent (the configurable
 	// visit concurrency is scoped to workflow tasks).
-	if visitErr := visitProtoPayloads(ntp.backgroundContext, ntp.inboundPayloadVisitor, response, 0); visitErr != nil {
+	inboundPayloadVisitor := bindReferenceSerializationContext(ntp.inboundPayloadVisitor, nctx.nexusSerializationContext)
+	if visitErr := visitProtoPayloads(ntp.backgroundContext, inboundPayloadVisitor, response, 0); visitErr != nil {
 		return ntp.reportExternalStorageFailure(response, "retrieve Nexus operation input from external storage", visitErr)
 	}
 

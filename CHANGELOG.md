@@ -24,9 +24,17 @@ to docs, or any other relevant information.
 
 ### Changed
 
+- Workers, clients, and the payload HTTP handler can now read external storage reference payloads
+  that are encoded with the configured payload codecs and marked with
+  `__temporal_external_storage_reference` metadata. This release does not write them yet. A later
+  release will, once workers have had time to upgrade.
+
 ### Deprecated
 
 ### :boom: Breaking Changes
+
+- `converter.PayloadHTTPHandlerOptions` replaces the experimental `PreStorageCodecs` and
+  `PostStorageCodecs` with a single `Codecs` list, applied the same way workers apply them.
 
 ### Fixed
 

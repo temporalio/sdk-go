@@ -121,6 +121,7 @@ type (
 		currentWorkflowTask *workflowservice.PollWorkflowTaskQueueResponse
 		laTunnel            *localActivityTunnel
 		cached              bool
+		referenceContexts   *workflowReferenceContexts
 	}
 
 	// workflowTaskHandlerImpl is the implementation of WorkflowTaskHandler
@@ -620,9 +621,13 @@ func newWorkflowExecutionContext(
 	workflowInfo *WorkflowInfo,
 	taskHandler *workflowTaskHandlerImpl,
 ) *workflowExecutionContextImpl {
+	referenceContexts := newWorkflowReferenceContexts(
+		workflowInfo.Namespace, workflowInfo.WorkflowExecution.ID, workflowInfo.WorkflowType.Name)
+	referenceContexts.taskQueue = workflowInfo.TaskQueueName
 	workflowContext := &workflowExecutionContextImpl{
-		workflowInfo: workflowInfo,
-		wth:          taskHandler,
+		workflowInfo:      workflowInfo,
+		wth:               taskHandler,
+		referenceContexts: referenceContexts,
 	}
 	workflowContext.createEventHandler()
 	return workflowContext
@@ -864,6 +869,10 @@ func (wth *workflowTaskHandlerImpl) GetOrCreateWorkflowContext(
 			// we are getting partial history task, but cached state was already evicted.
 			// we need to reset history so we get events from beginning to replay/rebuild the state
 			metricsHandler.Counter(metrics.StickyCacheMiss).Inc(1)
+			// The run's context does not exist yet. The caller resolves the first page
+			// again with the run's own table once it does.
+			useReferenceContexts(historyIterator, newWorkflowReferenceContexts(
+				wth.namespace, task.WorkflowExecution.GetWorkflowId(), task.WorkflowType.GetName()))
 			if _, err = resetHistory(task, historyIterator); err != nil {
 				return
 			}
@@ -890,6 +899,7 @@ func (wth *workflowTaskHandlerImpl) GetOrCreateWorkflowContext(
 		}
 	}
 
+	useReferenceContexts(historyIterator, workflowContext.referenceContexts)
 	err = workflowContext.resetStateIfDestroyed(task, historyIterator)
 	if err != nil {
 		workflowContext.Unlock(err)
@@ -2467,10 +2477,21 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 		defer unregister()
 	}
 
-	if err := visitProtoPayloads(canCtx, ath.inboundPayloadVisitor, t, ath.storageParams.MaxOperationsPerMessage()); err != nil {
+	// Heartbeat details are decoded with the propagated context and the rest of the
+	// task with the activity's, so their storage references are resolved separately.
+	var visitErr error
+	if details := t.GetHeartbeatDetails(); details != nil {
+		visitErr = visitProtoPayloads(canCtx, bindReferenceSerializationContext(ath.inboundPayloadVisitor, serializationContext),
+			details, ath.storageParams.MaxOperationsPerMessage())
+	}
+	if visitErr == nil {
+		visitErr = visitProtoPayloads(canCtx, bindReferenceSerializationContext(ath.inboundPayloadVisitor, activityContext),
+			t, ath.storageParams.MaxOperationsPerMessage())
+	}
+	if visitErr != nil {
 		return activityTaskResult{
-			response:   ath.visitorErrorToActivityFailure("Activity task preprocess error: ", t, err),
-			failureErr: err,
+			response:   ath.visitorErrorToActivityFailure("Activity task preprocess error: ", t, visitErr),
+			failureErr: visitErr,
 		}, nil
 	}
 
