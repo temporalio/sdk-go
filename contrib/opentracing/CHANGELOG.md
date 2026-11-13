@@ -13,9 +13,24 @@ or Security.
 
 ### Added
 
+### Changed
+
+### Deprecated
+
+### :boom: Breaking Changes
+
+### Fixed
+
+### Security
+
+## [0.4.0] - 2026-11-13
+
+### Added
+
 - `TracerOptions.EncodeHeaders` opts tracing headers into codec processing using the configured
   client's payload codec. Defaults to false; application-supplied headers are unchanged.
 
 ### Breaking Changes
 
 - Raised the minimum supported Go version from 1.25.4 to 1.26.0.
+
