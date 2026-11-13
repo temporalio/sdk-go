@@ -42,7 +42,7 @@ type (
 	syncWorkflowDefinition struct {
 		workflow   workflow
 		dispatcher dispatcher
-		cancel     CancelFunc
+		cancel     CancelCauseFunc
 		rootCtx    Context
 	}
 
@@ -582,14 +582,16 @@ func (d *syncWorkflowDefinition) Execute(env WorkflowEnvironment, header *common
 		panic(err)
 	}
 
-	d.rootCtx, d.cancel = WithCancel(rootCtx)
+	d.rootCtx, d.cancel = WithCancelCause(rootCtx)
 	d.dispatcher = dispatcher
 	envInterceptor.dispatcher = dispatcher
 
 	GetWorkflowEnvironment(d.rootCtx).RegisterCancelHandler(func() {
-		// It is ok to call this method multiple times.
-		// it doesn't do anything new, the context remains canceled.
-		d.cancel()
+		cause := ErrCanceled
+		if reason := env.GetCancellationReason(); reason != "" {
+			cause = NewCanceledErrorWithOptions(CanceledErrorOptions{Message: reason})
+		}
+		d.cancel(cause)
 	})
 
 	GetWorkflowEnvironment(d.rootCtx).RegisterSignalHandler(

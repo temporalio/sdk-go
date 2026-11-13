@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -401,7 +402,7 @@ func Test_ChildWorkflowStateMachine_CancelSucceed(t *testing.T) {
 	h.handleChildWorkflowExecutionStarted(workflowID)
 
 	// cancel child workflow
-	h.requestCancelExternalWorkflowExecution(namespace, workflowID, runID, cancellationID, true, nil)
+	h.requestCancelExternalWorkflowExecution(namespace, workflowID, runID, cancellationID, true, "", nil)
 	require.Equal(t, commandStateCanceledAfterStarted, d.getState())
 
 	// send cancel request
@@ -421,6 +422,81 @@ func Test_ChildWorkflowStateMachine_CancelSucceed(t *testing.T) {
 	// child workflow canceled
 	h.handleChildWorkflowExecutionCanceled(workflowID)
 	require.Equal(t, commandStateCompleted, d.getState())
+}
+
+func Test_ChildWorkflowStateMachine_CancelReason(t *testing.T) {
+	t.Parallel()
+	for _, state := range []commandState{
+		commandStateCreated, commandStateInitiated, commandStateStarted,
+	} {
+		for _, reason := range []string{"", "child no longer needed"} {
+			t.Run(fmt.Sprintf("%s/reason=%q", state, reason), func(t *testing.T) {
+				h := newCommandsHelper()
+				const namespace, workflowID = "test-namespace", "test-child-workflow"
+				d, err := h.startChildWorkflowExecution(&commandpb.StartChildWorkflowExecutionCommandAttributes{
+					Namespace:  namespace, //lint:ignore SA1019 deprecated namespace field
+					WorkflowId: workflowID,
+				}, nil, nil)
+				require.NoError(t, err)
+				if state != commandStateCreated {
+					h.getCommands(true)
+				}
+				if state == commandStateInitiated || state == commandStateStarted {
+					h.handleStartChildWorkflowExecutionInitiated(workflowID)
+				}
+				if state == commandStateStarted {
+					h.handleChildWorkflowExecutionStarted(workflowID)
+				}
+
+				h.requestCancelExternalWorkflowExecution(namespace, workflowID, "", "", true, reason, nil)
+				if state == commandStateCreated {
+					require.Equal(t, commandStateCanceledBeforeSent, d.getState())
+					require.Empty(t, h.getCommands(true))
+					return
+				}
+				if state != commandStateStarted {
+					require.Empty(t, h.getCommands(false))
+					h.handleChildWorkflowExecutionStarted(workflowID)
+				}
+				commands := h.getCommands(true)
+				require.Len(t, commands, 1)
+				require.Equal(t, enumspb.COMMAND_TYPE_REQUEST_CANCEL_EXTERNAL_WORKFLOW_EXECUTION, commands[0].GetCommandType())
+				require.Equal(t, &commandpb.RequestCancelExternalWorkflowExecutionCommandAttributes{
+					Namespace:         namespace, //lint:ignore SA1019 deprecated namespace field
+					WorkflowId:        workflowID,
+					ChildWorkflowOnly: true,
+					Reason:            reason,
+				}, commands[0].GetRequestCancelExternalWorkflowExecutionCommandAttributes())
+				h.requestCancelExternalWorkflowExecution(namespace, workflowID, "", "", true, "after command sent", nil)
+				require.Empty(t, h.getCommands(true))
+				h.handleRequestCancelExternalWorkflowExecutionInitiated(28, workflowID, "")
+				h.handleExternalWorkflowExecutionCancelRequested(28, workflowID)
+				require.Empty(t, h.getCommands(true))
+			})
+		}
+	}
+}
+
+func Test_ChildWorkflowStateMachine_CancelReasonAfterFailure(t *testing.T) {
+	t.Parallel()
+	h := newCommandsHelper()
+	const workflowID = "test-child-workflow"
+	_, err := h.startChildWorkflowExecution(&commandpb.StartChildWorkflowExecutionCommandAttributes{
+		WorkflowId: workflowID,
+	}, nil, nil)
+	require.NoError(t, err)
+	h.getCommands(true)
+	h.handleStartChildWorkflowExecutionInitiated(workflowID)
+	h.handleChildWorkflowExecutionStarted(workflowID)
+	h.requestCancelExternalWorkflowExecution("", workflowID, "", "", true, "original reason", nil)
+	h.getCommands(true)
+	h.handleRequestCancelExternalWorkflowExecutionInitiated(28, workflowID, "")
+	h.handleRequestCancelExternalWorkflowExecutionFailed(28, workflowID)
+
+	h.requestCancelExternalWorkflowExecution("", workflowID, "", "", true, "replacement reason", nil)
+	commands := h.getCommands(true)
+	require.Len(t, commands, 1)
+	require.Equal(t, "original reason", commands[0].GetRequestCancelExternalWorkflowExecutionCommandAttributes().GetReason())
 }
 
 func Test_ChildWorkflowStateMachine_InvalidStates(t *testing.T) {
@@ -470,7 +546,7 @@ func Test_ChildWorkflowStateMachine_InvalidStates(t *testing.T) {
 	require.NotNil(t, err)
 
 	// cancel child workflow after child workflow is started
-	h.requestCancelExternalWorkflowExecution(namespace, workflowID, runID, cancellationID, true, nil)
+	h.requestCancelExternalWorkflowExecution(namespace, workflowID, runID, cancellationID, true, "", nil)
 	require.Equal(t, commandStateCanceledAfterStarted, d.getState())
 
 	// send cancel request
@@ -521,7 +597,7 @@ func Test_ChildWorkflow_UnusualCancelationOrdering(t *testing.T) {
 	h.handleStartChildWorkflowExecutionInitiated(workflowID)
 	h.handleChildWorkflowExecutionStarted(workflowID)
 	// cancel child workflow after child workflow is started
-	h.requestCancelExternalWorkflowExecution(namespace, workflowID, runID, cancellationID, true, nil)
+	h.requestCancelExternalWorkflowExecution(namespace, workflowID, runID, cancellationID, true, "", nil)
 	// send cancel request
 	h.getCommands(true)
 	h.handleRequestCancelExternalWorkflowExecutionInitiated(initiatedEventID, workflowID, cancellationID)
@@ -556,7 +632,7 @@ func Test_ChildWorkflowStateMachine_CancelFailed(t *testing.T) {
 	// child workflow started
 	h.handleChildWorkflowExecutionStarted(workflowID)
 	// cancel child workflow
-	h.requestCancelExternalWorkflowExecution(namespace, workflowID, runID, cancellationID, true, nil)
+	h.requestCancelExternalWorkflowExecution(namespace, workflowID, runID, cancellationID, true, "", nil)
 	// send cancel request
 	h.getCommands(true)
 	// cancel request initiated
@@ -624,7 +700,7 @@ func Test_CancelExternalWorkflowStateMachine_Succeed(t *testing.T) {
 	h := newCommandsHelper()
 
 	// request cancel external workflow
-	command := h.requestCancelExternalWorkflowExecution(namespace, workflowID, runID, cancellationID, false, nil)
+	command := h.requestCancelExternalWorkflowExecution(namespace, workflowID, runID, cancellationID, false, "", nil)
 	require.False(t, command.isDone())
 	d := h.getCommand(makeCommandID(commandTypeCancellation, cancellationID))
 	require.Equal(t, commandStateCreated, d.getState())
@@ -672,7 +748,7 @@ func Test_CancelExternalWorkflowStateMachine_Failed(t *testing.T) {
 	h := newCommandsHelper()
 
 	// request cancel external workflow
-	command := h.requestCancelExternalWorkflowExecution(namespace, workflowID, runID, cancellationID, false, nil)
+	command := h.requestCancelExternalWorkflowExecution(namespace, workflowID, runID, cancellationID, false, "", nil)
 	require.False(t, command.isDone())
 	d := h.getCommand(makeCommandID(commandTypeCancellation, cancellationID))
 	require.Equal(t, commandStateCreated, d.getState())
