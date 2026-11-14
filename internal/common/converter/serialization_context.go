@@ -11,7 +11,9 @@ type SerializationContext interface {
 //
 // Exposed as: [go.temporal.io/sdk/converter.WorkflowSerializationContext]
 type WorkflowSerializationContext struct {
-	Namespace  string
+	// Namespace is the workflow namespace.
+	Namespace string
+	// WorkflowID is the workflow ID.
 	WorkflowID string
 }
 
@@ -21,14 +23,18 @@ func (WorkflowSerializationContext) isSerializationContext() {}
 //
 // Exposed as: [go.temporal.io/sdk/converter.ActivitySerializationContext]
 type ActivitySerializationContext struct {
+	// Namespace is the activity namespace.
 	Namespace string
 	// Empty for a standalone activity.
 	WorkflowID string
 	// Empty for a standalone activity.
 	WorkflowType string
+	// ActivityType is the activity type name.
 	ActivityType string
-	TaskQueue    string
-	IsLocal      bool
+	// TaskQueue is the activity task queue.
+	TaskQueue string
+	// IsLocal reports whether the activity is local.
+	IsLocal bool
 }
 
 func (ActivitySerializationContext) isSerializationContext() {}

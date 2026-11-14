@@ -35,6 +35,8 @@ type DataConverter interface {
 }
 
 // PayloadCodec is exposed as [go.temporal.io/sdk/converter.PayloadCodec].
+//
+// Exposed as: [go.temporal.io/sdk/converter.PayloadCodec]
 type PayloadCodec interface {
 	// Encode optionally encodes non-nil payloads without mutating them.
 	Encode([]*commonpb.Payload) ([]*commonpb.Payload, error)
@@ -44,6 +46,8 @@ type PayloadCodec interface {
 }
 
 // PayloadCodecProvider is exposed as [go.temporal.io/sdk/converter.PayloadCodecProvider].
+//
+// Exposed as: [go.temporal.io/sdk/converter.PayloadCodecProvider]
 type PayloadCodecProvider interface {
 	Codec() PayloadCodec
 }
