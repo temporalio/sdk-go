@@ -39,7 +39,12 @@ type mockEffects struct {
 var _ effects = &mockEffects{}
 
 func (eff *mockEffects) runCommand(root, name string, args ...string) (string, error) {
-	cmd := filepath.ToSlash(formatCommand(name, args...))
+	// Normalize paths before quoting so command escapes are preserved on Windows.
+	normalizedArgs := make([]string, len(args))
+	for i, arg := range args {
+		normalizedArgs[i] = filepath.ToSlash(arg)
+	}
+	cmd := formatCommand(name, normalizedArgs...)
 	fmt.Fprintf(&eff.commands, "%s: %s\n", root, cmd)
 	printDetail(&eff.output, "$ %s", cmd)
 	if eff.commandHandler == nil {
@@ -144,5 +149,26 @@ func testEqual(t *testing.T, got, want string) {
 	t.Helper()
 	if got, want = stripIndentation(got), stripIndentation(want); got != want {
 		t.Fatalf("unexpected text:\n--- got ---\n%s\n--- want ---\n%s", got, want)
+	}
+}
+
+func TestMockEffectsPreservesCommandEscapes(t *testing.T) {
+	want := `git commit -m "Prepare release 2026-08-04\n\ncontrib/envconfig=0.2.0" -- contrib/envconfig/CHANGELOG.md`
+	called := false
+	_, eff := newMockApp(app{}, func(cmd string) (string, error) {
+		called = true
+		if cmd != want {
+			t.Fatalf("unexpected command: got %q, want %q", cmd, want)
+		}
+		return "", nil
+	})
+	_, err := eff.runCommand(mockRepoRoot, "git", "commit", "-m",
+		"Prepare release 2026-08-04\n\ncontrib/envconfig=0.2.0", "--",
+		filepath.Join("contrib", "envconfig", "CHANGELOG.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !called {
+		t.Fatal("command handler was not called")
 	}
 }

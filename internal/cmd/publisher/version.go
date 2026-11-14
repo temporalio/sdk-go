@@ -90,6 +90,15 @@ func latestReleasedVersion(tags []string, tagPrefix string) *semver {
 	return latest
 }
 
+// suggestReleaseVersion suggests a minor release, or 0.1.0 for a new module.
+// The caller must review the suggestion; it does not infer the semantic impact of changes.
+func suggestReleaseVersion(oldVersion *semver) semver {
+	if oldVersion == nil {
+		return semver{0, 1, 0}
+	}
+	return semver{oldVersion[0], oldVersion[1] + 1, 0}
+}
+
 // extractSDKVersion returns the version named by the sole SDKVersion declaration
 // in version.go.
 func extractSDKVersion(text string) (semver, error) {
