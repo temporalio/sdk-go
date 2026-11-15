@@ -1,4 +1,4 @@
-package main
+package pure
 
 import (
 	"strings"
@@ -21,21 +21,39 @@ func TestChangelogRegexps(t *testing.T) {
 
 func TestValidateChangelog(t *testing.T) {
 	tests := []struct {
-		name string
-		text string
-		// oldVersion is the module's current release, or empty if it has never
-		// been released.
-		oldVersion string
-		wantErr    string
+		name    string
+		text    string
+		version string
+		wantErr string
 	}{
 		{
 			name: "valid",
 			text: stripIndentation(`
 				## [Unreleased]
 
-				## [1.47.0] - 2026-07-28
+				## [1.47.0] - 2026-08-04
 			`),
-			oldVersion: "1.47.0",
+			version: "1.47.0",
+		},
+		{
+			name: "wrong release date",
+			text: stripIndentation(`
+				## [Unreleased]
+
+				## [1.47.0] - 2026-08-03
+			`),
+			version: "1.47.0",
+			wantErr: `expected section for "1.47.0" to have date "2026-08-04", found "2026-08-03"`,
+		},
+		{
+			name: "missing release date",
+			text: stripIndentation(`
+				## [Unreleased]
+
+				## [1.47.0]
+			`),
+			version: "1.47.0",
+			wantErr: `expected section for "1.47.0" to have date "2026-08-04", found ""`,
 		},
 		{
 			name: "missing current",
@@ -44,8 +62,8 @@ func TestValidateChangelog(t *testing.T) {
 
 				## [1.46.0] - 2026-07-07
 			`),
-			oldVersion: "1.47.0",
-			wantErr:    `exactly one section for "1.47.0", found 0`,
+			version: "1.47.0",
+			wantErr: `exactly one section for "1.47.0", found 0`,
 		},
 		{
 			name: "duplicate current",
@@ -56,8 +74,8 @@ func TestValidateChangelog(t *testing.T) {
 
 				## [1.47.0]
 			`),
-			oldVersion: "1.47.0",
-			wantErr:    `exactly one section for "1.47.0", found 2`,
+			version: "1.47.0",
+			wantErr: `exactly one section for "1.47.0", found 2`,
 		},
 		{
 			name: "duplicate previous",
@@ -70,41 +88,30 @@ func TestValidateChangelog(t *testing.T) {
 
 				## [1.46.0]
 			`),
-			oldVersion: "1.47.0",
-			wantErr:    `found 2 sections for "1.46.0"`,
+			version: "1.47.0",
+			wantErr: `found 2 sections for "1.46.0"`,
 		},
 		{
-			// It's ok for a released module to have no release sections in the
-			// changelog. That means we didn't start keeping a changelog until now.
-			name: "released module whose changelog records no history",
+			name: "missing release section",
 			text: stripIndentation(`
 				## [Unreleased]
 			`),
-			oldVersion: "1.0.2",
+			version: "1.0.2",
+			wantErr: `exactly one section for "1.0.2", found 0`,
 		},
 		{
-			name: "unreleased module",
-			text: stripIndentation(`
-				## [Unreleased]
-			`),
-		},
-		{
-			name: "unreleased module without an Unreleased section",
+			name: "missing Unreleased section",
 			text: stripIndentation(`
 				# Changelog
 			`),
+			version: "1.0.0",
 			wantErr: `exactly one section for "Unreleased", found 0`,
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			var oldVersion *semver
-			if test.oldVersion != "" {
-				v := mustVersion(t, test.oldVersion)
-				oldVersion = &v
-			}
-			err := validateChangelog(test.text, oldVersion)
+			err := ValidateChangelog(test.text, mustVersion(t, test.version), time.Date(2026, time.August, 4, 0, 0, 0, 0, time.UTC))
 			if test.wantErr == "" && err != nil {
 				t.Fatal(err)
 			}
@@ -137,7 +144,7 @@ func TestComputeNewChangelog(t *testing.T) {
 - An older feature.
 `
 	date := time.Date(2026, time.August, 4, 0, 0, 0, 0, time.UTC)
-	got, err := computeNewChangelog(input, semver{1, 3, 0}, date)
+	got, err := ComputeNewChangelog(input, Version{1, 3, 0}, date)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -198,7 +205,7 @@ func TestComputeNewChangelogUsesCanonicalSeededHeaders(t *testing.T) {
 - An older feature.
 `
 	date := time.Date(2026, time.August, 4, 0, 0, 0, 0, time.UTC)
-	got, err := computeNewChangelog(input, semver{0, 2, 1}, date)
+	got, err := ComputeNewChangelog(input, Version{0, 2, 1}, date)
 	if err != nil {
 		t.Fatal(err)
 	}

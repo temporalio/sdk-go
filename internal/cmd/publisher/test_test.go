@@ -2,11 +2,16 @@ package main
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/google/go-cmp/cmp"
+
+	"go.temporal.io/sdk/internal/cmd/publisher/pure"
 )
 
 const (
@@ -14,21 +19,43 @@ const (
 	mockRepoRoot = "/repo"
 )
 
-func newMockApp(a app, handler func(cmd string) (string, error)) (*app, *mockEffects) {
+// Relative fixture paths belong to the temporary worktree; absolute paths model other checkouts.
+// Copy the fixtures so assertions can compare modified files against their original contents.
+func newMockApp(a app, input map[string]string, handler func(cmd string) (string, error)) (*app, *mockEffects) {
 	eff := &mockEffects{
 		commandHandler: handler,
 		tempDir:        mockTempDir,
 		files:          make(map[string]string),
 	}
-	a.out, a.eff, a.repoRoot = &eff.output, eff, mockRepoRoot
+	maps.Copy(eff.files, input)
+	a.eff, a.repoRoot = eff, mockRepoRoot
 	return &a, eff
+}
+
+func newMockLint(c lintApp, input map[string]string, handler func(cmd string) (string, error)) (*lintApp, *mockEffects) {
+	a, eff := newMockApp(c.app, input, handler)
+	c.app = *a
+	return &c, eff
+}
+
+func newMockPR(c prApp, input map[string]string, handler func(cmd string) (string, error)) (*prApp, *mockEffects) {
+	a, eff := newMockApp(c.app, input, handler)
+	c.app = *a
+	return &c, eff
+}
+
+func newMockRelease(c releaseApp, input map[string]string, handler func(cmd string) (string, error)) (*releaseApp, *mockEffects) {
+	a, eff := newMockApp(c.app, input, handler)
+	c.app = *a
+	return &c, eff
 }
 
 // mockEffects is a mock implementation of [effects] for testing.
 type mockEffects struct {
 	commandHandler func(cmd string) (string, error)
-	commands       strings.Builder
+	audit          strings.Builder
 	output         strings.Builder
+	errors         strings.Builder
 	tempDir        string
 	files          map[string]string
 	// moduleLookupHandler answers checkModulePublished.
@@ -38,19 +65,54 @@ type mockEffects struct {
 
 var _ effects = &mockEffects{}
 
+func (eff *mockEffects) page(string) error {
+	return nil
+}
+
+func (eff *mockEffects) runInteractiveCommand(string, string, ...string) error {
+	return nil
+}
+
+func (eff *mockEffects) readCharacter() (byte, error) {
+	panic("interactive input is not supported by mockEffects")
+}
+
+func (eff *mockEffects) today() time.Time {
+	return time.Date(2026, time.August, 4, 0, 0, 0, 0, time.UTC)
+}
+
+func (eff *mockEffects) out(format string, args ...any) {
+	_, _ = fmt.Fprintf(&eff.output, format, args...)
+}
+
+func (eff *mockEffects) err(format string, args ...any) {
+	_, _ = fmt.Fprintf(&eff.errors, format, args...)
+}
+
 func (eff *mockEffects) runCommand(root, name string, args ...string) (string, error) {
 	// Normalize paths before quoting so command escapes are preserved on Windows.
 	normalizedArgs := make([]string, len(args))
 	for i, arg := range args {
 		normalizedArgs[i] = filepath.ToSlash(arg)
 	}
-	cmd := formatCommand(name, normalizedArgs...)
-	fmt.Fprintf(&eff.commands, "%s: %s\n", root, cmd)
-	printDetail(&eff.output, "$ %s", cmd)
-	if eff.commandHandler == nil {
-		return "", nil
+	cmd := FormatCommand(name, normalizedArgs...)
+	audit := realWorld{audit: &eff.audit}
+	if err := audit.logAudit("# Running in %s:\n$ %s\n", root, cmd); err != nil {
+		return "", err
 	}
-	return eff.commandHandler(cmd)
+	var output string
+	var err error
+	if eff.commandHandler != nil {
+		output, err = eff.commandHandler(cmd)
+	}
+	var stderr string
+	if err != nil {
+		stderr = err.Error()
+	}
+	if auditErr := audit.logCommandOutput(output, stderr); auditErr != nil {
+		return "", auditErr
+	}
+	return output, err
 }
 
 func (eff *mockEffects) mkdirTemp(string, string) (string, error) {
@@ -58,7 +120,8 @@ func (eff *mockEffects) mkdirTemp(string, string) (string, error) {
 }
 
 func (eff *mockEffects) readFile(path string) (string, error) {
-	contents, ok := eff.files[path]
+	key := strings.TrimPrefix(filepath.ToSlash(path), filepath.ToSlash(eff.tempDir)+"/")
+	contents, ok := eff.files[key]
 	if !ok {
 		return "", fmt.Errorf("read %s: %w", path, os.ErrNotExist)
 	}
@@ -66,7 +129,8 @@ func (eff *mockEffects) readFile(path string) (string, error) {
 }
 
 func (eff *mockEffects) writeFile(path, contents string) error {
-	eff.files[path] = contents
+	key := strings.TrimPrefix(filepath.ToSlash(path), filepath.ToSlash(eff.tempDir)+"/")
+	eff.files[key] = contents
 	return nil
 }
 
@@ -78,38 +142,13 @@ func (eff *mockEffects) checkModulePublished(modulePath, version string) (bool, 
 }
 
 // contribEnvconfig is the module used by the contrib tests.
-func contribEnvconfig(t *testing.T) releaseTarget {
+func contribEnvconfig(t *testing.T) pure.Module {
 	t.Helper()
-	target, err := contribTarget("contrib/envconfig")
+	m, err := pure.ContribModule("contrib/envconfig")
 	if err != nil {
 		t.Fatal(err)
 	}
-	return target
-}
-
-// mustVersion parses a release version or fails the test.
-func mustVersion(t *testing.T, s string) semver {
-	t.Helper()
-	v, err := parseVersion(s)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return v
-}
-
-// testRegexp checks that expression matches every input in matches and none in rejects.
-func testRegexp(t *testing.T, expression *regexp.Regexp, matches, rejects []string) {
-	t.Helper()
-	for _, input := range matches {
-		if !expression.MatchString(input) {
-			t.Errorf("expected %q to match %s", input, expression)
-		}
-	}
-	for _, input := range rejects {
-		if expression.MatchString(input) {
-			t.Errorf("expected %q not to match %s", input, expression)
-		}
-	}
+	return m
 }
 
 // stripIndentation removes surrounding blank lines and indentation shared by every nonblank line.
@@ -152,10 +191,17 @@ func testEqual(t *testing.T, got, want string) {
 	}
 }
 
+func testEqualMaps(t *testing.T, got, want map[string]string) {
+	t.Helper()
+	if !maps.Equal(got, want) {
+		t.Fatalf("unexpected files (-want +got):\n%s", cmp.Diff(want, got))
+	}
+}
+
 func TestMockEffectsPreservesCommandEscapes(t *testing.T) {
 	want := `git commit -m "Prepare release 2026-08-04\n\ncontrib/envconfig=0.2.0" -- contrib/envconfig/CHANGELOG.md`
 	called := false
-	_, eff := newMockApp(app{}, func(cmd string) (string, error) {
+	_, eff := newMockApp(app{}, nil, func(cmd string) (string, error) {
 		called = true
 		if cmd != want {
 			t.Fatalf("unexpected command: got %q, want %q", cmd, want)

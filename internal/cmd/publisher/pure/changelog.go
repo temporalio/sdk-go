@@ -1,4 +1,4 @@
-package main
+package pure
 
 import (
 	"errors"
@@ -11,7 +11,7 @@ import (
 
 var (
 	// Matches changelog headings such as "## [1.48.0] - 2026-08-04".
-	changelogHeadingRE = regexp.MustCompile(`^## \[([^]]+)](?:\s+-\s+.*)?\s*$`)
+	changelogHeadingRE = regexp.MustCompile(`^## \[([^]]+)](?:\s+-\s+(.*?))?\s*$`)
 	// Matches changelog section headers such as "### :boom: Breaking Changes".
 	changelogHeaderRE = regexp.MustCompile(`^### (.+?)\s*$`)
 )
@@ -25,16 +25,13 @@ var changelogHeaders = []string{
 	"Security",
 }
 
-// validateChangelog requires one Unreleased section, one section for the module's
-// current version, and no duplicate release sections. A nil oldVersion means the module
-// has never been released, so only the Unreleased section is required.
-// If a module's oldVersion is non-nil, it's okay for the changelog to have no
-// release sections - that means we didn't start maintaining the changelog until now.
-func validateChangelog(text string, oldVersion *semver) error {
+// ValidateChangelog requires one Unreleased section, one section for the requested
+// release version dated today, and no duplicate release sections.
+func ValidateChangelog(text string, version Version, today time.Time) error {
 	// Count the number of sections for each version.
 	counts := make(map[string]int)
 	var versions []string
-	recordsReleases := false
+	var releaseDate string
 	for _, line := range strings.Split(text, "\n") {
 		match := changelogHeadingRE.FindStringSubmatch(line)
 		if match == nil {
@@ -44,15 +41,12 @@ func validateChangelog(text string, oldVersion *semver) error {
 			versions = append(versions, match[1])
 		}
 		counts[match[1]]++
-		if _, err := parseVersion(match[1]); err == nil {
-			recordsReleases = true
+		if match[1] == version.String() {
+			releaseDate = strings.TrimSpace(match[2])
 		}
 	}
 
-	required := []string{"Unreleased"}
-	if oldVersion != nil && recordsReleases {
-		required = append(required, oldVersion.String())
-	}
+	required := []string{"Unreleased", version.String()}
 
 	// Report missing and duplicate sections
 	var problems []string
@@ -66,48 +60,26 @@ func validateChangelog(text string, oldVersion *semver) error {
 			problems = append(problems, fmt.Sprintf("found %d sections for %q", counts[version], version))
 		}
 	}
+	if counts[version.String()] == 1 && releaseDate != today.Format(time.DateOnly) {
+		problems = append(problems, fmt.Sprintf("expected section for %q to have date %q, found %q",
+			version.String(), today.Format(time.DateOnly), releaseDate))
+	}
 	if len(problems) > 0 {
 		return errors.New("invalid changelog: " + strings.Join(problems, "; "))
 	}
 	return nil
 }
 
-// pendingChangelogVersion returns the highest changelog version newer than the latest
-// stable tag, or nil if no release has been prepared.
-func pendingChangelogVersion(text string, oldVersion *semver) *semver {
-	var pending *semver
-	for _, line := range strings.Split(text, "\n") {
-		match := changelogHeadingRE.FindStringSubmatch(line)
-		if match == nil {
-			continue
-		}
-		version, err := parseVersion(match[1])
-		if err != nil || (oldVersion != nil && slices.Compare(version[:], oldVersion[:]) <= 0) {
-			continue
-		}
-		if pending == nil || slices.Compare(version[:], pending[:]) > 0 {
-			pending = &version
-		}
-	}
-	return pending
-}
-
-// computeNewChangelog moves Unreleased entries into a dated version section and reseeds
-// the Unreleased section.
-func computeNewChangelog(text string, version semver, releaseDate time.Time) (string, error) {
+// ComputeNewChangelog moves Unreleased entries into a dated version section and reseeds
+// the Unreleased section. It allows empty entries and does not check for existing versions.
+func ComputeNewChangelog(text string, version Version, releaseDate time.Time) (string, error) {
 	v := version.String()
 	lines := strings.Split(strings.TrimSuffix(text, "\n"), "\n")
-	if _, _, _, ok := findVersionSection(lines, v); ok {
-		return "", fmt.Errorf("changelog already has a section for %q", v)
-	}
 	heading, start, end, ok := findVersionSection(lines, "Unreleased")
 	if !ok {
 		return "", errors.New("could not find changelog section for 'Unreleased'")
 	}
 	unreleased := stripEmptyLevelThreeHeaders(stripOuterBlankLines(lines[start:end]))
-	if len(unreleased) == 0 {
-		return "", errors.New("changelog section for 'Unreleased' appears to be empty")
-	}
 	next := append([]string{}, lines[:heading]...)
 	next = append(next, seededUnreleasedLines(changelogHeaders)...)
 	next = append(next, "## ["+v+"] - "+releaseDate.Format(time.DateOnly), "")
@@ -117,8 +89,8 @@ func computeNewChangelog(text string, version semver, releaseDate time.Time) (st
 	return strings.Join(next, "\n") + "\n", nil
 }
 
-// computeReleaseNotes formats one release's changelog sections for a GitHub release.
-func computeReleaseNotes(text string, version semver) (string, error) {
+// ComputeReleaseNotes formats one release's changelog sections for a GitHub release.
+func ComputeReleaseNotes(text string, version Version) (string, error) {
 	v := version.String()
 	lines := strings.Split(strings.TrimSuffix(text, "\n"), "\n")
 	_, start, end, ok := findVersionSection(lines, v)

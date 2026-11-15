@@ -1,4 +1,4 @@
-package main
+package pure
 
 import (
 	"errors"
@@ -16,14 +16,14 @@ var (
 	goVersionRE = regexp.MustCompile(`^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
 )
 
-// moduleRequirement is a Temporal module that a go.mod depends on.
-type moduleRequirement struct {
-	modulePath string
-	version    string
+// ModuleRequirement is a Temporal module that a go.mod depends on.
+type ModuleRequirement struct {
+	ModulePath string
+	Version    string
 }
 
-// validateModulePath checks that go.mod declares the module the release tag will version.
-func validateModulePath(goMod, modulePath string) error {
+// ValidateModulePath checks that go.mod declares the module the release tag will version.
+func ValidateModulePath(goMod, modulePath string) error {
 	declaration := moduleDeclarationRE.FindStringSubmatch(goMod)
 	if declaration == nil {
 		return errors.New("could not find a module declaration in go.mod")
@@ -34,24 +34,24 @@ func validateModulePath(goMod, modulePath string) error {
 	return nil
 }
 
-// validateGoMod requires go.mod to declare the module the release tag will version,
+// ValidateGoMod requires go.mod to declare the module the release tag will version,
 // and every Temporal module it depends on to use a tagged stable release instead of a
 // prerelease or git snapshot.
 //
 // Returns the Temporal requirements, which the caller still has to check are
 // published.
-func validateGoMod(goMod, modulePath string) ([]moduleRequirement, error) {
-	err := validateModulePath(goMod, modulePath)
+func ValidateGoMod(goMod, modulePath string) ([]ModuleRequirement, error) {
+	err := ValidateModulePath(goMod, modulePath)
 	if err != nil {
 		return nil, err
 	}
-	var requirements []moduleRequirement
+	var requirements []ModuleRequirement
 	for _, match := range temporalModuleRequirementRE.FindAllStringSubmatch(goMod, -1) {
 		required, version := match[1], match[2]
 		if !goVersionRE.MatchString(version) {
 			return nil, fmt.Errorf("%s must use an official release, found %q", required, version)
 		}
-		requirements = append(requirements, moduleRequirement{required, version})
+		requirements = append(requirements, ModuleRequirement{required, version})
 	}
 	return requirements, nil
 }

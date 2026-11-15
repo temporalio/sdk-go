@@ -1,4 +1,4 @@
-package main
+package pure
 
 import (
 	"fmt"
@@ -153,7 +153,7 @@ func TestValidateGoMod(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			_, err := validateGoMod(test.goMod, modulePath)
+			_, err := ValidateGoMod(test.goMod, modulePath)
 			if test.wantErr == "" {
 				if err != nil {
 					t.Fatalf("expected go.mod to be valid, got %v", err)
@@ -178,13 +178,13 @@ func TestValidateGoModReturnsTemporalRequirements(t *testing.T) {
 		)
 	`)
 
-	requirements, err := validateGoMod(goMod, "go.temporal.io/sdk/contrib/tally")
+	requirements, err := ValidateGoMod(goMod, "go.temporal.io/sdk/contrib/tally")
 	if err != nil {
 		t.Fatal(err)
 	}
 	var got strings.Builder
 	for _, requirement := range requirements {
-		fmt.Fprintf(&got, "%s %s\n", requirement.modulePath, requirement.version)
+		fmt.Fprintf(&got, "%s %s\n", requirement.ModulePath, requirement.Version)
 	}
 	testEqual(t, got.String(), `
 		go.temporal.io/api v1.63.4

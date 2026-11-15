@@ -2,21 +2,18 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"path/filepath"
 	"strings"
-	"time"
+
+	"go.temporal.io/sdk/internal/cmd/publisher/pure"
 )
 
 // worktree represents a temporary git worktree that the script creates to validate
 // and update release files.
 type worktree struct {
-	out io.Writer
 	eff effects
-	// releaseDate is the date the new release took place on.
-	releaseDate time.Time
-	// repoRoot is the root of the user's own checkout, which owns this worktree.
-	repoRoot string
+	// repo is the original checkout that owns this worktree.
+	repo *repo
 	// worktreeRoot is the worktreeRoot directory of this worktree.
 	worktreeRoot string
 	// branch is the git branch that this worktree has checked out.
@@ -29,192 +26,27 @@ type releaseFile struct {
 	contents string
 }
 
-// validateEverything validates everything about the module release before
-// anything gets written. The command is "pr" or "release". For "release", the version
-// constant and changelog must match the requested release instead of the latest tag:
-//   - check that go.mod exists and has the correct module path;
-//   - check that all Temporal dependencies in go.mod point to published releases;
-//   - check that the version constant, if the module has one, agrees with the tags
-//     (or the requested version for a prepared release);
-//   - check that the new version is "one greater" than the current release;
-//   - check that the changelog exists and has the required sections.
-func (w *worktree) validateEverything(release releaseSpec, command string) error {
-	target := release.target
-	modulePath := target.modulePath()
-
-	// Validate go.mod
-	goMod, err := w.eff.readFile(w.pathToGoMod(target))
-	if err != nil {
-		return fmt.Errorf("%s: %w", modulePath, err)
-	}
-	requirements, err := validateGoMod(goMod, modulePath)
-	if err != nil {
-		return fmt.Errorf("%s: %w", modulePath, err)
-	}
-	err = w.validateRequirementsPublished(requirements)
-	if err != nil {
-		return fmt.Errorf("%s: %w", modulePath, err)
-	}
-
-	return w.validatePreparation(release, command)
-}
-
-// validatePreparation checks module identity, versions, and changelog structure.
-// Dependency readiness is left to lint and release, so it can be fixed in the PR.
-func (w *worktree) validatePreparation(release releaseSpec, command string) error {
-	target := release.target
-	modulePath := target.modulePath()
-	goMod, err := w.eff.readFile(w.pathToGoMod(target))
-	if err != nil {
-		return fmt.Errorf("%s: %w", modulePath, err)
-	}
-	err = validateModulePath(goMod, modulePath)
-	if err != nil {
-		return fmt.Errorf("%s: %w", modulePath, err)
-	}
-
-	// Validate version number
-	tags, err := w.listTags(target.tagPattern())
-	if err != nil {
-		return err
-	}
-	oldVersion := latestReleasedVersion(tags, target.tagPrefix())
-	expectedVersion := oldVersion
-	if command == "release" && oldVersion != nil {
-		expectedVersion = &release.version
-	}
-	err = w.validateVersionConstant(target, expectedVersion)
-	if err != nil {
-		return fmt.Errorf("%s: %w", modulePath, err)
-	}
-	if oldVersion != nil {
-		err = validateVersionIncrease(*oldVersion, release.version)
-		if err != nil {
-			return fmt.Errorf("%s: %w", modulePath, err)
-		}
-	}
-
-	// Validate changelog
-	changelog, err := w.eff.readFile(w.pathToChangelog(target))
-	if err != nil {
-		return fmt.Errorf("%s: %w", modulePath, err)
-	}
-	if command == "release" {
-		expectedVersion = &release.version
-	}
-	err = validateChangelog(changelog, expectedVersion)
-	if err != nil {
-		return fmt.Errorf("%s: %w", modulePath, err)
-	}
-
-	return nil
-}
-
-// lintRelease checks either Unreleased changes or an already prepared release.
-// It returns the release and validation command even when readiness checks fail,
-// so callers can report the module and suggest PR preparation.
-func (w *worktree) lintRelease(candidate releaseCandidate) (releaseSpec, string, error) {
-	changelog, err := w.eff.readFile(w.pathToChangelog(candidate.target))
-	if err != nil {
-		return releaseSpec{target: candidate.target, version: suggestReleaseVersion(candidate.oldVersion)}, "pr", err
-	}
-	pending := pendingChangelogVersion(changelog, candidate.oldVersion)
-	var release releaseSpec
-	var command string
-	if pending == nil {
-		release = releaseSpec{target: candidate.target, version: suggestReleaseVersion(candidate.oldVersion)}
-		command = "pr"
-	} else {
-		release = releaseSpec{target: candidate.target, version: *pending}
-		command = "release"
-	}
-	err = w.validateEverything(release, command)
-	if err != nil {
-		return release, command, err
-	}
-	if command == "pr" {
-		_, err = w.computeReleaseFiles(release)
-	} else {
-		_, err = w.readReleaseNotes(release)
-	}
-	return release, command, err
-}
-
-func (w *worktree) validateRequirementsPublished(requirements []moduleRequirement) error {
-	for _, requirement := range requirements {
-		published, err := w.eff.checkModulePublished(requirement.modulePath, requirement.version)
-		if err != nil {
-			return err
-		}
-		if !published {
-			return fmt.Errorf("%s %s is not published on the Go module proxy",
-				requirement.modulePath, requirement.version)
-		}
-	}
-	return nil
-}
-
-// listTags returns the repository's git tags matching the given glob pattern.
-func (w *worktree) listTags(pattern string) ([]string, error) {
-	output, err := w.eff.runCommand(w.worktreeRoot, "git", "tag", "--list", pattern)
-	if err != nil {
-		return nil, fmt.Errorf("list tags matching %s: %w", pattern, err)
-	}
-	var tags []string
-	for _, line := range strings.Split(output, "\n") {
-		if tag := strings.TrimSpace(line); tag != "" {
-			tags = append(tags, tag)
-		}
-	}
-	return tags, nil
-}
-
-// validateVersionConstant checks that the version in version.go
-// (if it exists) matches the expected version.
-func (w *worktree) validateVersionConstant(target releaseTarget, expectedVersion *semver) error {
-	if target.versionFile == "" {
-		return nil
-	}
-	text, err := w.eff.readFile(w.pathToVersionFile(target))
-	if err != nil {
-		return err
-	}
-	declared, err := extractSDKVersion(text)
-	if err != nil {
-		return err
-	}
-	if expectedVersion == nil {
-		return fmt.Errorf("%s declares version %s, but no release tags match %q",
-			target.versionFile, declared, target.tagPattern())
-	}
-	if declared != *expectedVersion {
-		return fmt.Errorf("%s declares version %s, expected %s",
-			target.versionFile, declared, *expectedVersion)
-	}
-	return nil
-}
-
-// computeReleaseFiles prepares the changelog and version.go (if the module has one)
+// newReleaseFiles prepares the changelog and version.go (if the module has one)
 // without writing them.
-func (w *worktree) computeReleaseFiles(release releaseSpec) ([]releaseFile, error) {
-	changelogPath := w.pathToChangelog(release.target)
+func (w *worktree) newReleaseFiles(module pure.VersionedModule) ([]releaseFile, error) {
+	changelogPath := w.pathToChangelog(module.Module)
 	changelog, err := w.eff.readFile(changelogPath)
 	if err != nil {
 		return nil, err
 	}
-	changelog, err = computeNewChangelog(changelog, release.version, w.releaseDate)
+	changelog, err = pure.ComputeNewChangelog(changelog, module.Version, w.eff.today())
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", changelogPath, err)
 	}
 	files := []releaseFile{{path: changelogPath, contents: changelog}}
 
-	versionFile := w.pathToVersionFile(release.target)
+	versionFile := w.pathToVersionFile(module.Module)
 	if versionFile != "" {
 		text, err := w.eff.readFile(versionFile)
 		if err != nil {
 			return nil, err
 		}
-		text, err = computeNewVersionFile(text, release.version)
+		text, err = pure.ComputeNewVersionFile(text, module.Version)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", versionFile, err)
 		}
@@ -224,10 +56,53 @@ func (w *worktree) computeReleaseFiles(release releaseSpec) ([]releaseFile, erro
 	return files, nil
 }
 
-func (w *worktree) commitRelease(releases []releaseSpec) error {
-	gitArgs := []string{"commit", "-m", releaseCommitMessage(releases, w.releaseDate), "--"}
-	for _, release := range releases {
-		gitArgs = append(gitArgs, release.target.releaseFiles()...)
+func (w *worktree) readReleaseNotes(module pure.VersionedModule) (string, error) {
+	m := module.Module
+	changelog, err := w.eff.readFile(w.pathToChangelog(m))
+	if err != nil {
+		return "", err
+	}
+	releaseNotes, err := pure.ComputeReleaseNotes(changelog, module.Version)
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", m.Changelog(), err)
+	}
+	return releaseNotes, nil
+}
+
+// pathToChangelog points to the module's CHANGELOG.md
+func (w *worktree) pathToChangelog(m pure.Module) string {
+	return filepath.Join(w.worktreeRoot, filepath.FromSlash(m.Changelog()))
+}
+
+// pathToGoMod points to the module's go.mod
+func (w *worktree) pathToGoMod(m pure.Module) string {
+	return filepath.Join(w.worktreeRoot, filepath.FromSlash(m.GoMod()))
+}
+
+// pathToVersionFile points to the module's version.go if it exists
+func (w *worktree) pathToVersionFile(m pure.Module) string {
+	if m.VersionFile == "" {
+		return ""
+	}
+	return filepath.Join(w.worktreeRoot, filepath.FromSlash(m.VersionFile))
+}
+
+func (w *worktree) writeReleaseFiles(files []releaseFile) error {
+	for _, file := range files {
+		err := w.eff.writeFile(file.path, file.contents)
+		if err != nil {
+			return fmt.Errorf("write %s: %w", file.path, err)
+		}
+	}
+	return nil
+}
+
+// Git/GitHub operations
+
+func (w *worktree) commitRelease(modules []pure.VersionedModule) error {
+	gitArgs := []string{"commit", "-m", pure.ReleaseCommitMessage(modules, w.eff.today()), "--"}
+	for _, module := range modules {
+		gitArgs = append(gitArgs, module.Module.ReleaseFiles()...)
 	}
 	_, err := w.eff.runCommand(w.worktreeRoot, "git", gitArgs...)
 	if err != nil {
@@ -244,8 +119,8 @@ func (w *worktree) pushBranch() error {
 	return nil
 }
 
-func (w *worktree) openDraftPR(releases []releaseSpec) (string, error) {
-	title, body, _ := strings.Cut(releaseCommitMessage(releases, w.releaseDate), "\n\n")
+func (w *worktree) openDraftPR(modules []pure.VersionedModule) (string, error) {
+	title, body, _ := strings.Cut(pure.ReleaseCommitMessage(modules, w.eff.today()), "\n\n")
 	url, err := w.eff.runCommand(w.worktreeRoot, "gh", "pr", "create", "--draft",
 		"--base", "main",
 		"--head", w.branch,
@@ -256,38 +131,23 @@ func (w *worktree) openDraftPR(releases []releaseSpec) (string, error) {
 		return "", fmt.Errorf("create draft PR: %w", err)
 	}
 	url = strings.TrimSpace(url)
-	printDetail(w.out, "Draft PR: %s", url)
+	printDetail(w.eff, "Draft PR: %s", url)
 	return url, nil
 }
 
-func (w *worktree) readReleaseNotes(release releaseSpec) (string, error) {
-	target := release.target
-	changelog, err := w.eff.readFile(w.pathToChangelog(target))
-	if err != nil {
-		return "", err
-	}
-	releaseNotes, err := computeReleaseNotes(changelog, release.version)
-	if err != nil {
-		return "", fmt.Errorf("%s: %w", target.changelog(), err)
-	}
-	return releaseNotes, nil
-}
-
-func (w *worktree) createDraftRelease(release releaseSpec, commit, releaseNotes string) (string, error) {
-	target := release.target
-	tag := target.tag(release.version)
+func (w *worktree) createDraftRelease(module pure.VersionedModule, commit, releaseNotes string) (string, error) {
+	m := module.Module
+	tag := m.Tag(module.Version)
 	releaseNotesPath := filepath.Join(w.worktreeRoot, "prepare-release-notes.md")
 	err := w.eff.writeFile(releaseNotesPath, releaseNotes)
 	if err != nil {
 		return "", fmt.Errorf("write release notes to %s: %w", releaseNotesPath, err)
 	}
-	printDetail(w.out, "Release notes: %s", releaseNotesPath)
-
 	ghArgs := []string{"release", "create", tag, "--draft", "--target", commit, "--title", tag, "--notes-file", releaseNotesPath}
-	if target.generateNotes {
+	if m.GenerateNotes {
 		ghArgs = append(ghArgs, "--generate-notes")
 	}
-	if !target.markLatest {
+	if !m.MarkLatest {
 		ghArgs = append(ghArgs, "--latest=false")
 	}
 	url, err := w.eff.runCommand(w.worktreeRoot, "gh", ghArgs...)
@@ -295,42 +155,10 @@ func (w *worktree) createDraftRelease(release releaseSpec, commit, releaseNotes 
 		return "", fmt.Errorf("create draft release %s: %w", tag, err)
 	}
 	url = strings.TrimSpace(url)
-	printDetail(w.out, "Draft release: %s", url)
+	printDetail(w.eff, "Draft release: %s", url)
 	return url, nil
 }
 
 func (w *worktree) cleanup() error {
-	_, err := w.eff.runCommand(w.repoRoot, "git", "worktree", "remove", "--force", w.worktreeRoot)
-	if err != nil {
-		return fmt.Errorf("remove worktree: %w", err)
-	}
-	return nil
-}
-
-// pathToChangelog points to the release target's CHANGELOG.md
-func (w *worktree) pathToChangelog(target releaseTarget) string {
-	return filepath.Join(w.worktreeRoot, filepath.FromSlash(target.changelog()))
-}
-
-// pathToGoMod points to the release target's go.mod
-func (w *worktree) pathToGoMod(target releaseTarget) string {
-	return filepath.Join(w.worktreeRoot, filepath.FromSlash(target.goMod()))
-}
-
-// pathToVersionFile points to the release target's version.go if it exists
-func (w *worktree) pathToVersionFile(target releaseTarget) string {
-	if target.versionFile == "" {
-		return ""
-	}
-	return filepath.Join(w.worktreeRoot, filepath.FromSlash(target.versionFile))
-}
-
-func (w *worktree) writeReleaseFiles(files []releaseFile) error {
-	for _, file := range files {
-		err := w.eff.writeFile(file.path, file.contents)
-		if err != nil {
-			return fmt.Errorf("write %s: %w", file.path, err)
-		}
-	}
-	return nil
+	return w.repo.removeWorktree(w.worktreeRoot)
 }
