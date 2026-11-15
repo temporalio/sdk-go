@@ -33,4 +33,5 @@ or Security.
 ### Breaking Changes
 
 - Raised the minimum supported Go version from 1.25.4 to 1.26.0.
+- Raised the minimum Temporal Go SDK requirement to v1.51.0.
 

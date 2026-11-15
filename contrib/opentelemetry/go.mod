@@ -7,7 +7,7 @@ require (
 	go.opentelemetry.io/otel v1.45.0
 	go.opentelemetry.io/otel/sdk v1.45.0
 	go.opentelemetry.io/otel/trace v1.45.0
-	go.temporal.io/sdk v1.46.0
+	go.temporal.io/sdk v1.51.0
 )
 
 require (
@@ -44,5 +44,3 @@ require (
 	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-replace go.temporal.io/sdk => ../../

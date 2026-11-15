@@ -5,7 +5,7 @@ go 1.26.0
 require (
 	github.com/DataDog/dd-trace-go/v2 v2.8.1
 	github.com/stretchr/testify v1.11.1
-	go.temporal.io/sdk v1.25.1
+	go.temporal.io/sdk v1.51.0
 )
 
 require (
@@ -99,5 +99,3 @@ require (
 	gopkg.in/ini.v1 v1.67.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-replace go.temporal.io/sdk => ../../

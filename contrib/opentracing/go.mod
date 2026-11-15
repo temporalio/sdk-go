@@ -5,7 +5,7 @@ go 1.26.0
 require (
 	github.com/opentracing/opentracing-go v1.2.0
 	github.com/stretchr/testify v1.10.0
-	go.temporal.io/sdk v1.12.0
+	go.temporal.io/sdk v1.51.0
 )
 
 require (
@@ -33,5 +33,3 @@ require (
 	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-replace go.temporal.io/sdk => ../../
