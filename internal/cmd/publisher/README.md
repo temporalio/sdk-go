@@ -1,6 +1,21 @@
 This is a script that helps automate releasing the Go SDK and its contrib modules.
 Prepare a draft PR, lint its commit, then create draft releases after merging.
 
+## Changelog tool setup
+
+Publisher invokes `cargo run --quiet --locked` from a local sdk-rust checkout.
+Install Rust and Cargo, and check out sdk-rust beside sdk-go at the revision in
+`sdk-rust-revision`. Set `PUBLISHER_SDK_RUST` to use a checkout elsewhere.
+The PR, lint, and release commands verify its HEAD once during setup, before
+creating a temporary worktree or validating modules. Discovery does not need the
+tool. Publisher does not fetch or change that checkout. Uncommitted tool edits are
+used, which allows testing coordinated changes.
+
+Each module keeps pending notes in `changelog/<category>/<name>.md` relative to its
+module directory. Categories are `added`, `stabilized`, `changed`, `deprecated`,
+`breaking-changes`, `fixed`, and `security`. Each nonempty line becomes one bullet;
+write entries without leading list markers. There is no Unreleased section.
+
 `publisher find` scans SDK and contrib modules on `origin/main` after fetching
 origin and release tags. It checks for commits since each module's highest stable
 release tag and asks you to choose minor `[m]`,
@@ -30,6 +45,13 @@ draft PR using the specified versions. For example,
 envconfig version `1.0.3`. Versions must use `major.minor.patch` format, without
 prerelease or build metadata.
 
+PR preparation validates fragments for all selected modules, then calls the shared
+tool to assemble dated changelog sections and delete consumed fragments. Empty
+releases are allowed; duplicate versions and leftover Unreleased sections are
+rejected. Only selected modules are prepared. Version-file changes are still owned
+by publisher. A preparation failure can partially modify the temporary worktree,
+but publisher does not commit or push it and removes it during cleanup.
+
 `publisher release COMMIT MODULE=VERSION [MODULE=VERSION ...]` still takes explicit
 versions and validates the merged release commit before creating draft releases.
 
@@ -45,6 +67,12 @@ against the supplied release specs. The selected changelog sections must be date
 today, using the machine's local date in `YYYY-MM-DD` format. Both lint and release
 enforce this check. It does not infer versions or compare them
 with existing release tags.
+
+Lint uses the shared tool's `release-notes --date` command, discarding its output.
+It does not require pending
+fragment directories to be empty: notes merged after preparation belong to the next
+release. Publishing uses `release-notes` from the completed version section, with
+the `## Notable Changes` wrapper, and never includes pending fragments.
 
 Each invocation prints the path to a private `publisher-*.log` file in the system
 temporary directory. The log shows a `# Running in <dir>:` comment above each command,
@@ -63,7 +91,8 @@ The package is organized as follows:
 
 - `main.go` contains the entry point, shared `app` dependencies, and the
   `find`, `lint`, `pr`, and `release` commands, each with its own constructor, options, and workflow.
-  It also coordinates module validation for lint and release.
+  Commands that use the shared tool initialize it locally. This file also coordinates
+  module validation for lint and release.
 - `repo.go` owns operations on the original checkout, including fetching, resolving
   commits, discovering contrib changes, and creating and removing temporary worktrees.
 - `worktree.go` implements operations performed on a checkout or temporary worktree, like
@@ -71,9 +100,12 @@ The package is organized as follows:
 - `effects.go` dependency injection object for console input/output,
   the clock, the filesystem, and the network.
   It also contains command formatting and module-proxy path escaping helpers.
+- `coretool.go` locates and verifies the pinned sdk-rust checkout, then invokes the
+  shared tool for fragment validation, changelog preparation, completed-release
+  validation, and publishing notes. Each wrapper constructs its Rust CLI arguments;
+  the shared runner invokes Cargo.
 - `pure/` contains helpers that take explicit data inputs, with no dependency on `app`,
   `worktree`, the filesystem, or the network:
-  - `pure/changelog.go` validates and updates changelog contents.
   - `pure/module.go` defines a `Module`, like the Go SDK or `contrib/envconfig`, and a
     `VersionedModule` pairing a module with the version to release.
   - `pure/gomod.go` validates module declarations and Temporal requirements in `go.mod`.

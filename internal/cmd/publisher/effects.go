@@ -118,7 +118,7 @@ func (w errorWriter) Write(p []byte) (int, error) {
 }
 
 func (eff realWorld) runCommand(dir, name string, args ...string) (string, error) {
-	command := FormatCommand(name, args...)
+	command := formatCommand(name, args...)
 	if err := eff.logAudit("# Running in %s:\n$ %s\n", dir, command); err != nil {
 		return "", err
 	}
@@ -145,7 +145,7 @@ func (eff realWorld) runCommand(dir, name string, args ...string) (string, error
 // runInteractiveCommand leaves output attached to the terminal so commands can
 // use their own pagers. The audit log records the command, not its terminal output.
 func (eff realWorld) runInteractiveCommand(dir, name string, args ...string) error {
-	command := FormatCommand(name, args...)
+	command := formatCommand(name, args...)
 	if err := eff.logAudit("# Running in %s:\n$ %s\n\n", dir, command); err != nil {
 		return err
 	}
@@ -198,7 +198,7 @@ func (realWorld) writeFile(path, contents string) error {
 }
 
 func (eff realWorld) checkModulePublished(modulePath, version string) (bool, error) {
-	url := goModuleProxy + "/" + EscapeModulePath(modulePath) + "/@v/" + version + ".info"
+	url := goModuleProxy + "/" + escapeModulePath(modulePath) + "/@v/" + version + ".info"
 	if err := eff.logAudit("HTTP GET %s\n", url); err != nil {
 		return false, err
 	}
@@ -229,10 +229,10 @@ func (eff realWorld) checkModulePublished(modulePath, version string) (bool, err
 	}
 }
 
-// EscapeModulePath encodes a module path for the module proxy, which requires
+// escapeModulePath encodes a module path for the module proxy, which requires
 // every uppercase letter to be replaced by an exclamation mark and its lowercase
 // form. See https://go.dev/ref/mod#goproxy-protocol.
-func EscapeModulePath(modulePath string) string {
+func escapeModulePath(modulePath string) string {
 	if !strings.ContainsFunc(modulePath, func(r rune) bool { return r >= 'A' && r <= 'Z' }) {
 		return modulePath
 	}
@@ -247,8 +247,8 @@ func EscapeModulePath(modulePath string) string {
 	return escaped.String()
 }
 
-// FormatCommand renders a command with quoting suitable for logs.
-func FormatCommand(name string, args ...string) string {
+// formatCommand renders a command with quoting suitable for logs.
+func formatCommand(name string, args ...string) string {
 	parts := []string{name}
 	for _, arg := range args {
 		if strings.ContainsAny(arg, " \t\n\"'") {

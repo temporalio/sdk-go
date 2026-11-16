@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-
 	"go.temporal.io/sdk/internal/cmd/publisher/pure"
 )
 
@@ -23,9 +22,17 @@ const (
 // Copy the fixtures so assertions can compare modified files against their original contents.
 func newMockApp(a app, input map[string]string, handler func(cmd string) (string, error)) (*app, *mockEffects) {
 	eff := &mockEffects{
-		commandHandler: handler,
-		tempDir:        mockTempDir,
-		files:          make(map[string]string),
+		commandHandler: func(cmd string) (string, error) {
+			if cmd == "git rev-parse HEAD" {
+				return strings.TrimSpace(sdkRustRevision), nil
+			}
+			if handler != nil {
+				return handler(cmd)
+			}
+			return "", nil
+		},
+		tempDir: mockTempDir,
+		files:   make(map[string]string),
 	}
 	maps.Copy(eff.files, input)
 	a.eff, a.repoRoot = eff, mockRepoRoot
@@ -95,7 +102,7 @@ func (eff *mockEffects) runCommand(root, name string, args ...string) (string, e
 	for i, arg := range args {
 		normalizedArgs[i] = filepath.ToSlash(arg)
 	}
-	cmd := FormatCommand(name, normalizedArgs...)
+	cmd := formatCommand(name, normalizedArgs...)
 	audit := realWorld{audit: &eff.audit}
 	if err := audit.logAudit("# Running in %s:\n$ %s\n", root, cmd); err != nil {
 		return "", err
@@ -193,8 +200,8 @@ func testEqual(t *testing.T, got, want string) {
 
 func testEqualMaps(t *testing.T, got, want map[string]string) {
 	t.Helper()
-	if !maps.Equal(got, want) {
-		t.Fatalf("unexpected files (-want +got):\n%s", cmp.Diff(want, got))
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Fatalf("unexpected files (-want +got):\n%s", diff)
 	}
 }
 

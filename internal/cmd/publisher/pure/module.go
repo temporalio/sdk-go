@@ -3,6 +3,7 @@ package pure
 import (
 	"fmt"
 	"path"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -21,15 +22,6 @@ type Module struct {
 	// Dir is the module directory relative to the repository root in slash form,
 	// e.g. "contrib/envconfig". Empty for the main SDK module.
 	Dir string
-	// VersionFile is "internal/version.go" if we're releasing the main SDK module.
-	// Otherwise it's an empty string.
-	VersionFile string
-	// MarkLatest is whether GitHub should mark the release as the repository's
-	// latest release.
-	MarkLatest bool
-	// GenerateNotes is whether GitHub should populate draft releases with
-	// --generate-notes.
-	GenerateNotes bool
 }
 
 // VersionedModule describes a module and the version to release.
@@ -40,11 +32,7 @@ type VersionedModule struct {
 
 // SDKModule describes the main go.temporal.io/sdk module.
 func SDKModule() Module {
-	return Module{
-		VersionFile:   "internal/version.go",
-		MarkLatest:    true,
-		GenerateNotes: true,
-	}
+	return Module{}
 }
 
 // ContribModule describes a contrib module, given its directory relative to the
@@ -56,11 +44,7 @@ func ContribModule(dir string) (Module, error) {
 		return Module{}, fmt.Errorf(
 			"invalid module %q; expected a slash-separated contrib module directory such as 'contrib/envconfig'", dir)
 	}
-	return Module{
-		Dir:           dir,
-		MarkLatest:    false,
-		GenerateNotes: false,
-	}, nil
+	return Module{Dir: dir}, nil
 }
 
 // ContribModules returns contrib modules identified by go.mod files, sorted by
@@ -130,13 +114,17 @@ func ParseVersionedModules(args []string) ([]VersionedModule, error) {
 func FormatVersionedModules(modules []VersionedModule) string {
 	var args []string
 	for _, module := range modules {
-		dir := module.Module.Dir
-		if dir == "" {
-			dir = "sdk"
-		}
-		args = append(args, dir+"="+module.Version.String())
+		args = append(args, module.Module.Name()+"="+module.Version.String())
 	}
 	return strings.Join(args, " ")
+}
+
+// Name returns "sdk" for the main SDK module or the contrib module's directory.
+func (m Module) Name() string {
+	if m.Dir == "" {
+		return "sdk"
+	}
+	return m.Dir
 }
 
 // ModulePath returns the module path, e.g. "go.temporal.io/sdk/contrib/envconfig".
@@ -148,7 +136,7 @@ func (m Module) ModulePath() string {
 // For the main SDK module, it's empty.
 // For a contrib module like "contrib/envconfig", it's "contrib/envconfig/".
 func (m Module) TagPrefix() string {
-	if m.Dir == "" {
+	if m.Name() == "sdk" {
 		return ""
 	}
 	return m.Dir + "/"
@@ -164,23 +152,64 @@ func (m Module) TagPattern() string {
 	return m.TagPrefix() + "v*"
 }
 
-// Changelog returns the module's changelog relative to the repository root.
-func (m Module) Changelog() string {
-	return path.Join(m.Dir, "CHANGELOG.md")
+// Changelog returns the module's changelog path. An empty prefix returns a
+// repository-relative slash path; otherwise prefix must be the absolute repository root.
+func (m Module) Changelog(prefix string) string {
+	if prefix == "" {
+		return path.Join(m.Dir, "CHANGELOG.md")
+	}
+	return filepath.Join(prefix, filepath.FromSlash(m.Dir), "CHANGELOG.md")
 }
 
-// GoMod returns the module's go.mod relative to the repository root.
-func (m Module) GoMod() string {
-	return path.Join(m.Dir, "go.mod")
+// Fragments returns the module's pending changelog directory. An empty prefix returns
+// a repository-relative slash path; otherwise prefix must be the absolute repository root.
+func (m Module) Fragments(prefix string) string {
+	if prefix == "" {
+		return path.Join(m.Dir, "changelog")
+	}
+	return filepath.Join(prefix, filepath.FromSlash(m.Dir), "changelog")
 }
 
-// ReleaseFiles lists the files a release should update, relative to the repository root.
+// GoMod returns the module's go.mod path. An empty prefix returns a
+// repository-relative slash path; otherwise prefix must be the absolute repository root.
+func (m Module) GoMod(prefix string) string {
+	if prefix == "" {
+		return path.Join(m.Dir, "go.mod")
+	}
+	return filepath.Join(prefix, filepath.FromSlash(m.Dir), "go.mod")
+}
+
+// VersionFile returns the module's version file path and whether the module has one,
+// without checking the filesystem. An empty prefix returns a repository-relative
+// slash path; otherwise prefix must be the absolute repository root.
+func (m Module) VersionFile(prefix string) (string, bool) {
+	if m.Name() != "sdk" {
+		return "", false
+	}
+	if prefix == "" {
+		return "internal/version.go", true
+	}
+	return filepath.Join(prefix, "internal", "version.go"), true
+}
+
+// MarkLatest reports whether GitHub should mark the release as the repository's latest release.
+func (m Module) MarkLatest() bool {
+	return m.Name() == "sdk"
+}
+
+// GenerateNotes reports whether GitHub should populate draft releases with --generate-notes.
+func (m Module) GenerateNotes() bool {
+	return m.Name() == "sdk"
+}
+
+// ReleaseFiles lists the files a release should update. An empty prefix returns
+// repository-relative slash paths; otherwise prefix must be the absolute repository root.
 // For the main SDK module, it's CHANGELOG.md and internal/version.go.
 // For a contrib module, it's just CHANGELOG.md.
-func (m Module) ReleaseFiles() []string {
-	files := []string{m.Changelog()}
-	if m.VersionFile != "" {
-		files = append(files, m.VersionFile)
+func (m Module) ReleaseFiles(prefix string) []string {
+	files := []string{m.Changelog(prefix)}
+	if versionFile, ok := m.VersionFile(prefix); ok {
+		files = append(files, versionFile)
 	}
 	return files
 }

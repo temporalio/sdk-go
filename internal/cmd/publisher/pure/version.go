@@ -81,8 +81,9 @@ func ValidateVersionConstant(text string, m Module, expectedVersion Version) err
 		return err
 	}
 	if declared != expectedVersion {
+		versionFile, _ := m.VersionFile("")
 		return fmt.Errorf("%s declares version %s, expected %s",
-			m.VersionFile, declared, expectedVersion)
+			versionFile, declared, expectedVersion)
 	}
 	return nil
 }

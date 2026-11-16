@@ -7,15 +7,6 @@ import (
 	"testing"
 )
 
-func mustVersion(t *testing.T, s string) Version {
-	t.Helper()
-	v, err := ParseVersion(s)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return v
-}
-
 func testRegexp(t *testing.T, expression *regexp.Regexp, matches, rejects []string) {
 	t.Helper()
 	for _, input := range matches {

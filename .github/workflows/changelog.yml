@@ -11,4 +11,46 @@ permissions:
 jobs:
   changelog-check:
     name: Changelog checkpoint
-    uses: temporalio/.github/.github/workflows/changelog.yml@d8129c755fbd1d3f18c5a7a5420d5754acc63e3f
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: sdk-go
+          fetch-depth: 0
+      - name: Read changelog tool revision
+        id: tool
+        working-directory: sdk-go
+        run: echo "revision=$(cat internal/cmd/publisher/sdk-rust-revision)" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          repository: temporalio/sdk-rust
+          ref: ${{ steps.tool.outputs.revision }}
+          path: sdk-rust
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Validate changelog fragments
+        working-directory: sdk-go
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          SKIP_CHANGELOG: ${{ contains(github.event.pull_request.labels.*.name, 'skip-changelog') }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo="$PWD"
+          manifest="$repo/../sdk-rust/crates/changelog-release-notes/Cargo.toml"
+          found_new=false
+          while IFS= read -r -d '' module; do
+            directory="${module%go.mod}changelog"
+            (
+              cd ../sdk-rust
+              cargo run --quiet --locked --manifest-path "$manifest" --bin changelog-tool -- \
+                check --repo "$repo" --changelog "${module%go.mod}CHANGELOG.md" --fragments "$directory"
+            )
+            if [[ -n "$(git diff --name-only --diff-filter=A --no-renames "$BASE" HEAD -- \
+              ":(glob)$directory/*/*.md")" ]]; then
+              found_new=true
+            fi
+          done < <(git ls-files -z -- go.mod ':(glob)contrib/**/go.mod')
+          if [[ "$SKIP_CHANGELOG" != true && "$found_new" != true ]]; then
+            echo "Add a new changelog fragment or apply the skip-changelog label." >&2
+            exit 1
+          fi

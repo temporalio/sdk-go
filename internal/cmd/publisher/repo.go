@@ -54,7 +54,7 @@ func (r *repo) changesSinceLastRelease(module pure.Module, commit string) (*pure
 
 func (r *repo) modulePathspecs(module pure.Module) []string {
 	dir := module.Dir
-	if dir == "" {
+	if module.Name() == "sdk" {
 		dir = "."
 	}
 
@@ -65,21 +65,12 @@ func (r *repo) modulePathspecs(module pure.Module) []string {
 		pathspecs = append(pathspecs, ":(exclude,glob)"+path.Join(dir, "**", file))
 	}
 	for _, nested := range r.contribModules {
-		if module.Dir == "" || strings.HasPrefix(nested.Dir, dir+"/") {
+		if module.Name() == "sdk" || strings.HasPrefix(nested.Dir, dir+"/") {
 			pathspecs = append(pathspecs, ":(exclude,literal)"+nested.Dir+"/")
 		}
 	}
 
 	return pathspecs
-}
-
-func (r *repo) worktreeAt(root, branch string) *worktree {
-	return &worktree{
-		eff:          r.eff,
-		repo:         r,
-		worktreeRoot: root,
-		branch:       branch,
-	}
 }
 
 // repoRoot locates the git repo that contains this script.
@@ -118,7 +109,11 @@ func (r *repo) createWorktree(commit string) (*worktree, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create worktree: %w", err)
 	}
-	return r.worktreeAt(root, ""), nil
+	return &worktree{
+		eff:          r.eff,
+		repo:         r,
+		worktreeRoot: root,
+	}, nil
 }
 
 func (r *repo) createWorktreeAndBranch(commit, branch string) (*worktree, error) {
@@ -130,7 +125,12 @@ func (r *repo) createWorktreeAndBranch(commit, branch string) (*worktree, error)
 	if err != nil {
 		return nil, fmt.Errorf("create worktree: %w", err)
 	}
-	return r.worktreeAt(root, branch), nil
+	return &worktree{
+		eff:          r.eff,
+		repo:         r,
+		worktreeRoot: root,
+		branch:       branch,
+	}, nil
 }
 
 func (r *repo) removeWorktree(root string) error {

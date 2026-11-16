@@ -169,13 +169,13 @@ func (c *findApp) chooseVersion(module pure.Module, latestVersion *pure.Version,
 			return nil, fmt.Errorf("read release choice for %s: %w", name, err)
 		}
 		switch answer {
-		case 'm', 'M':
+		case 'm':
 			return &pure.Version{latest[0], latest[1] + 1, 0}, nil
-		case 'p', 'P':
+		case 'p':
 			return &pure.Version{latest[0], latest[1], latest[2] + 1}, nil
-		case 's', 'S', '\r', '\n':
+		case 's':
 			return nil, nil
-		case 'c', 'C':
+		case 'c':
 			ref := head
 			if latestVersion != nil {
 				ref = module.Tag(*latestVersion) + ".." + head
@@ -183,7 +183,7 @@ func (c *findApp) chooseVersion(module pure.Module, latestVersion *pure.Version,
 			if err := c.viewCommits(ref, pathspecs...); err != nil {
 				return nil, fmt.Errorf("view commits for %s: %w", name, err)
 			}
-		case 'd', 'D':
+		case 'd':
 			// Compare never-released modules against the empty tree.
 			base := "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 			if latestVersion != nil {
@@ -237,8 +237,12 @@ func newPrApp(eff effects, args []string) (*prApp, error) {
 func (c *prApp) run() (retErr error) {
 	printLine(c.eff, "Preparing release PR\n")
 
-	printLine(c.eff, "[1/3] Fetch origin and create worktree")
+	printLine(c.eff, "[1/3] Fetch origin, prepare changelog tool, and create worktree")
 	err := c.fetchOrigin()
+	if err != nil {
+		return err
+	}
+	coreTool, err := newCoreTool(c.eff, c.repoRoot)
 	if err != nil {
 		return err
 	}
@@ -252,17 +256,16 @@ func (c *prApp) run() (retErr error) {
 	}()
 
 	printLine(c.eff, "[2/3] Update release files")
-	var files []releaseFile
 	for _, module := range c.modules {
-		updated, err := worktree.newReleaseFiles(module)
+		err := c.goReleaseFiles(worktree, module)
 		if err != nil {
 			return err
 		}
-		files = append(files, updated...)
 	}
-	err = worktree.writeReleaseFiles(files)
-	if err != nil {
-		return err
+	for _, module := range c.modules {
+		if err := coreTool.prepareChangelog(worktree.worktreeRoot, module, c.eff.today()); err != nil {
+			return err
+		}
 	}
 
 	printLine(c.eff, "[3/3] Commit and publish draft PR")
@@ -288,8 +291,26 @@ func (c *prApp) run() (retErr error) {
 	printDetail(c.eff, "publisher release <YOUR_COMMIT_HASH> %s", pure.FormatVersionedModules(c.modules))
 
 	printLine(c.eff, "\nAlternatively, you can close the PR and delete the branch:")
-	printDetail(c.eff, FormatCommand("gh", "pr", "close", prURL, "--delete-branch"))
+	printDetail(c.eff, formatCommand("gh", "pr", "close", prURL, "--delete-branch"))
 
+	return nil
+}
+
+func (c *prApp) goReleaseFiles(w *worktree, module pure.VersionedModule) error {
+	if versionFile, ok := module.Module.VersionFile(w.worktreeRoot); ok {
+		text, err := c.eff.readFile(versionFile)
+		if err != nil {
+			return err
+		}
+		text, err = pure.ComputeNewVersionFile(text, module.Version)
+		if err != nil {
+			return fmt.Errorf("%s: %w", versionFile, err)
+		}
+		err = c.eff.writeFile(versionFile, text)
+		if err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -334,8 +355,12 @@ func newLintApp(eff effects, args []string) (*lintApp, error) {
 func (c *lintApp) run() (retErr error) {
 	printLine(c.eff, "Checking release readiness\n")
 
-	printLine(c.eff, "[1/2] Fetch origin and create worktree")
+	printLine(c.eff, "[1/2] Fetch origin, prepare changelog tool, and create worktree")
 	err := c.fetchOrigin()
+	if err != nil {
+		return err
+	}
+	coreTool, err := newCoreTool(c.eff, c.repoRoot)
 	if err != nil {
 		return err
 	}
@@ -352,25 +377,11 @@ func (c *lintApp) run() (retErr error) {
 	}()
 
 	printLine(c.eff, "[2/2] Validate release files")
-	var problems []error
-	ready := make(map[pure.VersionedModule]bool)
-	for _, module := range c.modules {
-		err := c.lintModule(worktree, module)
-		if err != nil {
-			ready[module] = false
-			problems = append(problems, err)
-		} else {
-			ready[module] = true
-		}
+	err = c.lintModules(worktree, c.modules, coreTool)
+	if err != nil {
+		return err
 	}
-	for _, module := range c.modules {
-		if ready[module] {
-			printDetail(c.eff, "%s: passed inspection ✔", module.Module.ModulePath())
-		} else {
-			printDetail(c.eff, "%s: failed inspection ✘", module.Module.ModulePath())
-		}
-	}
-	return errors.Join(problems...)
+	return nil
 }
 
 // RELEASE
@@ -414,8 +425,12 @@ func newReleaseApp(eff effects, args []string) (*releaseApp, error) {
 func (c *releaseApp) run() (retErr error) {
 	printLine(c.eff, "Creating draft releases for %s\n", pure.FormatVersionedModules(c.modules))
 
-	printLine(c.eff, "[1/4] Fetch origin and create worktree")
+	printLine(c.eff, "[1/4] Fetch origin, prepare changelog tool, and create worktree")
 	err := c.fetchOrigin()
+	if err != nil {
+		return err
+	}
+	coreTool, err := newCoreTool(c.eff, c.repoRoot)
 	if err != nil {
 		return err
 	}
@@ -432,23 +447,15 @@ func (c *releaseApp) run() (retErr error) {
 	}()
 
 	printLine(c.eff, "[2/4] Lint released modules")
-	var problems []error
-	for _, module := range c.modules {
-		err = c.lintModule(worktree, module)
-		if err != nil {
-			problems = append(problems, err)
-		}
-	}
-	err = errors.Join(problems...)
+	err = c.lintModules(worktree, c.modules, coreTool)
 	if err != nil {
-		return fmt.Errorf("lint failed: %w", err)
+		return err
 	}
-	printDetail(c.eff, "Modules passed inspection ✔")
 
 	printLine(c.eff, "[3/4] Get release notes")
 	releaseNotes := make([]string, len(c.modules))
 	for i, module := range c.modules {
-		releaseNotes[i], err = worktree.readReleaseNotes(module)
+		releaseNotes[i], err = coreTool.readReleaseNotes(worktree.worktreeRoot, module)
 		if err != nil {
 			return err
 		}
@@ -462,7 +469,7 @@ func (c *releaseApp) run() (retErr error) {
 		}
 		printLine(c.eff, "\nTo roll back successful draft releases, run:")
 		for _, module := range c.modules[:releaseCount] {
-			printDetail(c.eff, FormatCommand("gh", "release", "delete", module.Module.Tag(module.Version), "--yes"))
+			printDetail(c.eff, formatCommand("gh", "release", "delete", module.Module.Tag(module.Version), "--yes"))
 		}
 	}()
 	for i, module := range c.modules {
@@ -477,12 +484,34 @@ func (c *releaseApp) run() (retErr error) {
 
 // VALIDATION
 
-func (c *app) lintModule(w *worktree, module pure.VersionedModule) error {
+func (c *app) lintModules(w *worktree, modules []pure.VersionedModule, coreTool *coreTool) error {
+	var problems []error
+	ready := make(map[pure.VersionedModule]bool)
+	for _, module := range modules {
+		err := c.lintModule(w, module, coreTool)
+		if err != nil {
+			ready[module] = false
+			problems = append(problems, err)
+		} else {
+			ready[module] = true
+		}
+	}
+	for _, module := range modules {
+		if ready[module] {
+			printDetail(c.eff, "%s: passed inspection ✔", module.Module.ModulePath())
+		} else {
+			printDetail(c.eff, "%s: failed inspection ✘", module.Module.ModulePath())
+		}
+	}
+	return errors.Join(problems...)
+}
+
+func (c *app) lintModule(w *worktree, module pure.VersionedModule, coreTool *coreTool) error {
 	m := module.Module
 	modulePath := m.ModulePath()
 
 	printDetail(c.eff, "%s: validate go.mod", modulePath)
-	goMod, err := w.eff.readFile(w.pathToGoMod(m))
+	goMod, err := w.eff.readFile(m.GoMod(w.worktreeRoot))
 	if err != nil {
 		return fmt.Errorf("%s: %w", modulePath, err)
 	}
@@ -501,9 +530,9 @@ func (c *app) lintModule(w *worktree, module pure.VersionedModule) error {
 				modulePath, requirement.ModulePath, requirement.Version)
 		}
 	}
-	if m.VersionFile != "" {
+	if versionFile, ok := m.VersionFile(w.worktreeRoot); ok {
 		printDetail(c.eff, "%s: validate version.go", modulePath)
-		text, err := w.eff.readFile(w.pathToVersionFile(m))
+		text, err := w.eff.readFile(versionFile)
 		if err != nil {
 			return fmt.Errorf("%s: %w", modulePath, err)
 		}
@@ -513,12 +542,7 @@ func (c *app) lintModule(w *worktree, module pure.VersionedModule) error {
 	}
 
 	printDetail(c.eff, "%s: validate changelog", modulePath)
-	changelog, err := w.eff.readFile(w.pathToChangelog(m))
-	if err != nil {
-		return fmt.Errorf("%s: %w", modulePath, err)
-	}
-	err = pure.ValidateChangelog(changelog, module.Version, c.eff.today())
-	if err != nil {
+	if err := coreTool.validateReleaseChangelog(w.worktreeRoot, module, c.eff.today()); err != nil {
 		return fmt.Errorf("%s: %w", modulePath, err)
 	}
 

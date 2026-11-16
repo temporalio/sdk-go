@@ -1,11 +1,77 @@
 package pure
 
 import (
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestModuleFilePaths(t *testing.T) {
+	root := t.TempDir()
+	contrib, err := ContribModule("contrib/aws/s3driver/awssdkv2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name         string
+		module       Module
+		prefix       string
+		goMod        string
+		changelog    string
+		fragments    string
+		versionFile  string
+		hasVersion   bool
+		releaseFiles []string
+	}{
+		{
+			name: "relative SDK", module: SDKModule(),
+			goMod: "go.mod", changelog: "CHANGELOG.md", fragments: "changelog",
+			versionFile: "internal/version.go", hasVersion: true,
+			releaseFiles: []string{"CHANGELOG.md", "internal/version.go"},
+		},
+		{
+			name: "absolute SDK", module: SDKModule(), prefix: root,
+			goMod: filepath.Join(root, "go.mod"), changelog: filepath.Join(root, "CHANGELOG.md"),
+			fragments:   filepath.Join(root, "changelog"),
+			versionFile: filepath.Join(root, "internal", "version.go"), hasVersion: true,
+			releaseFiles: []string{filepath.Join(root, "CHANGELOG.md"), filepath.Join(root, "internal", "version.go")},
+		},
+		{
+			name: "relative contrib", module: contrib,
+			goMod:        "contrib/aws/s3driver/awssdkv2/go.mod",
+			changelog:    "contrib/aws/s3driver/awssdkv2/CHANGELOG.md",
+			fragments:    "contrib/aws/s3driver/awssdkv2/changelog",
+			releaseFiles: []string{"contrib/aws/s3driver/awssdkv2/CHANGELOG.md"},
+		},
+		{
+			name: "absolute contrib", module: contrib, prefix: root,
+			goMod:        filepath.Join(root, "contrib", "aws", "s3driver", "awssdkv2", "go.mod"),
+			changelog:    filepath.Join(root, "contrib", "aws", "s3driver", "awssdkv2", "CHANGELOG.md"),
+			fragments:    filepath.Join(root, "contrib", "aws", "s3driver", "awssdkv2", "changelog"),
+			releaseFiles: []string{filepath.Join(root, "contrib", "aws", "s3driver", "awssdkv2", "CHANGELOG.md")},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := test.module.GoMod(test.prefix); got != test.goMod {
+				t.Errorf("go.mod path: got %q, want %q", got, test.goMod)
+			}
+			if got := test.module.Changelog(test.prefix); got != test.changelog {
+				t.Errorf("changelog path: got %q, want %q", got, test.changelog)
+			}
+			if got := test.module.Fragments(test.prefix); got != test.fragments {
+				t.Errorf("changelog directory: got %q, want %q", got, test.fragments)
+			}
+			if got, ok := test.module.VersionFile(test.prefix); got != test.versionFile || ok != test.hasVersion {
+				t.Errorf("version file: got (%q, %t), want (%q, %t)", got, ok, test.versionFile, test.hasVersion)
+			}
+			if got := test.module.ReleaseFiles(test.prefix); !slices.Equal(got, test.releaseFiles) {
+				t.Errorf("release files: got %q, want %q", got, test.releaseFiles)
+			}
+		})
+	}
+}
 
 func TestListContribModules(t *testing.T) {
 	paths := []string{
