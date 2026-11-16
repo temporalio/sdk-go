@@ -1607,3 +1607,92 @@ func (s *ExternalStorageTestSuite) TestTargetContext_StartChildWorkflow() {
 		RunID:        run.GetRunID(),
 	}, ctxs[3].Target)
 }
+
+type recordingSelector struct {
+	driver converter.StorageDriver
+	mu     sync.Mutex
+	ctxs   []converter.StorageDriverSelectContext
+}
+
+func (r *recordingSelector) SelectDriver(ctx converter.StorageDriverSelectContext, _ *commonpb.Payload) (converter.StorageDriver, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.ctxs = append(r.ctxs, ctx)
+	return r.driver, nil
+}
+
+func (r *recordingSelector) getAndReset() []converter.StorageDriverSelectContext {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := r.ctxs
+	r.ctxs = nil
+	return out
+}
+
+func (s *ExternalStorageTestSuite) TestAmbientNamespace() {
+	selector := &recordingSelector{driver: s.driver}
+	var err error
+	s.client.Close()
+	s.client, err = s.newDefaultClient(func(options *client.Options) {
+		options.WorkerHeartbeatInterval = -1
+		options.ExternalStorage = converter.ExternalStorage{
+			Drivers:              []converter.StorageDriver{s.driver},
+			DriverSelector:       selector,
+			PayloadSizeThreshold: extStoreThreshold,
+		}
+	})
+	s.NoError(err)
+	s.worker.Stop()
+	s.worker = worker.New(s.client, s.taskQueueName, worker.Options{WorkflowPanicPolicy: worker.FailWorkflow})
+
+	taskTokenCh := make(chan []byte, 1)
+	s.worker.RegisterActivityWithOptions(func(ctx context.Context) error {
+		taskTokenCh <- activity.GetInfo(ctx).TaskToken
+		return activity.ErrResultPending
+	}, activity.RegisterOptions{Name: "extStoreAsyncActivity"})
+	s.worker.RegisterWorkflow(extStoreAsyncActivityWorkflow)
+	s.worker.RegisterWorkflow(extStoreTargetWorkflow)
+	s.NoError(s.worker.Start())
+
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	// [0] client start arg, [1] worker workflow result; both carry a target.
+	run, err := s.client.ExecuteWorkflow(ctx, s.startOpts("ext-ambient-ns-"+uuid.NewString()), extStoreTargetWorkflow, oversized(72))
+	s.NoError(err)
+	s.NoError(run.Get(ctx, nil))
+	storeCtxs := s.driver.getStoreContexts()
+	selectCtxs := selector.getAndReset()
+	s.Len(storeCtxs, 2)
+	s.Len(selectCtxs, 2)
+	for i := range storeCtxs {
+		s.NotNil(storeCtxs[i].Target)
+		s.Equal(s.config.Namespace, storeCtxs[i].Namespace)
+		s.Equal(s.config.Namespace, selectCtxs[i].Namespace)
+	}
+
+	run, err = s.client.ExecuteWorkflow(ctx, s.startOpts("ext-ambient-ns-async-"+uuid.NewString()), extStoreAsyncActivityWorkflow)
+	s.NoError(err)
+	var taskToken []byte
+	select {
+	case taskToken = <-taskTokenCh:
+	case <-ctx.Done():
+		s.Fail("timed out waiting for activity task token")
+	}
+
+	// A heartbeat addressed only by task token has no target.
+	s.driver.resetStoreContexts()
+	selector.getAndReset()
+	s.NoError(s.client.RecordActivityHeartbeat(ctx, taskToken, oversized(72)))
+	storeCtxs = s.driver.getStoreContexts()
+	selectCtxs = selector.getAndReset()
+	s.Len(storeCtxs, 1)
+	s.Len(selectCtxs, 1)
+	s.Nil(storeCtxs[0].Target)
+	s.Nil(selectCtxs[0].Target)
+	s.Equal(s.config.Namespace, storeCtxs[0].Namespace)
+	s.Equal(s.config.Namespace, selectCtxs[0].Namespace)
+
+	s.NoError(s.client.CompleteActivity(ctx, taskToken, nil, nil))
+	s.NoError(run.Get(ctx, nil))
+}

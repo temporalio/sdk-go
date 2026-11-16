@@ -145,7 +145,7 @@ type (
 		cache                     *WorkerCache
 		deadlockDetectionTimeout  time.Duration
 		capabilities              *workflowservice.GetSystemInfoResponse_Capabilities
-		workerControlTaskQueue    string
+		namespaceWorker           *sharedNamespaceWorker
 	}
 
 	activityCancellationCallbacks struct {
@@ -612,7 +612,7 @@ func newWorkflowTaskHandler(params workerExecutionParameters, ppMgr pressurePoin
 		cache:                     params.cache,
 		deadlockDetectionTimeout:  params.DeadlockDetectionTimeout,
 		capabilities:              params.capabilities,
-		workerControlTaskQueue:    params.workerControlTaskQueue,
+		namespaceWorker:           params.namespaceWorker,
 	}
 }
 
@@ -2080,7 +2080,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 			wth.useBuildIDForVersioning,
 			wth.workerDeploymentVersion,
 		),
-		WorkerControlTaskQueue: wth.workerControlTaskQueue,
+		WorkerControlTaskQueue: wth.namespaceWorker.controlTaskQueue(),
 	}
 	if wth.capabilities != nil && wth.capabilities.BuildIdBasedVersioning {
 		//lint:ignore SA1019 ignore deprecated versioning APIs

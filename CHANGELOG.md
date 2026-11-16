@@ -25,6 +25,13 @@ to docs, or any other relevant information.
 - Added `StartWorkflowInput` to `interceptor.ClientUpdateWithStartWorkflowInput`, so client
   interceptors can inspect and modify the start options, workflow type, and arguments of an
   update-with-start call without reflection.
+- **Experimental**: `converter.StorageDriverStoreContext` and
+  `converter.StorageDriverSelectContext` have a `Namespace` field holding the
+  namespace of the client or worker performing the operation, so drivers and
+  selectors can partition by namespace even when there is no `Target`.
+- Added experimental `worker.GetSlotUsage`, which returns a snapshot of a worker's task slot usage.
+- Added experimental `worker.GetInfo`, which returns a snapshot of a worker's state, currently its task
+  slot usage.
 
 ### Changed
 
@@ -33,6 +40,9 @@ to docs, or any other relevant information.
 ### :boom: Breaking Changes
 
 ### Fixed
+
+- Workers no longer advertise a worker control task queue unless worker heartbeats and commands
+  are supported and the shared namespace command poller is running.
 
 ### Security
 
