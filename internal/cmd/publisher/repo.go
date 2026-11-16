@@ -110,6 +110,19 @@ func (r *repo) resolveCommit(ref string) (string, error) {
 	return strings.TrimSpace(commit), nil
 }
 
+func (r *repo) readGoMod(module pure.Module, commit string) (pure.GoMod, error) {
+	file := module.GoMod("")
+	contents, err := r.eff.runCommand(r.repoRoot, "git", "show", commit+":"+file)
+	if err != nil {
+		return pure.GoMod{}, fmt.Errorf("read %s at %s: %w", file, commit, err)
+	}
+	goMod, err := pure.NewValidatedGoMod(contents, module.ModulePath())
+	if err != nil {
+		return pure.GoMod{}, fmt.Errorf("validate %s at %s: %w", file, commit, err)
+	}
+	return goMod, nil
+}
+
 func (r *repo) createWorktree(commit string) (*worktree, error) {
 	root, err := r.eff.mkdirTemp("", "prepare-go-release-")
 	if err != nil {

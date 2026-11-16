@@ -2,6 +2,8 @@ package pure
 
 import (
 	"fmt"
+	"reflect"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -182,6 +184,7 @@ func TestNewValidatedGoModReturnsTemporalRequirements(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	testEqual(t, validated.ModulePath, "go.temporal.io/sdk/contrib/tally")
 	var got strings.Builder
 	for _, requirement := range validated.Requirements {
 		fmt.Fprintf(&got, "%s %s\n", requirement.ModulePath, requirement.Version)
@@ -190,4 +193,171 @@ func TestNewValidatedGoModReturnsTemporalRequirements(t *testing.T) {
 		go.temporal.io/api v1.63.4
 		go.temporal.io/sdk v1.48.0
 	`)
+}
+
+func TestSortGoMods(t *testing.T) {
+	input := make(map[string]string)
+	input["go.mod"] = stripIndentation(`
+		module go.temporal.io/sdk
+
+		require go.temporal.io/api v1.64.3
+	`)
+	input["contrib/envconfig/go.mod"] = stripIndentation(`
+		module go.temporal.io/sdk/contrib/envconfig
+
+		require (
+			go.temporal.io/sdk v1.39.0
+			go.temporal.io/api v1.64.3 // indirect
+		)
+	`)
+	input["contrib/aws/secretsmanager/go.mod"] = stripIndentation(`
+		module go.temporal.io/sdk/contrib/aws/secretsmanager
+
+		require (
+			go.temporal.io/sdk v1.39.0
+			go.temporal.io/sdk/contrib/envconfig v1.1.0
+			go.temporal.io/api v1.64.3 // indirect
+		)
+	`)
+	input["contrib/opentelemetry/go.mod"] = stripIndentation(`
+		module go.temporal.io/sdk/contrib/opentelemetry
+
+		require (
+			go.temporal.io/sdk v1.46.0
+			go.temporal.io/api v1.64.3 // indirect
+		)
+	`)
+	input["contrib/opentelemetry/otlpworker/go.mod"] = stripIndentation(`
+		module go.temporal.io/sdk/contrib/opentelemetry/otlpworker
+
+		require (
+			go.temporal.io/sdk v1.46.0
+			go.temporal.io/sdk/contrib/opentelemetry v0.8.1
+			go.temporal.io/api v1.64.3 // indirect
+		)
+	`)
+	modules := make(map[string]GoMod)
+	for file, contents := range input {
+		modulePath := SDKModulePath
+		if file != "go.mod" {
+			modulePath += "/" + strings.TrimSuffix(file, "/go.mod")
+		}
+		module, err := NewValidatedGoMod(contents, modulePath)
+		if err != nil {
+			t.Fatalf("%s: %v", file, err)
+		}
+		modules[file] = module
+	}
+	sdk := modules["go.mod"]
+	envconfig := modules["contrib/envconfig/go.mod"]
+	secretsmanager := modules["contrib/aws/secretsmanager/go.mod"]
+	opentelemetry := modules["contrib/opentelemetry/go.mod"]
+	otlpworker := modules["contrib/opentelemetry/otlpworker/go.mod"]
+	for _, test := range []struct {
+		name    string
+		input   []GoMod
+		want    string
+		wantErr string
+	}{
+		{name: "nil"},
+		{name: "empty", input: []GoMod{}},
+		{name: "SDK with external API requirement", input: []GoMod{sdk}, want: "go.temporal.io/sdk"},
+		{
+			name:  "Secrets Manager dependency chain",
+			input: []GoMod{secretsmanager, envconfig, sdk},
+			want: `
+				go.temporal.io/sdk
+				go.temporal.io/sdk/contrib/envconfig
+				go.temporal.io/sdk/contrib/aws/secretsmanager
+			`,
+		},
+		{
+			name:  "independent contrib modules without SDK in input",
+			input: []GoMod{envconfig, opentelemetry},
+			want:  "go.temporal.io/sdk/contrib/envconfig go.temporal.io/sdk/contrib/opentelemetry",
+		},
+		{
+			name:  "contrib modules sharing the SDK",
+			input: []GoMod{envconfig, opentelemetry, sdk},
+			want: `
+				go.temporal.io/sdk
+				go.temporal.io/sdk/contrib/envconfig go.temporal.io/sdk/contrib/opentelemetry
+			`,
+		},
+		{
+			name:  "greedy partitioning across AWS and OpenTelemetry",
+			input: []GoMod{secretsmanager, envconfig, sdk, otlpworker, opentelemetry},
+			want: `
+				go.temporal.io/sdk
+				go.temporal.io/sdk/contrib/envconfig
+				go.temporal.io/sdk/contrib/aws/secretsmanager go.temporal.io/sdk/contrib/opentelemetry
+				go.temporal.io/sdk/contrib/opentelemetry/otlpworker
+			`,
+		},
+		{
+			name:  "Secrets Manager requires a nonadjacent module in the partition",
+			input: []GoMod{envconfig, opentelemetry, secretsmanager},
+			want: `
+				go.temporal.io/sdk/contrib/envconfig go.temporal.io/sdk/contrib/opentelemetry
+				go.temporal.io/sdk/contrib/aws/secretsmanager
+			`,
+		},
+		{
+			name:    "duplicate module",
+			input:   []GoMod{sdk, sdk},
+			wantErr: `duplicate module path "go.temporal.io/sdk"`,
+		},
+		{
+			name:    "missing module path",
+			input:   []GoMod{{}},
+			wantErr: "go.mod at index 0 has no module path",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			before := slices.Clone(test.input)
+			for i := range before {
+				before[i].Requirements = slices.Clone(before[i].Requirements)
+			}
+			got, err := SortGoMods(test.input)
+			if !reflect.DeepEqual(test.input, before) {
+				t.Fatalf("input changed: got %#v, want %#v", test.input, before)
+			}
+			if test.wantErr != "" {
+				if err == nil {
+					t.Fatal("expected an error")
+				}
+				testEqual(t, err.Error(), test.wantErr)
+				if got != nil {
+					t.Fatalf("returned a partial ordering on error: %#v", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			var partitions []string
+			for _, partition := range got {
+				if len(partition) == 0 {
+					t.Fatal("returned an empty partition")
+				}
+				var paths []string
+				for _, module := range partition {
+					paths = append(paths, module.ModulePath)
+					if i := slices.IndexFunc(test.input, func(input GoMod) bool {
+						return input.ModulePath == module.ModulePath
+					}); i < 0 || !reflect.DeepEqual(module, test.input[i]) {
+						t.Fatalf("module data changed: %#v", module)
+					}
+				}
+				partitions = append(partitions, strings.Join(paths, " "))
+			}
+			testEqual(t, strings.Join(partitions, "\n"), test.want)
+			if len(got) > 0 {
+				got[0][0].ModulePath = "changed"
+				if !reflect.DeepEqual(test.input, before) {
+					t.Fatal("sorted slice shares its backing array with the input")
+				}
+			}
+		})
+	}
 }

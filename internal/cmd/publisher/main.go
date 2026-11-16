@@ -140,9 +140,37 @@ func (c *findApp) run() error {
 		}
 		printLine(c.eff, "")
 	}
-	if len(toRelease) > 0 {
+	if len(toRelease) == 0 {
+		return nil
+	}
+
+	var goMods []pure.GoMod
+	byPath := make(map[string]pure.VersionedModule, len(toRelease))
+	for _, module := range toRelease {
+		goMod, err := c.readGoMod(module.Module, head)
+		if err != nil {
+			return err
+		}
+		goMods = append(goMods, goMod)
+		byPath[goMod.ModulePath] = module
+	}
+
+	batches, err := pure.SortGoMods(goMods)
+	if err != nil {
+		return fmt.Errorf("sort modules for release: %w", err)
+	}
+	switch {
+	case len(batches) == 1:
 		printLine(c.eff, "To create a release PR, run the command:")
-		printDetail(c.eff, "publisher pr %s\n", pure.FormatVersionedModules(toRelease))
+	default:
+		printLine(c.eff, "I found dependencies between the modules. Release them in the following order:")
+	}
+	for _, batch := range batches {
+		var releases []pure.VersionedModule
+		for _, module := range batch {
+			releases = append(releases, byPath[module.ModulePath])
+		}
+		printDetail(c.eff, "publisher pr %s", pure.FormatVersionedModules(releases))
 	}
 	return nil
 }
