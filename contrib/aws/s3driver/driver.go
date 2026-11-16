@@ -133,7 +133,7 @@ func (d *s3StorageDriver) Store(
 				}
 				hexDigest := sha256Hex(data)
 				bucket := d.bucketFunc(ctx, p)
-				key := objectKey(ctx.Target, hexDigest)
+				key := objectKey(ctx.Target, ctx.Namespace, hexDigest)
 				exists, err := d.client.ObjectExists(gctx, bucket, key)
 				if err != nil {
 					return fmt.Errorf("existence check failed [bucket=%s, key=%s%s]: %w", bucket, key, describeClient(d.client), err)
@@ -223,7 +223,8 @@ func (d *s3StorageDriver) Retrieve(
 	return payloads, nil
 }
 
-func objectKey(target converter.StorageDriverTargetInfo, hexDigest string) string {
+// objectKey uses namespace only when target carries no namespace of its own.
+func objectKey(target converter.StorageDriverTargetInfo, namespace, hexDigest string) string {
 	digestSegment := "/d/" + hashAlgorithm + "/" + hexDigest
 	switch t := target.(type) {
 	case converter.StorageDriverWorkflowInfo:
@@ -241,7 +242,7 @@ func objectKey(target converter.StorageDriverTargetInfo, hexDigest string) strin
 			"/ri/" + percentEncode(t.RunID) +
 			digestSegment
 	default:
-		return keyVersion + digestSegment
+		return keyVersion + "/ns/" + percentEncode(namespace) + digestSegment
 	}
 }
 
