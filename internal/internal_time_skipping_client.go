@@ -298,10 +298,11 @@ func (wc *WorkflowClient) pollWorkflowTimeSkipping(
 // PollWorkflowFastForward waits for the identified fast-forward on a workflow
 // execution to complete.
 //
-// Returns (true, nil) on completion; (false, nil) when the workflow chain
-// terminates or the fast-forward is superseded, reset, or time skipping is
-// disabled before it completes; (false, err) when the server reports that the
-// fast-forward ID no longer matches.
+// Returns a FastForwardPollResult with Completed true once it reaches its
+// target. A fast-forward that stops without completing — the workflow chain
+// terminated, or it was superseded, reset, or time skipping disabled — reports
+// Completed false with the server's FailedReason, not an error. An error means
+// the call itself failed.
 //
 // The wait is a server long poll, bounded by the caller's context.
 //

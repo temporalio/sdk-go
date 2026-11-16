@@ -4,15 +4,12 @@
 // Time skipping lets a test advance an execution's virtual clock instead of
 // waiting out its timers, so an hour-long sleep or a week of scheduled runs
 // completes in moments. It is a testing facility and is not intended for
-// production workloads, but it is driven through an ordinary client rather than
-// a test framework, so it lives here rather than in testsuite.
+// production workloads.
 //
 // Time skipping is switched on per execution, by passing a
 // [go.temporal.io/sdk/client.TimeSkippingConfig] when the workflow is started
-// or the schedule created. Nothing is enabled for you and there is no ambient
-// mode: an execution skips time only if its own configuration says so. A
-// workflow's configuration does propagate to the children and scheduled
-// workflows it starts, unless DisablePropagation is set.
+// or the schedule created. A workflow's configuration propagatea to the
+// children and scheduled workflows it starts, unless DisablePropagation is set.
 //
 //	cfg := client.TimeSkippingConfig{Enabled: true}
 //	run, _ := c.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
@@ -24,17 +21,6 @@
 //	// Advance an hour and wait for it to land.
 //	ok, _ := timeskipping.FastForwardWorkflow(ctx, c, run,
 //		timeskipping.WorkflowFastForwardOptions{Duration: time.Hour})
-//
-// # Shape of this API
-//
-// Every function names the resource it acts on — Workflow or Schedule — and
-// takes that resource as an argument rather than as a field of its options.
-// The options carry parameters only.
-//
-// The two halves are otherwise parallel, and differ in one way: a workflow
-// takes both a client and a [go.temporal.io/sdk/client.WorkflowRun], because a
-// WorkflowRun holds no client of its own, while a
-// [go.temporal.io/sdk/client.ScheduleHandle] does and so travels alone.
 //
 // The server must have time skipping enabled; [StartDevServer] starts a dev
 // server with the dynamic config it needs.
@@ -48,10 +34,6 @@ import (
 	"go.temporal.io/sdk/internal"
 )
 
-// The configuration and info types time skipping shares with the rest of the
-// client API — TimeSkippingConfig, FastForwardConfig, TimeSkippingInfo and
-// TimeSkippingFastForwardInfo — live in [go.temporal.io/sdk/client] and are
-// used from there rather than re-exported here.
 type (
 	// WorkflowFastForwardOptions configures a single fast-forward on a workflow.
 	//
@@ -87,12 +69,13 @@ type (
 // for the result.
 //
 // With a Duration the fast-forward is bounded: it completes once virtual time
-// reaches the target, and time skipping switches itself off there. Without one
-// it is unbounded — skipping stays on and the call waits for the workflow to
-// end, which is why that case returns false.
+// reaches the target, and time skipping switches itself off there. Returns true
+// on completion, false if the workflow ends or the fast-forward is superseded
+// first. Without a Duration it is unbounded: skipping stays on and the call
+// waits for the workflow to end, always returning false.
 //
-// The workflow must already have time skipping configured; starting it with a
-// client.TimeSkippingConfig is what does that.
+// If time skipping need is not already  enabled on the workflow; this enables
+// it, preserving any DisablePropagation and MaxSessionSkipCount already set.
 //
 // NOTE: Experimental
 func FastForwardWorkflow(
