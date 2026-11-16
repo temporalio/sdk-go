@@ -146,7 +146,7 @@ func TestParseVersionedModules(t *testing.T) {
 		t.Fatalf("unexpected contrib tag: %s", got)
 	}
 	date := time.Date(2026, time.August, 4, 0, 0, 0, 0, time.UTC)
-	if got := ReleaseBranchName(date); got != "chore/release-2026-08-04" {
+	if got := ReleaseBranchName(date, "abc234de"); got != "chore/release-2026-08-04-abc234de" {
 		t.Fatalf("unexpected branch: %s", got)
 	}
 	if got := ReleaseCommitMessage(modules, date); got != "Prepare release 2026-08-04\n\n"+strings.Join(args, " ") {

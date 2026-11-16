@@ -95,6 +95,10 @@ func (eff *mockEffects) today() time.Time {
 	return time.Date(2026, time.August, 4, 0, 0, 0, 0, time.UTC)
 }
 
+func (eff *mockEffects) randomSuffix() string {
+	return "abc234de"
+}
+
 func (eff *mockEffects) out(format string, args ...any) {
 	_, _ = fmt.Fprintf(&eff.output, format, args...)
 }

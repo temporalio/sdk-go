@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"io"
@@ -21,6 +22,7 @@ const goModuleProxy = "https://proxy.golang.org"
 // console, network, and filesystem.
 type effects interface {
 	today() time.Time
+	randomSuffix() string
 	readCharacter() (byte, error)
 	page(text string) error
 	out(format string, args ...any)
@@ -44,6 +46,10 @@ var _ effects = realWorld{}
 
 func (eff realWorld) today() time.Time {
 	return time.Now()
+}
+
+func (realWorld) randomSuffix() string {
+	return strings.ToLower(rand.Text()[:8])
 }
 
 func (eff realWorld) readCharacter() (byte, error) {

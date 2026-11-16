@@ -8,8 +8,8 @@ import (
 	"go.temporal.io/sdk/internal/cmd/publisher/pure"
 )
 
-// worktree represents a temporary git worktree that the script creates to validate
-// and update release files.
+// worktree represents a temporary git worktree that the script creates to inspect,
+// validate, and update release files.
 type worktree struct {
 	eff effects
 	// repo is the original checkout that owns this worktree.
@@ -21,6 +21,49 @@ type worktree struct {
 }
 
 // Git/GitHub operations
+
+// listTags returns the repository's git tags matching the given glob pattern.
+func (w *worktree) listTags(pattern string) ([]string, error) {
+	output, err := w.eff.runCommand(w.worktreeRoot, "git", "tag", "--list", pattern)
+	if err != nil {
+		return nil, fmt.Errorf("list tags matching %s: %w", pattern, err)
+	}
+	var tags []string
+	for _, line := range strings.Split(output, "\n") {
+		if tag := strings.TrimSpace(line); tag != "" {
+			tags = append(tags, tag)
+		}
+	}
+	return tags, nil
+}
+
+func (w *worktree) hasCommits(ref string, pathspecs ...string) (bool, error) {
+	args := []string{"log", "--full-history", "--no-renames", "--max-count=1", "--format=%H", ref, "--"}
+	args = append(args, pathspecs...)
+	output, err := w.eff.runCommand(w.worktreeRoot, "git", args...)
+	if err != nil {
+		return false, fmt.Errorf("check commits at %s: %w", ref, err)
+	}
+	return strings.TrimSpace(output) != "", nil
+}
+
+func (w *worktree) viewCommits(ref string, pathspecs ...string) error {
+	args := []string{"log", "--no-color", "--full-history", "--topo-order", "--no-renames", "--abbrev=7",
+		"--date=format:%d %b %Y",
+		"--format=%ad (%h)  %s%n ↪ https://github.com/temporalio/sdk-go/commit/%H%n", ref, "--"}
+	args = append(args, pathspecs...)
+	output, err := w.eff.runCommand(w.worktreeRoot, "git", args...)
+	if err != nil {
+		return err
+	}
+	return w.eff.page(output)
+}
+
+func (w *worktree) viewDiff(base string, pathspecs ...string) error {
+	args := []string{"--paginate", "diff", "--no-renames", base, "HEAD", "--"}
+	args = append(args, pathspecs...)
+	return w.eff.runInteractiveCommand(w.worktreeRoot, "git", args...)
+}
 
 func (w *worktree) commitRelease(modules []pure.VersionedModule) error {
 	paths := []string{}

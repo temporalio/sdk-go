@@ -110,28 +110,40 @@ func newFindApp(eff effects, args []string) (*findApp, error) {
 	return &findApp{app: app{repo: r}}, nil
 }
 
-func (c *findApp) run() error {
+func (c *findApp) run() (retErr error) {
 	if err := c.fetchOrigin(); err != nil {
 		return err
 	}
-	head, err := c.resolveCommit("origin/main")
+	w, err := c.createWorktree("origin/main")
 	if err != nil {
 		return err
 	}
+	defer func() {
+		retErr = errors.Join(retErr, w.cleanup())
+	}()
 
 	modules := []pure.Module{pure.SDKModule()}
 	modules = append(modules, c.contribModules...)
 
 	var toRelease []pure.VersionedModule
 	for _, module := range modules {
-		latestVersion, changed, err := c.changesSinceLastRelease(module, head)
+		tags, err := w.listTags(module.TagPattern())
+		if err != nil {
+			return err
+		}
+		latestVersion := pure.LatestReleasedVersion(tags, module.TagPrefix())
+		ref := "HEAD"
+		if latestVersion != nil {
+			ref = module.Tag(*latestVersion) + "..HEAD"
+		}
+		changed, err := w.hasCommits(ref, c.modulePathspecs(module)...)
 		if err != nil {
 			return err
 		}
 		if !changed {
 			continue
 		}
-		nextVersion, err := c.chooseVersion(module, latestVersion, head)
+		nextVersion, err := c.chooseVersion(w, module, latestVersion)
 		if err != nil {
 			return err
 		}
@@ -147,9 +159,14 @@ func (c *findApp) run() error {
 	var goMods []pure.GoMod
 	byPath := make(map[string]pure.VersionedModule, len(toRelease))
 	for _, module := range toRelease {
-		goMod, err := c.readGoMod(module.Module, head)
+		file := module.Module.GoMod(w.worktreeRoot)
+		contents, err := w.eff.readFile(file)
 		if err != nil {
-			return err
+			return fmt.Errorf("read %s: %w", file, err)
+		}
+		goMod, err := pure.NewValidatedGoMod(contents, module.Module.ModulePath())
+		if err != nil {
+			return fmt.Errorf("validate %s: %w", file, err)
 		}
 		goMods = append(goMods, goMod)
 		byPath[goMod.ModulePath] = module
@@ -175,7 +192,7 @@ func (c *findApp) run() error {
 	return nil
 }
 
-func (c *findApp) chooseVersion(module pure.Module, latestVersion *pure.Version, head string) (*pure.Version, error) {
+func (c *findApp) chooseVersion(w *worktree, module pure.Module, latestVersion *pure.Version) (*pure.Version, error) {
 	var latest pure.Version
 	var baseline string
 	if latestVersion != nil {
@@ -206,11 +223,11 @@ func (c *findApp) chooseVersion(module pure.Module, latestVersion *pure.Version,
 		case 's', '\r', '\n':
 			return nil, nil
 		case 'c':
-			ref := head
+			ref := "HEAD"
 			if latestVersion != nil {
-				ref = module.Tag(*latestVersion) + ".." + head
+				ref = module.Tag(*latestVersion) + "..HEAD"
 			}
-			if err := c.viewCommits(ref, pathspecs...); err != nil {
+			if err := w.viewCommits(ref, pathspecs...); err != nil {
 				return nil, fmt.Errorf("view commits for %s: %w", name, err)
 			}
 		case 'd':
@@ -219,7 +236,7 @@ func (c *findApp) chooseVersion(module pure.Module, latestVersion *pure.Version,
 			if latestVersion != nil {
 				base = module.Tag(*latestVersion)
 			}
-			if err := c.viewDiff(base, head, pathspecs...); err != nil {
+			if err := w.viewDiff(base, pathspecs...); err != nil {
 				return nil, fmt.Errorf("view diff for %s: %w", name, err)
 			}
 		default:
@@ -290,13 +307,16 @@ func (c *lintApp) run() error {
 type prApp struct {
 	app
 	modules []pure.VersionedModule
+	branch  string
 }
 
 func newPrApp(eff effects, args []string) (*prApp, error) {
-	const usage = "usage: publisher pr MODULE=VERSION [MODULE=VERSION ...]\n" +
+	const usage = "usage: publisher pr [-branch BRANCH] MODULE=VERSION [MODULE=VERSION ...]\n" +
 		"MODULE is 'sdk' for the Go SDK or a slash-separated contrib module directory like 'contrib/envconfig'"
+	var branch string
 	flags := flag.NewFlagSet("publisher pr", flag.ContinueOnError)
 	flags.SetOutput(errorWriter{eff: eff})
+	flags.StringVar(&branch, "branch", "", "use this new branch instead of generating a unique release branch")
 	flags.Usage = func() {
 		eff.err("%s\n", usage)
 		flags.PrintDefaults()
@@ -318,6 +338,7 @@ func newPrApp(eff effects, args []string) (*prApp, error) {
 	return &prApp{
 		app:     app{repo: r},
 		modules: modules,
+		branch:  branch,
 	}, nil
 }
 
@@ -329,11 +350,14 @@ func (c *prApp) run() (retErr error) {
 	if err != nil {
 		return err
 	}
+	branchName := c.branch
+	if branchName == "" {
+		branchName = pure.ReleaseBranchName(c.eff.today(), c.eff.randomSuffix())
+	}
 	coreTool, err := newCoreTool(c.eff, c.repoRoot)
 	if err != nil {
 		return err
 	}
-	branchName := pure.ReleaseBranchName(c.eff.today())
 	worktree, err := c.createWorktreeAndBranch("origin/main", branchName)
 	if err != nil {
 		return err

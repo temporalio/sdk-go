@@ -19,10 +19,14 @@ module directory. Categories are `added`, `stabilized`, `changed`, `deprecated`,
 write entries without leading list markers. There is no Unreleased section.
 
 `publisher find` scans SDK and contrib modules on `origin/main` after fetching
-origin and release tags. It checks for commits since each module's highest stable
+origin and release tags. It creates a temporary detached worktree at `origin/main`
+for history inspection and reading module files, then removes it on completion,
+error, or EOF. It checks for commits since each module's highest stable
 release tag and asks you to choose minor `[m]`,
 patch `[p]`, view commit log `[c]`, view diff `[d]`, or skip `[s]`. Empty input also skips.
-It prints a `publisher pr` command for the selected versions without running it.
+It reads the selected modules' `go.mod` files and prints dependency-ordered
+`publisher pr` commands, grouping independent modules into one PR without running
+the commands.
 If no modules are selected, it prints no command or summary.
 
 The module list is computed once from the checkout's `HEAD`. A module is eligible
@@ -57,11 +61,17 @@ The base commit must already be available locally; this command does not fetch.
 Validation reads files from the working tree, but module discovery and the
 new-fragment check use committed files.
 
-`publisher pr MODULE=VERSION [MODULE=VERSION ...]` updates release files and creates a
+`publisher pr [-branch BRANCH] MODULE=VERSION [MODULE=VERSION ...]` updates release files and creates a
 draft PR using the specified versions. For example,
 `publisher pr sdk=1.48.0 contrib/envconfig=1.0.3` prepares SDK version `1.48.0` and
 envconfig version `1.0.3`. Versions must use `major.minor.patch` format, without
 prerelease or build metadata.
+
+Each invocation generates a branch named `chore/release-YYYY-MM-DD-<random>`, so
+multiple batches or attempts on the same day do not share a branch name. Use
+`-branch dplyukhin/my-release` before the module assignments to select a name
+explicitly. Git validates the name when creating the worktree and rejects an
+existing local branch; publisher does not resume an existing branch.
 
 PR preparation validates fragments for all selected modules, then calls the shared
 tool to assemble dated changelog sections and delete consumed fragments. Empty
@@ -113,9 +123,10 @@ The package is organized as follows:
   Commands that use the shared tool initialize it locally. This file also coordinates
   module validation for lint-release and release.
 - `repo.go` owns operations on the original checkout, including fetching, resolving
-  commits, discovering contrib changes, and creating and removing temporary worktrees.
+  commits, computing module pathspecs, and creating and removing temporary worktrees.
 - `worktree.go` implements operations performed on a checkout or temporary worktree, like
-  release-file preparation and draft PR and release creation.
+  release-history inspection, interactive history viewers, release-file preparation,
+  and draft PR and release creation.
 - `effects.go` dependency injection object for console input/output,
   the clock, the filesystem, and the network.
   It also contains command formatting and module-proxy path escaping helpers.

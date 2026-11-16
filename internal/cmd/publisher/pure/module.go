@@ -227,8 +227,8 @@ func (m Module) ReleaseFiles(prefix string) []string {
 }
 
 // ReleaseBranchName names the git branch we use for issuing a new release.
-func ReleaseBranchName(releaseDate time.Time) string {
-	return "chore/release-" + releaseDate.Format(time.DateOnly)
+func ReleaseBranchName(releaseDate time.Time, suffix string) string {
+	return "chore/release-" + releaseDate.Format(time.DateOnly) + "-" + suffix
 }
 
 // ReleaseCommitMessage describes the release date and modules in a commit or PR.

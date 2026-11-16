@@ -26,7 +26,17 @@ func TestFindNoChanges(t *testing.T) {
 }
 
 func TestFindReleasableModules(t *testing.T) {
-	a, eff := newMockApp(app{}, nil, func(cmd string) (string, error) {
+	input := make(map[string]string)
+	input["go.mod"] = stripIndentation(`
+		module go.temporal.io/sdk
+	`)
+	input["contrib/envconfig/go.mod"] = stripIndentation(`
+		module go.temporal.io/sdk/contrib/envconfig
+	`)
+	input["contrib/fragments/go.mod"] = stripIndentation(`
+		module go.temporal.io/sdk/contrib/fragments
+	`)
+	a, eff := newMockApp(app{}, input, func(cmd string) (string, error) {
 		switch {
 		case strings.HasPrefix(cmd, "git rev-parse"):
 			return strings.Repeat("a", 40), nil
@@ -86,7 +96,8 @@ func TestFindChooseVersion(t *testing.T) {
 			a, eff := newMockApp(app{}, nil, nil)
 			eff.input = test.input
 			c := findApp{app: *a}
-			got, err := c.chooseVersion(pure.SDKModule(), &latest, "HEAD")
+			w := &worktree{eff: eff, repo: &a.repo, worktreeRoot: mockTempDir}
+			got, err := c.chooseVersion(w, pure.SDKModule(), &latest)
 			if test.wantEOF {
 				if !errors.Is(err, io.EOF) {
 					t.Fatalf("expected EOF, got %v", err)
@@ -179,7 +190,7 @@ func TestPR(t *testing.T) {
 			return "contrib/envconfig/changelog/added/singing-swan.md\x00", nil
 		case `git commit -m "Prepare release 2026-08-04\n\nsdk=1.48.0 contrib/envconfig=1.0.3"`:
 			testEqualMaps(t, eff.files, output)
-		case `gh pr create --draft --base main --head chore/release-2026-08-04 --label skip-changelog --title "Prepare release 2026-08-04" --body "sdk=1.48.0 contrib/envconfig=1.0.3"`:
+		case `gh pr create --draft --base main --head chore/release-2026-08-04-abc234de --label skip-changelog --title "Prepare release 2026-08-04" --body "sdk=1.48.0 contrib/envconfig=1.0.3"`:
 			return "https://github.com/temporalio/sdk-go/pull/123\n", nil
 		}
 		return "", nil
@@ -200,7 +211,7 @@ func TestPR(t *testing.T) {
 		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- --help --repo /repo
 
 		# Running in /repo:
-		$ git worktree add -b chore/release-2026-08-04 /tmp/prepare-go-release-123456 origin/main
+		$ git worktree add -b chore/release-2026-08-04-abc234de /tmp/prepare-go-release-123456 origin/main
 
 		# Running in /sdk-rust:
 		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- prepare --repo /tmp/prepare-go-release-123456 --version 1.48.0 --date 2026-08-04 --changelog CHANGELOG.md --fragments changelog
@@ -223,10 +234,10 @@ func TestPR(t *testing.T) {
 		$ git commit -m "Prepare release 2026-08-04\n\nsdk=1.48.0 contrib/envconfig=1.0.3"
 
 		# Running in /tmp/prepare-go-release-123456:
-		$ git push --set-upstream origin chore/release-2026-08-04
+		$ git push --set-upstream origin chore/release-2026-08-04-abc234de
 
 		# Running in /tmp/prepare-go-release-123456:
-		$ gh pr create --draft --base main --head chore/release-2026-08-04 --label skip-changelog --title "Prepare release 2026-08-04" --body "sdk=1.48.0 contrib/envconfig=1.0.3"
+		$ gh pr create --draft --base main --head chore/release-2026-08-04-abc234de --label skip-changelog --title "Prepare release 2026-08-04" --body "sdk=1.48.0 contrib/envconfig=1.0.3"
 		https://github.com/temporalio/sdk-go/pull/123
 
 		# Running in /repo:
@@ -242,7 +253,7 @@ func TestPR(t *testing.T) {
 
 		Next steps:
 		1. Lint the release branch:
-		      publisher lint-release chore/release-2026-08-04 sdk=1.48.0 contrib/envconfig=1.0.3
+		      publisher lint-release chore/release-2026-08-04-abc234de sdk=1.48.0 contrib/envconfig=1.0.3
 		2. Fix errors and mark the PR as "ready for review".
 		3. Merge the PR and copy the commit hash.
 		4. Create draft github releases:
@@ -296,10 +307,10 @@ func TestCoreToolSetupFailure(t *testing.T) {
 
 func TestPRWorktreeCreationFailed(t *testing.T) {
 	t.Setenv("PUBLISHER_SDK_RUST", "/sdk-rust")
-	a, eff := newMockPR(prApp{modules: []pure.VersionedModule{
+	a, eff := newMockPR(prApp{branch: "dplyukhin/custom-release", modules: []pure.VersionedModule{
 		{Module: pure.SDKModule(), Version: pure.Version{1, 48, 0}},
 	}}, nil, func(cmd string) (string, error) {
-		if cmd == "git worktree add -b chore/release-2026-08-04 "+mockTempDir+" origin/main" {
+		if cmd == "git worktree add -b dplyukhin/custom-release "+mockTempDir+" origin/main" {
 			return "", errors.New("command failed")
 		}
 		return "", nil
@@ -317,7 +328,7 @@ func TestPRWorktreeCreationFailed(t *testing.T) {
 		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- --help --repo /repo
 
 		# Running in /repo:
-		$ git worktree add -b chore/release-2026-08-04 /tmp/prepare-go-release-123456 origin/main
+		$ git worktree add -b dplyukhin/custom-release /tmp/prepare-go-release-123456 origin/main
 		command failed
 	`)
 	testEqual(t, eff.output.String(), `
@@ -351,7 +362,7 @@ func TestPRReleaseFilesCannotBeComputed(t *testing.T) {
 		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- --help --repo /repo
 
 		# Running in /repo:
-		$ git worktree add -b chore/release-2026-08-04 /tmp/prepare-go-release-123456 origin/main
+		$ git worktree add -b chore/release-2026-08-04-abc234de /tmp/prepare-go-release-123456 origin/main
 
 		# Running in /repo:
 		$ git worktree remove --force /tmp/prepare-go-release-123456
@@ -430,7 +441,7 @@ func TestPRCommitFailed(t *testing.T) {
 		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- --help --repo /repo
 
 		# Running in /repo:
-		$ git worktree add -b chore/release-2026-08-04 /tmp/prepare-go-release-123456 origin/main
+		$ git worktree add -b chore/release-2026-08-04-abc234de /tmp/prepare-go-release-123456 origin/main
 
 		# Running in /sdk-rust:
 		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- prepare --repo /tmp/prepare-go-release-123456 --version 1.48.0 --date 2026-08-04 --changelog CHANGELOG.md --fragments changelog
@@ -489,7 +500,7 @@ func TestPRWorktreeCleanupFailed(t *testing.T) {
 		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- --help --repo /repo
 
 		# Running in /repo:
-		$ git worktree add -b chore/release-2026-08-04 /tmp/prepare-go-release-123456 origin/main
+		$ git worktree add -b chore/release-2026-08-04-abc234de /tmp/prepare-go-release-123456 origin/main
 
 		# Running in /sdk-rust:
 		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- prepare --repo /tmp/prepare-go-release-123456 --version 0.1.0 --date 2026-08-04 --changelog contrib/envconfig/CHANGELOG.md --fragments contrib/envconfig/changelog
@@ -539,7 +550,7 @@ func TestPRChangelogFragmentValidationFailed(t *testing.T) {
 		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- --help --repo /repo
 
 		# Running in /repo:
-		$ git worktree add -b chore/release-2026-08-04 /tmp/prepare-go-release-123456 origin/main
+		$ git worktree add -b chore/release-2026-08-04-abc234de /tmp/prepare-go-release-123456 origin/main
 
 		# Running in /sdk-rust:
 		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- prepare --repo /tmp/prepare-go-release-123456 --version 1.0.3 --date 2026-08-04 --changelog contrib/envconfig/CHANGELOG.md --fragments contrib/envconfig/changelog
@@ -584,7 +595,7 @@ func TestPRChangelogPreparationFailed(t *testing.T) {
 		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- --help --repo /repo
 
 		# Running in /repo:
-		$ git worktree add -b chore/release-2026-08-04 /tmp/prepare-go-release-123456 origin/main
+		$ git worktree add -b chore/release-2026-08-04-abc234de /tmp/prepare-go-release-123456 origin/main
 
 		# Running in /sdk-rust:
 		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- prepare --repo /tmp/prepare-go-release-123456 --version 1.0.3 --date 2026-08-04 --changelog contrib/envconfig/CHANGELOG.md --fragments contrib/envconfig/changelog
@@ -641,7 +652,7 @@ func TestPRStagingFailed(t *testing.T) {
 		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- --help --repo /repo
 
 		# Running in /repo:
-		$ git worktree add -b chore/release-2026-08-04 /tmp/prepare-go-release-123456 origin/main
+		$ git worktree add -b chore/release-2026-08-04-abc234de /tmp/prepare-go-release-123456 origin/main
 
 		# Running in /sdk-rust:
 		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- prepare --repo /tmp/prepare-go-release-123456 --version 1.0.3 --date 2026-08-04 --changelog contrib/envconfig/CHANGELOG.md --fragments contrib/envconfig/changelog
@@ -1361,6 +1372,7 @@ func TestNewCommand(t *testing.T) {
 		{name: "extra changelog argument", args: []string{"lint", "abc123", "extra"}, wantErr: "usage: publisher lint [-skip-changelog] BASE_COMMIT"},
 		{name: "lint release commit", args: []string{"lint-release", "abc123", "sdk=1.48.0"}},
 		{name: "SDK PR", args: []string{"pr", "sdk=1.48.0"}},
+		{name: "explicit PR branch", args: []string{"pr", "-branch", "dplyukhin/custom-release", "sdk=1.48.0"}},
 		{name: "contrib PR", args: []string{"pr", "contrib/envconfig=1.0.3"}, wantDirs: []string{"contrib/envconfig"}},
 		{name: "nested contrib module", args: []string{"pr", "contrib/aws/s3driver/awssdkv2=0.2.2"}, wantDirs: []string{"contrib/aws/s3driver/awssdkv2"}},
 		{name: "trailing slash", args: []string{"pr", "contrib/envconfig/=1.0.3"}, wantDirs: []string{"contrib/envconfig"}},
@@ -1405,6 +1417,9 @@ func TestNewCommand(t *testing.T) {
 				name, commit, modules = "lint-release", got.commit, got.modules
 			case *prApp:
 				name, modules = "pr", got.modules
+				if test.name == "explicit PR branch" {
+					testEqual(t, got.branch, "dplyukhin/custom-release")
+				}
 			case *releaseApp:
 				name, commit, modules = "release", got.commit, got.modules
 			default:
