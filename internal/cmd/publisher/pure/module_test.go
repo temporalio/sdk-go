@@ -78,19 +78,55 @@ func TestListContribModules(t *testing.T) {
 		"go.mod",
 		"contrib/envconfig/go.mod",
 		"contrib/envconfig/CHANGELOG.md",
+		"contrib/envconfig/test/go.mod",
 		"contrib/aws/s3driver/go.mod",
 		"contrib/aws/s3driver/awssdkv2/go.mod",
 		"contrib/aws/s3driver/awssdkv2/CHANGELOG.md",
 		"contrib/aws/s3driver/awssdkv2/internal/foo.go",
+		"contrib/fragments/go.mod",
+		"contrib/fragments/changelog/added/first-release.md",
+		"contrib/not-a-module/CHANGELOG.md",
 	}
 	modules := ContribModules(paths)
 	want := []Module{
-		{Dir: "contrib/aws/s3driver"},
 		{Dir: "contrib/aws/s3driver/awssdkv2"},
 		{Dir: "contrib/envconfig"},
+		{Dir: "contrib/fragments"},
 	}
 	if !slices.Equal(modules, want) {
 		t.Fatalf("unexpected modules: got %+v, want %+v", modules, want)
+	}
+}
+
+func TestModuleIsReleasable(t *testing.T) {
+	contrib, err := ContribModule("contrib/envconfig")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name   string
+		module Module
+		paths  []string
+		want   bool
+	}{
+		{name: "SDK changelog", paths: []string{"CHANGELOG.md"}, want: true},
+		{name: "SDK fragments", paths: []string{"changelog/fixed/fix.md"}, want: true},
+		{name: "SDK without changelog", paths: []string{"go.mod"}},
+		{name: "contrib changelog", module: contrib, paths: []string{"contrib/envconfig/CHANGELOG.md"}, want: true},
+		{name: "contrib fragments", module: contrib, paths: []string{"contrib/envconfig/changelog/fixed/fix.md"}, want: true},
+		{name: "fragment directory README", module: contrib, paths: []string{"contrib/envconfig/changelog/README.md"}, want: true},
+		{name: "no changelog", module: contrib, paths: []string{"contrib/envconfig/go.mod"}},
+		{name: "root changelog only", module: contrib, paths: []string{"CHANGELOG.md"}},
+		{name: "nested changelog only", module: contrib, paths: []string{"contrib/envconfig/test/CHANGELOG.md"}},
+		{name: "nested fragments only", module: contrib, paths: []string{"contrib/envconfig/test/changelog/fixed/fix.md"}},
+		{name: "similarly named directory", module: contrib, paths: []string{"contrib/envconfig/changelog-other/fix.md"}},
+		{name: "file named changelog", module: contrib, paths: []string{"contrib/envconfig/changelog"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := test.module.IsReleasable(test.paths); got != test.want {
+				t.Fatalf("IsReleasable(%q): got %t, want %t", test.paths, got, test.want)
+			}
+		})
 	}
 }
 

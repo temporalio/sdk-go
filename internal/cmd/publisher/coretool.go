@@ -2,6 +2,7 @@ package main
 
 import (
 	_ "embed"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -49,6 +50,21 @@ func newCoreTool(eff effects, repoRoot string) (*coreTool, error) {
 	return tool, nil
 }
 
+// checkChangelog validates fragments and, if present, the module's CHANGELOG.md.
+func (t *coreTool) checkChangelog(root string, module pure.Module, baseCommit string, requireNew bool) error {
+	args := []string{"--fragments", module.Fragments(""), "--base", baseCommit}
+	if requireNew {
+		args = append(args, "--require-new")
+	}
+	if _, err := t.eff.readFile(module.Changelog(root)); err == nil {
+		args = append(args, "--changelog", module.Changelog(""))
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("read changelog for %s: %w", module.Name(), err)
+	}
+	_, err := t.run(root, "check", args...)
+	return err
+}
+
 // prepareChangelog validates the module's changelog fragment layout (e.g.
 // checking for unexpected subdirectories, non-markdown files, etc) and
 // moves them into the module's CHANGELOG.md with the given date and version.
@@ -79,7 +95,7 @@ func (t *coreTool) readReleaseNotes(root string, module pure.VersionedModule) (s
 // checkout, returning the tool's stdout.
 func (t *coreTool) run(root string, command string, args ...string) (string, error) {
 	cargoArgs := []string{
-		"run", "--quiet", "--locked",
+		"run", "--quiet",
 		"--manifest-path", filepath.Join(t.checkout, "crates/changelog-release-notes/Cargo.toml"),
 		"--bin", "changelog-tool", "--", command, "--repo", root,
 	}

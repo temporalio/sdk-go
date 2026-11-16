@@ -47,9 +47,9 @@ func ContribModule(dir string) (Module, error) {
 	return Module{Dir: dir}, nil
 }
 
-// ContribModules returns contrib modules identified by go.mod files, sorted by
-// directory, whether or not they have changelogs. Paths must be repository-relative
-// and slash-separated.
+// ContribModules returns releasable contrib modules sorted by directory. A module
+// must have a go.mod file and either CHANGELOG.md or files in its own changelog
+// directory. Paths must be repository-relative and slash-separated.
 func ContribModules(paths []string) []Module {
 	files := make(map[string]bool)
 	for _, file := range paths {
@@ -61,7 +61,7 @@ func ContribModules(paths []string) []Module {
 			continue
 		}
 		module, err := ContribModule(path.Dir(file))
-		if err == nil {
+		if err == nil && module.IsReleasable(paths) {
 			modules = append(modules, module)
 		}
 	}
@@ -69,6 +69,18 @@ func ContribModules(paths []string) []Module {
 		return strings.Compare(a.Dir, b.Dir)
 	})
 	return modules
+}
+
+// IsReleasable reports whether repository-relative file paths include the module's
+// CHANGELOG.md or files in its own changelog directory.
+func (m Module) IsReleasable(paths []string) bool {
+	changelog, fragments := m.Changelog(""), m.Fragments("")+"/"
+	for _, file := range paths {
+		if file == changelog || strings.HasPrefix(file, fragments) {
+			return true
+		}
+	}
+	return false
 }
 
 // ParseVersionedModule parses a MODULE=VERSION assignment, with 'sdk' naming the Go SDK.
@@ -119,7 +131,7 @@ func FormatVersionedModules(modules []VersionedModule) string {
 	return strings.Join(args, " ")
 }
 
-// Name returns "sdk" for the main SDK module or the contrib module's directory.
+// Name returns the contrib module's directory or "sdk" for the main SDK module.
 func (m Module) Name() string {
 	if m.Dir == "" {
 		return "sdk"

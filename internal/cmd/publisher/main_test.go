@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"strings"
 	"testing"
@@ -22,6 +23,88 @@ func TestFindNoChanges(t *testing.T) {
 		t.Fatal(err)
 	}
 	testEqual(t, eff.output.String(), "")
+}
+
+func TestFindReleasableModules(t *testing.T) {
+	a, eff := newMockApp(app{}, nil, func(cmd string) (string, error) {
+		switch {
+		case strings.HasPrefix(cmd, "git rev-parse"):
+			return strings.Repeat("a", 40), nil
+		case strings.HasPrefix(cmd, "git log"):
+			return strings.Repeat("b", 40), nil
+		default:
+			return "", nil
+		}
+	})
+	paths := []string{
+		"CHANGELOG.md",
+		"contrib/envconfig/go.mod",
+		"contrib/envconfig/CHANGELOG.md",
+		"contrib/envconfig/test/go.mod",
+		"contrib/fragments/go.mod",
+		"contrib/fragments/changelog/added/new-module.md",
+		"contrib/test-only/go.mod",
+	}
+	a.contribModules = pure.ContribModules(paths)
+	eff.input = "mmm"
+	c := findApp{app: *a}
+	if err := c.run(); err != nil {
+		t.Fatal(err)
+	}
+	output := eff.output.String()
+	if !strings.Contains(output, "publisher pr sdk=0.1.0 contrib/envconfig=0.1.0 contrib/fragments=0.1.0") {
+		t.Fatalf("missing release command for eligible modules:\n%s", output)
+	}
+	if strings.Contains(output, "contrib/envconfig/test") || strings.Contains(output, "contrib/test-only") {
+		t.Fatalf("offered a module without a changelog:\n%s", output)
+	}
+	if eff.input != "" {
+		t.Fatalf("not all eligible modules were offered: unused input %q", eff.input)
+	}
+	if strings.Contains(eff.audit.String(), ":(exclude,literal)contrib/envconfig/test/") {
+		t.Fatalf("nested test module was excluded from parent changes:\n%s", eff.audit.String())
+	}
+}
+
+func TestFindChooseVersion(t *testing.T) {
+	latest := pure.Version{1, 48, 0}
+	for _, test := range []struct {
+		name    string
+		input   string
+		want    *pure.Version
+		wantEOF bool
+	}{
+		{name: "minor", input: "m", want: &pure.Version{1, 49, 0}},
+		{name: "patch", input: "p", want: &pure.Version{1, 48, 1}},
+		{name: "skip", input: "s"},
+		{name: "enter", input: "\n"},
+		{name: "carriage return", input: "\r"},
+		{name: "invalid then enter", input: "x\n"},
+		{name: "EOF", wantEOF: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			a, eff := newMockApp(app{}, nil, nil)
+			eff.input = test.input
+			c := findApp{app: *a}
+			got, err := c.chooseVersion(pure.SDKModule(), &latest, "HEAD")
+			if test.wantEOF {
+				if !errors.Is(err, io.EOF) {
+					t.Fatalf("expected EOF, got %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if test.want == nil {
+				if got != nil {
+					t.Fatalf("selected version %s, want a skip", got)
+				}
+			} else if got == nil || *got != *test.want {
+				t.Fatalf("selected version %v, want %s", got, test.want)
+			}
+		})
+	}
 }
 
 func TestPR(t *testing.T) {
@@ -82,11 +165,11 @@ func TestPR(t *testing.T) {
 		switch cmd {
 		case "git rev-parse HEAD":
 			return strings.TrimSpace(sdkRustRevision), nil
-		case "cargo run --quiet --locked --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- prepare --repo " + mockTempDir + " --version 1.48.0 --date 2026-08-04 --changelog CHANGELOG.md --fragments changelog":
+		case "cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- prepare --repo " + mockTempDir + " --version 1.48.0 --date 2026-08-04 --changelog CHANGELOG.md --fragments changelog":
 			testEqual(t, eff.files["changelog/fixed/dancing-duck.md"], input["changelog/fixed/dancing-duck.md"])
 			eff.files["CHANGELOG.md"] = output["CHANGELOG.md"]
 			delete(eff.files, "changelog/fixed/dancing-duck.md")
-		case "cargo run --quiet --locked --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- prepare --repo " + mockTempDir + " --version 1.0.3 --date 2026-08-04 --changelog contrib/envconfig/CHANGELOG.md --fragments contrib/envconfig/changelog":
+		case "cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- prepare --repo " + mockTempDir + " --version 1.0.3 --date 2026-08-04 --changelog contrib/envconfig/CHANGELOG.md --fragments contrib/envconfig/changelog":
 			testEqual(t, eff.files["contrib/envconfig/changelog/added/singing-swan.md"], input["contrib/envconfig/changelog/added/singing-swan.md"])
 			eff.files["contrib/envconfig/CHANGELOG.md"] = output["contrib/envconfig/CHANGELOG.md"]
 			delete(eff.files, "contrib/envconfig/changelog/added/singing-swan.md")
@@ -114,16 +197,16 @@ func TestPR(t *testing.T) {
 		`+strings.TrimSpace(sdkRustRevision)+`
 
 		# Running in /sdk-rust:
-		$ cargo run --quiet --locked --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- --help --repo /repo
+		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- --help --repo /repo
 
 		# Running in /repo:
 		$ git worktree add -b chore/release-2026-08-04 /tmp/prepare-go-release-123456 origin/main
 
 		# Running in /sdk-rust:
-		$ cargo run --quiet --locked --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- prepare --repo /tmp/prepare-go-release-123456 --version 1.48.0 --date 2026-08-04 --changelog CHANGELOG.md --fragments changelog
+		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- prepare --repo /tmp/prepare-go-release-123456 --version 1.48.0 --date 2026-08-04 --changelog CHANGELOG.md --fragments changelog
 
 		# Running in /sdk-rust:
-		$ cargo run --quiet --locked --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- prepare --repo /tmp/prepare-go-release-123456 --version 1.0.3 --date 2026-08-04 --changelog contrib/envconfig/CHANGELOG.md --fragments contrib/envconfig/changelog
+		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- prepare --repo /tmp/prepare-go-release-123456 --version 1.0.3 --date 2026-08-04 --changelog contrib/envconfig/CHANGELOG.md --fragments contrib/envconfig/changelog
 
 		# Running in /tmp/prepare-go-release-123456:
 		$ git diff --name-only --diff-filter=D -z -- changelog/
@@ -159,7 +242,7 @@ func TestPR(t *testing.T) {
 
 		Next steps:
 		1. Lint the release branch:
-		      publisher lint chore/release-2026-08-04 sdk=1.48.0 contrib/envconfig=1.0.3
+		      publisher lint-release chore/release-2026-08-04 sdk=1.48.0 contrib/envconfig=1.0.3
 		2. Fix errors and mark the PR as "ready for review".
 		3. Merge the PR and copy the commit hash.
 		4. Create draft github releases:
@@ -175,7 +258,7 @@ func TestCoreToolSetupFailure(t *testing.T) {
 		{Module: pure.SDKModule(), Version: pure.Version{1, 48, 0}},
 		{Module: contribEnvconfig(t), Version: pure.Version{1, 0, 3}},
 	}
-	for _, name := range []string{"pr", "lint", "release"} {
+	for _, name := range []string{"pr", "lint-release", "release"} {
 		t.Run(name, func(t *testing.T) {
 			a, eff := newMockApp(app{}, nil, nil)
 			eff.commandHandler = func(cmd string) (string, error) {
@@ -188,8 +271,8 @@ func TestCoreToolSetupFailure(t *testing.T) {
 			switch name {
 			case "pr":
 				c = &prApp{app: *a, modules: modules}
-			case "lint":
-				c = &lintApp{app: *a, modules: modules, commit: "abc123"}
+			case "lint-release":
+				c = &lintReleaseApp{app: *a, modules: modules, commit: "abc123"}
 			case "release":
 				c = &releaseApp{app: *a, modules: modules, commit: "abc123"}
 			}
@@ -231,7 +314,7 @@ func TestPRWorktreeCreationFailed(t *testing.T) {
 		`+strings.TrimSpace(sdkRustRevision)+`
 
 		# Running in /sdk-rust:
-		$ cargo run --quiet --locked --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- --help --repo /repo
+		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- --help --repo /repo
 
 		# Running in /repo:
 		$ git worktree add -b chore/release-2026-08-04 /tmp/prepare-go-release-123456 origin/main
@@ -265,7 +348,7 @@ func TestPRReleaseFilesCannotBeComputed(t *testing.T) {
 		`+strings.TrimSpace(sdkRustRevision)+`
 
 		# Running in /sdk-rust:
-		$ cargo run --quiet --locked --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- --help --repo /repo
+		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- --help --repo /repo
 
 		# Running in /repo:
 		$ git worktree add -b chore/release-2026-08-04 /tmp/prepare-go-release-123456 origin/main
@@ -323,7 +406,7 @@ func TestPRCommitFailed(t *testing.T) {
 		switch cmd {
 		case "git rev-parse HEAD":
 			return strings.TrimSpace(sdkRustRevision), nil
-		case "cargo run --quiet --locked --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- prepare --repo " + mockTempDir + " --version 1.48.0 --date 2026-08-04 --changelog CHANGELOG.md --fragments changelog":
+		case "cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- prepare --repo " + mockTempDir + " --version 1.48.0 --date 2026-08-04 --changelog CHANGELOG.md --fragments changelog":
 			eff.files["CHANGELOG.md"] = output["CHANGELOG.md"]
 			delete(eff.files, "changelog/fixed/dancing-duck.md")
 		case "git diff --name-only --diff-filter=D -z -- changelog/":
@@ -344,13 +427,13 @@ func TestPRCommitFailed(t *testing.T) {
 		`+strings.TrimSpace(sdkRustRevision)+`
 
 		# Running in /sdk-rust:
-		$ cargo run --quiet --locked --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- --help --repo /repo
+		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- --help --repo /repo
 
 		# Running in /repo:
 		$ git worktree add -b chore/release-2026-08-04 /tmp/prepare-go-release-123456 origin/main
 
 		# Running in /sdk-rust:
-		$ cargo run --quiet --locked --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- prepare --repo /tmp/prepare-go-release-123456 --version 1.48.0 --date 2026-08-04 --changelog CHANGELOG.md --fragments changelog
+		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- prepare --repo /tmp/prepare-go-release-123456 --version 1.48.0 --date 2026-08-04 --changelog CHANGELOG.md --fragments changelog
 
 		# Running in /tmp/prepare-go-release-123456:
 		$ git diff --name-only --diff-filter=D -z -- changelog/
@@ -386,7 +469,7 @@ func TestPRWorktreeCleanupFailed(t *testing.T) {
 		{Module: contribEnvconfig(t), Version: pure.Version{0, 1, 0}},
 	}}, input, func(cmd string) (string, error) {
 		switch cmd {
-		case "cargo run --quiet --locked --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- prepare --repo " + mockTempDir + " --version 0.1.0 --date 2026-08-04 --changelog contrib/envconfig/CHANGELOG.md --fragments contrib/envconfig/changelog":
+		case "cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- prepare --repo " + mockTempDir + " --version 0.1.0 --date 2026-08-04 --changelog contrib/envconfig/CHANGELOG.md --fragments contrib/envconfig/changelog":
 			return "", errors.New("empty fragment: /tmp/prepare-go-release-123456/contrib/envconfig/changelog/fixed/empty-otter.md")
 		case "git worktree remove --force " + mockTempDir:
 			return "", errors.New("cleanup failed")
@@ -403,13 +486,13 @@ func TestPRWorktreeCleanupFailed(t *testing.T) {
 		`+strings.TrimSpace(sdkRustRevision)+`
 
 		# Running in /sdk-rust:
-		$ cargo run --quiet --locked --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- --help --repo /repo
+		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- --help --repo /repo
 
 		# Running in /repo:
 		$ git worktree add -b chore/release-2026-08-04 /tmp/prepare-go-release-123456 origin/main
 
 		# Running in /sdk-rust:
-		$ cargo run --quiet --locked --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- prepare --repo /tmp/prepare-go-release-123456 --version 0.1.0 --date 2026-08-04 --changelog contrib/envconfig/CHANGELOG.md --fragments contrib/envconfig/changelog
+		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- prepare --repo /tmp/prepare-go-release-123456 --version 0.1.0 --date 2026-08-04 --changelog contrib/envconfig/CHANGELOG.md --fragments contrib/envconfig/changelog
 		empty fragment: /tmp/prepare-go-release-123456/contrib/envconfig/changelog/fixed/empty-otter.md
 
 		# Running in /repo:
@@ -437,7 +520,7 @@ func TestPRChangelogFragmentValidationFailed(t *testing.T) {
 	a, eff := newMockPR(prApp{modules: []pure.VersionedModule{
 		{Module: contribEnvconfig(t), Version: pure.Version{1, 0, 3}},
 	}}, input, func(cmd string) (string, error) {
-		if cmd == "cargo run --quiet --locked --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- prepare --repo "+mockTempDir+" --version 1.0.3 --date 2026-08-04 --changelog contrib/envconfig/CHANGELOG.md --fragments contrib/envconfig/changelog" {
+		if cmd == "cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- prepare --repo "+mockTempDir+" --version 1.0.3 --date 2026-08-04 --changelog contrib/envconfig/CHANGELOG.md --fragments contrib/envconfig/changelog" {
 			return "", errors.New("empty fragment: /tmp/prepare-go-release-123456/contrib/envconfig/changelog/fixed/empty-otter.md")
 		}
 		return "", nil
@@ -453,13 +536,13 @@ func TestPRChangelogFragmentValidationFailed(t *testing.T) {
 		`+strings.TrimSpace(sdkRustRevision)+`
 
 		# Running in /sdk-rust:
-		$ cargo run --quiet --locked --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- --help --repo /repo
+		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- --help --repo /repo
 
 		# Running in /repo:
 		$ git worktree add -b chore/release-2026-08-04 /tmp/prepare-go-release-123456 origin/main
 
 		# Running in /sdk-rust:
-		$ cargo run --quiet --locked --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- prepare --repo /tmp/prepare-go-release-123456 --version 1.0.3 --date 2026-08-04 --changelog contrib/envconfig/CHANGELOG.md --fragments contrib/envconfig/changelog
+		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- prepare --repo /tmp/prepare-go-release-123456 --version 1.0.3 --date 2026-08-04 --changelog contrib/envconfig/CHANGELOG.md --fragments contrib/envconfig/changelog
 		empty fragment: /tmp/prepare-go-release-123456/contrib/envconfig/changelog/fixed/empty-otter.md
 
 		# Running in /repo:
@@ -482,7 +565,7 @@ func TestPRChangelogPreparationFailed(t *testing.T) {
 	a, eff := newMockPR(prApp{modules: []pure.VersionedModule{
 		{Module: contribEnvconfig(t), Version: pure.Version{1, 0, 3}},
 	}}, input, func(cmd string) (string, error) {
-		if cmd == "cargo run --quiet --locked --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- prepare --repo "+mockTempDir+" --version 1.0.3 --date 2026-08-04 --changelog contrib/envconfig/CHANGELOG.md --fragments contrib/envconfig/changelog" {
+		if cmd == "cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- prepare --repo "+mockTempDir+" --version 1.0.3 --date 2026-08-04 --changelog contrib/envconfig/CHANGELOG.md --fragments contrib/envconfig/changelog" {
 			return "", errors.New("command failed")
 		}
 		return "", nil
@@ -498,13 +581,13 @@ func TestPRChangelogPreparationFailed(t *testing.T) {
 		`+strings.TrimSpace(sdkRustRevision)+`
 
 		# Running in /sdk-rust:
-		$ cargo run --quiet --locked --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- --help --repo /repo
+		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- --help --repo /repo
 
 		# Running in /repo:
 		$ git worktree add -b chore/release-2026-08-04 /tmp/prepare-go-release-123456 origin/main
 
 		# Running in /sdk-rust:
-		$ cargo run --quiet --locked --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- prepare --repo /tmp/prepare-go-release-123456 --version 1.0.3 --date 2026-08-04 --changelog contrib/envconfig/CHANGELOG.md --fragments contrib/envconfig/changelog
+		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- prepare --repo /tmp/prepare-go-release-123456 --version 1.0.3 --date 2026-08-04 --changelog contrib/envconfig/CHANGELOG.md --fragments contrib/envconfig/changelog
 		command failed
 
 		# Running in /repo:
@@ -534,7 +617,7 @@ func TestPRStagingFailed(t *testing.T) {
 		switch cmd {
 		case "git rev-parse HEAD":
 			return strings.TrimSpace(sdkRustRevision), nil
-		case "cargo run --quiet --locked --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- prepare --repo " + mockTempDir + " --version 1.0.3 --date 2026-08-04 --changelog contrib/envconfig/CHANGELOG.md --fragments contrib/envconfig/changelog":
+		case "cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- prepare --repo " + mockTempDir + " --version 1.0.3 --date 2026-08-04 --changelog contrib/envconfig/CHANGELOG.md --fragments contrib/envconfig/changelog":
 			eff.files["contrib/envconfig/CHANGELOG.md"] = output["contrib/envconfig/CHANGELOG.md"]
 			delete(eff.files, "contrib/envconfig/changelog/fixed/dancing-duck.md")
 		case "git diff --name-only --diff-filter=D -z -- contrib/envconfig/changelog/":
@@ -555,13 +638,13 @@ func TestPRStagingFailed(t *testing.T) {
 		`+strings.TrimSpace(sdkRustRevision)+`
 
 		# Running in /sdk-rust:
-		$ cargo run --quiet --locked --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- --help --repo /repo
+		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- --help --repo /repo
 
 		# Running in /repo:
 		$ git worktree add -b chore/release-2026-08-04 /tmp/prepare-go-release-123456 origin/main
 
 		# Running in /sdk-rust:
-		$ cargo run --quiet --locked --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- prepare --repo /tmp/prepare-go-release-123456 --version 1.0.3 --date 2026-08-04 --changelog contrib/envconfig/CHANGELOG.md --fragments contrib/envconfig/changelog
+		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- prepare --repo /tmp/prepare-go-release-123456 --version 1.0.3 --date 2026-08-04 --changelog contrib/envconfig/CHANGELOG.md --fragments contrib/envconfig/changelog
 
 		# Running in /tmp/prepare-go-release-123456:
 		$ git diff --name-only --diff-filter=D -z -- contrib/envconfig/changelog/
@@ -584,7 +667,139 @@ func TestPRStagingFailed(t *testing.T) {
 	testEqualMaps(t, eff.files, output)
 }
 
-func TestLintCommit(t *testing.T) {
+func TestLintRequiresFragmentsPerChangedModule(t *testing.T) {
+	t.Setenv("PUBLISHER_SDK_RUST", "/sdk-rust")
+	input := make(map[string]string)
+	input["/repo/CHANGELOG.md"] = stripIndentation(`
+		# Changelog
+
+		## [1.48.0] - 2026-08-04
+	`)
+	input["/repo/contrib/envconfig/CHANGELOG.md"] = stripIndentation(`
+		# Changelog
+
+		## [1.0.3] - 2026-08-04
+	`)
+	input["/repo/contrib/envconfig/envconfig.go"] = stripIndentation(`
+		package envconfig
+
+		const NewOption = true
+	`)
+	input["/repo/contrib/envconfig/changelog/added/helpful-hippo.md"] = stripIndentation(`
+		Add a new configuration option.
+	`)
+	input["/repo/contrib/fragments/feature.go"] = stripIndentation(`
+		package fragments
+
+		const NewFeature = true
+	`)
+	input["/repo/contrib/fragments/changelog/README.md"] = stripIndentation(`
+		Add pending release notes to category directories.
+	`)
+	output := maps.Clone(input)
+	a, eff := newMockApp(app{}, input, func(cmd string) (string, error) {
+		switch cmd {
+		case "git rev-parse --verify --end-of-options base^{commit}":
+			return "base-sha\n", nil
+		case "git diff --name-only --no-renames base-sha HEAD -- contrib/envconfig/ :(exclude,glob)contrib/envconfig/**/go.mod :(exclude,glob)contrib/envconfig/**/go.sum":
+			return "contrib/envconfig/envconfig.go\ncontrib/envconfig/changelog/added/helpful-hippo.md\n", nil
+		case "git diff --name-only --no-renames base-sha HEAD -- contrib/fragments/ :(exclude,glob)contrib/fragments/**/go.mod :(exclude,glob)contrib/fragments/**/go.sum":
+			return "contrib/fragments/feature.go\n", nil
+		case "cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- check --repo /repo --fragments contrib/fragments/changelog --base base-sha --require-new":
+			return "", errors.New("add a new changelog fragment")
+		}
+		return "", nil
+	})
+	a.contribModules = []pure.Module{contribEnvconfig(t), {Dir: "contrib/fragments"}}
+	c := lintApp{app: *a, baseCommit: "base"}
+	err := c.run()
+	testEqual(t, fmt.Sprint(err), "check changelog for contrib/fragments: changelog-tool check: add a new changelog fragment")
+	testEqual(t, eff.audit.String(), `
+		# Running in /repo:
+		$ git rev-parse --verify --end-of-options base^{commit}
+		base-sha
+
+		# Running in /sdk-rust:
+		$ git rev-parse HEAD
+		`+strings.TrimSpace(sdkRustRevision)+`
+
+		# Running in /sdk-rust:
+		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- --help --repo /repo
+
+		# Running in /repo:
+		$ git diff --name-only --no-renames base-sha HEAD -- ./ :(exclude,glob)**/go.mod :(exclude,glob)**/go.sum :(exclude,literal)contrib/envconfig/ :(exclude,literal)contrib/fragments/
+
+		# Running in /sdk-rust:
+		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- check --repo /repo --fragments changelog --base base-sha --changelog CHANGELOG.md
+
+		# Running in /repo:
+		$ git diff --name-only --no-renames base-sha HEAD -- contrib/envconfig/ :(exclude,glob)contrib/envconfig/**/go.mod :(exclude,glob)contrib/envconfig/**/go.sum
+		contrib/envconfig/envconfig.go
+		contrib/envconfig/changelog/added/helpful-hippo.md
+
+		# Running in /sdk-rust:
+		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- check --repo /repo --fragments contrib/envconfig/changelog --base base-sha --require-new --changelog contrib/envconfig/CHANGELOG.md
+
+		# Running in /repo:
+		$ git diff --name-only --no-renames base-sha HEAD -- contrib/fragments/ :(exclude,glob)contrib/fragments/**/go.mod :(exclude,glob)contrib/fragments/**/go.sum
+		contrib/fragments/feature.go
+
+		# Running in /sdk-rust:
+		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- check --repo /repo --fragments contrib/fragments/changelog --base base-sha --require-new
+		add a new changelog fragment
+	`)
+	testEqual(t, eff.output.String(), "")
+	testEqualMaps(t, eff.files, output)
+}
+
+func TestLintSkipChangelog(t *testing.T) {
+	t.Setenv("PUBLISHER_SDK_RUST", "/sdk-rust")
+	input := make(map[string]string)
+	input["/repo/CHANGELOG.md"] = stripIndentation(`
+		# Changelog
+
+		## [1.48.0] - 2026-08-04
+	`)
+	input["/repo/contrib/envconfig/CHANGELOG.md"] = stripIndentation(`
+		# Changelog
+
+		## [1.0.3] - 2026-08-04
+	`)
+	output := maps.Clone(input)
+	a, eff := newMockApp(app{}, input, func(cmd string) (string, error) {
+		if cmd == "git rev-parse --verify --end-of-options base^{commit}" {
+			return "base-sha\n", nil
+		}
+		return "", nil
+	})
+	a.contribModules = []pure.Module{contribEnvconfig(t)}
+	c := lintApp{app: *a, baseCommit: "base", skipChangelog: true}
+	if err := c.run(); err != nil {
+		t.Fatal(err)
+	}
+	testEqual(t, eff.audit.String(), `
+		# Running in /repo:
+		$ git rev-parse --verify --end-of-options base^{commit}
+		base-sha
+
+		# Running in /sdk-rust:
+		$ git rev-parse HEAD
+		`+strings.TrimSpace(sdkRustRevision)+`
+
+		# Running in /sdk-rust:
+		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- --help --repo /repo
+
+		# Running in /sdk-rust:
+		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- check --repo /repo --fragments changelog --base base-sha --changelog CHANGELOG.md
+
+		# Running in /sdk-rust:
+		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- check --repo /repo --fragments contrib/envconfig/changelog --base base-sha --changelog contrib/envconfig/CHANGELOG.md
+	`)
+	testEqual(t, eff.output.String(), "")
+	testEqualMaps(t, eff.files, output)
+}
+
+func TestLintReleaseCommit(t *testing.T) {
 	t.Setenv("PUBLISHER_SDK_RUST", "/sdk-rust")
 	commit := "1234567890abcdef1234567890abcdef12345678"
 	input := make(map[string]string)
@@ -609,7 +824,7 @@ func TestLintCommit(t *testing.T) {
 	input["/repo/CHANGELOG.md"] = "Local edits must not be inspected.\n"
 	input["changelog/fixed/late-llama.md"] = "A fix for the next release.\n"
 	output := maps.Clone(input)
-	a, eff := newMockLint(lintApp{commit: "1234567", modules: []pure.VersionedModule{
+	a, eff := newMockLintRelease(lintReleaseApp{commit: "1234567", modules: []pure.VersionedModule{
 		{Module: pure.SDKModule(), Version: pure.Version{1, 48, 0}},
 	}}, input, func(cmd string) (string, error) {
 		if cmd == "git rev-parse --verify --end-of-options 1234567^{commit}" {
@@ -630,7 +845,7 @@ func TestLintCommit(t *testing.T) {
 		`+strings.TrimSpace(sdkRustRevision)+`
 
 		# Running in /sdk-rust:
-		$ cargo run --quiet --locked --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- --help --repo /repo
+		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- --help --repo /repo
 
 		# Running in /repo:
 		$ git rev-parse --verify --end-of-options 1234567^{commit}
@@ -640,7 +855,7 @@ func TestLintCommit(t *testing.T) {
 		$ git worktree add --detach /tmp/prepare-go-release-123456 `+commit+`
 
 		# Running in /sdk-rust:
-		$ cargo run --quiet --locked --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- release-notes --repo /tmp/prepare-go-release-123456 --version 1.48.0 --date 2026-08-04 --changelog CHANGELOG.md
+		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- release-notes --repo /tmp/prepare-go-release-123456 --version 1.48.0 --date 2026-08-04 --changelog CHANGELOG.md
 
 		# Running in /repo:
 		$ git worktree remove --force /tmp/prepare-go-release-123456
@@ -658,7 +873,7 @@ func TestLintCommit(t *testing.T) {
 	`)
 }
 
-func TestLintReportsAllBlockedModules(t *testing.T) {
+func TestLintReleaseReportsAllBlockedModules(t *testing.T) {
 	t.Setenv("PUBLISHER_SDK_RUST", "/sdk-rust")
 	tally, err := pure.ContribModule("contrib/tally")
 	if err != nil {
@@ -667,12 +882,12 @@ func TestLintReportsAllBlockedModules(t *testing.T) {
 	input := make(map[string]string)
 	input["contrib/envconfig/go.mod"] = "module go.temporal.io/sdk/contrib/envconfig\n"
 	input["contrib/envconfig/CHANGELOG.md"] = "# Changelog\n\n## [0.0.1] - 2026-07-28\n"
-	a, eff := newMockLint(lintApp{commit: "abc123", modules: []pure.VersionedModule{
+	a, eff := newMockLintRelease(lintReleaseApp{commit: "abc123", modules: []pure.VersionedModule{
 		{Module: contribEnvconfig(t), Version: pure.Version{0, 1, 0}},
 		{Module: tally, Version: pure.Version{0, 1, 0}},
 	}}, input, func(cmd string) (string, error) {
 		switch cmd {
-		case "cargo run --quiet --locked --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- release-notes --repo " + mockTempDir + " --version 0.1.0 --date 2026-08-04 --changelog contrib/envconfig/CHANGELOG.md":
+		case "cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- release-notes --repo " + mockTempDir + " --version 0.1.0 --date 2026-08-04 --changelog contrib/envconfig/CHANGELOG.md":
 			return "", errors.New("missing release section for 0.1.0")
 		case "git rev-parse --verify --end-of-options abc123^{commit}":
 			return "abc123\n", nil
@@ -701,7 +916,7 @@ func TestLintReportsAllBlockedModules(t *testing.T) {
 		`+strings.TrimSpace(sdkRustRevision)+`
 
 		# Running in /sdk-rust:
-		$ cargo run --quiet --locked --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- --help --repo /repo
+		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- --help --repo /repo
 
 		# Running in /repo:
 		$ git rev-parse --verify --end-of-options abc123^{commit}
@@ -711,7 +926,7 @@ func TestLintReportsAllBlockedModules(t *testing.T) {
 		$ git worktree add --detach /tmp/prepare-go-release-123456 abc123
 
 		# Running in /sdk-rust:
-		$ cargo run --quiet --locked --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- release-notes --repo /tmp/prepare-go-release-123456 --version 0.1.0 --date 2026-08-04 --changelog contrib/envconfig/CHANGELOG.md
+		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- release-notes --repo /tmp/prepare-go-release-123456 --version 0.1.0 --date 2026-08-04 --changelog contrib/envconfig/CHANGELOG.md
 		missing release section for 0.1.0
 
 		# Running in /repo:
@@ -790,9 +1005,9 @@ func TestRelease(t *testing.T) {
 			return strings.TrimSpace(sdkRustRevision), nil
 		case "git rev-parse --verify --end-of-options 1234567^{commit}":
 			return commit + "\n", nil
-		case "cargo run --quiet --locked --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- release-notes --repo " + mockTempDir + " --version 1.48.0 --changelog CHANGELOG.md":
+		case "cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- release-notes --repo " + mockTempDir + " --version 1.48.0 --changelog CHANGELOG.md":
 			return sdkNotes, nil
-		case "cargo run --quiet --locked --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- release-notes --repo " + mockTempDir + " --version 1.0.3 --changelog contrib/envconfig/CHANGELOG.md":
+		case "cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- release-notes --repo " + mockTempDir + " --version 1.0.3 --changelog contrib/envconfig/CHANGELOG.md":
 			return contribNotes, nil
 		case "gh release create v1.48.0 --draft --target " + commit + " --title v1.48.0 --notes-file /tmp/prepare-go-release-123456/prepare-release-notes.md --generate-notes":
 			testEqualMaps(t, eff.files, sdkOutput)
@@ -816,7 +1031,7 @@ func TestRelease(t *testing.T) {
 		`+strings.TrimSpace(sdkRustRevision)+`
 
 		# Running in /sdk-rust:
-		$ cargo run --quiet --locked --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- --help --repo /repo
+		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- --help --repo /repo
 
 		# Running in /repo:
 		$ git rev-parse --verify --end-of-options 1234567^{commit}
@@ -826,13 +1041,13 @@ func TestRelease(t *testing.T) {
 		$ git worktree add --detach /tmp/prepare-go-release-123456 `+commit+`
 
 		# Running in /sdk-rust:
-		$ cargo run --quiet --locked --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- release-notes --repo /tmp/prepare-go-release-123456 --version 1.48.0 --date 2026-08-04 --changelog CHANGELOG.md
+		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- release-notes --repo /tmp/prepare-go-release-123456 --version 1.48.0 --date 2026-08-04 --changelog CHANGELOG.md
 
 		# Running in /sdk-rust:
-		$ cargo run --quiet --locked --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- release-notes --repo /tmp/prepare-go-release-123456 --version 1.0.3 --date 2026-08-04 --changelog contrib/envconfig/CHANGELOG.md
+		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- release-notes --repo /tmp/prepare-go-release-123456 --version 1.0.3 --date 2026-08-04 --changelog contrib/envconfig/CHANGELOG.md
 
 		# Running in /sdk-rust:
-		$ cargo run --quiet --locked --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- release-notes --repo /tmp/prepare-go-release-123456 --version 1.48.0 --changelog CHANGELOG.md
+		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- release-notes --repo /tmp/prepare-go-release-123456 --version 1.48.0 --changelog CHANGELOG.md
 		## Notable Changes
 
 		### Fixed
@@ -840,7 +1055,7 @@ func TestRelease(t *testing.T) {
 		- An SDK fix.
 
 		# Running in /sdk-rust:
-		$ cargo run --quiet --locked --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- release-notes --repo /tmp/prepare-go-release-123456 --version 1.0.3 --changelog contrib/envconfig/CHANGELOG.md
+		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- release-notes --repo /tmp/prepare-go-release-123456 --version 1.0.3 --changelog contrib/envconfig/CHANGELOG.md
 		## Notable Changes
 
 		### Added
@@ -897,7 +1112,7 @@ func TestReleaseEmpty(t *testing.T) {
 		switch cmd {
 		case "git rev-parse --verify --end-of-options abc123^{commit}":
 			return "abc123\n", nil
-		case "cargo run --quiet --locked --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- release-notes --repo " + mockTempDir + " --version 1.0.3 --changelog contrib/envconfig/CHANGELOG.md":
+		case "cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- release-notes --repo " + mockTempDir + " --version 1.0.3 --changelog contrib/envconfig/CHANGELOG.md":
 			return "## Notable Changes\n\n", nil
 		case "gh release create contrib/envconfig/v1.0.3 --draft --target abc123 --title contrib/envconfig/v1.0.3 --notes-file /tmp/prepare-go-release-123456/prepare-release-notes.md --latest=false":
 			return "https://github.com/temporalio/sdk-go/releases/tag/draft\n", nil
@@ -917,7 +1132,7 @@ func TestReleaseEmpty(t *testing.T) {
 		`+strings.TrimSpace(sdkRustRevision)+`
 
 		# Running in /sdk-rust:
-		$ cargo run --quiet --locked --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- --help --repo /repo
+		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- --help --repo /repo
 
 		# Running in /repo:
 		$ git rev-parse --verify --end-of-options abc123^{commit}
@@ -927,10 +1142,10 @@ func TestReleaseEmpty(t *testing.T) {
 		$ git worktree add --detach /tmp/prepare-go-release-123456 abc123
 
 		# Running in /sdk-rust:
-		$ cargo run --quiet --locked --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- release-notes --repo /tmp/prepare-go-release-123456 --version 1.0.3 --date 2026-08-04 --changelog contrib/envconfig/CHANGELOG.md
+		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- release-notes --repo /tmp/prepare-go-release-123456 --version 1.0.3 --date 2026-08-04 --changelog contrib/envconfig/CHANGELOG.md
 
 		# Running in /sdk-rust:
-		$ cargo run --quiet --locked --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- release-notes --repo /tmp/prepare-go-release-123456 --version 1.0.3 --changelog contrib/envconfig/CHANGELOG.md
+		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- release-notes --repo /tmp/prepare-go-release-123456 --version 1.0.3 --changelog contrib/envconfig/CHANGELOG.md
 		## Notable Changes
 
 		# Running in /tmp/prepare-go-release-123456:
@@ -973,7 +1188,7 @@ func TestReleaseLintBeforePublish(t *testing.T) {
 		switch cmd {
 		case "git rev-parse --verify --end-of-options abc123^{commit}":
 			return "abc123\n", nil
-		case "cargo run --quiet --locked --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- release-notes --repo " + mockTempDir + " --version 1.0.3 --date 2026-08-04 --changelog contrib/envconfig/CHANGELOG.md":
+		case "cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- release-notes --repo " + mockTempDir + " --version 1.0.3 --date 2026-08-04 --changelog contrib/envconfig/CHANGELOG.md":
 			return "", errors.New("wrong release date")
 		}
 		return "", nil
@@ -988,7 +1203,7 @@ func TestReleaseLintBeforePublish(t *testing.T) {
 		`+strings.TrimSpace(sdkRustRevision)+`
 
 		# Running in /sdk-rust:
-		$ cargo run --quiet --locked --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- --help --repo /repo
+		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- --help --repo /repo
 
 		# Running in /repo:
 		$ git rev-parse --verify --end-of-options abc123^{commit}
@@ -998,10 +1213,10 @@ func TestReleaseLintBeforePublish(t *testing.T) {
 		$ git worktree add --detach /tmp/prepare-go-release-123456 abc123
 
 		# Running in /sdk-rust:
-		$ cargo run --quiet --locked --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- release-notes --repo /tmp/prepare-go-release-123456 --version 1.48.0 --date 2026-08-04 --changelog CHANGELOG.md
+		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- release-notes --repo /tmp/prepare-go-release-123456 --version 1.48.0 --date 2026-08-04 --changelog CHANGELOG.md
 
 		# Running in /sdk-rust:
-		$ cargo run --quiet --locked --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- release-notes --repo /tmp/prepare-go-release-123456 --version 1.0.3 --date 2026-08-04 --changelog contrib/envconfig/CHANGELOG.md
+		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- release-notes --repo /tmp/prepare-go-release-123456 --version 1.0.3 --date 2026-08-04 --changelog contrib/envconfig/CHANGELOG.md
 		wrong release date
 
 		# Running in /repo:
@@ -1047,8 +1262,8 @@ func TestReleaseStillReportsCreatedDraftsOnFailure(t *testing.T) {
 		switch cmd {
 		case "git rev-parse --verify --end-of-options abc123^{commit}":
 			return "abc123\n", nil
-		case "cargo run --quiet --locked --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- release-notes --repo " + mockTempDir + " --version 0.1.0 --changelog contrib/envconfig/CHANGELOG.md",
-			"cargo run --quiet --locked --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- release-notes --repo " + mockTempDir + " --version 0.1.0 --changelog contrib/tally/CHANGELOG.md":
+		case "cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- release-notes --repo " + mockTempDir + " --version 0.1.0 --changelog contrib/envconfig/CHANGELOG.md",
+			"cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- release-notes --repo " + mockTempDir + " --version 0.1.0 --changelog contrib/tally/CHANGELOG.md":
 			return notes, nil
 		case "gh release create contrib/envconfig/v0.1.0 --draft --target abc123 --title contrib/envconfig/v0.1.0 --notes-file /tmp/prepare-go-release-123456/prepare-release-notes.md --latest=false":
 			return "https://github.com/temporalio/sdk-go/releases/tag/untagged-envconfig\n", nil
@@ -1068,7 +1283,7 @@ func TestReleaseStillReportsCreatedDraftsOnFailure(t *testing.T) {
 		`+strings.TrimSpace(sdkRustRevision)+`
 
 		# Running in /sdk-rust:
-		$ cargo run --quiet --locked --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- --help --repo /repo
+		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- --help --repo /repo
 
 		# Running in /repo:
 		$ git rev-parse --verify --end-of-options abc123^{commit}
@@ -1078,13 +1293,13 @@ func TestReleaseStillReportsCreatedDraftsOnFailure(t *testing.T) {
 		$ git worktree add --detach /tmp/prepare-go-release-123456 abc123
 
 		# Running in /sdk-rust:
-		$ cargo run --quiet --locked --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- release-notes --repo /tmp/prepare-go-release-123456 --version 0.1.0 --date 2026-08-04 --changelog contrib/envconfig/CHANGELOG.md
+		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- release-notes --repo /tmp/prepare-go-release-123456 --version 0.1.0 --date 2026-08-04 --changelog contrib/envconfig/CHANGELOG.md
 
 		# Running in /sdk-rust:
-		$ cargo run --quiet --locked --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- release-notes --repo /tmp/prepare-go-release-123456 --version 0.1.0 --date 2026-08-04 --changelog contrib/tally/CHANGELOG.md
+		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- release-notes --repo /tmp/prepare-go-release-123456 --version 0.1.0 --date 2026-08-04 --changelog contrib/tally/CHANGELOG.md
 
 		# Running in /sdk-rust:
-		$ cargo run --quiet --locked --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- release-notes --repo /tmp/prepare-go-release-123456 --version 0.1.0 --changelog contrib/envconfig/CHANGELOG.md
+		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- release-notes --repo /tmp/prepare-go-release-123456 --version 0.1.0 --changelog contrib/envconfig/CHANGELOG.md
 		## Notable Changes
 
 		### Added
@@ -1092,7 +1307,7 @@ func TestReleaseStillReportsCreatedDraftsOnFailure(t *testing.T) {
 		- A feature.
 
 		# Running in /sdk-rust:
-		$ cargo run --quiet --locked --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- release-notes --repo /tmp/prepare-go-release-123456 --version 0.1.0 --changelog contrib/tally/CHANGELOG.md
+		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- release-notes --repo /tmp/prepare-go-release-123456 --version 0.1.0 --changelog contrib/tally/CHANGELOG.md
 		## Notable Changes
 
 		### Added
@@ -1140,15 +1355,19 @@ func TestNewCommand(t *testing.T) {
 		wantDirs []string
 		wantErr  string
 	}{
-		{name: "lint commit", args: []string{"lint", "abc123", "sdk=1.48.0"}},
+		{name: "lint changelog", args: []string{"lint", "abc123"}},
+		{name: "skip changelog", args: []string{"lint", "-skip-changelog=true", "abc123"}},
+		{name: "missing changelog base", args: []string{"lint"}, wantErr: "usage: publisher lint [-skip-changelog] BASE_COMMIT"},
+		{name: "extra changelog argument", args: []string{"lint", "abc123", "extra"}, wantErr: "usage: publisher lint [-skip-changelog] BASE_COMMIT"},
+		{name: "lint release commit", args: []string{"lint-release", "abc123", "sdk=1.48.0"}},
 		{name: "SDK PR", args: []string{"pr", "sdk=1.48.0"}},
 		{name: "contrib PR", args: []string{"pr", "contrib/envconfig=1.0.3"}, wantDirs: []string{"contrib/envconfig"}},
 		{name: "nested contrib module", args: []string{"pr", "contrib/aws/s3driver/awssdkv2=0.2.2"}, wantDirs: []string{"contrib/aws/s3driver/awssdkv2"}},
 		{name: "trailing slash", args: []string{"pr", "contrib/envconfig/=1.0.3"}, wantDirs: []string{"contrib/envconfig"}},
 		{name: "SDK release", args: []string{"release", "abc123", "sdk=1.48.0"}},
 		{name: "contrib release", args: []string{"release", "abc123", "contrib/envconfig=1.0.3"}, wantDirs: []string{"contrib/envconfig"}},
-		{name: "unknown command", args: []string{"unknown"}, wantErr: "unknown command \"unknown\"\nusage: publisher (find|pr|lint|release)"},
-		{name: "old invocation", args: []string{"1.48.0"}, wantErr: "unknown command \"1.48.0\"\nusage: publisher (find|pr|lint|release)"},
+		{name: "unknown command", args: []string{"unknown"}, wantErr: "unknown command \"unknown\"\nusage: publisher (find|lint|pr|lint-release|release)"},
+		{name: "old invocation", args: []string{"1.48.0"}, wantErr: "unknown command \"1.48.0\"\nusage: publisher (find|lint|pr|lint-release|release)"},
 		{name: "multiple PR assignments", args: []string{"pr", "sdk=1.48.0", "contrib/envconfig=1.0.3"}, wantDirs: []string{"", "contrib/envconfig"}},
 		{name: "multiple release assignments", args: []string{"release", "abc123", "sdk=1.48.0", "contrib/envconfig=1.0.3"}, wantDirs: []string{"", "contrib/envconfig"}},
 		{name: "duplicate SDK", args: []string{"pr", "sdk=1.48.0", "sdk=1.48.1"}, wantErr: `module "go.temporal.io/sdk" is specified more than once`},
@@ -1177,7 +1396,13 @@ func TestNewCommand(t *testing.T) {
 			var modules []pure.VersionedModule
 			switch got := got.(type) {
 			case *lintApp:
-				name, commit, modules = "lint", got.commit, got.modules
+				testEqual(t, got.baseCommit, "abc123")
+				if want := test.name == "skip changelog"; got.skipChangelog != want {
+					t.Fatalf("skip-changelog: got %t, want %t", got.skipChangelog, want)
+				}
+				return
+			case *lintReleaseApp:
+				name, commit, modules = "lint-release", got.commit, got.modules
 			case *prApp:
 				name, modules = "pr", got.modules
 			case *releaseApp:
@@ -1188,7 +1413,7 @@ func TestNewCommand(t *testing.T) {
 			if name != test.args[0] {
 				t.Fatalf("unexpected command: got %q, want %q", name, test.args[0])
 			}
-			if (name == "release" || name == "lint") && commit != "abc123" {
+			if (name == "release" || name == "lint-release") && commit != "abc123" {
 				t.Fatalf("unexpected commit: %q", commit)
 			}
 			wantDirs := test.wantDirs

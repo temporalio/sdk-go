@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"maps"
 	"os"
 	"path/filepath"
@@ -39,7 +40,7 @@ func newMockApp(a app, input map[string]string, handler func(cmd string) (string
 	return &a, eff
 }
 
-func newMockLint(c lintApp, input map[string]string, handler func(cmd string) (string, error)) (*lintApp, *mockEffects) {
+func newMockLintRelease(c lintReleaseApp, input map[string]string, handler func(cmd string) (string, error)) (*lintReleaseApp, *mockEffects) {
 	a, eff := newMockApp(c.app, input, handler)
 	c.app = *a
 	return &c, eff
@@ -65,6 +66,7 @@ type mockEffects struct {
 	errors         strings.Builder
 	tempDir        string
 	files          map[string]string
+	input          string
 	// moduleLookupHandler answers checkModulePublished.
 	// A nil handler treats every version as published.
 	moduleLookupHandler func(modulePath, version string) (bool, error)
@@ -81,7 +83,12 @@ func (eff *mockEffects) runInteractiveCommand(string, string, ...string) error {
 }
 
 func (eff *mockEffects) readCharacter() (byte, error) {
-	panic("interactive input is not supported by mockEffects")
+	if eff.input == "" {
+		return 0, io.EOF
+	}
+	character := eff.input[0]
+	eff.input = eff.input[1:]
+	return character, nil
 }
 
 func (eff *mockEffects) today() time.Time {

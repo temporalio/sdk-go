@@ -54,7 +54,7 @@ func TestGoModRegexps(t *testing.T) {
 	})
 }
 
-func TestValidateGoMod(t *testing.T) {
+func TestNewValidatedGoMod(t *testing.T) {
 	const modulePath = "go.temporal.io/sdk/contrib/tally"
 	tests := []struct {
 		name  string
@@ -153,7 +153,7 @@ func TestValidateGoMod(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			_, err := ValidateGoMod(test.goMod, modulePath)
+			_, err := NewValidatedGoMod(test.goMod, modulePath)
 			if test.wantErr == "" {
 				if err != nil {
 					t.Fatalf("expected go.mod to be valid, got %v", err)
@@ -167,7 +167,7 @@ func TestValidateGoMod(t *testing.T) {
 	}
 }
 
-func TestValidateGoModReturnsTemporalRequirements(t *testing.T) {
+func TestNewValidatedGoModReturnsTemporalRequirements(t *testing.T) {
 	goMod := stripIndentation(`
 		module go.temporal.io/sdk/contrib/tally
 
@@ -178,12 +178,12 @@ func TestValidateGoModReturnsTemporalRequirements(t *testing.T) {
 		)
 	`)
 
-	requirements, err := ValidateGoMod(goMod, "go.temporal.io/sdk/contrib/tally")
+	validated, err := NewValidatedGoMod(goMod, "go.temporal.io/sdk/contrib/tally")
 	if err != nil {
 		t.Fatal(err)
 	}
 	var got strings.Builder
-	for _, requirement := range requirements {
+	for _, requirement := range validated.Requirements {
 		fmt.Fprintf(&got, "%s %s\n", requirement.ModulePath, requirement.Version)
 	}
 	testEqual(t, got.String(), `

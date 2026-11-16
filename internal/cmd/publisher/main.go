@@ -10,7 +10,7 @@ import (
 	"go.temporal.io/sdk/internal/cmd/publisher/pure"
 )
 
-const usage = "usage: publisher (find|pr|lint|release)"
+const usage = "usage: publisher (find|lint|pr|lint-release|release)"
 
 type command interface {
 	run() error
@@ -65,10 +65,12 @@ func newCommand(eff effects, args []string) (command, error) {
 	switch name {
 	case "find":
 		return newFindApp(eff, args[1:])
-	case "pr":
-		return newPrApp(eff, args[1:])
 	case "lint":
 		return newLintApp(eff, args[1:])
+	case "pr":
+		return newPrApp(eff, args[1:])
+	case "lint-release":
+		return newLintReleaseApp(eff, args[1:])
 	case "release":
 		return newReleaseApp(eff, args[1:])
 	default:
@@ -173,7 +175,7 @@ func (c *findApp) chooseVersion(module pure.Module, latestVersion *pure.Version,
 			return &pure.Version{latest[0], latest[1] + 1, 0}, nil
 		case 'p':
 			return &pure.Version{latest[0], latest[1], latest[2] + 1}, nil
-		case 's':
+		case 's', '\r', '\n':
 			return nil, nil
 		case 'c':
 			ref := head
@@ -196,6 +198,63 @@ func (c *findApp) chooseVersion(module pure.Module, latestVersion *pure.Version,
 			printLine(c.eff, "Invalid choice; enter m, p, c, d, or s.")
 		}
 	}
+}
+
+// LINT
+
+type lintApp struct {
+	app
+	baseCommit    string
+	skipChangelog bool
+}
+
+func newLintApp(eff effects, args []string) (*lintApp, error) {
+	const usage = "usage: publisher lint [-skip-changelog] BASE_COMMIT"
+	c := &lintApp{}
+	flags := flag.NewFlagSet("publisher lint", flag.ContinueOnError)
+	flags.SetOutput(errorWriter{eff: eff})
+	flags.BoolVar(&c.skipChangelog, "skip-changelog", false, "do not require a new changelog fragment")
+	flags.Usage = func() {
+		eff.err("%s\n", usage)
+		flags.PrintDefaults()
+	}
+	if err := flags.Parse(args); err != nil {
+		return nil, err
+	}
+	if flags.NArg() != 1 {
+		return nil, errors.New(usage)
+	}
+	r, err := newRepo(eff)
+	if err != nil {
+		return nil, err
+	}
+	c.app, c.baseCommit = app{repo: r}, flags.Arg(0)
+	return c, nil
+}
+
+func (c *lintApp) run() error {
+	baseCommit, err := c.resolveCommit(c.baseCommit)
+	if err != nil {
+		return err
+	}
+	coreTool, err := newCoreTool(c.eff, c.repoRoot)
+	if err != nil {
+		return err
+	}
+	modules := append([]pure.Module{pure.SDKModule()}, c.contribModules...)
+	for _, module := range modules {
+		requireNew := false
+		if !c.skipChangelog {
+			requireNew, err = c.moduleChanged(module, baseCommit)
+			if err != nil {
+				return err
+			}
+		}
+		if err := coreTool.checkChangelog(c.repoRoot, module, baseCommit, requireNew); err != nil {
+			return fmt.Errorf("check changelog for %s: %w", module.Name(), err)
+		}
+	}
+	return nil
 }
 
 // PR
@@ -284,7 +343,7 @@ func (c *prApp) run() (retErr error) {
 
 	printLine(c.eff, "\nNext steps:")
 	printLine(c.eff, "1. Lint the release branch:")
-	printDetail(c.eff, "publisher lint %s %s", branchName, pure.FormatVersionedModules(c.modules))
+	printDetail(c.eff, "publisher lint-release %s %s", branchName, pure.FormatVersionedModules(c.modules))
 	printLine(c.eff, "2. Fix errors and mark the PR as \"ready for review\".")
 	printLine(c.eff, "3. Merge the PR and copy the commit hash.")
 	printLine(c.eff, "4. Create draft github releases:")
@@ -314,17 +373,17 @@ func (c *prApp) goReleaseFiles(w *worktree, module pure.VersionedModule) error {
 	return nil
 }
 
-// LINT
+// LINT RELEASE
 
-type lintApp struct {
+type lintReleaseApp struct {
 	app
 	modules []pure.VersionedModule
 	commit  string
 }
 
-func newLintApp(eff effects, args []string) (*lintApp, error) {
-	const usage = "usage: publisher lint COMMIT MODULE=VERSION [MODULE=VERSION ...]"
-	flags := flag.NewFlagSet("publisher lint", flag.ContinueOnError)
+func newLintReleaseApp(eff effects, args []string) (*lintReleaseApp, error) {
+	const usage = "usage: publisher lint-release COMMIT MODULE=VERSION [MODULE=VERSION ...]"
+	flags := flag.NewFlagSet("publisher lint-release", flag.ContinueOnError)
 	flags.SetOutput(errorWriter{eff: eff})
 	flags.Usage = func() {
 		eff.err("%s\n", usage)
@@ -345,14 +404,14 @@ func newLintApp(eff effects, args []string) (*lintApp, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &lintApp{
+	return &lintReleaseApp{
 		app:     app{repo: r},
 		modules: modules,
 		commit:  commit,
 	}, nil
 }
 
-func (c *lintApp) run() (retErr error) {
+func (c *lintReleaseApp) run() (retErr error) {
 	printLine(c.eff, "Checking release readiness\n")
 
 	printLine(c.eff, "[1/2] Fetch origin, prepare changelog tool, and create worktree")
@@ -511,16 +570,16 @@ func (c *app) lintModule(w *worktree, module pure.VersionedModule, coreTool *cor
 	modulePath := m.ModulePath()
 
 	printDetail(c.eff, "%s: validate go.mod", modulePath)
-	goMod, err := w.eff.readFile(m.GoMod(w.worktreeRoot))
+	contents, err := w.eff.readFile(m.GoMod(w.worktreeRoot))
 	if err != nil {
 		return fmt.Errorf("%s: %w", modulePath, err)
 	}
-	requirements, err := pure.ValidateGoMod(goMod, modulePath)
+	goMod, err := pure.NewValidatedGoMod(contents, modulePath)
 	if err != nil {
 		return fmt.Errorf("%s: %w", modulePath, err)
 	}
 	printDetail(c.eff, "%s: verify that go.mod requirements are published", modulePath)
-	for _, requirement := range requirements {
+	for _, requirement := range goMod.Requirements {
 		published, err := w.eff.checkModulePublished(requirement.ModulePath, requirement.Version)
 		if err != nil {
 			return fmt.Errorf("%s: %w", modulePath, err)

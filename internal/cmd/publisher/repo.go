@@ -84,6 +84,16 @@ func repoRoot() (string, error) {
 
 // Git/GitHub operations
 
+func (r *repo) moduleChanged(module pure.Module, baseCommit string) (bool, error) {
+	args := []string{"diff", "--name-only", "--no-renames", baseCommit, "HEAD", "--"}
+	args = append(args, r.modulePathspecs(module)...)
+	output, err := r.eff.runCommand(r.repoRoot, "git", args...)
+	if err != nil {
+		return false, fmt.Errorf("check changes for %s since %s: %w", module.Name(), baseCommit, err)
+	}
+	return strings.TrimSpace(output) != "", nil
+}
+
 func (r *repo) fetchOrigin() error {
 	_, err := r.eff.runCommand(r.repoRoot, "git", "fetch", "--tags", "origin")
 	if err != nil {

@@ -27,30 +27,14 @@ jobs:
           ref: ${{ steps.tool.outputs.revision }}
           path: sdk-rust
       - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: sdk-go/go.mod
+          cache-dependency-path: sdk-go/go.sum
       - name: Validate changelog fragments
         working-directory: sdk-go
         env:
-          BASE: ${{ github.event.pull_request.base.sha }}
+          BASE_COMMIT: ${{ github.event.pull_request.base.sha }}
           SKIP_CHANGELOG: ${{ contains(github.event.pull_request.labels.*.name, 'skip-changelog') }}
         shell: bash
-        run: |
-          set -euo pipefail
-          repo="$PWD"
-          manifest="$repo/../sdk-rust/crates/changelog-release-notes/Cargo.toml"
-          found_new=false
-          while IFS= read -r -d '' module; do
-            directory="${module%go.mod}changelog"
-            (
-              cd ../sdk-rust
-              cargo run --quiet --locked --manifest-path "$manifest" --bin changelog-tool -- \
-                check --repo "$repo" --changelog "${module%go.mod}CHANGELOG.md" --fragments "$directory"
-            )
-            if [[ -n "$(git diff --name-only --diff-filter=A --no-renames "$BASE" HEAD -- \
-              ":(glob)$directory/*/*.md")" ]]; then
-              found_new=true
-            fi
-          done < <(git ls-files -z -- go.mod ':(glob)contrib/**/go.mod')
-          if [[ "$SKIP_CHANGELOG" != true && "$found_new" != true ]]; then
-            echo "Add a new changelog fragment or apply the skip-changelog label." >&2
-            exit 1
-          fi
+        run: go run ./internal/cmd/publisher lint -skip-changelog="$SKIP_CHANGELOG" "$BASE_COMMIT"

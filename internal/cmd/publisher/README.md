@@ -1,15 +1,17 @@
 This is a script that helps automate releasing the Go SDK and its contrib modules.
-Prepare a draft PR, lint its commit, then create draft releases after merging.
+Prepare a draft PR, run lint-release on its commit, then create draft releases after merging.
 
 ## Changelog tool setup
 
-Publisher invokes `cargo run --quiet --locked` from a local sdk-rust checkout.
+Publisher invokes `cargo run --quiet` from a local sdk-rust checkout.
 Install Rust and Cargo, and check out sdk-rust beside sdk-go at the revision in
 `sdk-rust-revision`. Set `PUBLISHER_SDK_RUST` to use a checkout elsewhere.
-The PR, lint, and release commands verify its HEAD once during setup, before
-creating a temporary worktree or validating modules. Discovery does not need the
-tool. Publisher does not fetch or change that checkout. Uncommitted tool edits are
-used, which allows testing coordinated changes.
+The lint, PR, lint-release, and release commands verify its HEAD once during
+setup, before creating a temporary worktree or validating modules. Discovery does
+not need the tool. Publisher does not fetch sdk-rust or change its Git revision.
+Uncommitted tool edits are used, which allows testing coordinated changes.
+Cargo may generate the workspace's ignored `Cargo.lock` and build artifacts.
+The source revision is pinned, but dependency resolution is not.
 
 Each module keeps pending notes in `changelog/<category>/<name>.md` relative to its
 module directory. Categories are `added`, `stabilized`, `changed`, `deprecated`,
@@ -23,10 +25,13 @@ patch `[p]`, view commit log `[c]`, view diff `[d]`, or skip `[s]`. Empty input 
 It prints a `publisher pr` command for the selected versions without running it.
 If no modules are selected, it prints no command or summary.
 
-The module list is computed once from the checkout's `HEAD`, including contrib
-directories with `go.mod` even without a changelog. Commit discovery excludes
-dependency-only changes (`go.mod` and `go.sum`) and changes belonging to nested
-modules. Local edits and commits outside `origin/main` are not included.
+The module list is computed once from the checkout's `HEAD`. A module is eligible
+for release discovery if it has a `CHANGELOG.md` file or a `changelog/` directory.
+CI uses the same eligibility rule and validates fragments even when there is no
+`CHANGELOG.md` yet. Commit discovery excludes dependency-only changes (`go.mod`
+and `go.sum`) and changes belonging to nested releasable modules. Changes in
+test-only nested modules count toward their containing releasable module.
+Local edits and commits outside `origin/main` are not included.
 A never-released module offers `0.1.0` for minor or `0.0.1` for patch.
 The scan is advisory: commits that were later reverted still appear.
 
@@ -38,6 +43,19 @@ pager to return to the release prompt. Both commands use the module's matching
 files and the selected commit; diffs compare against the last release, or an empty
 tree for never-released modules.
 EOF cancels without printing a release command, even if earlier modules were selected.
+
+`publisher lint [-skip-changelog] BASE_COMMIT` validates fragments and existing
+changelogs in the checkout for the SDK and releasable contrib modules. Each module
+with changes between `BASE_COMMIT` and `HEAD` must have a new fragment of its own.
+Change detection uses the same ownership rules as release discovery: dependency-only
+changes are ignored, nested releasable modules are checked separately, and test-only
+nested modules belong to their parent. A fragment for one module does not satisfy
+another module's requirement.
+Use `-skip-changelog` to waive only the new-fragment requirement; validation still
+runs for every module. CI sets this flag from the `skip-changelog` PR label.
+The base commit must already be available locally; this command does not fetch.
+Validation reads files from the working tree, but module discovery and the
+new-fragment check use committed files.
 
 `publisher pr MODULE=VERSION [MODULE=VERSION ...]` updates release files and creates a
 draft PR using the specified versions. For example,
@@ -57,18 +75,18 @@ versions and validates the merged release commit before creating draft releases.
 
 To see a sample execution, check out [main_test.go](./main_test.go).
 
-`publisher lint COMMIT MODULE=VERSION [MODULE=VERSION ...]` validates the specified
+`publisher lint-release COMMIT MODULE=VERSION [MODULE=VERSION ...]` validates the specified
 releases in a temporary snapshot after fetching origin. For example,
-`publisher lint my-release sdk=1.48.0 contrib/envconfig=1.0.3` checks those two releases.
+`publisher lint-release my-release sdk=1.48.0 contrib/envconfig=1.0.3` checks those two releases.
 Specify `HEAD`, a branch, a tag, or a commit SHA. There is no default commit.
 Uncommitted local edits are not included. Inspection checks module metadata,
 published Temporal dependencies, the SDK version constant, and changelog sections
 against the supplied release specs. The selected changelog sections must be dated
-today, using the machine's local date in `YYYY-MM-DD` format. Both lint and release
+today, using the machine's local date in `YYYY-MM-DD` format. Both lint-release and release
 enforce this check. It does not infer versions or compare them
 with existing release tags.
 
-Lint uses the shared tool's `release-notes --date` command, discarding its output.
+Lint-release uses the shared tool's `release-notes --date` command, discarding its output.
 It does not require pending
 fragment directories to be empty: notes merged after preparation belong to the next
 release. Publishing uses `release-notes` from the completed version section, with
@@ -90,9 +108,10 @@ as arguments.
 The package is organized as follows:
 
 - `main.go` contains the entry point, shared `app` dependencies, and the
-  `find`, `lint`, `pr`, and `release` commands, each with its own constructor, options, and workflow.
+  `find`, `lint`, `pr`, `lint-release`, and `release` commands, each with its own
+  constructor, options, and workflow.
   Commands that use the shared tool initialize it locally. This file also coordinates
-  module validation for lint and release.
+  module validation for lint-release and release.
 - `repo.go` owns operations on the original checkout, including fetching, resolving
   commits, discovering contrib changes, and creating and removing temporary worktrees.
 - `worktree.go` implements operations performed on a checkout or temporary worktree, like
