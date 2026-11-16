@@ -4,6 +4,7 @@
 package converter
 
 import (
+	"context"
 	"errors"
 	"io"
 	"net/http"
@@ -23,25 +24,14 @@ const (
 //
 // NOTE: Experimental
 type PayloadHTTPHandlerOptions struct {
-	// PostStorageCodecs are codecs applied after external storage from the
-	// perspective of payloads going through a encoding transformation. These are
-	// typically the codecs that would be configured in the proxy's codec chain.
-	// When encoding, the codecs are applied last to first meaning the earlier
-	// codecs wrap the later ones. When decoding, the codecs are applied first
-	// to last to reverse the effect.
+	// Codecs are the codecs configured on the client's DataConverter. They are
+	// applied to payloads before external storage on encode, and to encoded
+	// storage references and retrieved payloads on decode. The codecs are applied
+	// last to first meaning the earlier codecs wrap the later ones. When decoding,
+	// the codecs are applied first to last to reverse the effect.
 	//
 	// NOTE: Experimental.
-	PostStorageCodecs []PayloadCodec
-
-	// PreStorageCodecs are codecs that are applied before external storage,
-	// from the perspective of payloads going through an encoding transformation.
-	// These are typically the codecs that would be configured in the DataConverter
-	// codec chain on a Temporal client. When encoding, the codecs are applied last
-	// to first meaning the earlier codecs wrap the later ones. When decoding, the
-	// codecs are applied first to last to reverse the effect.
-	//
-	// NOTE: Experimental.
-	PreStorageCodecs []PayloadCodec
+	Codecs []PayloadCodec
 
 	// ExternalStorage configures external payload storage, allowing payloads
 	// to be stored and retrieved from external sources if they meet the size
@@ -52,10 +42,12 @@ type PayloadHTTPHandlerOptions struct {
 }
 
 type payloadHTTPHandler struct {
-	postStorageCodecs []PayloadCodec
-	preStorageCodecs  []PayloadCodec
-	retrievalVisitor  extstore.PayloadVisitor
-	storageVisitor    extstore.PayloadVisitor
+	codecs                       []PayloadCodec
+	referenceDecodingVisitor     extstore.PayloadVisitor
+	referenceOnlyDecodingVisitor extstore.PayloadVisitor
+	referenceEncodingVisitor     extstore.PayloadVisitor
+	retrievalVisitor             extstore.PayloadVisitor
+	storageVisitor               extstore.PayloadVisitor
 }
 
 var _ http.Handler = (*payloadHTTPHandler)(nil)
@@ -70,11 +62,14 @@ func NewPayloadHTTPHandler(options PayloadHTTPHandlerOptions) (http.Handler, err
 		return nil, err
 	}
 
+	referenceCodec := func(context.Context) extstore.ReferenceCodec { return codecChain(options.Codecs) }
 	h := &payloadHTTPHandler{
-		postStorageCodecs: options.PostStorageCodecs,
-		preStorageCodecs:  options.PreStorageCodecs,
-		retrievalVisitor:  extstore.NewExternalRetrievalVisitor(params),
-		storageVisitor:    extstore.NewExternalStorageVisitor(params),
+		codecs:                       options.Codecs,
+		referenceDecodingVisitor:     extstore.NewReferenceDecodingVisitor(params, referenceCodec),
+		referenceOnlyDecodingVisitor: extstore.NewReferenceOnlyDecodingVisitor(referenceCodec),
+		referenceEncodingVisitor:     extstore.NewReferenceEncodingVisitor(referenceCodec),
+		retrievalVisitor:             extstore.NewExternalRetrievalVisitor(params),
+		storageVisitor:               extstore.NewExternalStorageVisitor(params),
 	}
 	return h, nil
 }
@@ -141,53 +136,53 @@ func (h *payloadHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// decode decodes payloads through the post-storage then pre-storage codec chains.
-// If preserveStorageRefs=true is set in the query string, storage references are
-// returned as-is rather than being retrieved from external storage.
+// decode decodes storage references, retrieves the payloads they refer to, and
+// decodes the result. If preserveStorageRefs=true is set in the query string,
+// storage references are returned decoded but not retrieved.
 func (h *payloadHTTPHandler) decode(r *http.Request, payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	vpc := &proxy.VisitPayloadsContext{Context: r.Context()}
 	var err error
-
-	payloads, err = decodePayloads(payloads, h.postStorageCodecs)
+	if strings.EqualFold(r.URL.Query().Get("preserveStorageRefs"), "true") {
+		payloads, err = h.referenceOnlyDecodingVisitor.Visit(vpc, payloads)
+	} else {
+		payloads, err = h.referenceDecodingVisitor.Visit(vpc, payloads)
+		if err == nil {
+			payloads, err = h.retrievalVisitor.Visit(vpc, payloads)
+		}
+	}
 	if err != nil {
 		return nil, err
 	}
 
-	if !strings.EqualFold(r.URL.Query().Get("preserveStorageRefs"), "true") {
-		vpc := &proxy.VisitPayloadsContext{Context: r.Context()}
-		payloads, err = h.retrievalVisitor.Visit(vpc, payloads)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return decodeNonReferences(payloads, h.preStorageCodecs)
+	return decodeNonReferences(payloads, h.codecs)
 }
 
-// download retrieves payloads from external storage and decodes them through
-// the pre-storage codec chain. All input payloads must be storage references.
+// download retrieves payloads from external storage and decodes them. All input
+// payloads must be storage references.
 func (h *payloadHTTPHandler) download(r *http.Request, payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
 	for _, p := range payloads {
-		if !extstore.IsStorageReference(p) {
+		if !extstore.HasReferenceMarker(p) && !extstore.IsStorageReference(p) {
 			return nil, errors.New("all payloads must be storage references")
 		}
 	}
 
 	vpc := &proxy.VisitPayloadsContext{Context: r.Context()}
-	retrieved, err := h.retrievalVisitor.Visit(vpc, payloads)
+	references, err := h.referenceDecodingVisitor.Visit(vpc, payloads)
+	if err != nil {
+		return nil, err
+	}
+	retrieved, err := h.retrievalVisitor.Visit(vpc, references)
 	if err != nil {
 		return nil, err
 	}
 
-	return decodeNonReferences(retrieved, h.preStorageCodecs)
+	return decodeNonReferences(retrieved, h.codecs)
 }
 
-// encode encodes payloads through the pre-storage then post-storage codec chains,
-// applying external storage as configured. Storage references are returned for
-// payloads that meet the size threshold and driver selection criteria.
+// encode encodes payloads, applying external storage as configured, and encodes
+// the storage references that replace stored payloads.
 func (h *payloadHTTPHandler) encode(r *http.Request, payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
-	var err error
-
-	payloads, err = encodePayloads(payloads, h.preStorageCodecs)
+	payloads, err := encodePayloads(payloads, h.codecs)
 	if err != nil {
 		return nil, err
 	}
@@ -197,13 +192,22 @@ func (h *payloadHTTPHandler) encode(r *http.Request, payloads []*commonpb.Payloa
 	if err != nil {
 		return nil, err
 	}
-
-	payloads, err = encodePayloads(payloads, h.postStorageCodecs)
-	if err != nil {
-		return nil, err
+	if !extstore.WriteEncodedReferences {
+		return payloads, nil
 	}
 
-	return payloads, nil
+	return h.referenceEncodingVisitor.Visit(vpc, payloads)
+}
+
+// codecChain applies codecs the same way a CodecDataConverter does.
+type codecChain []PayloadCodec
+
+func (c codecChain) Encode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	return encodePayloads(payloads, c)
+}
+
+func (c codecChain) Decode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	return decodePayloads(payloads, c)
 }
 
 // decodeNonReferences decodes non-storage-reference payloads through the given

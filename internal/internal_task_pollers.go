@@ -217,9 +217,11 @@ type (
 	// payload visitor to each page fetched, resolving external storage references
 	// in paginated history events that were not part of the initial poll response.
 	retrievingHistoryIterator struct {
-		inner          HistoryIterator
-		inboundVisitor PayloadVisitor
-		storageParams  extstore.StorageParameters
+		inner             HistoryIterator
+		inboundVisitor    PayloadVisitor
+		storageParams     extstore.StorageParameters
+		dataConverter     converter.DataConverter
+		referenceContexts *workflowReferenceContexts
 	}
 
 	localActivityTaskPoller struct {
@@ -589,11 +591,6 @@ func (wtp *workflowTaskProcessor) processWorkflowTask(task *workflowTask) (retEr
 	ctx := extstore.WithStorageOperationCallback(context.Background(), downloadPayloadMetrics)
 
 	var taskErr error
-	if taskErr = visitProtoPayloads(ctx, wtp.inboundPayloadVisitor, task.task, wtp.storageParams.MaxOperationsPerMessage()); taskErr != nil {
-		wtp.handleInboundVisitorError(task.task, taskErr)
-		return nil
-	}
-
 	wfctx, err := wtp.contextManager.GetOrCreateWorkflowContext(task.task, task.historyIterator)
 	if err != nil {
 		return err
@@ -615,6 +612,13 @@ func (wtp *workflowTaskProcessor) processWorkflowTask(task *workflowTask) (retEr
 		}
 		wfctx.Unlock(taskErr)
 	}()
+
+	// Payloads are resolved once the run's context is held, so storage references
+	// can be decoded with contexts recorded from earlier workflow tasks.
+	if err := wtp.resolveWorkflowTaskPayloads(ctx, task, wfctx); err != nil {
+		wtp.handleInboundVisitorError(task.task, err)
+		return nil
+	}
 
 	for {
 		startTime := time.Now()
@@ -641,7 +645,7 @@ func (wtp *workflowTaskProcessor) processWorkflowTask(task *workflowTask) (retEr
 					return nil, nil
 				}
 				task := wtp.toWorkflowTask(heartbeatResponse.WorkflowTask)
-				if err := visitProtoPayloads(ctx, wtp.inboundPayloadVisitor, task.task, wtp.storageParams.MaxOperationsPerMessage()); err != nil {
+				if err := wtp.resolveWorkflowTaskPayloads(ctx, task, wfctx); err != nil {
 					wtp.handleInboundVisitorError(task.task, err)
 					return nil, nil
 				}
@@ -680,7 +684,7 @@ func (wtp *workflowTaskProcessor) processWorkflowTask(task *workflowTask) (retEr
 
 		// we are getting new workflow task, so reset the workflowTask and continue process the new one
 		task = wtp.toWorkflowTask(response.WorkflowTask)
-		if err := visitProtoPayloads(ctx, wtp.inboundPayloadVisitor, task.task, wtp.storageParams.MaxOperationsPerMessage()); err != nil {
+		if err := wtp.resolveWorkflowTaskPayloads(ctx, task, wfctx); err != nil {
 			wtp.handleInboundVisitorError(task.task, err)
 			return nil
 		}
@@ -1042,6 +1046,13 @@ func (wtp *workflowTaskProcessor) reportGrpcMessageTooLarge(
 		panic("unknown request type from ProcessWorkflowTask()")
 	}
 	return
+}
+
+// resolveWorkflowTaskPayloads requires the caller to hold wfctx's lock.
+func (wtp *workflowTaskProcessor) resolveWorkflowTaskPayloads(ctx context.Context, task *workflowTask, wfctx *workflowExecutionContextImpl) error {
+	useReferenceContexts(task.historyIterator, wfctx.referenceContexts)
+	visitor := newWorkflowTaskInboundVisitor(wtp.inboundPayloadVisitor, wtp.dataConverter, wfctx.referenceContexts)
+	return visitProtoPayloads(ctx, visitor, task.task, wtp.storageParams.MaxOperationsPerMessage())
 }
 
 func (wtp *workflowTaskProcessor) handleInboundVisitorError(task *workflowservice.PollWorkflowTaskQueueResponse, visitErr error) {
@@ -1676,6 +1687,7 @@ func (wtp *workflowTaskPoller) toWorkflowTask(response *workflowservice.PollWork
 			},
 			inboundVisitor: wtp.inboundPayloadVisitor,
 			storageParams:  wtp.storageParams,
+			dataConverter:  wtp.dataConverter,
 		},
 	}
 }
@@ -1696,6 +1708,7 @@ func (wtp *workflowTaskProcessor) toWorkflowTask(response *workflowservice.PollW
 			},
 			inboundVisitor: wtp.inboundPayloadVisitor,
 			storageParams:  wtp.storageParams,
+			dataConverter:  wtp.dataConverter,
 		},
 	}
 }
@@ -1735,10 +1748,20 @@ func (r *retrievingHistoryIterator) GetNextPage() (*historypb.History, error) {
 	if err != nil || history == nil {
 		return history, err
 	}
-	if err := visitProtoPayloads(context.Background(), r.inboundVisitor, history, r.storageParams.MaxOperationsPerMessage()); err != nil {
+	visitor := r.inboundVisitor
+	if r.referenceContexts != nil {
+		visitor = newWorkflowTaskInboundVisitor(r.inboundVisitor, r.dataConverter, r.referenceContexts)
+	}
+	if err := visitProtoPayloads(context.Background(), visitor, history, r.storageParams.MaxOperationsPerMessage()); err != nil {
 		return nil, err
 	}
 	return history, nil
+}
+
+func useReferenceContexts(historyIterator HistoryIterator, contexts *workflowReferenceContexts) {
+	if r, ok := historyIterator.(*retrievingHistoryIterator); ok {
+		r.referenceContexts = contexts
+	}
 }
 
 func (r *retrievingHistoryIterator) HasNextPage() bool { return r.inner.HasNextPage() }

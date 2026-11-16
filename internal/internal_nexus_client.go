@@ -223,6 +223,7 @@ type (
 		dc                    converter.DataConverter
 		failureConverter      converter.FailureConverter
 		inboundPayloadVisitor PayloadVisitor
+		failurePayloadVisitor PayloadVisitor
 	}
 
 	// ClientNexusOperationCancellationInfo contains cancellation information for a Nexus operation.
@@ -394,7 +395,7 @@ func (d *ClientNexusOperationExecutionDescription) GetLastAttemptFailure() error
 	if failure == nil {
 		return nil
 	}
-	if err := visitProtoPayloads(context.Background(), d.inboundPayloadVisitor, failure, 0); err != nil {
+	if err := visitProtoPayloads(context.Background(), d.failurePayloadVisitor, failure, 0); err != nil {
 		return err
 	}
 	return d.failureConverter.FailureToError(failure)
@@ -783,12 +784,13 @@ func (w *workflowClientInterceptor) PollNexusOperationResult(
 	// Servers without propagation support do not return the context, so fall back to the start
 	// request's context, which detached handles do not have.
 	serializationContext := serializationContextFor(in.nexusSerializationContext, resp.GetPropagatedNexusSerializationContext())
+	inboundPayloadVisitor := w.inboundPayloadVisitor
 	if serializationContext != nil {
 		dataConverter = converter.WithDataConverterSerializationContext(dataConverter, serializationContext)
 		failureConverter = converter.WithFailureConverterSerializationContext(failureConverter, serializationContext)
+		inboundPayloadVisitor = bindReferenceSerializationContext(inboundPayloadVisitor, serializationContext)
 	}
-
-	if err := visitProtoPayloads(ctx, w.inboundPayloadVisitor, resp, 0); err != nil {
+	if err := visitProtoPayloads(ctx, inboundPayloadVisitor, resp, 0); err != nil {
 		return nil, err
 	}
 
@@ -844,7 +846,7 @@ func (w *workflowClientInterceptor) DescribeNexusOperation(
 			Reason:                  info.CancellationInfo.Reason,
 			lastAttemptFailure:      info.CancellationInfo.LastAttemptFailure,
 			failureConverter:        failureConverter,
-			inboundPayloadVisitor:   w.inboundPayloadVisitor,
+			inboundPayloadVisitor:   bindReferenceSerializationContext(w.inboundPayloadVisitor, nexusContext),
 		}
 	}
 
@@ -881,6 +883,7 @@ func (w *workflowClientInterceptor) DescribeNexusOperation(
 			dc:                      WithContext(ctx, w.client.dataConverter),
 			failureConverter:        failureConverter,
 			inboundPayloadVisitor:   w.inboundPayloadVisitor,
+			failurePayloadVisitor:   bindReferenceSerializationContext(w.inboundPayloadVisitor, nexusContext),
 		},
 	}, nil
 }

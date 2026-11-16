@@ -365,32 +365,33 @@ type (
 	ClientActivityExecutionDescription struct {
 		ClientActivityExecutionInfo
 		// Raw server response this struct was built from.
-		RawResponse               *workflowservice.DescribeActivityExecutionResponse
-		ScheduleToCloseTimeout    time.Duration
-		ScheduleToStartTimeout    time.Duration
-		StartToCloseTimeout       time.Duration
-		HeartbeatTimeout          time.Duration
-		StartDelay                time.Duration
-		RunState                  enumspb.PendingActivityState
-		LastHeartbeatTime         time.Time
-		LastStartedTime           time.Time
-		Attempt                   int32
-		TotalHeartbeatCount       int64
-		RetryPolicy               *RetryPolicy
-		ExpirationTime            time.Time
-		LastWorkerIdentity        string
-		CurrentRetryInterval      time.Duration
-		LastAttemptCompleteTime   time.Time
-		NextAttemptScheduleTime   time.Time
-		LastDeploymentVersion     *WorkerDeploymentVersion
-		Priority                  Priority
-		CanceledReason            string
-		dataConverter             converter.DataConverter
-		callerFacingDataConverter converter.DataConverter // result and heartbeat details; uses the propagated Nexus context, if any
-		failureConverter          converter.FailureConverter
-		inboundPayloadVisitor     PayloadVisitor
-		summary                   string
-		staticDetails             string
+		RawResponse                *workflowservice.DescribeActivityExecutionResponse
+		ScheduleToCloseTimeout     time.Duration
+		ScheduleToStartTimeout     time.Duration
+		StartToCloseTimeout        time.Duration
+		HeartbeatTimeout           time.Duration
+		StartDelay                 time.Duration
+		RunState                   enumspb.PendingActivityState
+		LastHeartbeatTime          time.Time
+		LastStartedTime            time.Time
+		Attempt                    int32
+		TotalHeartbeatCount        int64
+		RetryPolicy                *RetryPolicy
+		ExpirationTime             time.Time
+		LastWorkerIdentity         string
+		CurrentRetryInterval       time.Duration
+		LastAttemptCompleteTime    time.Time
+		NextAttemptScheduleTime    time.Time
+		LastDeploymentVersion      *WorkerDeploymentVersion
+		Priority                   Priority
+		CanceledReason             string
+		dataConverter              converter.DataConverter
+		callerFacingDataConverter  converter.DataConverter // result and heartbeat details; uses the propagated Nexus context, if any
+		failureConverter           converter.FailureConverter
+		inboundPayloadVisitor      PayloadVisitor
+		callerFacingPayloadVisitor PayloadVisitor
+		summary                    string
+		staticDetails              string
 	}
 
 	// clientActivityHandleImpl is the default implementation of ClientActivityHandle.
@@ -417,7 +418,7 @@ func (d *ClientActivityExecutionDescription) GetHeartbeatDetails(valuePtrs ...an
 	if details == nil {
 		return ErrNoData
 	}
-	if err := visitProtoPayloads(context.Background(), d.inboundPayloadVisitor, details, 0); err != nil {
+	if err := visitProtoPayloads(context.Background(), d.callerFacingPayloadVisitor, details, 0); err != nil {
 		return err
 	}
 	return d.callerFacingDataConverter.FromPayloads(details, valuePtrs...)
@@ -462,7 +463,7 @@ func (d *ClientActivityExecutionDescription) GetResult(valuePtr any) error {
 	if !ok {
 		return ErrNoData
 	}
-	if err := visitProtoPayloads(context.Background(), d.inboundPayloadVisitor, outcome.Result, 0); err != nil {
+	if err := visitProtoPayloads(context.Background(), d.callerFacingPayloadVisitor, outcome.Result, 0); err != nil {
 		return err
 	}
 	return d.callerFacingDataConverter.FromPayloads(outcome.Result, valuePtr)
@@ -487,7 +488,7 @@ func (d *ClientActivityExecutionDescription) GetOutcomeFailure() error {
 	if !ok {
 		return nil
 	}
-	if err := visitProtoPayloads(context.Background(), d.inboundPayloadVisitor, outcome.Failure, 0); err != nil {
+	if err := visitProtoPayloads(context.Background(), d.callerFacingPayloadVisitor, outcome.Failure, 0); err != nil {
 		return err
 	}
 	return d.failureConverter.FailureToError(outcome.Failure)
@@ -510,7 +511,7 @@ func (d *ClientActivityExecutionDescription) GetLastFailure() error {
 	if failure == nil {
 		return nil
 	}
-	if err := visitProtoPayloads(context.Background(), d.inboundPayloadVisitor, failure, 0); err != nil {
+	if err := visitProtoPayloads(context.Background(), d.callerFacingPayloadVisitor, failure, 0); err != nil {
 		return err
 	}
 	return d.failureConverter.FailureToError(failure)
@@ -986,12 +987,12 @@ func (w *workflowClientInterceptor) PollActivityResult(
 		}
 	}
 
-	if err := visitProtoPayloads(ctx, w.inboundPayloadVisitor, resp, 0); err != nil {
+	serializationContext := serializationContextFor(converter.ActivitySerializationContext{Namespace: w.client.namespace},
+		resp.GetPropagatedNexusSerializationContext())
+	if err := visitProtoPayloads(ctx, bindReferenceSerializationContext(w.inboundPayloadVisitor, serializationContext), resp, 0); err != nil {
 		return nil, err
 	}
 
-	serializationContext := serializationContextFor(converter.ActivitySerializationContext{Namespace: w.client.namespace},
-		resp.GetPropagatedNexusSerializationContext())
 	dataConverter := converter.WithDataConverterSerializationContext(
 		WithContext(ctx, w.client.dataConverter), serializationContext)
 	failureConverter := converter.WithFailureConverterSerializationContext(
@@ -1087,7 +1088,8 @@ func (w *workflowClientInterceptor) DescribeActivity(
 				WithContext(ctx, w.client.dataConverter), resultContext),
 			failureConverter: converter.WithFailureConverterSerializationContext(
 				w.client.failureConverter, resultContext),
-			inboundPayloadVisitor: w.inboundPayloadVisitor,
+			inboundPayloadVisitor:      bindReferenceSerializationContext(w.inboundPayloadVisitor, activityContext),
+			callerFacingPayloadVisitor: bindReferenceSerializationContext(w.inboundPayloadVisitor, resultContext),
 		},
 	}, nil
 }

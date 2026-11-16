@@ -312,7 +312,7 @@ func (wc *WorkflowClient) getWorkflow(ctx context.Context, workflowID string, ru
 		dataConverter:         converter.WithDataConverterSerializationContext(wc.dataConverter, gwCtx),
 		failureConverter:      converter.WithFailureConverterSerializationContext(wc.failureConverter, gwCtx),
 		registry:              wc.registry,
-		inboundPayloadVisitor: extstore.NewExternalRetrievalVisitor(wc.storageParams.WithLogger(wc.logger)),
+		inboundPayloadVisitor: bindReferenceSerializationContext(newInboundPayloadVisitor(wc.dataConverter, wc.storageParams.WithLogger(wc.logger)), gwCtx),
 	}
 }
 
@@ -1855,7 +1855,7 @@ func (wc *WorkflowClient) Close() {
 func (wc *WorkflowClient) newOutboundPayloadVisitor() PayloadVisitor {
 	payloadLimitVisitor, _ := newPayloadLimitsVisitor(wc.payloadWarningLimits, wc.logger)
 	return newCompositePayloadVisitor(
-		extstore.NewExternalStorageVisitor(wc.storageParams.WithLogger(wc.logger)),
+		newOutboundStorageVisitor(wc.dataConverter, wc.storageParams.WithLogger(wc.logger)),
 		payloadLimitVisitor,
 	)
 }
@@ -2027,14 +2027,16 @@ func (workflowRun *workflowRunImpl) getResult(
 		return nil, err
 	}
 
-	if err := visitProtoPayloads(ctx, workflowRun.inboundPayloadVisitor, closeEvent, 0); err != nil {
-		return nil, err
-	}
+	inboundPayloadVisitor := workflowRun.inboundPayloadVisitor
 	dataConverter := workflowRun.dataConverter
 	failureConverter := workflowRun.failureConverter
 	if propagatedContext != nil {
+		inboundPayloadVisitor = bindReferenceSerializationContext(inboundPayloadVisitor, *propagatedContext)
 		dataConverter = converter.WithDataConverterSerializationContext(dataConverter, *propagatedContext)
 		failureConverter = converter.WithFailureConverterSerializationContext(failureConverter, *propagatedContext)
+	}
+	if err := visitProtoPayloads(ctx, inboundPayloadVisitor, closeEvent, 0); err != nil {
+		return nil, err
 	}
 
 	switch closeEvent.GetEventType() {
@@ -2353,7 +2355,7 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 		dataConverter:         converter.WithDataConverterSerializationContext(w.client.dataConverter, serializationContext),
 		failureConverter:      converter.WithFailureConverterSerializationContext(w.client.failureConverter, serializationContext),
 		registry:              w.client.registry,
-		inboundPayloadVisitor: w.inboundPayloadVisitor,
+		inboundPayloadVisitor: bindReferenceSerializationContext(w.inboundPayloadVisitor, serializationContext),
 	}, nil
 }
 
@@ -2574,7 +2576,13 @@ func (w *workflowClientInterceptor) updateWithStartWorkflow(
 			break
 		}
 	}
-	if err := visitProtoPayloads(ctx, w.inboundPayloadVisitor, updateResp, 0); err != nil {
+	wfCtx := converter.WorkflowSerializationContext{
+		Namespace:  w.client.namespace,
+		WorkflowID: startRequest.WorkflowId,
+	}
+	// The outcome is decoded with the propagated Nexus context, if any; see updateHandleFromResponse.
+	updateContext := serializationContextFor(wfCtx, updateResp.GetPropagatedNexusSerializationContext())
+	if err := visitProtoPayloads(ctx, bindReferenceSerializationContext(w.inboundPayloadVisitor, updateContext), updateResp, 0); err != nil {
 		return nil, err
 	}
 	return updateResp, nil
@@ -2782,7 +2790,7 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 		dataConverter:         converter.WithDataConverterSerializationContext(w.client.dataConverter, swsCtx),
 		failureConverter:      converter.WithFailureConverterSerializationContext(w.client.failureConverter, swsCtx),
 		registry:              w.client.registry,
-		inboundPayloadVisitor: w.inboundPayloadVisitor,
+		inboundPayloadVisitor: bindReferenceSerializationContext(w.inboundPayloadVisitor, swsCtx),
 	}, nil
 }
 
@@ -2928,16 +2936,17 @@ func (w *workflowClientInterceptor) DescribeWorkflow(
 		WorkflowCloseTime:       closeTime,
 		HistoryLength:           int(info.GetHistoryLength()),
 	}
+	wfCtx := converter.WorkflowSerializationContext{
+		Namespace:  w.client.namespace,
+		WorkflowID: in.WorkflowID,
+	}
 	o := &WorkflowExecutionDescription{
 		WorkflowExecutionMetadata: m,
 		RawResponse:               resp,
-		dc: converter.WithDataConverterSerializationContext(w.client.dataConverter, converter.WorkflowSerializationContext{
-			Namespace:  w.client.namespace,
-			WorkflowID: in.WorkflowID,
-		}),
-		inboundPayloadVisitor: w.inboundPayloadVisitor,
-		staticSummaryPayload:  resp.GetExecutionConfig().GetUserMetadata().GetSummary(),
-		staticDetailsPayload:  resp.GetExecutionConfig().GetUserMetadata().GetDetails(),
+		dc:                        converter.WithDataConverterSerializationContext(w.client.dataConverter, wfCtx),
+		inboundPayloadVisitor:     bindReferenceSerializationContext(w.inboundPayloadVisitor, wfCtx),
+		staticSummaryPayload:      resp.GetExecutionConfig().GetUserMetadata().GetSummary(),
+		staticDetailsPayload:      resp.GetExecutionConfig().GetUserMetadata().GetDetails(),
 	}
 
 	return &ClientDescribeWorkflowOutput{
@@ -2949,10 +2958,11 @@ func (w *workflowClientInterceptor) QueryWorkflow(
 	ctx context.Context,
 	in *ClientQueryWorkflowInput,
 ) (converter.EncodedValue, error) {
-	dc := converter.WithDataConverterSerializationContext(w.client.dataConverter, converter.WorkflowSerializationContext{
+	wfCtx := converter.WorkflowSerializationContext{
 		Namespace:  w.client.namespace,
 		WorkflowID: in.WorkflowID,
-	})
+	}
+	dc := converter.WithDataConverterSerializationContext(w.client.dataConverter, wfCtx)
 
 	// get workflow headers from the context
 	header, err := headerPropagated(ctx, w.client.contextPropagators, w.client.workflowHeaderCodec(in.WorkflowID))
@@ -2998,7 +3008,7 @@ func (w *workflowClientInterceptor) QueryWorkflow(
 		return nil, err
 	}
 
-	if err := visitProtoPayloads(ctx, w.inboundPayloadVisitor, resp, 0); err != nil {
+	if err := visitProtoPayloads(ctx, bindReferenceSerializationContext(w.inboundPayloadVisitor, wfCtx), resp, 0); err != nil {
 		return nil, err
 	}
 
@@ -3054,7 +3064,13 @@ func (w *workflowClientInterceptor) UpdateWorkflow(
 		}
 	}
 
-	if err := visitProtoPayloads(ctx, w.inboundPayloadVisitor, resp, 0); err != nil {
+	wfCtx := converter.WorkflowSerializationContext{
+		Namespace:  w.client.namespace,
+		WorkflowID: in.WorkflowID,
+	}
+	// The outcome is decoded with the propagated Nexus context, if any; see updateHandleFromResponse.
+	updateContext := serializationContextFor(wfCtx, resp.GetPropagatedNexusSerializationContext())
+	if err := visitProtoPayloads(ctx, bindReferenceSerializationContext(w.inboundPayloadVisitor, updateContext), resp, 0); err != nil {
 		return nil, err
 	}
 
@@ -3200,11 +3216,11 @@ func (w *workflowClientInterceptor) PollWorkflowUpdate(
 			return nil, err
 		}
 
-		if err := visitProtoPayloads(parentCtx, w.inboundPayloadVisitor, resp, 0); err != nil {
+		serializationContext := serializationContextFor(wfCtx, resp.GetPropagatedNexusSerializationContext())
+		if err := visitProtoPayloads(parentCtx, bindReferenceSerializationContext(w.inboundPayloadVisitor, serializationContext), resp, 0); err != nil {
 			return nil, err
 		}
 
-		serializationContext := serializationContextFor(wfCtx, resp.GetPropagatedNexusSerializationContext())
 		switch v := resp.GetOutcome().GetValue().(type) {
 		case *updatepb.Outcome_Failure:
 			fc := converter.WithFailureConverterSerializationContext(w.client.failureConverter, serializationContext)
