@@ -8,19 +8,8 @@
 //
 // Time skipping is switched on per execution, by passing a
 // [go.temporal.io/sdk/client.TimeSkippingConfig] when the workflow is started
-// or the schedule created. A workflow's configuration propagatea to the
+// or the schedule created. A workflow's configuration propagates to the
 // children and scheduled workflows it starts, unless DisablePropagation is set.
-//
-//	cfg := client.TimeSkippingConfig{Enabled: true}
-//	run, _ := c.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
-//		ID:                 "wf",
-//		TaskQueue:          tq,
-//		TimeSkippingConfig: &cfg,
-//	}, MyWorkflow)
-//
-//	// Advance an hour and wait for it to land.
-//	ok, _ := timeskipping.FastForwardWorkflow(ctx, c, run,
-//		timeskipping.WorkflowFastForwardOptions{Duration: time.Hour})
 //
 // The server must have time skipping enabled; [StartDevServer] starts a dev
 // server with the dynamic config it needs.
