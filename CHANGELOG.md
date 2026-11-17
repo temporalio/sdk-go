@@ -27,7 +27,7 @@ to docs, or any other relevant information.
   hour-long sleep or a week of scheduled runs completes in moments. Unlike the
   older Java test server, each execution has its own virtual clock. See the
   [timeskipping](https://pkg.go.dev/go.temporal.io/sdk/timeskipping) package.
-  Requires a Temporal Server with time skipping enabled via
+  Requires a Temporal Server with time skipping enabled, such as with
   `timeskipping.StartDevServer`.
 - **Experimental**: `converter.StorageDriverStoreContext` and
   `converter.StorageDriverSelectContext` have a `Namespace` field holding the
