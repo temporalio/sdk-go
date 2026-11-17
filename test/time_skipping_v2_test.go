@@ -1113,7 +1113,7 @@ func (s *TimeSkippingV2TestSuite) startSessionFieldsRun(
 	ctx context.Context, tq string, seconds float64,
 ) client.WorkflowRun {
 	cfg := client.TimeSkippingConfig{
-		Enabled:             true,
+		Enabled:             false,
 		DisablePropagation:  true,
 		MaxSessionSkipCount: 50,
 	}
