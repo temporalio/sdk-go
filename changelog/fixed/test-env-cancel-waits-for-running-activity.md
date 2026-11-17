@@ -1,0 +1,1 @@
+`testsuite.TestWorkflowEnvironment` no longer advances a canceled workflow past a running activity before that activity finishes. Deferred workflow functions now run only after the in-flight activity completes, matching the order observed with a real Temporal server.
