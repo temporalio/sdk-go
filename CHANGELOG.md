@@ -22,6 +22,14 @@ to docs, or any other relevant information.
 
 ### Added
 
+- **Experimental**: `converter.StorageDriverStoreContext` and
+  `converter.StorageDriverSelectContext` have a `Namespace` field holding the
+  namespace of the client or worker performing the operation, so drivers and
+  selectors can partition by namespace even when there is no `Target`.
+- Added experimental `worker.GetSlotUsage`, which returns a snapshot of a worker's task slot usage.
+- Added experimental `worker.GetInfo`, which returns a snapshot of a worker's state, currently its task
+  slot usage.
+
 ### Changed
 
 ### Deprecated

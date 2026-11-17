@@ -175,7 +175,7 @@ func TestStore_SinglePayload(t *testing.T) {
 	data, _ := proto.Marshal(p)
 	h := sha256.Sum256(data)
 	expectedDigest := hex.EncodeToString(h[:])
-	assert.Equal(t, "v0/d/sha256/"+expectedDigest, claims[0].ClaimData["object_name"])
+	assert.Equal(t, "v0/ns/null/d/sha256/"+expectedDigest, claims[0].ClaimData["object_name"])
 	assert.Equal(t, expectedDigest, claims[0].ClaimData["hash_value"])
 }
 
@@ -507,7 +507,38 @@ func TestRetrieve_ClaimMissingHashValue(t *testing.T) {
 // --- Object name generation tests ---
 
 func TestObjectName_NoTarget(t *testing.T) {
-	assert.Equal(t, "v0/d/sha256/abc123", objectName(nil, "abc123"))
+	assert.Equal(t, "v0/ns/null/d/sha256/abc123", objectName(nil, "", "abc123"))
+}
+
+func TestObjectName_NoTargetWithNamespace(t *testing.T) {
+	assert.Equal(t, "v0/ns/my%2Fns/d/sha256/abc123", objectName(nil, "my/ns", "abc123"))
+}
+
+func TestObjectName_TargetNamespaceOverridesAmbient(t *testing.T) {
+	workflowTarget := converter.StorageDriverWorkflowInfo{
+		Namespace:    "target-ns",
+		WorkflowType: "MyWorkflow",
+		WorkflowID:   "wf-123",
+		RunID:        "run-456",
+	}
+	assert.Equal(t,
+		"v0/ns/target-ns/wt/MyWorkflow/wi/wf-123/ri/run-456/d/sha256/abc123",
+		objectName(workflowTarget, "ambient-ns", "abc123"),
+	)
+	activityTarget := converter.StorageDriverActivityInfo{
+		Namespace:    "target-ns",
+		ActivityType: "MyActivity",
+		ActivityID:   "act-789",
+		RunID:        "run-abc",
+	}
+	assert.Equal(t,
+		"v0/ns/target-ns/at/MyActivity/ai/act-789/ri/run-abc/d/sha256/abc123",
+		objectName(activityTarget, "ambient-ns", "abc123"),
+	)
+	assert.Equal(t,
+		"v0/ns/null/wt/null/wi/null/ri/null/d/sha256/abc123",
+		objectName(converter.StorageDriverWorkflowInfo{}, "ambient-ns", "abc123"),
+	)
 }
 
 func TestObjectName_WorkflowInfo(t *testing.T) {
@@ -519,7 +550,7 @@ func TestObjectName_WorkflowInfo(t *testing.T) {
 	}
 	assert.Equal(t,
 		"v0/ns/default/wt/MyWorkflow/wi/wf-123/ri/run-456/d/sha256/abc123",
-		objectName(target, "abc123"),
+		objectName(target, "", "abc123"),
 	)
 }
 
@@ -532,7 +563,7 @@ func TestObjectName_ActivityInfo(t *testing.T) {
 	}
 	assert.Equal(t,
 		"v0/ns/default/at/MyActivity/ai/act-789/ri/run-abc/d/sha256/abc123",
-		objectName(target, "abc123"),
+		objectName(target, "", "abc123"),
 	)
 }
 
@@ -544,7 +575,7 @@ func TestObjectName_WorkflowInfo_EmptyFields(t *testing.T) {
 	}
 	assert.Equal(t,
 		"v0/ns/my-ns/wt/null/wi/null/ri/null/d/sha256/abc123",
-		objectName(target, "abc123"),
+		objectName(target, "", "abc123"),
 	)
 }
 
@@ -555,7 +586,7 @@ func TestObjectName_ActivityInfo_EmptyFields(t *testing.T) {
 	}
 	assert.Equal(t,
 		"v0/ns/my-ns/at/null/ai/null/ri/null/d/sha256/abc123",
-		objectName(target, "abc123"),
+		objectName(target, "", "abc123"),
 	)
 }
 
@@ -567,7 +598,7 @@ func TestObjectName_WorkflowInfo_SpecialChars(t *testing.T) {
 		WorkflowID:   "wf id+1",
 		RunID:        "run=abc",
 	}
-	name := objectName(target, "abc123")
+	name := objectName(target, "", "abc123")
 	assert.Equal(t,
 		"v0/ns/my namespace/wt/my%2Fworkflow/wi/wf id+1/ri/run=abc/d/sha256/abc123",
 		name,
@@ -584,8 +615,9 @@ func TestObjectName_LongNameFallback(t *testing.T) {
 		WorkflowID:   longID,
 		RunID:        longID,
 	}
-	name := objectName(target, "abc123")
+	name := objectName(target, "", "abc123")
 	assert.Equal(t, "v0/ns/"+longID+"/d/sha256/abc123", name)
+	assert.Equal(t, name, objectName(target, "ambient-ns", "abc123"))
 }
 
 func TestEncodeObjectNameSegment_Empty(t *testing.T) {
