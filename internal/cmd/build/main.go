@@ -288,6 +288,57 @@ func findUnitModuleDirs(root fs.FS) ([]string, error) {
 	return unitModuleDirs, nil
 }
 
+// moduleList distinguishes an omitted flag (nil) from an explicitly empty list.
+type moduleList []string
+
+func (m moduleList) String() string {
+	return strings.Join(m, ",")
+}
+
+func (m *moduleList) Set(value string) error {
+	names := make([]string, 0)
+	if value != "" {
+		for _, name := range strings.Split(value, ",") {
+			name = strings.TrimSpace(name)
+			if name == "" {
+				return fmt.Errorf("must be a comma-separated list without empty entries")
+			}
+			name = filepath.ToSlash(filepath.Clean(filepath.FromSlash(name)))
+			if !slices.Contains(names, name) {
+				names = append(names, name)
+			}
+		}
+	}
+	*m = names
+	return nil
+}
+
+func selectModuleNames(available, selected []string) ([]string, error) {
+	for _, name := range selected {
+		if !slices.Contains(available, name) {
+			return nil, fmt.Errorf("no test module found for argument %q in -module", name)
+		}
+	}
+	names := make([]string, 0, len(available))
+	for _, name := range available {
+		if len(selected) == 0 || slices.Contains(selected, name) {
+			names = append(names, name)
+		}
+	}
+	return names, nil
+}
+
+func validateReleaseModules(available, releaseModules []string) error {
+	for _, name := range releaseModules {
+		if !slices.Contains(available, name) || isIntegrationTestModuleDir(name) {
+			return fmt.Errorf("no release module found for -release-modules %q; select the SDK or a library module, not its test module", name)
+		}
+	}
+	return nil
+}
+
+const releaseModulesUsage = "Ignore all go.mod replacements except these comma-separated repository-relative module directories (empty: ignore all)"
+
 func isIntegrationTestModuleDir(moduleDir string) bool {
 	if moduleDir == integrationTestModuleDir || strings.HasPrefix(moduleDir, integrationTestModuleDir+"/") {
 		return true
@@ -305,11 +356,6 @@ func isIntegrationTestModuleDir(moduleDir string) bool {
 
 const integrationTestUsage = `Usage: go run . integration-test [options]
 
-Release mode keeps only -release-module local and resolves all other dependencies
-from published versions. All other requirements must name published versions.
-For example:
-  go run . integration-test -module contrib/opentelemetry-v2/test -release -release-module contrib/opentelemetry-v2
-
 Options:
 `
 
@@ -320,9 +366,9 @@ func (b *builder) integrationTest() error {
 		fmt.Fprint(flagSet.Output(), integrationTestUsage)
 		flagSet.PrintDefaults()
 	}
-	moduleFlag := flagSet.String("module", "", "Run only this integration test module relative to the repository root (default: all)")
-	releaseFlag := flagSet.Bool("release", false, "Test against published dependencies, keeping only -release-module local (requires -module)")
-	releaseModuleFlag := flagSet.String("release-module", "", "Module directory to keep local, relative to the repository root; use . for the SDK (requires -release)")
+	var modules, releaseModules moduleList
+	flagSet.Var(&modules, "module", "Comma-separated integration test module directories relative to the repository root (default: all)")
+	flagSet.Var(&releaseModules, "release-modules", releaseModulesUsage)
 	runFlag := flagSet.String("run", "", "Passed to go test as -run")
 	pFlag := flagSet.String("p", "", "Passed to go test as -p")
 	packagesFlag := flagSet.String("packages", "./...", "Packages passed to go test")
@@ -341,12 +387,6 @@ func (b *builder) integrationTest() error {
 	if flagSet.NArg() != 0 {
 		return fmt.Errorf("integration-test: unexpected arguments: %s", strings.Join(flagSet.Args(), " "))
 	}
-	if *releaseFlag && (*moduleFlag == "" || strings.TrimSpace(*releaseModuleFlag) == "") {
-		return fmt.Errorf("-release requires -module to select the tests and -release-module to select the module being released")
-	}
-	if !*releaseFlag && *releaseModuleFlag != "" {
-		return fmt.Errorf("-release-module requires -release")
-	}
 	if *devServerFlag && *envConfigFlag {
 		return fmt.Errorf("-dev-server and -envconfig cannot be used together")
 	}
@@ -357,25 +397,28 @@ func (b *builder) integrationTest() error {
 	if err != nil {
 		return fmt.Errorf("failed finding integration test modules: %w", err)
 	}
-	var releaseModuleDir string
-	if *releaseFlag {
-		moduleName := filepath.ToSlash(filepath.Clean(filepath.FromSlash(strings.TrimSpace(*releaseModuleFlag))))
-		if !slices.Contains(moduleDirs, moduleName) || isIntegrationTestModuleDir(moduleName) {
-			return fmt.Errorf("no release module found for -release-module %q; select the SDK or a library module, not its test module", *releaseModuleFlag)
-		}
-		releaseModuleDir = filepath.Join(b.rootDir, filepath.FromSlash(moduleName))
+	if err := validateReleaseModules(moduleDirs, releaseModules); err != nil {
+		return err
 	}
 	integrationModuleDirs := make([]string, 0, len(moduleDirs))
 	for _, moduleDir := range moduleDirs {
-		if isIntegrationTestModuleDir(moduleDir) && (*moduleFlag == "" || moduleDir == *moduleFlag) {
+		if isIntegrationTestModuleDir(moduleDir) {
 			integrationModuleDirs = append(integrationModuleDirs, moduleDir)
 		}
 	}
-	if len(integrationModuleDirs) == 0 {
-		return fmt.Errorf("no integration test modules found matching %q; expected test/ modules at the repository root or under contrib/", *moduleFlag)
+	integrationModuleDirs, err = selectModuleNames(integrationModuleDirs, modules)
+	if err != nil {
+		return err
 	}
-	if *moduleFlag != "" && *moduleFlag != integrationTestModuleDir && (*envConfigFlag || *cloudFlag) {
-		return fmt.Errorf("integration test module %q manages its own server and does not support -envconfig or -cloud", *moduleFlag)
+	if len(integrationModuleDirs) == 0 {
+		return fmt.Errorf("no integration test modules found; expected test/ modules at the repository root or under contrib/")
+	}
+	if len(modules) != 0 && (*envConfigFlag || *cloudFlag) {
+		for _, moduleDir := range integrationModuleDirs {
+			if moduleDir != integrationTestModuleDir {
+				return fmt.Errorf("integration test module %q manages its own server and does not support -envconfig or -cloud", moduleDir)
+			}
+		}
 	}
 	output, err := b.prepareTestOutput(*testOutputFlags, "go-test.log")
 	if err != nil {
@@ -413,8 +456,8 @@ func (b *builder) integrationTest() error {
 		rootModule := moduleDir == integrationTestModuleDir
 		rerunArgs := []string{"go", "run", ".", "integration-test"}
 		rerunArgs = append(rerunArgs, "-module", moduleDir)
-		if *releaseFlag {
-			rerunArgs = append(rerunArgs, "-release", "-release-module", *releaseModuleFlag)
+		if releaseModules != nil {
+			rerunArgs = append(rerunArgs, "-release-modules", releaseModules.String())
 		}
 		if *devServerFlag && rootModule {
 			rerunArgs = append(rerunArgs, "-dev-server")
@@ -437,7 +480,7 @@ func (b *builder) integrationTest() error {
 		testOutput.rerunCommand = formatShellCommand(rerunArgs)
 
 		var modFile string
-		if *releaseFlag {
+		if releaseModules != nil {
 			tempDir, err := os.MkdirTemp(filepath.Dir(testOutput.logPath), ".release-")
 			if err != nil {
 				return fmt.Errorf("creating release manifest directory: %w", err)
@@ -448,7 +491,7 @@ func (b *builder) integrationTest() error {
 				}
 			}()
 			modFile, err = b.prepareReleaseManifest(
-				filepath.Join(b.rootDir, filepath.FromSlash(moduleDir)), tempDir, releaseModuleDir, testOutput)
+				filepath.Join(b.rootDir, filepath.FromSlash(moduleDir)), tempDir, releaseModules, testOutput)
 			if err != nil {
 				return err
 			}
@@ -556,7 +599,7 @@ func (b *builder) integrationTest() error {
 		// Run integration test
 		args := []string{"go", "test", "-json", "-count", "1", "-race", "-v", "-timeout", *timeoutFlag}
 		env := append(os.Environ(), "DISABLE_SERVER_1_25_TESTS=1")
-		if *releaseFlag {
+		if releaseModules != nil {
 			args = append(args, "-mod=readonly", "-modfile="+modFile)
 			env = append(env, "GOWORK=off")
 		}
@@ -645,8 +688,9 @@ func (b *builder) unitTest() error {
 		fmt.Fprint(flagSet.Output(), unitTestUsage)
 		flagSet.PrintDefaults()
 	}
-	modulesFlag := flagSet.String("modules", "", "Comma-separated unit test module directories relative to the repository root (default: all)")
-	releaseFlag := flagSet.Bool("release", false, "Ignore 'replace' directives in go.mod and run against declared dependencies instead (requires -modules)")
+	var modules, releaseModules moduleList
+	flagSet.Var(&modules, "module", "Comma-separated unit test module directories relative to the repository root (default: all)")
+	flagSet.Var(&releaseModules, "release-modules", releaseModulesUsage)
 	runFlag := flagSet.String("run", "", "Passed to go test as -run")
 	coverageFlag := flagSet.Bool("coverage", false, "If set, enables coverage output")
 	testOutputFlags := addTestOutputFlags(flagSet)
@@ -659,32 +703,21 @@ func (b *builder) unitTest() error {
 	if flagSet.NArg() != 0 {
 		return fmt.Errorf("unit-test: unexpected arguments: %s", strings.Join(flagSet.Args(), " "))
 	}
-	if *releaseFlag && *modulesFlag == "" {
-		return fmt.Errorf("-release requires -modules to select the release candidates")
-	}
 
 	moduleNames, err := findUnitModuleDirs(os.DirFS(b.rootDir))
 	if err != nil {
 		return fmt.Errorf("failed finding modules to test: %w", err)
 	}
-	selectedModules := make(map[string]bool)
-	if *modulesFlag != "" {
-		for _, moduleName := range strings.Split(*modulesFlag, ",") {
-			if strings.TrimSpace(moduleName) == "" {
-				return fmt.Errorf("-modules must be a comma-separated list without empty entries")
-			}
-			moduleName = filepath.ToSlash(filepath.Clean(filepath.FromSlash(strings.TrimSpace(moduleName))))
-			if !slices.Contains(moduleNames, moduleName) {
-				return fmt.Errorf("no unit test module found for argument %q in -modules", moduleName)
-			}
-			selectedModules[moduleName] = true
-		}
+	if err := validateReleaseModules(moduleNames, releaseModules); err != nil {
+		return err
+	}
+	moduleNames, err = selectModuleNames(moduleNames, modules)
+	if err != nil {
+		return err
 	}
 	moduleDirs := make([]string, 0, len(moduleNames))
 	for _, moduleName := range moduleNames {
-		if len(selectedModules) == 0 || selectedModules[moduleName] {
-			moduleDirs = append(moduleDirs, filepath.Join(b.rootDir, filepath.FromSlash(moduleName)))
-		}
+		moduleDirs = append(moduleDirs, filepath.Join(b.rootDir, filepath.FromSlash(moduleName)))
 	}
 	if len(moduleDirs) == 0 {
 		return fmt.Errorf("no unit test modules found")
@@ -707,7 +740,7 @@ func (b *builder) unitTest() error {
 	if *coverageFlag {
 		coverage = unitCoverageEnabled
 	}
-	return b.runUnitModules(moduleDirs, *runFlag, coverage, *releaseFlag, testOutput)
+	return b.runUnitModules(moduleDirs, *runFlag, coverage, releaseModules, testOutput)
 }
 
 type unitWorker struct {
@@ -726,7 +759,7 @@ func (b *builder) runUnitModules(
 	moduleDirs []string,
 	run string,
 	coverage unitCoverage,
-	release bool,
+	releaseModules []string,
 	output testOutput,
 ) error {
 	tempDir, err := os.MkdirTemp(filepath.Dir(output.logPath), ".unit-test-")
@@ -753,7 +786,7 @@ func (b *builder) runUnitModules(
 		go func(worker *unitWorker) {
 			defer wait.Done()
 			for moduleDir := range jobs {
-				if err := b.runUnitModule(moduleDir, run, coverage, release, worker.output); err != nil {
+				if err := b.runUnitModule(moduleDir, run, coverage, releaseModules, worker.output); err != nil {
 					worker.failures = append(worker.failures, unitFailure{moduleDir: moduleDir, err: err})
 				}
 			}
@@ -799,14 +832,14 @@ func (b *builder) prepareUnitWorker(tempDir string, index int, output testOutput
 	return nil
 }
 
-func (b *builder) runUnitModule(moduleDir string, run string, coverage unitCoverage, release bool, output testOutput) (retErr error) {
+func (b *builder) runUnitModule(moduleDir string, run string, coverage unitCoverage, releaseModules []string, output testOutput) (retErr error) {
 	moduleName, err := filepath.Rel(b.rootDir, moduleDir)
 	if err != nil {
 		return fmt.Errorf("resolving to relative path %q: %w", moduleDir, err)
 	}
-	rerunArgs := []string{"go", "run", ".", "unit-test", "-modules", filepath.ToSlash(moduleName)}
-	if release {
-		rerunArgs = append(rerunArgs, "-release")
+	rerunArgs := []string{"go", "run", ".", "unit-test", "-module", filepath.ToSlash(moduleName)}
+	if releaseModules != nil {
+		rerunArgs = append(rerunArgs, "-release-modules", strings.Join(releaseModules, ","))
 	}
 	output.rerunCommand = formatShellCommand(rerunArgs)
 
@@ -814,7 +847,7 @@ func (b *builder) runUnitModule(moduleDir string, run string, coverage unitCover
 		"go", "test", "-json", "-count", "1", "-race", "-v", "-timeout", "5m",
 		"-p", unitTestPackageConcurrency,
 	}
-	if release {
+	if releaseModules != nil {
 		tempDir, err := os.MkdirTemp(filepath.Dir(output.logPath), ".release-")
 		if err != nil {
 			return fmt.Errorf("creating release manifest directory: %w", err)
@@ -824,7 +857,7 @@ func (b *builder) runUnitModule(moduleDir string, run string, coverage unitCover
 				retErr = errors.Join(retErr, fmt.Errorf("removing release manifest directory: %w", err))
 			}
 		}()
-		modFile, err := b.prepareReleaseManifest(moduleDir, tempDir, "", output)
+		modFile, err := b.prepareReleaseManifest(moduleDir, tempDir, releaseModules, output)
 		if err != nil {
 			return err
 		}
@@ -845,7 +878,7 @@ func (b *builder) runUnitModule(moduleDir string, run string, coverage unitCover
 
 	cmd := b.cmdFromRoot(args...)
 	cmd.Dir = moduleDir
-	if release {
+	if releaseModules != nil {
 		cmd.Env = append(os.Environ(), "GOWORK=off")
 	}
 	return b.runTestCmd(cmd, output)
@@ -1119,9 +1152,9 @@ func (b *builder) getInstalledTool(modPath string) (string, error) {
 // prepareReleaseModFile parses the module's go.mod and go.sum files
 // and writes release.mod and release.sum to a temporary directory.
 // The output files are identical to the input, except release.mod
-// has no "replace" directives other than one for releaseModuleDir, if nonempty.
+// has no "replace" directives other than local replacements for releaseModules.
 // Returns the path to release.mod.
-func prepareReleaseModFile(moduleDir, tempDir, releaseModuleDir string) (string, error) {
+func (b *builder) prepareReleaseModFile(moduleDir, tempDir string, releaseModules []string) (string, error) {
 	sourcePath := filepath.Join(moduleDir, "go.mod")
 	contents, err := os.ReadFile(sourcePath)
 	if err != nil {
@@ -1136,8 +1169,8 @@ func prepareReleaseModFile(moduleDir, tempDir, releaseModuleDir string) (string,
 			return "", fmt.Errorf("removing go.mod replace directive for %q: %w", replacement.Old.Path, err)
 		}
 	}
-	if releaseModuleDir != "" {
-		releaseModuleDir, err = filepath.Abs(releaseModuleDir)
+	for _, moduleName := range releaseModules {
+		releaseModuleDir, err := filepath.Abs(filepath.Join(b.rootDir, filepath.FromSlash(moduleName)))
 		if err != nil {
 			return "", fmt.Errorf("constructing absolute release module path: %w", err)
 		}
@@ -1154,10 +1187,8 @@ func prepareReleaseModFile(moduleDir, tempDir, releaseModuleDir string) (string,
 			return "", fmt.Errorf("missing module directive in %q", releasePath)
 		}
 		releaseModulePath := releaseModule.Module.Mod.Path
-		if !slices.ContainsFunc(module.Require, func(req *modfile.Require) bool {
-			return req.Mod.Path == releaseModulePath
-		}) {
-			return "", fmt.Errorf("%q does not require release module %q", sourcePath, releaseModulePath)
+		if module.Module != nil && module.Module.Mod.Path == releaseModulePath {
+			continue
 		}
 		if err := module.AddReplace(releaseModulePath, "", releaseModuleDir, ""); err != nil {
 			return "", fmt.Errorf("adding local replacement for release module %q: %w", releaseModulePath, err)
@@ -1193,9 +1224,9 @@ func prepareReleaseModFile(moduleDir, tempDir, releaseModuleDir string) (string,
 // "go list" and "go mod download" to resolve its published graph and checksums.
 // It returns the manifest path to use for testing. The caller owns tempDir and
 // must keep it until testing finishes.
-// If releaseModuleDir is nonempty, that module stays local.
-func (b *builder) prepareReleaseManifest(moduleDir, tempDir, releaseModuleDir string, output testOutput) (string, error) {
-	modFile, err := prepareReleaseModFile(moduleDir, tempDir, releaseModuleDir)
+// Only releaseModules stay local.
+func (b *builder) prepareReleaseManifest(moduleDir, tempDir string, releaseModules []string, output testOutput) (string, error) {
+	modFile, err := b.prepareReleaseModFile(moduleDir, tempDir, releaseModules)
 	if err != nil {
 		return "", err
 	}
