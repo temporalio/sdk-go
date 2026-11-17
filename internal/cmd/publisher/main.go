@@ -12,11 +12,16 @@ import (
 
 const usage = `usage: publisher (gate|find|stage|vet|tag)
 
-  gate   Verify that a non-release PR has a new changelog fragment for each changed module
+  gate   Verify changed modules have changelog fragments in a non-release PR
   find   Find modules that changed since their last release
   stage  Create a draft release PR
   vet    Find mistakes in a release commit
-  tag    Create draft GitHub releases`
+  tag    Create draft GitHub releases
+
+The command requires a UNIX OS and assumes you have cargo and gh on your PATH.
+
+The command guides you through the release process. Start with "publisher find".
+If anything goes wrong, publisher prints an audit log with the commands it ran`
 
 type command interface {
 	run() error

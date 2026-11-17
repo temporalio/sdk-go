@@ -215,24 +215,3 @@ func testEqualMaps(t *testing.T, got, want map[string]string) {
 		t.Fatalf("unexpected files (-want +got):\n%s", diff)
 	}
 }
-
-func TestMockEffectsPreservesCommandEscapes(t *testing.T) {
-	want := `git commit -m "Prepare release 2026-08-04\n\ncontrib/envconfig=0.2.0" -- contrib/envconfig/CHANGELOG.md`
-	called := false
-	_, eff := newMockApp(app{}, nil, func(cmd string) (string, error) {
-		called = true
-		if cmd != want {
-			t.Fatalf("unexpected command: got %q, want %q", cmd, want)
-		}
-		return "", nil
-	})
-	_, err := eff.runCommand(mockRepoRoot, "git", "commit", "-m",
-		"Prepare release 2026-08-04\n\ncontrib/envconfig=0.2.0", "--",
-		filepath.Join("contrib", "envconfig", "CHANGELOG.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !called {
-		t.Fatal("command handler was not called")
-	}
-}

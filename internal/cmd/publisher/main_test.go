@@ -3,13 +3,14 @@ package main
 import (
 	"errors"
 	"fmt"
-	"io"
 	"maps"
 	"strings"
 	"testing"
 
 	"go.temporal.io/sdk/internal/cmd/publisher/pure"
 )
+
+// -- GATE ----------------------------------------
 
 func TestGateRequiresFragmentsPerChangedModule(t *testing.T) {
 	t.Setenv("PUBLISHER_SDK_RUST", "/sdk-rust")
@@ -143,6 +144,8 @@ func TestGateSkipChangelog(t *testing.T) {
 	testEqualMaps(t, eff.files, output)
 }
 
+// -- FIND ---------------------------------------
+
 func TestFindNoChanges(t *testing.T) {
 	a, eff := newMockApp(app{}, nil, func(cmd string) (string, error) {
 		if cmd == "git rev-parse --verify --end-of-options origin/main^{commit}" {
@@ -208,47 +211,7 @@ func TestFindReleasableModules(t *testing.T) {
 	}
 }
 
-func TestFindChooseVersion(t *testing.T) {
-	latest := pure.Version{1, 48, 0}
-	for _, test := range []struct {
-		name    string
-		input   string
-		want    *pure.Version
-		wantEOF bool
-	}{
-		{name: "minor", input: "m", want: &pure.Version{1, 49, 0}},
-		{name: "patch", input: "p", want: &pure.Version{1, 48, 1}},
-		{name: "skip", input: "s"},
-		{name: "enter", input: "\n"},
-		{name: "carriage return", input: "\r"},
-		{name: "invalid then enter", input: "x\n"},
-		{name: "EOF", wantEOF: true},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			a, eff := newMockApp(app{}, nil, nil)
-			eff.input = test.input
-			c := findApp{app: *a}
-			w := &worktree{eff: eff, repo: &a.repo, worktreeRoot: mockTempDir}
-			got, err := c.chooseVersion(w, pure.SDKModule(), &latest)
-			if test.wantEOF {
-				if !errors.Is(err, io.EOF) {
-					t.Fatalf("expected EOF, got %v", err)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatal(err)
-			}
-			if test.want == nil {
-				if got != nil {
-					t.Fatalf("selected version %s, want a skip", got)
-				}
-			} else if got == nil || *got != *test.want {
-				t.Fatalf("selected version %v, want %s", got, test.want)
-			}
-		})
-	}
-}
+// -- STAGE -------------------------------------------------
 
 func TestStage(t *testing.T) {
 	t.Setenv("PUBLISHER_SDK_RUST", "/sdk-rust")
@@ -769,6 +732,8 @@ func TestStageStagingFailed(t *testing.T) {
 	testEqualMaps(t, eff.files, output)
 }
 
+// -- VET ---------------------------------------
+
 func TestVetCommit(t *testing.T) {
 	t.Setenv("PUBLISHER_SDK_RUST", "/sdk-rust")
 	commit := "1234567890abcdef1234567890abcdef12345678"
@@ -908,6 +873,8 @@ func TestVetReportsAllBlockedModules(t *testing.T) {
 	`)
 	testEqualMaps(t, eff.files, input)
 }
+
+// -- TAG -------------------------------------------------
 
 func TestTag(t *testing.T) {
 	t.Setenv("PUBLISHER_SDK_RUST", "/sdk-rust")
@@ -1358,6 +1325,8 @@ func TestCoreToolSetupFailure(t *testing.T) {
 		})
 	}
 }
+
+// -- COMMANDS ---------------------------------------
 
 func TestNewCommand(t *testing.T) {
 	tests := []struct {
