@@ -15,11 +15,11 @@ require (
 	go.opentelemetry.io/otel/trace v1.45.0
 	go.temporal.io/api v1.64.3
 	go.temporal.io/sdk v1.51.0
-	go.temporal.io/sdk/contrib/envconfig v0.0.0-00010101000000-000000000000
-	go.temporal.io/sdk/contrib/opentelemetry v0.0.0-00010101000000-000000000000
-	go.temporal.io/sdk/contrib/opentracing v0.0.0-00010101000000-000000000000
-	go.temporal.io/sdk/contrib/sysinfo v0.0.0-00010101000000-000000000000
-	go.temporal.io/sdk/contrib/tally v0.0.0-00010101000000-000000000000
+	go.temporal.io/sdk/contrib/envconfig v1.1.0
+	go.temporal.io/sdk/contrib/opentelemetry v0.9.0
+	go.temporal.io/sdk/contrib/opentracing v0.4.0
+	go.temporal.io/sdk/contrib/sysinfo v0.1.1
+	go.temporal.io/sdk/contrib/tally v0.2.0
 	go.uber.org/goleak v1.3.0
 	google.golang.org/grpc v1.83.2
 	google.golang.org/protobuf v1.36.11

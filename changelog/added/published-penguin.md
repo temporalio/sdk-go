@@ -1,1 +1,1 @@
-The repository build tool supports `unit-test -modules <directories> -release` and `integration-test -module <test-directory> -release -release-module <directory>` to test release candidates against published dependencies, keeping only the module being released local.
+The repository build tool's `unit-test` and `integration-test` commands accept comma-separated module directories with `-module` and support `-release-modules <directories>` to ignore dependency replacements except for the listed local modules.
