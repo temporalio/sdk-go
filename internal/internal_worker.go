@@ -763,10 +763,12 @@ type registry struct {
 	dynamicActivity               activity
 	_                             DynamicRegisterActivityOptions
 	interceptors                  []WorkerInterceptor
+	logger                        log.Logger
 }
 
 type registryOptions struct {
 	disableAliasing bool
+	logger          log.Logger
 }
 
 func (r *registry) RegisterWorkflow(af any) {
@@ -1199,11 +1201,15 @@ func validateFnFormat(fnType reflect.Type, isWorkflow, isDynamic bool) error {
 func newRegistry() *registry { return newRegistryWithOptions(registryOptions{}) }
 
 func newRegistryWithOptions(options registryOptions) *registry {
+	if options.logger == nil {
+		options.logger = ilog.NewDefaultLogger()
+	}
 	r := &registry{
 		workflowFuncMap:               make(map[string]any),
 		workflowVersioningBehaviorMap: make(map[string]VersioningBehavior),
 		activityFuncMap:               make(map[string]activity),
 		nexusServices:                 make(map[string]*nexus.Service),
+		logger:                        options.logger,
 	}
 	if !options.disableAliasing {
 		r.workflowAliasMap = make(map[string]string)
@@ -2633,7 +2639,10 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	processTestTags(&options, &workerParams)
 
 	// worker specific registry
-	registry := newRegistryWithOptions(registryOptions{disableAliasing: options.DisableRegistrationAliasing})
+	registry := newRegistryWithOptions(registryOptions{
+		disableAliasing: options.DisableRegistrationAliasing,
+		logger:          workerParams.Logger,
+	})
 	// Build set of interceptors using the applicable client ones first (being
 	// careful not to append to the existing slice)
 	registry.interceptors = make([]WorkerInterceptor, 0, len(client.workerInterceptors)+len(options.Interceptors))

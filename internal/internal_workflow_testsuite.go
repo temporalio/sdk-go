@@ -304,7 +304,10 @@ type (
 func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *registry) *testWorkflowEnvironmentImpl {
 	var r *registry
 	if parentRegistry == nil {
-		r = newRegistryWithOptions(registryOptions{disableAliasing: s.disableRegistrationAliasing})
+		r = newRegistryWithOptions(registryOptions{
+			disableAliasing: s.disableRegistrationAliasing,
+			logger:          s.logger,
+		})
 	} else {
 		r = parentRegistry
 	}
