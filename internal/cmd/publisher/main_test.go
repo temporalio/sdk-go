@@ -11,6 +11,138 @@ import (
 	"go.temporal.io/sdk/internal/cmd/publisher/pure"
 )
 
+func TestGateRequiresFragmentsPerChangedModule(t *testing.T) {
+	t.Setenv("PUBLISHER_SDK_RUST", "/sdk-rust")
+	input := make(map[string]string)
+	input["/repo/CHANGELOG.md"] = stripIndentation(`
+		# Changelog
+
+		## [1.48.0] - 2026-08-04
+	`)
+	input["/repo/contrib/envconfig/CHANGELOG.md"] = stripIndentation(`
+		# Changelog
+
+		## [1.0.3] - 2026-08-04
+	`)
+	input["/repo/contrib/envconfig/envconfig.go"] = stripIndentation(`
+		package envconfig
+
+		const NewOption = true
+	`)
+	input["/repo/contrib/envconfig/changelog/added/helpful-hippo.md"] = stripIndentation(`
+		Add a new configuration option.
+	`)
+	input["/repo/contrib/fragments/feature.go"] = stripIndentation(`
+		package fragments
+
+		const NewFeature = true
+	`)
+	input["/repo/contrib/fragments/changelog/README.md"] = stripIndentation(`
+		Add pending release notes to category directories.
+	`)
+	output := maps.Clone(input)
+	a, eff := newMockApp(app{}, input, func(cmd string) (string, error) {
+		switch cmd {
+		case "git rev-parse --verify --end-of-options base^{commit}":
+			return "base-sha\n", nil
+		case "git diff --name-only --no-renames base-sha HEAD -- contrib/envconfig/ :(exclude,glob)contrib/envconfig/**/go.mod :(exclude,glob)contrib/envconfig/**/go.sum":
+			return "contrib/envconfig/envconfig.go\ncontrib/envconfig/changelog/added/helpful-hippo.md\n", nil
+		case "git diff --name-only --no-renames base-sha HEAD -- contrib/fragments/ :(exclude,glob)contrib/fragments/**/go.mod :(exclude,glob)contrib/fragments/**/go.sum":
+			return "contrib/fragments/feature.go\n", nil
+		case "cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- check --repo /repo --fragments contrib/fragments/changelog --base base-sha --require-new":
+			return "", errors.New("add a new changelog fragment")
+		}
+		return "", nil
+	})
+	a.contribModules = []pure.Module{contribEnvconfig(t), {Dir: "contrib/fragments"}}
+	c := gateApp{app: *a, baseCommit: "base"}
+	err := c.run()
+	testEqual(t, fmt.Sprint(err), "check changelog for contrib/fragments: changelog-tool check: add a new changelog fragment")
+	testEqual(t, eff.audit.String(), `
+		# Running in /repo:
+		$ git rev-parse --verify --end-of-options base^{commit}
+		base-sha
+
+		# Running in /sdk-rust:
+		$ git rev-parse HEAD
+		`+strings.TrimSpace(sdkRustRevision)+`
+
+		# Running in /sdk-rust:
+		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- --help --repo /repo
+
+		# Running in /repo:
+		$ git diff --name-only --no-renames base-sha HEAD -- ./ :(exclude,glob)**/go.mod :(exclude,glob)**/go.sum :(exclude,literal)contrib/envconfig/ :(exclude,literal)contrib/fragments/
+
+		# Running in /sdk-rust:
+		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- check --repo /repo --fragments changelog --base base-sha --changelog CHANGELOG.md
+
+		# Running in /repo:
+		$ git diff --name-only --no-renames base-sha HEAD -- contrib/envconfig/ :(exclude,glob)contrib/envconfig/**/go.mod :(exclude,glob)contrib/envconfig/**/go.sum
+		contrib/envconfig/envconfig.go
+		contrib/envconfig/changelog/added/helpful-hippo.md
+
+		# Running in /sdk-rust:
+		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- check --repo /repo --fragments contrib/envconfig/changelog --base base-sha --require-new --changelog contrib/envconfig/CHANGELOG.md
+
+		# Running in /repo:
+		$ git diff --name-only --no-renames base-sha HEAD -- contrib/fragments/ :(exclude,glob)contrib/fragments/**/go.mod :(exclude,glob)contrib/fragments/**/go.sum
+		contrib/fragments/feature.go
+
+		# Running in /sdk-rust:
+		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- check --repo /repo --fragments contrib/fragments/changelog --base base-sha --require-new
+		add a new changelog fragment
+	`)
+	testEqual(t, eff.output.String(), "")
+	testEqualMaps(t, eff.files, output)
+}
+
+func TestGateSkipChangelog(t *testing.T) {
+	t.Setenv("PUBLISHER_SDK_RUST", "/sdk-rust")
+	input := make(map[string]string)
+	input["/repo/CHANGELOG.md"] = stripIndentation(`
+		# Changelog
+
+		## [1.48.0] - 2026-08-04
+	`)
+	input["/repo/contrib/envconfig/CHANGELOG.md"] = stripIndentation(`
+		# Changelog
+
+		## [1.0.3] - 2026-08-04
+	`)
+	output := maps.Clone(input)
+	a, eff := newMockApp(app{}, input, func(cmd string) (string, error) {
+		if cmd == "git rev-parse --verify --end-of-options base^{commit}" {
+			return "base-sha\n", nil
+		}
+		return "", nil
+	})
+	a.contribModules = []pure.Module{contribEnvconfig(t)}
+	c := gateApp{app: *a, baseCommit: "base", skipChangelog: true}
+	if err := c.run(); err != nil {
+		t.Fatal(err)
+	}
+	testEqual(t, eff.audit.String(), `
+		# Running in /repo:
+		$ git rev-parse --verify --end-of-options base^{commit}
+		base-sha
+
+		# Running in /sdk-rust:
+		$ git rev-parse HEAD
+		`+strings.TrimSpace(sdkRustRevision)+`
+
+		# Running in /sdk-rust:
+		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- --help --repo /repo
+
+		# Running in /sdk-rust:
+		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- check --repo /repo --fragments changelog --base base-sha --changelog CHANGELOG.md
+
+		# Running in /sdk-rust:
+		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- check --repo /repo --fragments contrib/envconfig/changelog --base base-sha --changelog contrib/envconfig/CHANGELOG.md
+	`)
+	testEqual(t, eff.output.String(), "")
+	testEqualMaps(t, eff.files, output)
+}
+
 func TestFindNoChanges(t *testing.T) {
 	a, eff := newMockApp(app{}, nil, func(cmd string) (string, error) {
 		if cmd == "git rev-parse --verify --end-of-options origin/main^{commit}" {
@@ -62,7 +194,7 @@ func TestFindReleasableModules(t *testing.T) {
 		t.Fatal(err)
 	}
 	output := eff.output.String()
-	if !strings.Contains(output, "publisher pr sdk=0.1.0 contrib/envconfig=0.1.0 contrib/fragments=0.1.0") {
+	if !strings.Contains(output, "go run ./internal/cmd/publisher stage sdk=0.1.0 contrib/envconfig=0.1.0 contrib/fragments=0.1.0") {
 		t.Fatalf("missing release command for eligible modules:\n%s", output)
 	}
 	if strings.Contains(output, "contrib/envconfig/test") || strings.Contains(output, "contrib/test-only") {
@@ -118,7 +250,7 @@ func TestFindChooseVersion(t *testing.T) {
 	}
 }
 
-func TestPR(t *testing.T) {
+func TestStage(t *testing.T) {
 	t.Setenv("PUBLISHER_SDK_RUST", "/sdk-rust")
 	modules := []pure.VersionedModule{
 		{Module: pure.SDKModule(), Version: pure.Version{1, 48, 0}},
@@ -171,7 +303,7 @@ func TestPR(t *testing.T) {
 	delete(output, "changelog/fixed/dancing-duck.md")
 	delete(output, "contrib/envconfig/changelog/added/singing-swan.md")
 
-	a, eff := newMockPR(prApp{modules: modules}, input, nil)
+	a, eff := newMockStage(stageApp{modules: modules}, input, nil)
 	eff.commandHandler = func(cmd string) (string, error) {
 		switch cmd {
 		case "git rev-parse HEAD":
@@ -252,62 +384,21 @@ func TestPR(t *testing.T) {
 		      Draft PR: https://github.com/temporalio/sdk-go/pull/123
 
 		Next steps:
-		1. Lint the release branch:
-		      publisher lint-release chore/release-2026-08-04-abc234de sdk=1.48.0 contrib/envconfig=1.0.3
+		1. Vet the release branch:
+		      go run ./internal/cmd/publisher vet chore/release-2026-08-04-abc234de sdk=1.48.0 contrib/envconfig=1.0.3
 		2. Fix errors and mark the PR as "ready for review".
 		3. Merge the PR and copy the commit hash.
 		4. Create draft github releases:
-		      publisher release <YOUR_COMMIT_HASH> sdk=1.48.0 contrib/envconfig=1.0.3
+		      go run ./internal/cmd/publisher tag <YOUR_COMMIT_HASH> sdk=1.48.0 contrib/envconfig=1.0.3
 
 		Alternatively, you can close the PR and delete the branch:
 		      gh pr close https://github.com/temporalio/sdk-go/pull/123 --delete-branch
 	`)
 }
 
-func TestCoreToolSetupFailure(t *testing.T) {
-	modules := []pure.VersionedModule{
-		{Module: pure.SDKModule(), Version: pure.Version{1, 48, 0}},
-		{Module: contribEnvconfig(t), Version: pure.Version{1, 0, 3}},
-	}
-	for _, name := range []string{"pr", "lint-release", "release"} {
-		t.Run(name, func(t *testing.T) {
-			a, eff := newMockApp(app{}, nil, nil)
-			eff.commandHandler = func(cmd string) (string, error) {
-				if cmd == "git rev-parse HEAD" {
-					return "wrong-revision\n", nil
-				}
-				return "", nil
-			}
-			var c command
-			switch name {
-			case "pr":
-				c = &prApp{app: *a, modules: modules}
-			case "lint-release":
-				c = &lintReleaseApp{app: *a, modules: modules, commit: "abc123"}
-			case "release":
-				c = &releaseApp{app: *a, modules: modules, commit: "abc123"}
-			}
-			err := c.run()
-			if err == nil || !strings.Contains(err.Error(), "wrong-revision") {
-				t.Fatalf("expected a tool setup error, got %v", err)
-			}
-			audit := eff.audit.String()
-			if count := strings.Count(audit, "$ git rev-parse HEAD\n"); count != 1 {
-				t.Fatalf("verified the tool checkout %d times, want 1", count)
-			}
-			if strings.Contains(audit, "git worktree add") || strings.Contains(audit, "cargo ") {
-				t.Fatalf("started release work after a tool setup failure:\n%s", audit)
-			}
-			if strings.Contains(eff.output.String(), "validate go.mod") {
-				t.Fatal("reported a global setup failure during per-module validation")
-			}
-		})
-	}
-}
-
-func TestPRWorktreeCreationFailed(t *testing.T) {
+func TestStageWorktreeCreationFailed(t *testing.T) {
 	t.Setenv("PUBLISHER_SDK_RUST", "/sdk-rust")
-	a, eff := newMockPR(prApp{branch: "dplyukhin/custom-release", modules: []pure.VersionedModule{
+	a, eff := newMockStage(stageApp{branch: "dplyukhin/custom-release", modules: []pure.VersionedModule{
 		{Module: pure.SDKModule(), Version: pure.Version{1, 48, 0}},
 	}}, nil, func(cmd string) (string, error) {
 		if cmd == "git worktree add -b dplyukhin/custom-release "+mockTempDir+" origin/main" {
@@ -340,13 +431,13 @@ func TestPRWorktreeCreationFailed(t *testing.T) {
 	testEqualMaps(t, eff.files, map[string]string{})
 }
 
-func TestPRReleaseFilesCannotBeComputed(t *testing.T) {
+func TestStageReleaseFilesCannotBeComputed(t *testing.T) {
 	t.Setenv("PUBLISHER_SDK_RUST", "/sdk-rust")
 	input := make(map[string]string)
 	input["go.mod"] = "module go.temporal.io/sdk\n"
 	input["CHANGELOG.md"] = "# Changelog\n"
 	input["changelog/fixed/dancing-duck.md"] = "A fix.\n"
-	a, eff := newMockPR(prApp{modules: []pure.VersionedModule{
+	a, eff := newMockStage(stageApp{modules: []pure.VersionedModule{
 		{Module: pure.SDKModule(), Version: pure.Version{1, 48, 0}},
 	}}, input, nil)
 	err := a.run()
@@ -377,7 +468,7 @@ func TestPRReleaseFilesCannotBeComputed(t *testing.T) {
 	testEqualMaps(t, eff.files, input)
 }
 
-func TestPRCommitFailed(t *testing.T) {
+func TestStageCommitFailed(t *testing.T) {
 	t.Setenv("PUBLISHER_SDK_RUST", "/sdk-rust")
 	input := make(map[string]string)
 	input["go.mod"] = "module go.temporal.io/sdk\nrequire go.temporal.io/api v1.63.4\n"
@@ -410,7 +501,7 @@ func TestPRCommitFailed(t *testing.T) {
 	`) + "\n"
 	output["internal/version.go"] = "const (\n\tSDKVersion = \"1.48.0\"\n)"
 	delete(output, "changelog/fixed/dancing-duck.md")
-	a, eff := newMockPR(prApp{modules: []pure.VersionedModule{
+	a, eff := newMockStage(stageApp{modules: []pure.VersionedModule{
 		{Module: pure.SDKModule(), Version: pure.Version{1, 48, 0}},
 	}}, input, nil)
 	eff.commandHandler = func(cmd string) (string, error) {
@@ -471,12 +562,12 @@ func TestPRCommitFailed(t *testing.T) {
 	testEqualMaps(t, eff.files, output)
 }
 
-func TestPRWorktreeCleanupFailed(t *testing.T) {
+func TestStageWorktreeCleanupFailed(t *testing.T) {
 	t.Setenv("PUBLISHER_SDK_RUST", "/sdk-rust")
 	input := make(map[string]string)
 	input["contrib/envconfig/CHANGELOG.md"] = "# Changelog\n"
 	input["contrib/envconfig/changelog/fixed/empty-otter.md"] = ""
-	a, eff := newMockPR(prApp{modules: []pure.VersionedModule{
+	a, eff := newMockStage(stageApp{modules: []pure.VersionedModule{
 		{Module: contribEnvconfig(t), Version: pure.Version{0, 1, 0}},
 	}}, input, func(cmd string) (string, error) {
 		switch cmd {
@@ -523,12 +614,12 @@ func TestPRWorktreeCleanupFailed(t *testing.T) {
 	testEqualMaps(t, eff.files, input)
 }
 
-func TestPRChangelogFragmentValidationFailed(t *testing.T) {
+func TestStageChangelogFragmentValidationFailed(t *testing.T) {
 	t.Setenv("PUBLISHER_SDK_RUST", "/sdk-rust")
 	input := make(map[string]string)
 	input["contrib/envconfig/CHANGELOG.md"] = "# Changelog\n"
 	input["contrib/envconfig/changelog/fixed/empty-otter.md"] = ""
-	a, eff := newMockPR(prApp{modules: []pure.VersionedModule{
+	a, eff := newMockStage(stageApp{modules: []pure.VersionedModule{
 		{Module: contribEnvconfig(t), Version: pure.Version{1, 0, 3}},
 	}}, input, func(cmd string) (string, error) {
 		if cmd == "cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- prepare --repo "+mockTempDir+" --version 1.0.3 --date 2026-08-04 --changelog contrib/envconfig/CHANGELOG.md --fragments contrib/envconfig/changelog" {
@@ -568,12 +659,12 @@ func TestPRChangelogFragmentValidationFailed(t *testing.T) {
 	testEqualMaps(t, eff.files, input)
 }
 
-func TestPRChangelogPreparationFailed(t *testing.T) {
+func TestStageChangelogPreparationFailed(t *testing.T) {
 	t.Setenv("PUBLISHER_SDK_RUST", "/sdk-rust")
 	input := make(map[string]string)
 	input["contrib/envconfig/CHANGELOG.md"] = "# Changelog\n"
 	input["contrib/envconfig/changelog/fixed/dancing-duck.md"] = "A fix.\n"
-	a, eff := newMockPR(prApp{modules: []pure.VersionedModule{
+	a, eff := newMockStage(stageApp{modules: []pure.VersionedModule{
 		{Module: contribEnvconfig(t), Version: pure.Version{1, 0, 3}},
 	}}, input, func(cmd string) (string, error) {
 		if cmd == "cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- prepare --repo "+mockTempDir+" --version 1.0.3 --date 2026-08-04 --changelog contrib/envconfig/CHANGELOG.md --fragments contrib/envconfig/changelog" {
@@ -613,7 +704,7 @@ func TestPRChangelogPreparationFailed(t *testing.T) {
 	testEqualMaps(t, eff.files, input)
 }
 
-func TestPRStagingFailed(t *testing.T) {
+func TestStageStagingFailed(t *testing.T) {
 	t.Setenv("PUBLISHER_SDK_RUST", "/sdk-rust")
 	input := make(map[string]string)
 	input["contrib/envconfig/CHANGELOG.md"] = "# Changelog\n"
@@ -621,7 +712,7 @@ func TestPRStagingFailed(t *testing.T) {
 	output := maps.Clone(input)
 	output["contrib/envconfig/CHANGELOG.md"] = "# Changelog\n\n## [1.0.3] - 2026-08-04\n\n### Fixed\n\n- A fix.\n"
 	delete(output, "contrib/envconfig/changelog/fixed/dancing-duck.md")
-	a, eff := newMockPR(prApp{modules: []pure.VersionedModule{
+	a, eff := newMockStage(stageApp{modules: []pure.VersionedModule{
 		{Module: contribEnvconfig(t), Version: pure.Version{1, 0, 3}},
 	}}, input, nil)
 	eff.commandHandler = func(cmd string) (string, error) {
@@ -678,139 +769,7 @@ func TestPRStagingFailed(t *testing.T) {
 	testEqualMaps(t, eff.files, output)
 }
 
-func TestLintRequiresFragmentsPerChangedModule(t *testing.T) {
-	t.Setenv("PUBLISHER_SDK_RUST", "/sdk-rust")
-	input := make(map[string]string)
-	input["/repo/CHANGELOG.md"] = stripIndentation(`
-		# Changelog
-
-		## [1.48.0] - 2026-08-04
-	`)
-	input["/repo/contrib/envconfig/CHANGELOG.md"] = stripIndentation(`
-		# Changelog
-
-		## [1.0.3] - 2026-08-04
-	`)
-	input["/repo/contrib/envconfig/envconfig.go"] = stripIndentation(`
-		package envconfig
-
-		const NewOption = true
-	`)
-	input["/repo/contrib/envconfig/changelog/added/helpful-hippo.md"] = stripIndentation(`
-		Add a new configuration option.
-	`)
-	input["/repo/contrib/fragments/feature.go"] = stripIndentation(`
-		package fragments
-
-		const NewFeature = true
-	`)
-	input["/repo/contrib/fragments/changelog/README.md"] = stripIndentation(`
-		Add pending release notes to category directories.
-	`)
-	output := maps.Clone(input)
-	a, eff := newMockApp(app{}, input, func(cmd string) (string, error) {
-		switch cmd {
-		case "git rev-parse --verify --end-of-options base^{commit}":
-			return "base-sha\n", nil
-		case "git diff --name-only --no-renames base-sha HEAD -- contrib/envconfig/ :(exclude,glob)contrib/envconfig/**/go.mod :(exclude,glob)contrib/envconfig/**/go.sum":
-			return "contrib/envconfig/envconfig.go\ncontrib/envconfig/changelog/added/helpful-hippo.md\n", nil
-		case "git diff --name-only --no-renames base-sha HEAD -- contrib/fragments/ :(exclude,glob)contrib/fragments/**/go.mod :(exclude,glob)contrib/fragments/**/go.sum":
-			return "contrib/fragments/feature.go\n", nil
-		case "cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- check --repo /repo --fragments contrib/fragments/changelog --base base-sha --require-new":
-			return "", errors.New("add a new changelog fragment")
-		}
-		return "", nil
-	})
-	a.contribModules = []pure.Module{contribEnvconfig(t), {Dir: "contrib/fragments"}}
-	c := lintApp{app: *a, baseCommit: "base"}
-	err := c.run()
-	testEqual(t, fmt.Sprint(err), "check changelog for contrib/fragments: changelog-tool check: add a new changelog fragment")
-	testEqual(t, eff.audit.String(), `
-		# Running in /repo:
-		$ git rev-parse --verify --end-of-options base^{commit}
-		base-sha
-
-		# Running in /sdk-rust:
-		$ git rev-parse HEAD
-		`+strings.TrimSpace(sdkRustRevision)+`
-
-		# Running in /sdk-rust:
-		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- --help --repo /repo
-
-		# Running in /repo:
-		$ git diff --name-only --no-renames base-sha HEAD -- ./ :(exclude,glob)**/go.mod :(exclude,glob)**/go.sum :(exclude,literal)contrib/envconfig/ :(exclude,literal)contrib/fragments/
-
-		# Running in /sdk-rust:
-		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- check --repo /repo --fragments changelog --base base-sha --changelog CHANGELOG.md
-
-		# Running in /repo:
-		$ git diff --name-only --no-renames base-sha HEAD -- contrib/envconfig/ :(exclude,glob)contrib/envconfig/**/go.mod :(exclude,glob)contrib/envconfig/**/go.sum
-		contrib/envconfig/envconfig.go
-		contrib/envconfig/changelog/added/helpful-hippo.md
-
-		# Running in /sdk-rust:
-		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- check --repo /repo --fragments contrib/envconfig/changelog --base base-sha --require-new --changelog contrib/envconfig/CHANGELOG.md
-
-		# Running in /repo:
-		$ git diff --name-only --no-renames base-sha HEAD -- contrib/fragments/ :(exclude,glob)contrib/fragments/**/go.mod :(exclude,glob)contrib/fragments/**/go.sum
-		contrib/fragments/feature.go
-
-		# Running in /sdk-rust:
-		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- check --repo /repo --fragments contrib/fragments/changelog --base base-sha --require-new
-		add a new changelog fragment
-	`)
-	testEqual(t, eff.output.String(), "")
-	testEqualMaps(t, eff.files, output)
-}
-
-func TestLintSkipChangelog(t *testing.T) {
-	t.Setenv("PUBLISHER_SDK_RUST", "/sdk-rust")
-	input := make(map[string]string)
-	input["/repo/CHANGELOG.md"] = stripIndentation(`
-		# Changelog
-
-		## [1.48.0] - 2026-08-04
-	`)
-	input["/repo/contrib/envconfig/CHANGELOG.md"] = stripIndentation(`
-		# Changelog
-
-		## [1.0.3] - 2026-08-04
-	`)
-	output := maps.Clone(input)
-	a, eff := newMockApp(app{}, input, func(cmd string) (string, error) {
-		if cmd == "git rev-parse --verify --end-of-options base^{commit}" {
-			return "base-sha\n", nil
-		}
-		return "", nil
-	})
-	a.contribModules = []pure.Module{contribEnvconfig(t)}
-	c := lintApp{app: *a, baseCommit: "base", skipChangelog: true}
-	if err := c.run(); err != nil {
-		t.Fatal(err)
-	}
-	testEqual(t, eff.audit.String(), `
-		# Running in /repo:
-		$ git rev-parse --verify --end-of-options base^{commit}
-		base-sha
-
-		# Running in /sdk-rust:
-		$ git rev-parse HEAD
-		`+strings.TrimSpace(sdkRustRevision)+`
-
-		# Running in /sdk-rust:
-		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- --help --repo /repo
-
-		# Running in /sdk-rust:
-		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- check --repo /repo --fragments changelog --base base-sha --changelog CHANGELOG.md
-
-		# Running in /sdk-rust:
-		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- check --repo /repo --fragments contrib/envconfig/changelog --base base-sha --changelog contrib/envconfig/CHANGELOG.md
-	`)
-	testEqual(t, eff.output.String(), "")
-	testEqualMaps(t, eff.files, output)
-}
-
-func TestLintReleaseCommit(t *testing.T) {
+func TestVetCommit(t *testing.T) {
 	t.Setenv("PUBLISHER_SDK_RUST", "/sdk-rust")
 	commit := "1234567890abcdef1234567890abcdef12345678"
 	input := make(map[string]string)
@@ -835,7 +794,7 @@ func TestLintReleaseCommit(t *testing.T) {
 	input["/repo/CHANGELOG.md"] = "Local edits must not be inspected.\n"
 	input["changelog/fixed/late-llama.md"] = "A fix for the next release.\n"
 	output := maps.Clone(input)
-	a, eff := newMockLintRelease(lintReleaseApp{commit: "1234567", modules: []pure.VersionedModule{
+	a, eff := newMockVet(vetApp{commit: "1234567", modules: []pure.VersionedModule{
 		{Module: pure.SDKModule(), Version: pure.Version{1, 48, 0}},
 	}}, input, func(cmd string) (string, error) {
 		if cmd == "git rev-parse --verify --end-of-options 1234567^{commit}" {
@@ -884,7 +843,7 @@ func TestLintReleaseCommit(t *testing.T) {
 	`)
 }
 
-func TestLintReleaseReportsAllBlockedModules(t *testing.T) {
+func TestVetReportsAllBlockedModules(t *testing.T) {
 	t.Setenv("PUBLISHER_SDK_RUST", "/sdk-rust")
 	tally, err := pure.ContribModule("contrib/tally")
 	if err != nil {
@@ -893,7 +852,7 @@ func TestLintReleaseReportsAllBlockedModules(t *testing.T) {
 	input := make(map[string]string)
 	input["contrib/envconfig/go.mod"] = "module go.temporal.io/sdk/contrib/envconfig\n"
 	input["contrib/envconfig/CHANGELOG.md"] = "# Changelog\n\n## [0.0.1] - 2026-07-28\n"
-	a, eff := newMockLintRelease(lintReleaseApp{commit: "abc123", modules: []pure.VersionedModule{
+	a, eff := newMockVet(vetApp{commit: "abc123", modules: []pure.VersionedModule{
 		{Module: contribEnvconfig(t), Version: pure.Version{0, 1, 0}},
 		{Module: tally, Version: pure.Version{0, 1, 0}},
 	}}, input, func(cmd string) (string, error) {
@@ -950,7 +909,7 @@ func TestLintReleaseReportsAllBlockedModules(t *testing.T) {
 	testEqualMaps(t, eff.files, input)
 }
 
-func TestRelease(t *testing.T) {
+func TestTag(t *testing.T) {
 	t.Setenv("PUBLISHER_SDK_RUST", "/sdk-rust")
 	commit := "1234567890abcdef1234567890abcdef12345678"
 	modules := []pure.VersionedModule{
@@ -1009,7 +968,7 @@ func TestRelease(t *testing.T) {
 	sdkOutput := maps.Clone(input)
 	sdkOutput["prepare-release-notes.md"] = sdkNotes
 
-	a, eff := newMockRelease(releaseApp{modules: modules, commit: "1234567"}, input, nil)
+	a, eff := newMockTag(tagApp{modules: modules, commit: "1234567"}, input, nil)
 	eff.commandHandler = func(cmd string) (string, error) {
 		switch cmd {
 		case "git rev-parse HEAD":
@@ -1088,7 +1047,7 @@ func TestRelease(t *testing.T) {
 		Creating draft releases for sdk=1.48.0 contrib/envconfig=1.0.3
 
 		[1/4] Fetch origin, prepare changelog tool, and create worktree
-		[2/4] Lint released modules
+		[2/4] Vet released modules
 		      go.temporal.io/sdk: validate go.mod
 		      go.temporal.io/sdk: verify that go.mod requirements are published
 		      go.temporal.io/sdk: validate version.go
@@ -1109,7 +1068,7 @@ func TestRelease(t *testing.T) {
 	`)
 }
 
-func TestReleaseEmpty(t *testing.T) {
+func TestTagEmpty(t *testing.T) {
 	t.Setenv("PUBLISHER_SDK_RUST", "/sdk-rust")
 	input := make(map[string]string)
 	input["contrib/envconfig/go.mod"] = "module go.temporal.io/sdk/contrib/envconfig\n"
@@ -1117,7 +1076,7 @@ func TestReleaseEmpty(t *testing.T) {
 	input["contrib/envconfig/changelog/fixed/late-llama.md"] = "A fix for the next release.\n"
 	output := maps.Clone(input)
 	output["prepare-release-notes.md"] = "## Notable Changes\n\n"
-	a, eff := newMockRelease(releaseApp{commit: "abc123", modules: []pure.VersionedModule{
+	a, eff := newMockTag(tagApp{commit: "abc123", modules: []pure.VersionedModule{
 		{Module: contribEnvconfig(t), Version: pure.Version{1, 0, 3}},
 	}}, input, func(cmd string) (string, error) {
 		switch cmd {
@@ -1170,7 +1129,7 @@ func TestReleaseEmpty(t *testing.T) {
 		Creating draft releases for contrib/envconfig=1.0.3
 
 		[1/4] Fetch origin, prepare changelog tool, and create worktree
-		[2/4] Lint released modules
+		[2/4] Vet released modules
 		      go.temporal.io/sdk/contrib/envconfig: validate go.mod
 		      go.temporal.io/sdk/contrib/envconfig: verify that go.mod requirements are published
 		      go.temporal.io/sdk/contrib/envconfig: validate changelog
@@ -1184,7 +1143,7 @@ func TestReleaseEmpty(t *testing.T) {
 	`)
 }
 
-func TestReleaseLintBeforePublish(t *testing.T) {
+func TestTagVetBeforePublish(t *testing.T) {
 	t.Setenv("PUBLISHER_SDK_RUST", "/sdk-rust")
 	input := make(map[string]string)
 	input["go.mod"] = "module go.temporal.io/sdk\n"
@@ -1192,7 +1151,7 @@ func TestReleaseLintBeforePublish(t *testing.T) {
 	input["CHANGELOG.md"] = "# Changelog\n\n## [1.48.0] - 2026-08-04\n\n### Fixed\n\n- A fix.\n"
 	input["contrib/envconfig/go.mod"] = "module go.temporal.io/sdk/contrib/envconfig\n"
 	input["contrib/envconfig/CHANGELOG.md"] = "# Changelog\n\n## [1.0.3] - 2026-08-03\n"
-	a, eff := newMockRelease(releaseApp{commit: "abc123", modules: []pure.VersionedModule{
+	a, eff := newMockTag(tagApp{commit: "abc123", modules: []pure.VersionedModule{
 		{Module: pure.SDKModule(), Version: pure.Version{1, 48, 0}},
 		{Module: contribEnvconfig(t), Version: pure.Version{1, 0, 3}},
 	}}, input, func(cmd string) (string, error) {
@@ -1237,7 +1196,7 @@ func TestReleaseLintBeforePublish(t *testing.T) {
 		Creating draft releases for sdk=1.48.0 contrib/envconfig=1.0.3
 
 		[1/4] Fetch origin, prepare changelog tool, and create worktree
-		[2/4] Lint released modules
+		[2/4] Vet released modules
 		      go.temporal.io/sdk: validate go.mod
 		      go.temporal.io/sdk: verify that go.mod requirements are published
 		      go.temporal.io/sdk: validate version.go
@@ -1252,7 +1211,7 @@ func TestReleaseLintBeforePublish(t *testing.T) {
 	testEqualMaps(t, eff.files, input)
 }
 
-func TestReleaseStillReportsCreatedDraftsOnFailure(t *testing.T) {
+func TestTagStillReportsCreatedDraftsOnFailure(t *testing.T) {
 	t.Setenv("PUBLISHER_SDK_RUST", "/sdk-rust")
 	tally, err := pure.ContribModule("contrib/tally")
 	if err != nil {
@@ -1266,7 +1225,7 @@ func TestReleaseStillReportsCreatedDraftsOnFailure(t *testing.T) {
 	notes := "## Notable Changes\n\n### Added\n\n- A feature.\n"
 	output := maps.Clone(input)
 	output["prepare-release-notes.md"] = notes
-	a, eff := newMockRelease(releaseApp{commit: "abc123", modules: []pure.VersionedModule{
+	a, eff := newMockTag(tagApp{commit: "abc123", modules: []pure.VersionedModule{
 		{Module: contribEnvconfig(t), Version: pure.Version{0, 1, 0}},
 		{Module: tally, Version: pure.Version{0, 1, 0}},
 	}}, input, func(cmd string) (string, error) {
@@ -1340,7 +1299,7 @@ func TestReleaseStillReportsCreatedDraftsOnFailure(t *testing.T) {
 		Creating draft releases for contrib/envconfig=0.1.0 contrib/tally=0.1.0
 
 		[1/4] Fetch origin, prepare changelog tool, and create worktree
-		[2/4] Lint released modules
+		[2/4] Vet released modules
 		      go.temporal.io/sdk/contrib/envconfig: validate go.mod
 		      go.temporal.io/sdk/contrib/envconfig: verify that go.mod requirements are published
 		      go.temporal.io/sdk/contrib/envconfig: validate changelog
@@ -1359,6 +1318,47 @@ func TestReleaseStillReportsCreatedDraftsOnFailure(t *testing.T) {
 	testEqual(t, fmt.Sprint(err), "create draft release contrib/tally/v0.1.0: command failed")
 }
 
+func TestCoreToolSetupFailure(t *testing.T) {
+	modules := []pure.VersionedModule{
+		{Module: pure.SDKModule(), Version: pure.Version{1, 48, 0}},
+		{Module: contribEnvconfig(t), Version: pure.Version{1, 0, 3}},
+	}
+	for _, name := range []string{"stage", "vet", "tag"} {
+		t.Run(name, func(t *testing.T) {
+			a, eff := newMockApp(app{}, nil, nil)
+			eff.commandHandler = func(cmd string) (string, error) {
+				if cmd == "git rev-parse HEAD" {
+					return "wrong-revision\n", nil
+				}
+				return "", nil
+			}
+			var c command
+			switch name {
+			case "stage":
+				c = &stageApp{app: *a, modules: modules}
+			case "vet":
+				c = &vetApp{app: *a, modules: modules, commit: "abc123"}
+			case "tag":
+				c = &tagApp{app: *a, modules: modules, commit: "abc123"}
+			}
+			err := c.run()
+			if err == nil || !strings.Contains(err.Error(), "wrong-revision") {
+				t.Fatalf("expected a tool setup error, got %v", err)
+			}
+			audit := eff.audit.String()
+			if count := strings.Count(audit, "$ git rev-parse HEAD\n"); count != 1 {
+				t.Fatalf("verified the tool checkout %d times, want 1", count)
+			}
+			if strings.Contains(audit, "git worktree add") || strings.Contains(audit, "cargo ") {
+				t.Fatalf("started release work after a tool setup failure:\n%s", audit)
+			}
+			if strings.Contains(eff.output.String(), "validate go.mod") {
+				t.Fatal("reported a global setup failure during per-module validation")
+			}
+		})
+	}
+}
+
 func TestNewCommand(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -1366,33 +1366,34 @@ func TestNewCommand(t *testing.T) {
 		wantDirs []string
 		wantErr  string
 	}{
-		{name: "lint changelog", args: []string{"lint", "abc123"}},
-		{name: "skip changelog", args: []string{"lint", "-skip-changelog=true", "abc123"}},
-		{name: "missing changelog base", args: []string{"lint"}, wantErr: "usage: publisher lint [-skip-changelog] BASE_COMMIT"},
-		{name: "extra changelog argument", args: []string{"lint", "abc123", "extra"}, wantErr: "usage: publisher lint [-skip-changelog] BASE_COMMIT"},
-		{name: "lint release commit", args: []string{"lint-release", "abc123", "sdk=1.48.0"}},
-		{name: "SDK PR", args: []string{"pr", "sdk=1.48.0"}},
-		{name: "explicit PR branch", args: []string{"pr", "-branch", "dplyukhin/custom-release", "sdk=1.48.0"}},
-		{name: "contrib PR", args: []string{"pr", "contrib/envconfig=1.0.3"}, wantDirs: []string{"contrib/envconfig"}},
-		{name: "nested contrib module", args: []string{"pr", "contrib/aws/s3driver/awssdkv2=0.2.2"}, wantDirs: []string{"contrib/aws/s3driver/awssdkv2"}},
-		{name: "trailing slash", args: []string{"pr", "contrib/envconfig/=1.0.3"}, wantDirs: []string{"contrib/envconfig"}},
-		{name: "SDK release", args: []string{"release", "abc123", "sdk=1.48.0"}},
-		{name: "contrib release", args: []string{"release", "abc123", "contrib/envconfig=1.0.3"}, wantDirs: []string{"contrib/envconfig"}},
-		{name: "unknown command", args: []string{"unknown"}, wantErr: "unknown command \"unknown\"\nusage: publisher (find|lint|pr|lint-release|release)"},
-		{name: "old invocation", args: []string{"1.48.0"}, wantErr: "unknown command \"1.48.0\"\nusage: publisher (find|lint|pr|lint-release|release)"},
-		{name: "multiple PR assignments", args: []string{"pr", "sdk=1.48.0", "contrib/envconfig=1.0.3"}, wantDirs: []string{"", "contrib/envconfig"}},
-		{name: "multiple release assignments", args: []string{"release", "abc123", "sdk=1.48.0", "contrib/envconfig=1.0.3"}, wantDirs: []string{"", "contrib/envconfig"}},
-		{name: "duplicate SDK", args: []string{"pr", "sdk=1.48.0", "sdk=1.48.1"}, wantErr: `module "go.temporal.io/sdk" is specified more than once`},
-		{name: "duplicate contrib", args: []string{"pr", "contrib/envconfig=1.0.3", "./contrib/envconfig/=1.1.0"}, wantErr: `module "go.temporal.io/sdk/contrib/envconfig" is specified more than once`},
-		{name: "duplicate release module", args: []string{"release", "abc123", "sdk=1.48.0", "sdk=1.48.0"}, wantErr: `module "go.temporal.io/sdk" is specified more than once`},
-		{name: "invalid second version", args: []string{"pr", "sdk=1.48.0", "contrib/envconfig=bad"}, wantErr: `invalid version "bad"; expected a version like '1.48.0'`},
-		{name: "release kind", args: []string{"pr", "sdk=minor"}, wantErr: `invalid version "minor"; expected a version like '1.48.0'`},
-		{name: "non-contrib module", args: []string{"pr", "internal=1.0.3"}, wantErr: `invalid module "internal"; expected a slash-separated contrib module directory such as 'contrib/envconfig'`},
-		{name: "escaping module", args: []string{"pr", "contrib/../internal=1.0.3"}, wantErr: `invalid module "contrib/../internal"; expected a slash-separated contrib module directory such as 'contrib/envconfig'`},
-		{name: "missing equals", args: []string{"pr", "contrib/envconfig"}, wantErr: `invalid release "contrib/envconfig"; expected MODULE=VERSION, such as 'sdk=1.48.0'`},
-		{name: "empty module", args: []string{"pr", "=1.0.3"}, wantErr: `invalid module ""; expected a slash-separated contrib module directory such as 'contrib/envconfig'`},
-		{name: "empty version", args: []string{"pr", "contrib/envconfig="}, wantErr: `invalid version ""; expected a version like '1.48.0'`},
-		{name: "extra equals", args: []string{"pr", "sdk=1.48.0=1.49.0"}, wantErr: `invalid version "1.48.0=1.49.0"; expected a version like '1.48.0'`},
+		{name: "gate changelog", args: []string{"gate", "abc123"}},
+		{name: "skip changelog", args: []string{"gate", "-skip-changelog=true", "abc123"}},
+		{name: "missing changelog base", args: []string{"gate"}, wantErr: "usage: publisher gate [-skip-changelog] BASE_COMMIT"},
+		{name: "extra changelog argument", args: []string{"gate", "abc123", "extra"}, wantErr: "usage: publisher gate [-skip-changelog] BASE_COMMIT"},
+		{name: "find releases", args: []string{"find"}},
+		{name: "stage SDK", args: []string{"stage", "sdk=1.48.0"}},
+		{name: "explicit stage branch", args: []string{"stage", "-branch", "dplyukhin/custom-release", "sdk=1.48.0"}},
+		{name: "stage contrib", args: []string{"stage", "contrib/envconfig=1.0.3"}, wantDirs: []string{"contrib/envconfig"}},
+		{name: "nested contrib module", args: []string{"stage", "contrib/aws/s3driver/awssdkv2=0.2.2"}, wantDirs: []string{"contrib/aws/s3driver/awssdkv2"}},
+		{name: "trailing slash", args: []string{"stage", "contrib/envconfig/=1.0.3"}, wantDirs: []string{"contrib/envconfig"}},
+		{name: "vet release commit", args: []string{"vet", "abc123", "sdk=1.48.0"}},
+		{name: "tag SDK", args: []string{"tag", "abc123", "sdk=1.48.0"}},
+		{name: "tag contrib", args: []string{"tag", "abc123", "contrib/envconfig=1.0.3"}, wantDirs: []string{"contrib/envconfig"}},
+		{name: "unknown command", args: []string{"unknown"}, wantErr: "unknown command \"unknown\"\n" + usage},
+		{name: "old invocation", args: []string{"1.48.0"}, wantErr: "unknown command \"1.48.0\"\n" + usage},
+		{name: "multiple stage assignments", args: []string{"stage", "sdk=1.48.0", "contrib/envconfig=1.0.3"}, wantDirs: []string{"", "contrib/envconfig"}},
+		{name: "multiple tag assignments", args: []string{"tag", "abc123", "sdk=1.48.0", "contrib/envconfig=1.0.3"}, wantDirs: []string{"", "contrib/envconfig"}},
+		{name: "duplicate SDK", args: []string{"stage", "sdk=1.48.0", "sdk=1.48.1"}, wantErr: `module "go.temporal.io/sdk" is specified more than once`},
+		{name: "duplicate contrib", args: []string{"stage", "contrib/envconfig=1.0.3", "./contrib/envconfig/=1.1.0"}, wantErr: `module "go.temporal.io/sdk/contrib/envconfig" is specified more than once`},
+		{name: "duplicate release module", args: []string{"tag", "abc123", "sdk=1.48.0", "sdk=1.48.0"}, wantErr: `module "go.temporal.io/sdk" is specified more than once`},
+		{name: "invalid second version", args: []string{"stage", "sdk=1.48.0", "contrib/envconfig=bad"}, wantErr: `invalid version "bad"; expected a version like '1.48.0'`},
+		{name: "release kind", args: []string{"stage", "sdk=minor"}, wantErr: `invalid version "minor"; expected a version like '1.48.0'`},
+		{name: "non-contrib module", args: []string{"stage", "internal=1.0.3"}, wantErr: `invalid module "internal"; expected a slash-separated contrib module directory such as 'contrib/envconfig'`},
+		{name: "escaping module", args: []string{"stage", "contrib/../internal=1.0.3"}, wantErr: `invalid module "contrib/../internal"; expected a slash-separated contrib module directory such as 'contrib/envconfig'`},
+		{name: "missing equals", args: []string{"stage", "contrib/envconfig"}, wantErr: `invalid release "contrib/envconfig"; expected MODULE=VERSION, such as 'sdk=1.48.0'`},
+		{name: "empty module", args: []string{"stage", "=1.0.3"}, wantErr: `invalid module ""; expected a slash-separated contrib module directory such as 'contrib/envconfig'`},
+		{name: "empty version", args: []string{"stage", "contrib/envconfig="}, wantErr: `invalid version ""; expected a version like '1.48.0'`},
+		{name: "extra equals", args: []string{"stage", "sdk=1.48.0=1.49.0"}, wantErr: `invalid version "1.48.0=1.49.0"; expected a version like '1.48.0'`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -1407,28 +1408,30 @@ func TestNewCommand(t *testing.T) {
 			var name, commit string
 			var modules []pure.VersionedModule
 			switch got := got.(type) {
-			case *lintApp:
+			case *gateApp:
 				testEqual(t, got.baseCommit, "abc123")
 				if want := test.name == "skip changelog"; got.skipChangelog != want {
 					t.Fatalf("skip-changelog: got %t, want %t", got.skipChangelog, want)
 				}
 				return
-			case *lintReleaseApp:
-				name, commit, modules = "lint-release", got.commit, got.modules
-			case *prApp:
-				name, modules = "pr", got.modules
-				if test.name == "explicit PR branch" {
+			case *findApp:
+				return
+			case *stageApp:
+				name, modules = "stage", got.modules
+				if test.name == "explicit stage branch" {
 					testEqual(t, got.branch, "dplyukhin/custom-release")
 				}
-			case *releaseApp:
-				name, commit, modules = "release", got.commit, got.modules
+			case *vetApp:
+				name, commit, modules = "vet", got.commit, got.modules
+			case *tagApp:
+				name, commit, modules = "tag", got.commit, got.modules
 			default:
 				t.Fatalf("unexpected command type: %T", got)
 			}
 			if name != test.args[0] {
 				t.Fatalf("unexpected command: got %q, want %q", name, test.args[0])
 			}
-			if (name == "release" || name == "lint-release") && commit != "abc123" {
+			if (name == "tag" || name == "vet") && commit != "abc123" {
 				t.Fatalf("unexpected commit: %q", commit)
 			}
 			wantDirs := test.wantDirs

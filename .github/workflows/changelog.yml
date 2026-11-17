@@ -37,4 +37,4 @@ jobs:
           BASE_COMMIT: ${{ github.event.pull_request.base.sha }}
           SKIP_CHANGELOG: ${{ contains(github.event.pull_request.labels.*.name, 'skip-changelog') }}
         shell: bash
-        run: go run ./internal/cmd/publisher lint -skip-changelog="$SKIP_CHANGELOG" "$BASE_COMMIT"
+        run: go run ./internal/cmd/publisher gate -skip-changelog="$SKIP_CHANGELOG" "$BASE_COMMIT"

@@ -40,19 +40,19 @@ func newMockApp(a app, input map[string]string, handler func(cmd string) (string
 	return &a, eff
 }
 
-func newMockLintRelease(c lintReleaseApp, input map[string]string, handler func(cmd string) (string, error)) (*lintReleaseApp, *mockEffects) {
+func newMockVet(c vetApp, input map[string]string, handler func(cmd string) (string, error)) (*vetApp, *mockEffects) {
 	a, eff := newMockApp(c.app, input, handler)
 	c.app = *a
 	return &c, eff
 }
 
-func newMockPR(c prApp, input map[string]string, handler func(cmd string) (string, error)) (*prApp, *mockEffects) {
+func newMockStage(c stageApp, input map[string]string, handler func(cmd string) (string, error)) (*stageApp, *mockEffects) {
 	a, eff := newMockApp(c.app, input, handler)
 	c.app = *a
 	return &c, eff
 }
 
-func newMockRelease(c releaseApp, input map[string]string, handler func(cmd string) (string, error)) (*releaseApp, *mockEffects) {
+func newMockTag(c tagApp, input map[string]string, handler func(cmd string) (string, error)) (*tagApp, *mockEffects) {
 	a, eff := newMockApp(c.app, input, handler)
 	c.app = *a
 	return &c, eff

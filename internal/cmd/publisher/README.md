@@ -1,12 +1,12 @@
 This is a script that helps automate releasing the Go SDK and its contrib modules.
-Prepare a draft PR, run lint-release on its commit, then create draft releases after merging.
+Stage a draft PR, vet its commit, then create draft releases with tag after merging.
 
 ## Changelog tool setup
 
 Publisher invokes `cargo run --quiet` from a local sdk-rust checkout.
 Install Rust and Cargo, and check out sdk-rust beside sdk-go at the revision in
 `sdk-rust-revision`. Set `PUBLISHER_SDK_RUST` to use a checkout elsewhere.
-The lint, PR, lint-release, and release commands verify its HEAD once during
+The `gate`, `stage`, `vet`, and `tag` commands verify its HEAD once during
 setup, before creating a temporary worktree or validating modules. Discovery does
 not need the tool. Publisher does not fetch sdk-rust or change its Git revision.
 Uncommitted tool edits are used, which allows testing coordinated changes.
@@ -25,7 +25,7 @@ error, or EOF. It checks for commits since each module's highest stable
 release tag and asks you to choose minor `[m]`,
 patch `[p]`, view commit log `[c]`, view diff `[d]`, or skip `[s]`. Empty input also skips.
 It reads the selected modules' `go.mod` files and prints dependency-ordered
-`publisher pr` commands, grouping independent modules into one PR without running
+`publisher stage` commands, grouping independent modules into one PR without running
 the commands.
 If no modules are selected, it prints no command or summary.
 
@@ -48,7 +48,7 @@ files and the selected commit; diffs compare against the last release, or an emp
 tree for never-released modules.
 EOF cancels without printing a release command, even if earlier modules were selected.
 
-`publisher lint [-skip-changelog] BASE_COMMIT` validates fragments and existing
+`publisher gate [-skip-changelog] BASE_COMMIT` validates fragments and existing
 changelogs in the checkout for the SDK and releasable contrib modules. Each module
 with changes between `BASE_COMMIT` and `HEAD` must have a new fragment of its own.
 Change detection uses the same ownership rules as release discovery: dependency-only
@@ -61,9 +61,9 @@ The base commit must already be available locally; this command does not fetch.
 Validation reads files from the working tree, but module discovery and the
 new-fragment check use committed files.
 
-`publisher pr [-branch BRANCH] MODULE=VERSION [MODULE=VERSION ...]` updates release files and creates a
+`publisher stage [-branch BRANCH] MODULE=VERSION [MODULE=VERSION ...]` updates release files and creates a
 draft PR using the specified versions. For example,
-`publisher pr sdk=1.48.0 contrib/envconfig=1.0.3` prepares SDK version `1.48.0` and
+`publisher stage sdk=1.48.0 contrib/envconfig=1.0.3` prepares SDK version `1.48.0` and
 envconfig version `1.0.3`. Versions must use `major.minor.patch` format, without
 prerelease or build metadata.
 
@@ -80,23 +80,23 @@ rejected. Only selected modules are prepared. Version-file changes are still own
 by publisher. A preparation failure can partially modify the temporary worktree,
 but publisher does not commit or push it and removes it during cleanup.
 
-`publisher release COMMIT MODULE=VERSION [MODULE=VERSION ...]` still takes explicit
+`publisher tag COMMIT MODULE=VERSION [MODULE=VERSION ...]` takes explicit
 versions and validates the merged release commit before creating draft releases.
 
 To see a sample execution, check out [main_test.go](./main_test.go).
 
-`publisher lint-release COMMIT MODULE=VERSION [MODULE=VERSION ...]` validates the specified
+`publisher vet COMMIT MODULE=VERSION [MODULE=VERSION ...]` validates the specified
 releases in a temporary snapshot after fetching origin. For example,
-`publisher lint-release my-release sdk=1.48.0 contrib/envconfig=1.0.3` checks those two releases.
+`publisher vet my-release sdk=1.48.0 contrib/envconfig=1.0.3` checks those two releases.
 Specify `HEAD`, a branch, a tag, or a commit SHA. There is no default commit.
 Uncommitted local edits are not included. Inspection checks module metadata,
 published Temporal dependencies, the SDK version constant, and changelog sections
 against the supplied release specs. The selected changelog sections must be dated
-today, using the machine's local date in `YYYY-MM-DD` format. Both lint-release and release
+today, using the machine's local date in `YYYY-MM-DD` format. Both `vet` and `tag`
 enforce this check. It does not infer versions or compare them
 with existing release tags.
 
-Lint-release uses the shared tool's `release-notes --date` command, discarding its output.
+Vet uses the shared tool's `release-notes --date` command, discarding its output.
 It does not require pending
 fragment directories to be empty: notes merged after preparation belong to the next
 release. Publishing uses `release-notes` from the completed version section, with
@@ -118,10 +118,10 @@ as arguments.
 The package is organized as follows:
 
 - `main.go` contains the entry point, shared `app` dependencies, and the
-  `find`, `lint`, `pr`, `lint-release`, and `release` commands, each with its own
+  `gate`, `find`, `stage`, `vet`, and `tag` commands, each with its own
   constructor, options, and workflow.
   Commands that use the shared tool initialize it locally. This file also coordinates
-  module validation for lint-release and release.
+  module validation for vet and tag.
 - `repo.go` owns operations on the original checkout, including fetching, resolving
   commits, computing module pathspecs, and creating and removing temporary worktrees.
 - `worktree.go` implements operations performed on a checkout or temporary worktree, like
