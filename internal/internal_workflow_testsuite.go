@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/facebookgo/clock"
@@ -82,6 +83,15 @@ type (
 		timedOut           bool
 		timeoutType        enumspb.TimeoutType // which timeout occurred
 		cancelTimeoutWatch func()              // cancels the timeout monitoring goroutine
+		// started is set once the activity task handler begins executing. It is
+		// atomic because the activity runs outside the dispatcher callback that
+		// processes cancellation.
+		started atomic.Bool
+		// cancelRequested is set when the workflow asks to cancel a running activity.
+		// The canceled result is delivered once the activity actually finishes,
+		// matching the server's behavior of not advancing the workflow while the
+		// activity is still executing.
+		cancelRequested bool
 	}
 
 	testWorkflowHandle struct {
@@ -1266,9 +1276,18 @@ func (env *testWorkflowEnvironmentImpl) RequestCancelActivity(activityID Activit
 	}
 	activityInfo := handle.getActivityInfo()
 	env.logger.Debug("RequestCancelActivity", tagActivityID, activityID)
-	env.deleteHandle(token)
+
+	running := handle.started.Load()
+	if running {
+		handle.cancelRequested = true
+	} else {
+		env.deleteHandle(token)
+	}
+
 	env.postCallback(func() {
-		handle.callback(nil, NewCanceledError())
+		if !running {
+			handle.callback(nil, NewCanceledError())
+		}
 		if env.onActivityCanceledListener != nil {
 			env.onActivityCanceledListener(activityInfo)
 		}
@@ -1646,6 +1665,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivi
 	// activity runs in separate goroutinue outside of workflow dispatcher
 	// do callback in a defer to handle calls to runtime.Goexit inside the activity (which is done by t.FailNow)
 	go func() {
+		activityHandle.started.Store(true)
 		var result any
 		defer func() {
 			// Stop timeout monitoring
@@ -2085,6 +2105,14 @@ func (env *testWorkflowEnvironmentImpl) handleActivityResult(activityHandle *tes
 		return
 	}
 	env.deleteHandle(activityHandle.token)
+
+	if activityHandle.cancelRequested {
+		if activityHandle.cancelTimeoutWatch != nil {
+			activityHandle.cancelTimeoutWatch()
+		}
+		activityHandle.callback(nil, NewCanceledError())
+		return
+	}
 
 	var blob *commonpb.Payloads
 	var err error
