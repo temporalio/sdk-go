@@ -276,6 +276,7 @@ func registerTSTestWorkflows(w worker.Worker) {
 	w.RegisterWorkflow(SignalWithStartTargetWorkflow)
 	w.RegisterWorkflow(ParentTimeSkippingWorkflow)
 	w.RegisterWorkflow(ActivityThenSleepWorkflow)
+	w.RegisterWorkflow(UpdatableSleepWorkflow)
 	w.RegisterActivity(BlockingActivity)
 }
 
@@ -1091,5 +1092,124 @@ func (s *TimeSkippingV2TestSuite) TestUnboundedFastForwardEnablesSkippingMidRun(
 	now, err := timeskipping.GetWorkflowCurrentTime(ctx, s.server.Client(), run)
 	s.NoError(err)
 	s.WithinDuration(time.Now().Add(100000*time.Second), now, 30*time.Second)
+	s.assertTimeWasSkipped(ctx, run)
+}
+
+func UpdatableSleepWorkflow(ctx workflow.Context, seconds float64) (SleepResult, error) {
+	if err := workflow.SetUpdateHandler(ctx, "bump", func(workflow.Context) (string, error) {
+		return "bumped", nil
+	}); err != nil {
+		return SleepResult{}, err
+	}
+	tStart := workflow.Now(ctx)
+	if err := workflow.Sleep(ctx, time.Duration(seconds*float64(time.Second))); err != nil {
+		return SleepResult{}, err
+	}
+	return SleepResult{Start: tStart, End: workflow.Now(ctx), Message: "all done"}, nil
+}
+
+// Explicitly sets DisablePropagation and MaxSessionSkipCount.
+func (s *TimeSkippingV2TestSuite) startSessionFieldsRun(
+	ctx context.Context, tq string, seconds float64,
+) client.WorkflowRun {
+	cfg := client.TimeSkippingConfig{
+		Enabled:             true,
+		DisablePropagation:  true,
+		MaxSessionSkipCount: 50,
+	}
+	run, err := s.server.Client().ExecuteWorkflow(ctx,
+		client.StartWorkflowOptions{ID: "wf-" + uuid.NewString(), TaskQueue: tq, TimeSkippingConfig: &cfg},
+		SleepWorkflow, seconds)
+	s.NoError(err)
+	return run
+}
+
+func (s *TimeSkippingV2TestSuite) assertSessionFieldsPreserved(ctx context.Context, run client.WorkflowRun) {
+	tsi, err := timeskipping.GetWorkflowTimeSkippingInfo(ctx, s.server.Client(), run)
+	s.NoError(err)
+	s.NotNil(tsi)
+	s.EqualValues(50, tsi.EffectiveConfig.MaxSessionSkipCount,
+		"expected the fast-forward to carry MaxSessionSkipCount over, not reset it to the server default")
+	s.True(tsi.EffectiveConfig.DisablePropagation,
+		"expected the fast-forward to carry DisablePropagation over")
+}
+
+func (s *TimeSkippingV2TestSuite) TestBoundedFastForwardPreservesSessionFields() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+	tq := "tq-" + uuid.NewString()
+	w := worker.New(s.server.Client(), tq, worker.Options{})
+	registerTSTestWorkflows(w)
+	s.NoError(w.Start())
+	defer w.Stop()
+
+	run := s.startSessionFieldsRun(ctx, tq, 100000)
+	defer func() { _ = s.server.Client().CancelWorkflow(ctx, run.GetID(), "") }()
+
+	ok, err := timeskipping.FastForwardWorkflow(ctx, s.server.Client(), run,
+		timeskipping.WorkflowFastForwardOptions{Duration: time.Hour})
+	s.NoError(err)
+	s.True(ok)
+
+	s.assertSessionFieldsPreserved(ctx, run)
+	s.assertTimeWasSkipped(ctx, run)
+}
+
+func (s *TimeSkippingV2TestSuite) TestUnboundedFastForwardPreservesSessionFields() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+	tq := "tq-" + uuid.NewString()
+	w := worker.New(s.server.Client(), tq, worker.Options{})
+	registerTSTestWorkflows(w)
+	s.NoError(w.Start())
+	defer w.Stop()
+
+	run := s.startSessionFieldsRun(ctx, tq, 3600)
+
+	ok, err := timeskipping.FastForwardWorkflow(ctx, s.server.Client(), run,
+		timeskipping.WorkflowFastForwardOptions{})
+	s.NoError(err)
+	s.False(ok, "unbounded waits for the execution to end")
+
+	s.assertSessionFieldsPreserved(ctx, run)
+	s.assertTimeWasSkipped(ctx, run)
+}
+
+func (s *TimeSkippingV2TestSuite) TestUpdateWithStartSkipsTime() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+	tq := "tq-" + uuid.NewString()
+	cl := s.server.Client()
+	w := worker.New(cl, tq, worker.Options{})
+	registerTSTestWorkflows(w)
+	s.NoError(w.Start())
+	defer w.Stop()
+
+	cfg := client.TimeSkippingConfig{Enabled: true}
+	startOp := cl.NewWithStartWorkflowOperation(client.StartWorkflowOptions{
+		ID:                       "wf-" + uuid.NewString(),
+		TaskQueue:                tq,
+		TimeSkippingConfig:       &cfg,
+		WorkflowIDConflictPolicy: enumspb.WORKFLOW_ID_CONFLICT_POLICY_FAIL,
+	}, UpdatableSleepWorkflow, 100000.0)
+
+	handle, err := cl.UpdateWithStartWorkflow(ctx, client.UpdateWithStartWorkflowOptions{
+		StartWorkflowOperation: startOp,
+		UpdateOptions: client.UpdateWorkflowOptions{
+			UpdateName:   "bump",
+			WaitForStage: client.WorkflowUpdateStageCompleted,
+		},
+	})
+	s.NoError(err)
+	var updateResult string
+	s.NoError(handle.Get(ctx, &updateResult))
+	s.Equal("bumped", updateResult)
+
+	run, err := startOp.Get(ctx)
+	s.NoError(err)
+
+	var result SleepResult
+	s.NoError(run.Get(ctx, &result))
+	s.Equal("all done", result.Message)
 	s.assertTimeWasSkipped(ctx, run)
 }

@@ -33,7 +33,7 @@ type (
 	}
 
 	// FastForwardConfig is a one-shot fast-forward inside a [TimeSkippingConfig]. Both
-	// fields are required whenever a fast-forward is configured.
+	// fields are required.
 	//
 	// Exposed as: [go.temporal.io/sdk/client.FastForwardConfig]
 	//

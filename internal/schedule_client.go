@@ -399,7 +399,7 @@ type (
 		// TimeSkippingConfig - Optional time skipping v2 configuration for the
 		// schedule. If set, it is applied via the schedule's initial patch, so the
 		// schedule's virtual clock advances to its next fire time while it is idle.
-		// A bounded FastForwardConfig is required; a schedule has no end to skip to,
+		// A bounded TimeSkippingConfig.FastForwardConfig is required; a schedule has no end to skip to,
 		// so unbounded skipping is rejected by the server.
 		//
 		// NOTE: Experimental

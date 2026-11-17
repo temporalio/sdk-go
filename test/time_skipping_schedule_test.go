@@ -440,3 +440,46 @@ func (s *TimeSkippingScheduleTestSuite) TestScheduleCurrentTimeAdvances() {
 	s.WithinDurationf(before.Add(3*time.Hour), after, 5*time.Minute,
 		"expected the virtual clock to advance ~3h, went from %v to %v", before, after)
 }
+
+func (s *TimeSkippingScheduleTestSuite) TestNilConfigClearsActiveFastForward() {
+	// Longer timeout because of the poll.
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	tq := "tq-" + uuid.NewString()
+	w := s.startScheduleWorker(tq)
+	defer w.Stop()
+
+	handle := s.createHourlySchedule(ctx, tq, ScheduleTargetWorkflow)
+	defer func() { _ = handle.Delete(ctx) }()
+
+	// Pause first so the clock cannot advance and complete the fast-forward
+	// before the clear lands.
+	s.NoError(handle.Pause(ctx, client.SchedulePauseOptions{Note: "hold for nil-clear test"}))
+
+	ffID := uuid.NewString()
+	s.NoError(handle.SetTimeSkippingConfig(ctx, client.ScheduleSetTimeSkippingConfigOptions{
+		Config: &client.TimeSkippingConfig{
+			Enabled:           true,
+			FastForwardConfig: &client.FastForwardConfig{ID: ffID, Duration: 3 * time.Hour},
+		},
+	}))
+
+	tsi, err := timeskipping.GetScheduleTimeSkippingInfo(ctx, handle)
+	s.NoError(err)
+	s.NotNil(tsi)
+	s.True(tsi.EffectiveConfig.Enabled, "expected the fast-forward to be in flight before clearing")
+
+	s.NoError(handle.SetTimeSkippingConfig(ctx, client.ScheduleSetTimeSkippingConfigOptions{Config: nil}))
+
+	tsi, err = timeskipping.GetScheduleTimeSkippingInfo(ctx, handle)
+	s.NoError(err)
+	s.NotNil(tsi)
+	s.False(tsi.EffectiveConfig.Enabled, "expected a nil Config to clear time skipping")
+
+	waitCtx, cancelWait := context.WithTimeout(ctx, 20*time.Second)
+	defer cancelWait()
+	res, err := timeskipping.PollScheduleFastForward(waitCtx, handle,
+		timeskipping.SchedulePollFastForwardOptions{FastForwardID: ffID})
+	s.NoError(err, "stopping without completing is an outcome, not a call failure")
+	s.False(res.Completed, "the cleared fast-forward must not complete")
+}

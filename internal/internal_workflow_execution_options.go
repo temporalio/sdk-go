@@ -63,17 +63,6 @@ type (
 		Value *TimeSkippingConfig
 	}
 
-	// pollWorkflowTimeSkippingRequest is a request for PollWorkflowFastForward.
-	//
-	// NOTE: Experimental
-	pollWorkflowTimeSkippingRequest struct {
-		// ID of the workflow.
-		WorkflowID string
-		// Required. Identifies the fast-forward to wait for. Must match the
-		// FastForwardConfig id set in the execution's TimeSkippingConfig.
-		FastForwardID string
-	}
-
 	// VersioningOverrideChange sets or removes a versioning override when used with
 	// [WorkflowExecutionOptionsChanges].
 	//

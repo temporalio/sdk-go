@@ -15,20 +15,9 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/durationpb"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 const scheduleFastForwardPollInterval = 100 * time.Millisecond
-
-// Validate checks internal consistency of the config.
-//
-// NOTE: Experimental
-func (c *TimeSkippingConfig) Validate() error {
-	if !c.Enabled && c.FastForwardConfig != nil {
-		return errors.New("FastForwardConfig cannot be set when Enabled is false")
-	}
-	return nil
-}
 
 // toProto converts the config to its proto counterpart.
 func (c *TimeSkippingConfig) toProto() *commonpb.TimeSkippingConfig {
@@ -81,7 +70,7 @@ func timeSkippingInfoFromProto(p *commonpb.TimeSkippingInfo) *TimeSkippingInfo {
 		return nil
 	}
 	return &TimeSkippingInfo{
-		CurrentTime:             timeFromProto(p.GetCurrentTime()),
+		CurrentTime:             safeAsTime(p.GetCurrentTime()),
 		EffectiveConfig:         timeSkippingConfigFromProto(p.GetEffectiveConfig()),
 		FastForwardInfo:         timeSkippingFastForwardInfoFromProto(p.GetFastForwardInfo()),
 		CurrentSessionSkipCount: p.GetCurrentSessionSkipCount(),
@@ -95,18 +84,9 @@ func timeSkippingFastForwardInfoFromProto(p *commonpb.TimeSkippingFastForwardInf
 	return &TimeSkippingFastForwardInfo{
 		ID:           p.GetFastForwardId(),
 		Duration:     p.GetFastForwardDuration().AsDuration(),
-		TargetTime:   timeFromProto(p.GetTargetTime()),
+		TargetTime:   safeAsTime(p.GetTargetTime()),
 		HasCompleted: p.GetHasCompleted(),
 	}
-}
-
-// timeFromProto maps an absent timestamp to the zero time rather than to the
-// Unix epoch, so callers can tell "not reported" from a real instant.
-func timeFromProto(t *timestamppb.Timestamp) time.Time {
-	if t == nil {
-		return time.Time{}
-	}
-	return t.AsTime()
 }
 
 // FastForwardWorkflow issues a fast-forward on the workflow and waits for it
@@ -233,24 +213,24 @@ func fastForwardConfigFor(
 	return tsc, nil
 }
 func (wc *WorkflowClient) pollWorkflowTimeSkipping(
-	ctx context.Context, request pollWorkflowTimeSkippingRequest,
+	ctx context.Context, workflowID, fastForwardID string,
 ) (FastForwardPollResult, error) {
 	if err := wc.ensureInitialized(ctx); err != nil {
 		return FastForwardPollResult{}, err
 	}
-	if request.WorkflowID == "" {
+	if workflowID == "" {
 		return FastForwardPollResult{}, errors.New("missing workflow id argument")
 	}
-	if request.FastForwardID == "" {
+	if fastForwardID == "" {
 		return FastForwardPollResult{}, errors.New("missing fast forward id argument")
 	}
 
 	req := &workflowservice.PollWorkflowExecutionTimeSkippingRequest{
 		Namespace: wc.namespace,
 		WorkflowExecution: &commonpb.WorkflowExecution{
-			WorkflowId: request.WorkflowID,
+			WorkflowId: workflowID,
 		},
-		FastForwardId: request.FastForwardID,
+		FastForwardId: fastForwardID,
 	}
 	for {
 		grpcCtx, cancel := newGRPCContext(ctx, wc.rpcTimeout,
@@ -316,10 +296,7 @@ func PollWorkflowFastForward(
 	if err != nil {
 		return FastForwardPollResult{}, err
 	}
-	return wc.pollWorkflowTimeSkipping(ctx, pollWorkflowTimeSkippingRequest{
-		WorkflowID:    run.GetID(),
-		FastForwardID: options.FastForwardID,
-	})
+	return wc.pollWorkflowTimeSkipping(ctx, run.GetID(), options.FastForwardID)
 }
 
 func doBoundedFastForward(
@@ -333,10 +310,7 @@ func doBoundedFastForward(
 	if err := updateTimeSkippingConfig(ctx, wc, run, tsc); err != nil {
 		return false, err
 	}
-	res, err := wc.pollWorkflowTimeSkipping(ctx, pollWorkflowTimeSkippingRequest{
-		WorkflowID:    run.GetID(),
-		FastForwardID: ffID,
-	})
+	res, err := wc.pollWorkflowTimeSkipping(ctx, run.GetID(), ffID)
 	if err != nil {
 		return false, err
 	}

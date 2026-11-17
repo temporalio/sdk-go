@@ -356,11 +356,15 @@ func (scheduleHandle *scheduleHandleImpl) Trigger(ctx context.Context, options S
 }
 
 func (scheduleHandle *scheduleHandleImpl) SetTimeSkippingConfig(ctx context.Context, options ScheduleSetTimeSkippingConfigOptions) error {
+	tsc := options.Config.toProto()
+	if tsc == nil {
+		tsc = &commonpb.TimeSkippingConfig{Enabled: false}
+	}
 	request := &workflowservice.PatchScheduleRequest{
 		Namespace:  scheduleHandle.client.namespace,
 		ScheduleId: scheduleHandle.ID,
 		Patch: &schedulepb.SchedulePatch{
-			TimeSkippingConfig: options.Config.toProto(),
+			TimeSkippingConfig: tsc,
 		},
 		Identity:  scheduleHandle.client.identity,
 		RequestId: uuid.NewString(),
