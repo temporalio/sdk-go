@@ -63,8 +63,8 @@ type (
 // first. Without a Duration it is unbounded: skipping stays on and the call
 // waits for the workflow to end, always returning false.
 //
-// If time skipping need is not already  enabled on the workflow; this enables
-// it, preserving any DisablePropagation and MaxSessionSkipCount already set.
+// If time skipping is not already enabled on the workflow, this enables it,
+// preserving any DisablePropagation and MaxSessionSkipCount already set.
 //
 // NOTE: Experimental
 func FastForwardWorkflow(
