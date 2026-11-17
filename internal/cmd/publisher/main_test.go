@@ -46,6 +46,13 @@ func TestGateRequiresFragmentsPerChangedModule(t *testing.T) {
 		switch cmd {
 		case "git rev-parse --verify --end-of-options base^{commit}":
 			return "base-sha\n", nil
+		case "git ls-tree -r --name-only -z HEAD -- contrib/":
+			return strings.Join([]string{
+				"contrib/envconfig/go.mod",
+				"contrib/envconfig/CHANGELOG.md",
+				"contrib/fragments/go.mod",
+				"contrib/fragments/changelog/README.md",
+			}, "\x00") + "\x00", nil
 		case "git diff --name-only --no-renames base-sha HEAD -- contrib/envconfig/ :(exclude,glob)contrib/envconfig/**/go.mod :(exclude,glob)contrib/envconfig/**/go.sum":
 			return "contrib/envconfig/envconfig.go\ncontrib/envconfig/changelog/added/helpful-hippo.md\n", nil
 		case "git diff --name-only --no-renames base-sha HEAD -- contrib/fragments/ :(exclude,glob)contrib/fragments/**/go.mod :(exclude,glob)contrib/fragments/**/go.sum":
@@ -55,7 +62,6 @@ func TestGateRequiresFragmentsPerChangedModule(t *testing.T) {
 		}
 		return "", nil
 	})
-	a.contribModules = []pure.Module{contribEnvconfig(t), {Dir: "contrib/fragments"}}
 	c := gateApp{app: *a, baseCommit: "base"}
 	err := c.run()
 	testEqual(t, fmt.Sprint(err), "check changelog for contrib/fragments: changelog-tool check: add a new changelog fragment")
@@ -70,6 +76,10 @@ func TestGateRequiresFragmentsPerChangedModule(t *testing.T) {
 
 		# Running in /sdk-rust:
 		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- --help --repo /repo
+
+		# Running in /repo:
+		$ git ls-tree -r --name-only -z HEAD -- contrib/
+		contrib/envconfig/go.mod`+"\x00"+`contrib/envconfig/CHANGELOG.md`+"\x00"+`contrib/fragments/go.mod`+"\x00"+`contrib/fragments/changelog/README.md`+"\x00"+`
 
 		# Running in /repo:
 		$ git diff --name-only --no-renames base-sha HEAD -- ./ :(exclude,glob)**/go.mod :(exclude,glob)**/go.sum :(exclude,literal)contrib/envconfig/ :(exclude,literal)contrib/fragments/
@@ -112,12 +122,14 @@ func TestGateSkipChangelog(t *testing.T) {
 	`)
 	output := maps.Clone(input)
 	a, eff := newMockApp(app{}, input, func(cmd string) (string, error) {
-		if cmd == "git rev-parse --verify --end-of-options base^{commit}" {
+		switch cmd {
+		case "git rev-parse --verify --end-of-options base^{commit}":
 			return "base-sha\n", nil
+		case "git ls-tree -r --name-only -z HEAD -- contrib/":
+			return "contrib/envconfig/go.mod\x00contrib/envconfig/CHANGELOG.md\x00", nil
 		}
 		return "", nil
 	})
-	a.contribModules = []pure.Module{contribEnvconfig(t)}
 	c := gateApp{app: *a, baseCommit: "base", skipChangelog: true}
 	if err := c.run(); err != nil {
 		t.Fatal(err)
@@ -133,6 +145,10 @@ func TestGateSkipChangelog(t *testing.T) {
 
 		# Running in /sdk-rust:
 		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- --help --repo /repo
+
+		# Running in /repo:
+		$ git ls-tree -r --name-only -z HEAD -- contrib/
+		contrib/envconfig/go.mod`+"\x00"+`contrib/envconfig/CHANGELOG.md`+"\x00"+`
 
 		# Running in /sdk-rust:
 		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- check --repo /repo --fragments changelog --base base-sha --changelog CHANGELOG.md
@@ -171,16 +187,6 @@ func TestFindReleasableModules(t *testing.T) {
 	input["contrib/fragments/go.mod"] = stripIndentation(`
 		module go.temporal.io/sdk/contrib/fragments
 	`)
-	a, eff := newMockApp(app{}, input, func(cmd string) (string, error) {
-		switch {
-		case strings.HasPrefix(cmd, "git rev-parse"):
-			return strings.Repeat("a", 40), nil
-		case strings.HasPrefix(cmd, "git log"):
-			return strings.Repeat("b", 40), nil
-		default:
-			return "", nil
-		}
-	})
 	paths := []string{
 		"CHANGELOG.md",
 		"contrib/envconfig/go.mod",
@@ -190,7 +196,18 @@ func TestFindReleasableModules(t *testing.T) {
 		"contrib/fragments/changelog/added/new-module.md",
 		"contrib/test-only/go.mod",
 	}
-	a.contribModules = pure.ContribModules(paths)
+	a, eff := newMockApp(app{}, input, func(cmd string) (string, error) {
+		switch {
+		case cmd == "git ls-tree -r --name-only -z HEAD -- contrib/":
+			return strings.Join(paths, "\x00") + "\x00", nil
+		case strings.HasPrefix(cmd, "git rev-parse"):
+			return strings.Repeat("a", 40), nil
+		case strings.HasPrefix(cmd, "git log"):
+			return strings.Repeat("b", 40), nil
+		default:
+			return "", nil
+		}
+	})
 	eff.input = "mmm"
 	c := findApp{app: *a}
 	if err := c.run(); err != nil {

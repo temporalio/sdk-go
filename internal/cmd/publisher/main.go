@@ -138,11 +138,15 @@ func (c *gateApp) run() error {
 	if err != nil {
 		return err
 	}
-	modules := append([]pure.Module{pure.SDKModule()}, c.contribModules...)
+	contribModules, err := listContribModules(c.eff, c.repoRoot)
+	if err != nil {
+		return err
+	}
+	modules := append([]pure.Module{pure.SDKModule()}, contribModules...)
 	for _, module := range modules {
 		requireNew := false
 		if !c.skipChangelog {
-			requireNew, err = c.moduleChanged(module, baseCommit)
+			requireNew, err = c.moduleChanged(module, baseCommit, contribModules)
 			if err != nil {
 				return err
 			}
@@ -190,8 +194,11 @@ func (c *findApp) run() (retErr error) {
 		retErr = errors.Join(retErr, w.cleanup())
 	}()
 
-	modules := []pure.Module{pure.SDKModule()}
-	modules = append(modules, c.contribModules...)
+	contribModules, err := listContribModules(c.eff, w.worktreeRoot)
+	if err != nil {
+		return err
+	}
+	modules := append([]pure.Module{pure.SDKModule()}, contribModules...)
 
 	var toRelease []pure.VersionedModule
 	for _, module := range modules {
@@ -204,14 +211,15 @@ func (c *findApp) run() (retErr error) {
 		if latestVersion != nil {
 			ref = module.Tag(*latestVersion) + "..HEAD"
 		}
-		changed, err := w.hasCommits(ref, c.modulePathspecs(module)...)
+		pathspecs := modulePathspecs(module, contribModules)
+		changed, err := w.hasCommits(ref, pathspecs...)
 		if err != nil {
 			return err
 		}
 		if !changed {
 			continue
 		}
-		nextVersion, err := c.chooseVersion(w, module, latestVersion)
+		nextVersion, err := c.chooseVersion(w, module, latestVersion, pathspecs)
 		if err != nil {
 			return err
 		}
@@ -260,7 +268,7 @@ func (c *findApp) run() (retErr error) {
 	return nil
 }
 
-func (c *findApp) chooseVersion(w *worktree, module pure.Module, latestVersion *pure.Version) (*pure.Version, error) {
+func (c *findApp) chooseVersion(w *worktree, module pure.Module, latestVersion *pure.Version, pathspecs []string) (*pure.Version, error) {
 	var latest pure.Version
 	var baseline string
 	if latestVersion != nil {
@@ -277,7 +285,6 @@ func (c *findApp) chooseVersion(w *worktree, module pure.Module, latestVersion *
 	}
 	printLine(c.eff, "%s — %s", name, baseline)
 	printLine(c.eff, "Make a minor release [m], patch release [p], view commit log [c], view diff [d], or skip [s]. ")
-	pathspecs := c.modulePathspecs(module)
 	for {
 		answer, err := c.eff.readCharacter()
 		if err != nil {

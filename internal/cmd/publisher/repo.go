@@ -13,9 +13,8 @@ import (
 
 // repo represents the original checkout that owns temporary worktrees.
 type repo struct {
-	eff            effects
-	repoRoot       string
-	contribModules []pure.Module
+	eff      effects
+	repoRoot string
 }
 
 func newRepo(eff effects) (repo, error) {
@@ -23,19 +22,19 @@ func newRepo(eff effects) (repo, error) {
 	if err != nil {
 		return repo{}, err
 	}
-	output, err := eff.runCommand(root, "git", "ls-tree", "-r", "--name-only", "-z", "HEAD", "--", "contrib/")
-	if err != nil {
-		return repo{}, fmt.Errorf("list contrib module files at HEAD: %w", err)
-	}
-	paths := strings.Split(strings.TrimSuffix(output, "\x00"), "\x00")
-	return repo{
-		eff:            eff,
-		repoRoot:       root,
-		contribModules: pure.ContribModules(paths),
-	}, nil
+	return repo{eff: eff, repoRoot: root}, nil
 }
 
-func (r *repo) modulePathspecs(module pure.Module) []string {
+func listContribModules(eff effects, root string) ([]pure.Module, error) {
+	output, err := eff.runCommand(root, "git", "ls-tree", "-r", "--name-only", "-z", "HEAD", "--", "contrib/")
+	if err != nil {
+		return nil, fmt.Errorf("list contrib module files in %s at HEAD: %w", root, err)
+	}
+	paths := strings.Split(strings.TrimSuffix(output, "\x00"), "\x00")
+	return pure.ContribModules(paths), nil
+}
+
+func modulePathspecs(module pure.Module, contribModules []pure.Module) []string {
 	dir := module.Dir
 	if module.Name() == "sdk" {
 		dir = "."
@@ -47,7 +46,7 @@ func (r *repo) modulePathspecs(module pure.Module) []string {
 	for _, file := range []string{"go.mod", "go.sum"} {
 		pathspecs = append(pathspecs, ":(exclude,glob)"+path.Join(dir, "**", file))
 	}
-	for _, nested := range r.contribModules {
+	for _, nested := range contribModules {
 		if module.Name() == "sdk" || strings.HasPrefix(nested.Dir, dir+"/") {
 			pathspecs = append(pathspecs, ":(exclude,literal)"+nested.Dir+"/")
 		}
@@ -67,9 +66,9 @@ func repoRoot() (string, error) {
 
 // Git/GitHub operations
 
-func (r *repo) moduleChanged(module pure.Module, baseCommit string) (bool, error) {
+func (r *repo) moduleChanged(module pure.Module, baseCommit string, contribModules []pure.Module) (bool, error) {
 	args := []string{"diff", "--name-only", "--no-renames", baseCommit, "HEAD", "--"}
-	args = append(args, r.modulePathspecs(module)...)
+	args = append(args, modulePathspecs(module, contribModules)...)
 	output, err := r.eff.runCommand(r.repoRoot, "git", args...)
 	if err != nil {
 		return false, fmt.Errorf("check changes for %s since %s: %w", module.Name(), baseCommit, err)
