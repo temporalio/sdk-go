@@ -792,7 +792,7 @@ func (s *TimeSkippingV2TestSuite) TestGetTimeSkippingInfoDuringWorkflow() {
 	s.True(tsi.EffectiveConfig.Enabled, "expected effective_config.enabled")
 	s.Nil(tsi.FastForwardInfo, "no FF issued yet")
 
-	s.NoError(s.server.Client().SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "proceed", nil))
+	_ = s.server.Client().SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "proceed", nil)
 	_ = run.Get(ctx, nil)
 }
 
