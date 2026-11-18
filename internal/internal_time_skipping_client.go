@@ -116,7 +116,7 @@ func FastForwardWorkflow(
 	}
 	if options.Duration < 0 {
 		return false, fmt.Errorf(
-			"FastForwardWorkflow needs a Duration of zero (unbounded) or more: %v",
+			"FastForwardWorkflow needs a Duration of zero (unbounded) or more, got %v",
 			options.Duration)
 	}
 	if options.Duration == 0 {
@@ -178,7 +178,7 @@ func workflowClientFrom(c Client) (*WorkflowClient, error) {
 	wc, ok := c.(*WorkflowClient)
 	if !ok {
 		return nil, fmt.Errorf(
-			"time skipping needs the SDK's own client implementation: %T", c)
+			"time skipping needs the SDK's own client implementation, got %T", c)
 	}
 	return wc, nil
 }
@@ -403,7 +403,7 @@ func FastForwardSchedule(
 ) (bool, error) {
 	if options.Duration <= 0 {
 		return false, fmt.Errorf(
-			"FastForwardSchedule requires a Duration greater than zero: %v; a "+
+			"FastForwardSchedule requires a Duration greater than zero, got %v: a "+
 				"schedule has no terminal state to skip to, so the server rejects "+
 				"unbounded time skipping on it", options.Duration)
 	}

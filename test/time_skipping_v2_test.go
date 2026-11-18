@@ -969,7 +969,7 @@ func (s *TimeSkippingV2TestSuite) TestPollingASupersededFastForwardIsRejected() 
 	s.NoError(err, "a superseded fast-forward is an outcome, not a call failure")
 	s.False(res.Completed)
 	s.Contains(res.FailedReason, "does not match",
-		"expected the server to name the id mismatch")
+		"expected the server to name the id mismatch, got %q", res.FailedReason)
 
 	require.Eventually(s.T(), func() bool {
 		found, herr := historyHasEventType(ctx, cl, run,
