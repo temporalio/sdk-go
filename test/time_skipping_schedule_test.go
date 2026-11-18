@@ -306,9 +306,8 @@ func (s *TimeSkippingScheduleTestSuite) TestScheduleDescribeReturnsTimeSkippingI
 	s.False(tsi.EffectiveConfig.Enabled,
 		"expected time skipping to auto-disable once the target time was reached")
 
-	s.Greaterf(tsi.CurrentTime.Sub(time.Now()), 90*time.Minute,
-		"expected the schedule clock to be ~2h ahead, got %v",
-		tsi.CurrentTime)
+	s.Greater(tsi.CurrentTime.Sub(time.Now()), 90*time.Minute,
+		"expected the schedule clock to be ~2h ahead")
 }
 
 func (s *TimeSkippingScheduleTestSuite) TestSchedulePropagatesTimeSkippingToWorkflows() {
