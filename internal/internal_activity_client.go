@@ -17,7 +17,15 @@ import (
 	"go.temporal.io/sdk/internal/extstore"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
+
+func timeOrZero(ts *timestamppb.Timestamp) time.Time {
+	if !ts.IsValid() {
+		return time.Time{}
+	}
+	return ts.AsTime()
+}
 
 const pollActivityTimeout = 60 * time.Second
 
@@ -756,13 +764,13 @@ func (wc *WorkflowClient) ListActivities(ctx context.Context, options ClientList
 						ActivityID:            ex.ActivityId,
 						ActivityRunID:         ex.RunId,
 						ActivityType:          ex.ActivityType.GetName(),
-						ScheduleTime:          ex.ScheduleTime.AsTime(),
-						CloseTime:             ex.CloseTime.AsTime(),
+						ScheduleTime:          timeOrZero(ex.ScheduleTime),
+						CloseTime:             timeOrZero(ex.CloseTime),
 						Status:                ex.Status,
 						TypedSearchAttributes: convertToTypedSearchAttributes(wc.logger, ex.SearchAttributes.IndexedFields),
 						TaskQueue:             ex.TaskQueue,
 						ExecutionDuration:     ex.ExecutionDuration.AsDuration(),
-						ExecutionTime:         ex.ExecutionTime.AsTime(),
+						ExecutionTime:         timeOrZero(ex.ExecutionTime),
 					}, nil) {
 						return
 					}
@@ -1053,13 +1061,13 @@ func (w *workflowClientInterceptor) DescribeActivity(
 				ActivityID:            info.ActivityId,
 				ActivityRunID:         info.RunId,
 				ActivityType:          info.ActivityType.GetName(),
-				ScheduleTime:          info.ScheduleTime.AsTime(),
-				CloseTime:             info.CloseTime.AsTime(),
+				ScheduleTime:          timeOrZero(info.ScheduleTime),
+				CloseTime:             timeOrZero(info.CloseTime),
 				Status:                info.Status,
 				TypedSearchAttributes: convertToTypedSearchAttributes(w.client.logger, info.SearchAttributes.IndexedFields),
 				TaskQueue:             info.TaskQueue,
 				ExecutionDuration:     info.ExecutionDuration.AsDuration(),
-				ExecutionTime:         info.ExecutionTime.AsTime(),
+				ExecutionTime:         timeOrZero(info.ExecutionTime),
 			},
 			RawResponse:             resp,
 			ScheduleToCloseTimeout:  info.ScheduleToCloseTimeout.AsDuration(),
@@ -1068,16 +1076,16 @@ func (w *workflowClientInterceptor) DescribeActivity(
 			HeartbeatTimeout:        info.HeartbeatTimeout.AsDuration(),
 			StartDelay:              info.StartDelay.AsDuration(),
 			RunState:                info.RunState,
-			LastHeartbeatTime:       info.LastHeartbeatTime.AsTime(),
-			LastStartedTime:         info.LastStartedTime.AsTime(),
+			LastHeartbeatTime:       timeOrZero(info.LastHeartbeatTime),
+			LastStartedTime:         timeOrZero(info.LastStartedTime),
 			Attempt:                 info.Attempt,
 			TotalHeartbeatCount:     info.TotalHeartbeatCount,
 			RetryPolicy:             convertFromPBRetryPolicy(info.RetryPolicy),
-			ExpirationTime:          info.ExpirationTime.AsTime(),
+			ExpirationTime:          timeOrZero(info.ExpirationTime),
 			LastWorkerIdentity:      info.LastWorkerIdentity,
 			CurrentRetryInterval:    info.CurrentRetryInterval.AsDuration(),
-			LastAttemptCompleteTime: info.LastAttemptCompleteTime.AsTime(),
-			NextAttemptScheduleTime: info.NextAttemptScheduleTime.AsTime(),
+			LastAttemptCompleteTime: timeOrZero(info.LastAttemptCompleteTime),
+			NextAttemptScheduleTime: timeOrZero(info.NextAttemptScheduleTime),
 			LastDeploymentVersion:   lastDeploymentVersion,
 			Priority:                convertFromPBPriority(info.Priority),
 			CanceledReason:          info.CanceledReason,

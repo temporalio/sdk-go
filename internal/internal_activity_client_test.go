@@ -8,9 +8,38 @@ import (
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
+	activitypb "go.temporal.io/api/activity/v1"
+	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
 )
+
+func TestDescribeActivityNilTimestampsAreZero(t *testing.T) {
+	service := workflowservicemock.NewMockWorkflowServiceClient(gomock.NewController(t))
+	client := NewServiceClient(service, nil, ClientOptions{})
+	client.capabilities = &workflowservice.GetSystemInfoResponse_Capabilities{}
+
+	service.EXPECT().
+		DescribeActivityExecution(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.DescribeActivityExecutionResponse{
+			Info: &activitypb.ActivityExecutionInfo{
+				ActivityId:       "activity-id",
+				SearchAttributes: &commonpb.SearchAttributes{},
+			},
+		}, nil)
+
+	desc, err := client.GetActivityHandle(ClientGetActivityHandleOptions{ActivityID: "activity-id"}).
+		Describe(t.Context(), ClientDescribeActivityOptions{})
+	require.NoError(t, err)
+	require.True(t, desc.ScheduleTime.IsZero(), "ScheduleTime")
+	require.True(t, desc.CloseTime.IsZero(), "CloseTime")
+	require.True(t, desc.ExecutionTime.IsZero(), "ExecutionTime")
+	require.True(t, desc.LastHeartbeatTime.IsZero(), "LastHeartbeatTime")
+	require.True(t, desc.LastStartedTime.IsZero(), "LastStartedTime")
+	require.True(t, desc.ExpirationTime.IsZero(), "ExpirationTime")
+	require.True(t, desc.LastAttemptCompleteTime.IsZero(), "LastAttemptCompleteTime")
+	require.True(t, desc.NextAttemptScheduleTime.IsZero(), "NextAttemptScheduleTime")
+}
 
 const testActivityResourceID = "activity:activity-id"
 
