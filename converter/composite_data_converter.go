@@ -38,18 +38,18 @@ func (dc *CompositeDataConverter) ToPayloads(values ...any) (*commonpb.Payloads,
 		return nil, nil
 	}
 
-	result := &commonpb.Payloads{}
+	result := &commonpb.Payloads{Payloads: make([]*commonpb.Payload, len(values))}
 	for i, value := range values {
 		rawValue, ok := value.(RawValue)
 		if ok {
-			result.Payloads = append(result.Payloads, rawValue.Payload())
+			result.Payloads[i] = rawValue.Payload()
 		} else {
 			payload, err := dc.ToPayload(value)
 			if err != nil {
 				return nil, fmt.Errorf("values[%d]: %w", i, err)
 			}
 
-			result.Payloads = append(result.Payloads, payload)
+			result.Payloads[i] = payload
 		}
 	}
 

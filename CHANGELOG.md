@@ -32,6 +32,8 @@ to docs, or any other relevant information.
 
 ### Changed
 
+- Reduced allocations when converting batches of values to payloads.
+
 ### Deprecated
 
 ### :boom: Breaking Changes
