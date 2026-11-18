@@ -32,6 +32,9 @@ to docs, or any other relevant information.
 
 ### Changed
 
+- Reduced gRPC interceptor allocations when the effective metrics handler is a
+  no-op.
+
 ### Deprecated
 
 ### :boom: Breaking Changes
