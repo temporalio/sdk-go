@@ -681,7 +681,7 @@ type payloadSerializer struct {
 	payload   *common.Payload
 }
 
-// Validate before payload visitation too, so unsupported envelopes are not reported as external storage failures.
+// Validate before payload visitation so unsupported envelopes are not reported as external storage failures.
 func validateSystemNexusInput(payload *common.Payload) (bool, *nexus.HandlerError) {
 	if string(payload.GetMetadata()[proxy.SystemPayloadMetadataKey]) != "true" {
 		return false, nil
