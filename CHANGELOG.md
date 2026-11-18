@@ -42,6 +42,9 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- `testsuite.TestWorkflowEnvironment` no longer advances a canceled workflow past a running
+  activity before that activity finishes. Deferred workflow functions now run only after the
+  in-flight activity completes, matching the order observed with a real Temporal server.
 - Workers no longer advertise a worker control task queue unless worker heartbeats and commands
   are supported and the shared namespace command poller is running.
 
