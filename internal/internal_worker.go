@@ -2896,8 +2896,7 @@ func getFunctionName(i any) (name string, isMethod bool) {
 	// Full function name that has a struct pointer receiver has the following format
 	// <prefix>.(*<type>).<function>
 	isMethod = strings.ContainsAny(fullName, "*")
-	elements := strings.Split(fullName, ".")
-	shortName := elements[len(elements)-1]
+	shortName := fullName[strings.LastIndexByte(fullName, '.')+1:]
 	// This allows to call activities by method pointer
 	// Compiler adds -fm suffix to a function name which has a receiver
 	// Note that this works even if struct pointer used to get the function is nil
