@@ -10,6 +10,7 @@ import (
 	enumspb "go.temporal.io/api/enums/v1"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
+	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/log"
 )
@@ -162,13 +163,19 @@ func (ntp *nexusTaskPoller) ProcessTask(task any) error {
 	ntp.metricsHandler.WithTags(metrics.TaskQueueTags(ntp.taskQueueName)).Timer(metrics.NexusTaskScheduleToStartLatency).Record(scheduleToStartLatency)
 
 	nctx, handlerErr := ntp.taskHandler.newNexusOperationContext(response)
+	if handlerErr == nil {
+		_, handlerErr = validateSystemNexusInput(response.GetRequest().GetStartOperation().GetPayload())
+	}
 	if handlerErr != nil {
-		// context wasn't propagated to us, use a background context.
+		failureConverter := ntp.taskHandler.failureConverter
+		if nctx != nil {
+			failureConverter = converter.WithFailureConverterSerializationContext(failureConverter, nctx.nexusSerializationContext)
+		}
 		failedRequest, err := ntp.taskHandler.fillInFailure(
 			response.TaskToken,
 			handlerErr,
 			getEffectiveTemporalFailureResponses(response.GetRequest().GetCapabilities().GetTemporalFailureResponses()),
-			ntp.taskHandler.failureConverter,
+			failureConverter,
 			response.GetPollerGroupId(),
 		)
 		if err != nil {
