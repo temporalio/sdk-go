@@ -213,6 +213,67 @@ func TestZlibCodecConcurrentRoundTrip(t *testing.T) {
 	wg.Wait()
 }
 
+func zlibTestPayloads() []*commonpb.Payload {
+	return []*commonpb.Payload{
+		{},
+		{Metadata: map[string][]byte{MetadataEncoding: []byte("json/plain")}, Data: []byte(`"small"`)},
+		{Data: bytes.Repeat([]byte("compressible "), 10_000)},
+		{Data: bytes.Repeat([]byte{0, 1, 2, 3, 4, 5, 6, 7}, 1)},
+	}
+}
+
+func TestZlibCodecReuseMatchesFreshWriter(t *testing.T) {
+	for _, alwaysEncode := range []bool{true, false} {
+		codec := NewZlibCodec(ZlibCodecOptions{AlwaysEncode: alwaysEncode})
+		// Repeat so pooled writers and readers are reused across payload sizes.
+		for range 3 {
+			for _, p := range zlibTestPayloads() {
+				b, err := proto.Marshal(p)
+				require.NoError(t, err)
+				var expected bytes.Buffer
+				w := zlib.NewWriter(&expected)
+				_, err = w.Write(b)
+				require.NoError(t, err)
+				require.NoError(t, w.Close())
+
+				encoded, err := codec.Encode([]*commonpb.Payload{p})
+				require.NoError(t, err)
+				if expected.Len() < len(b) || alwaysEncode {
+					require.Equal(t, "binary/zlib", string(encoded[0].Metadata[MetadataEncoding]))
+					require.Equal(t, expected.Bytes(), encoded[0].Data)
+				} else {
+					require.Same(t, p, encoded[0])
+				}
+
+				decoded, err := codec.Decode(encoded)
+				require.NoError(t, err)
+				require.True(t, proto.Equal(p, decoded[0]))
+			}
+		}
+	}
+}
+
+func TestZlibCodecDecodeErrorDoesNotAffectLaterDecodes(t *testing.T) {
+	codec := NewZlibCodec(ZlibCodecOptions{AlwaysEncode: true})
+	payload := &commonpb.Payload{Data: bytes.Repeat([]byte("compressible "), 1_000)}
+	encoded, err := codec.Encode([]*commonpb.Payload{payload})
+	require.NoError(t, err)
+	data := encoded[0].Data
+
+	corrupt := bytes.Clone(data)
+	corrupt[len(corrupt)-1] ^= 0xff
+	for _, bad := range [][]byte{nil, []byte("not zlib"), data[:len(data)/2], corrupt} {
+		in := []*commonpb.Payload{{Metadata: map[string][]byte{MetadataEncoding: []byte("binary/zlib")}, Data: bad}}
+		out, err := codec.Decode(in)
+		require.Error(t, err)
+		require.Equal(t, in, out)
+
+		decoded, err := codec.Decode(encoded)
+		require.NoError(t, err)
+		require.True(t, proto.Equal(payload, decoded[0]))
+	}
+}
+
 func BenchmarkZlibCodecEncode(b *testing.B) {
 	payloads, err := GetDefaultDataConverter().ToPayloads(strings.Repeat(`{"id":"0001","status":"allocated"},`, 30))
 	require.NoError(b, err)
