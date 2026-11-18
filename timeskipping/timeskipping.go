@@ -24,21 +24,21 @@ import (
 )
 
 type (
-	// WorkflowFastForwardOptions configures a single fast-forward on a workflow.
+	// FastForwardWorkflowOptions configures a single fast-forward on a workflow.
 	//
 	// NOTE: Experimental
-	WorkflowFastForwardOptions = internal.WorkflowFastForwardOptions
+	FastForwardWorkflowOptions = internal.FastForwardWorkflowOptions
 
 	// ScheduleFastForwardOptions configures a single fast-forward on a schedule.
 	//
 	// NOTE: Experimental
 	ScheduleFastForwardOptions = internal.ScheduleFastForwardOptions
 
-	// WorkflowPollFastForwardOptions identifies the workflow fast-forward to wait
+	// PollWorkflowFastForwardOptions identifies the workflow fast-forward to wait
 	// for.
 	//
 	// NOTE: Experimental
-	WorkflowPollFastForwardOptions = internal.WorkflowPollFastForwardOptions
+	PollWorkflowFastForwardOptions = internal.PollWorkflowFastForwardOptions
 
 	// SchedulePollFastForwardOptions identifies the schedule fast-forward to wait
 	// for.
@@ -69,7 +69,7 @@ type (
 // NOTE: Experimental
 func FastForwardWorkflow(
 	ctx context.Context, c client.Client, run client.WorkflowRun,
-	options WorkflowFastForwardOptions,
+	options FastForwardWorkflowOptions,
 ) (bool, error) {
 	return internal.FastForwardWorkflow(ctx, c, run, options)
 }
@@ -97,7 +97,7 @@ func FastForwardSchedule(
 // NOTE: Experimental
 func PollWorkflowFastForward(
 	ctx context.Context, c client.Client, run client.WorkflowRun,
-	options WorkflowPollFastForwardOptions,
+	options PollWorkflowFastForwardOptions,
 ) (FastForwardPollResult, error) {
 	return internal.PollWorkflowFastForward(ctx, c, run, options)
 }

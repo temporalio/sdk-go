@@ -108,7 +108,7 @@ func timeSkippingFastForwardInfoFromProto(p *commonpb.TimeSkippingFastForwardInf
 //
 // NOTE: Experimental
 func FastForwardWorkflow(
-	ctx context.Context, c Client, run WorkflowRun, options WorkflowFastForwardOptions,
+	ctx context.Context, c Client, run WorkflowRun, options FastForwardWorkflowOptions,
 ) (bool, error) {
 	wc, err := workflowClientFrom(c)
 	if err != nil {
@@ -290,7 +290,7 @@ func (wc *WorkflowClient) pollWorkflowTimeSkipping(
 //
 // NOTE: Experimental
 func PollWorkflowFastForward(
-	ctx context.Context, c Client, run WorkflowRun, options WorkflowPollFastForwardOptions,
+	ctx context.Context, c Client, run WorkflowRun, options PollWorkflowFastForwardOptions,
 ) (FastForwardPollResult, error) {
 	wc, err := workflowClientFrom(c)
 	if err != nil {

@@ -31,7 +31,7 @@ func ExampleFastForwardWorkflow() {
 	// Advance an hour of virtual time and wait for it to land. The hour-long
 	// sleep in MyWorkflow completes in moments.
 	completed, _ := timeskipping.FastForwardWorkflow(ctx, c, run,
-		timeskipping.WorkflowFastForwardOptions{Duration: time.Hour})
+		timeskipping.FastForwardWorkflowOptions{Duration: time.Hour})
 	if completed {
 		// Virtual time reached the target, and time skipping switched itself
 		// off there.

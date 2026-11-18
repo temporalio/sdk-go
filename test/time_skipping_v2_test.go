@@ -300,7 +300,7 @@ func (s *TimeSkippingV2TestSuite) TestPollFastForwardIssuedSeparately() {
 	s.NoError(s.setFastForward(ctx, run.GetID(), ffID, time.Hour))
 
 	res, err := timeskipping.PollWorkflowFastForward(ctx, cl, run,
-		timeskipping.WorkflowPollFastForwardOptions{FastForwardID: ffID})
+		timeskipping.PollWorkflowFastForwardOptions{FastForwardID: ffID})
 	s.NoError(err)
 	s.True(res.Completed, "expected the fast-forward to complete")
 	s.Empty(res.FailedReason)
@@ -336,7 +336,7 @@ func (s *TimeSkippingV2TestSuite) TestPollFastForwardSpansContinueAsNew() {
 	defer func() { _ = cl.CancelWorkflow(ctx, wfID, "") }()
 
 	res, err := timeskipping.PollWorkflowFastForward(ctx, cl, run,
-		timeskipping.WorkflowPollFastForwardOptions{FastForwardID: ffID})
+		timeskipping.PollWorkflowFastForwardOptions{FastForwardID: ffID})
 	s.NoError(err)
 	s.True(res.Completed, "expected the fast-forward to complete on a later run")
 	s.Empty(res.FailedReason)
@@ -355,13 +355,13 @@ func (s *TimeSkippingV2TestSuite) TestPollFastForwardValidatesArgs() {
 	cl := s.server.Client()
 
 	_, err := timeskipping.PollWorkflowFastForward(ctx, cl, cl.GetWorkflow(ctx, "", ""),
-		timeskipping.WorkflowPollFastForwardOptions{FastForwardID: uuid.NewString()})
+		timeskipping.PollWorkflowFastForwardOptions{FastForwardID: uuid.NewString()})
 	s.Error(err)
 	s.Contains(err.Error(), "workflow id")
 
 	_, err = timeskipping.PollWorkflowFastForward(ctx,
 		cl, cl.GetWorkflow(ctx, "wf-"+uuid.NewString(), ""),
-		timeskipping.WorkflowPollFastForwardOptions{})
+		timeskipping.PollWorkflowFastForwardOptions{})
 	s.Error(err)
 	s.Contains(err.Error(), "fast forward id")
 }
@@ -373,7 +373,7 @@ func (s *TimeSkippingV2TestSuite) TestFastForwardWorkflowRejectsNegativeDuration
 
 	_, err := timeskipping.FastForwardWorkflow(ctx, cl,
 		cl.GetWorkflow(ctx, "wf-"+uuid.NewString(), ""),
-		timeskipping.WorkflowFastForwardOptions{Duration: -time.Hour})
+		timeskipping.FastForwardWorkflowOptions{Duration: -time.Hour})
 	s.Error(err)
 	s.Contains(err.Error(), "zero (unbounded) or more")
 }
@@ -444,7 +444,7 @@ func (s *TimeSkippingV2TestSuite) TestFastForwardWithResume() {
 	t0, err := timeskipping.GetWorkflowCurrentTime(ctx, s.server.Client(), run)
 	s.NoError(err)
 
-	ok, err := timeskipping.FastForwardWorkflow(ctx, s.server.Client(), run, timeskipping.WorkflowFastForwardOptions{Duration: 1 * time.Hour})
+	ok, err := timeskipping.FastForwardWorkflow(ctx, s.server.Client(), run, timeskipping.FastForwardWorkflowOptions{Duration: 1 * time.Hour})
 	s.NoError(err)
 	s.True(ok, "expected the first fast-forward to reach its target")
 	s.NoError(s.server.Client().SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "proceed", nil))
@@ -453,7 +453,7 @@ func (s *TimeSkippingV2TestSuite) TestFastForwardWithResume() {
 	s.NoError(err)
 	s.assertDurationSame(3600*time.Second, t1.Sub(t0), 10*time.Second)
 
-	ok, err = timeskipping.FastForwardWorkflow(ctx, s.server.Client(), run, timeskipping.WorkflowFastForwardOptions{Duration: 1 * time.Hour})
+	ok, err = timeskipping.FastForwardWorkflow(ctx, s.server.Client(), run, timeskipping.FastForwardWorkflowOptions{Duration: 1 * time.Hour})
 	s.NoError(err)
 	s.True(ok, "expected the second fast-forward to reach its target")
 	s.NoError(s.server.Client().SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "proceed", nil))
@@ -488,7 +488,7 @@ func (s *TimeSkippingV2TestSuite) TestPartialFastForwardThenUnbounded() {
 	t0, err := timeskipping.GetWorkflowCurrentTime(ctx, s.server.Client(), run)
 	s.NoError(err)
 
-	ok, err := timeskipping.FastForwardWorkflow(ctx, s.server.Client(), run, timeskipping.WorkflowFastForwardOptions{Duration: 30 * time.Minute})
+	ok, err := timeskipping.FastForwardWorkflow(ctx, s.server.Client(), run, timeskipping.FastForwardWorkflowOptions{Duration: 30 * time.Minute})
 	s.NoError(err)
 	s.True(ok)
 
@@ -496,7 +496,7 @@ func (s *TimeSkippingV2TestSuite) TestPartialFastForwardThenUnbounded() {
 	s.NoError(err)
 	s.assertDurationSame(30*60*time.Second, t1.Sub(t0), 10*time.Second)
 
-	ok, err = timeskipping.FastForwardWorkflow(ctx, s.server.Client(), run, timeskipping.WorkflowFastForwardOptions{})
+	ok, err = timeskipping.FastForwardWorkflow(ctx, s.server.Client(), run, timeskipping.FastForwardWorkflowOptions{})
 	s.NoError(err)
 	s.False(ok)
 
@@ -582,7 +582,7 @@ func (s *TimeSkippingV2TestSuite) TestFastForwardReturnsFalseWhenWorkflowTermina
 		SleepWorkflow, 60.0)
 	s.NoError(err)
 
-	ok, err := timeskipping.FastForwardWorkflow(ctx, s.server.Client(), run, timeskipping.WorkflowFastForwardOptions{Duration: 2 * time.Hour})
+	ok, err := timeskipping.FastForwardWorkflow(ctx, s.server.Client(), run, timeskipping.FastForwardWorkflowOptions{Duration: 2 * time.Hour})
 	s.NoError(err)
 	s.False(ok, "expected fast_forward to return false when workflow terminated first")
 	s.assertTimeWasSkipped(ctx, run)
@@ -610,10 +610,10 @@ func (s *TimeSkippingV2TestSuite) TestFastForwardSpansRetries() {
 	s.NoError(err)
 	firstRun := s.getWorkflowRun(ctx, run)
 
-	ok, err := timeskipping.FastForwardWorkflow(ctx, s.server.Client(), run, timeskipping.WorkflowFastForwardOptions{Duration: 2*time.Hour + 30*time.Minute})
+	ok, err := timeskipping.FastForwardWorkflow(ctx, s.server.Client(), run, timeskipping.FastForwardWorkflowOptions{Duration: 2*time.Hour + 30*time.Minute})
 	s.NoError(err)
 	s.True(ok, "expected the fast-forward to reach its target, not be cut short by the retry")
-	_, err = timeskipping.FastForwardWorkflow(ctx, s.server.Client(), run, timeskipping.WorkflowFastForwardOptions{})
+	_, err = timeskipping.FastForwardWorkflow(ctx, s.server.Client(), run, timeskipping.FastForwardWorkflowOptions{})
 	s.NoError(err)
 	var result string
 	s.NoError(run.Get(ctx, &result))
@@ -643,10 +643,10 @@ func (s *TimeSkippingV2TestSuite) TestFastForwardSpansContinueAsNew() {
 	s.NoError(err)
 	firstRun := s.getWorkflowRun(ctx, run)
 
-	ok, err := timeskipping.FastForwardWorkflow(ctx, s.server.Client(), run, timeskipping.WorkflowFastForwardOptions{Duration: 2 * time.Hour})
+	ok, err := timeskipping.FastForwardWorkflow(ctx, s.server.Client(), run, timeskipping.FastForwardWorkflowOptions{Duration: 2 * time.Hour})
 	s.NoError(err)
 	s.True(ok, "expected the fast-forward to reach its target, not be cut short by the continue-as-new")
-	_, err = timeskipping.FastForwardWorkflow(ctx, s.server.Client(), run, timeskipping.WorkflowFastForwardOptions{})
+	_, err = timeskipping.FastForwardWorkflow(ctx, s.server.Client(), run, timeskipping.FastForwardWorkflowOptions{})
 	s.NoError(err)
 	var result string
 	s.NoError(run.Get(ctx, &result))
@@ -677,7 +677,7 @@ func (s *TimeSkippingV2TestSuite) TestUnboundedWaitSpansContinueAsNew() {
 	firstRun := s.getWorkflowRun(ctx, run)
 
 	ok, err := timeskipping.FastForwardWorkflow(ctx, s.server.Client(), run,
-		timeskipping.WorkflowFastForwardOptions{})
+		timeskipping.FastForwardWorkflowOptions{})
 	s.NoError(err)
 	s.False(ok)
 
@@ -713,7 +713,7 @@ func (s *TimeSkippingV2TestSuite) TestFastForwardSpansCronRestarts() {
 	s.NoError(err)
 	defer func() { _ = s.server.Client().CancelWorkflow(ctx, wfID, "") }()
 
-	ok, err := timeskipping.FastForwardWorkflow(ctx, s.server.Client(), run, timeskipping.WorkflowFastForwardOptions{Duration: 3 * time.Hour})
+	ok, err := timeskipping.FastForwardWorkflow(ctx, s.server.Client(), run, timeskipping.FastForwardWorkflowOptions{Duration: 3 * time.Hour})
 	s.NoError(err)
 	s.True(ok)
 
@@ -834,7 +834,7 @@ func (s *TimeSkippingV2TestSuite) TestTimeSkippingVirtualClock() {
 	s.NoError(err)
 
 	wallStart := time.Now().UTC()
-	ok, err := timeskipping.FastForwardWorkflow(ctx, s.server.Client(), run, timeskipping.WorkflowFastForwardOptions{Duration: 1 * time.Hour})
+	ok, err := timeskipping.FastForwardWorkflow(ctx, s.server.Client(), run, timeskipping.FastForwardWorkflowOptions{Duration: 1 * time.Hour})
 	s.NoError(err)
 	s.True(ok)
 
@@ -860,7 +860,7 @@ func (s *TimeSkippingV2TestSuite) TestTransitionEventPayload() {
 		SleepWorkflow, 100000.0)
 	s.NoError(err)
 
-	ok, err := timeskipping.FastForwardWorkflow(ctx, s.server.Client(), run, timeskipping.WorkflowFastForwardOptions{Duration: 1 * time.Hour})
+	ok, err := timeskipping.FastForwardWorkflow(ctx, s.server.Client(), run, timeskipping.FastForwardWorkflowOptions{Duration: 1 * time.Hour})
 	s.NoError(err)
 	s.True(ok)
 
@@ -927,7 +927,7 @@ func (s *TimeSkippingV2TestSuite) TestFastForwardClampedToExecutionTimeout() {
 		}, SleepWorkflow, 100000.0)
 	s.NoError(err)
 
-	ok, err := timeskipping.FastForwardWorkflow(ctx, s.server.Client(), run, timeskipping.WorkflowFastForwardOptions{Duration: 1 * time.Hour})
+	ok, err := timeskipping.FastForwardWorkflow(ctx, s.server.Client(), run, timeskipping.FastForwardWorkflowOptions{Duration: 1 * time.Hour})
 	s.NoError(err)
 	s.False(ok, "expected fast_forward to return false when workflow timed out first")
 
@@ -965,7 +965,7 @@ func (s *TimeSkippingV2TestSuite) TestPollingASupersededFastForwardIsRejected() 
 	s.NoError(s.setFastForward(ctx, wfID, uuid.NewString(), 30*time.Minute))
 
 	res, err := timeskipping.PollWorkflowFastForward(ctx, cl, run,
-		timeskipping.WorkflowPollFastForwardOptions{FastForwardID: supersededID})
+		timeskipping.PollWorkflowFastForwardOptions{FastForwardID: supersededID})
 	s.NoError(err, "a superseded fast-forward is an outcome, not a call failure")
 	s.False(res.Completed)
 	s.Contains(res.FailedReason, "does not match",
@@ -1051,7 +1051,7 @@ func (s *TimeSkippingV2TestSuite) TestBoundedFastForwardAdvancesClockByItsDurati
 	s.NoError(err)
 	s.WithinDuration(time.Now(), now, 5*time.Second)
 
-	ok, err := timeskipping.FastForwardWorkflow(ctx, s.server.Client(), run, timeskipping.WorkflowFastForwardOptions{Duration: 1000 * time.Second})
+	ok, err := timeskipping.FastForwardWorkflow(ctx, s.server.Client(), run, timeskipping.FastForwardWorkflowOptions{Duration: 1000 * time.Second})
 	s.NoError(err)
 	s.True(ok)
 
@@ -1081,7 +1081,7 @@ func (s *TimeSkippingV2TestSuite) TestUnboundedFastForwardEnablesSkippingMidRun(
 
 	// Unbounded: enables skipping and waits for the terminal event, always
 	// reporting false since there is no fast-forward completion to observe.
-	ok, err := timeskipping.FastForwardWorkflow(ctx, s.server.Client(), run, timeskipping.WorkflowFastForwardOptions{})
+	ok, err := timeskipping.FastForwardWorkflow(ctx, s.server.Client(), run, timeskipping.FastForwardWorkflowOptions{})
 	s.NoError(err)
 	s.False(ok)
 
@@ -1147,7 +1147,7 @@ func (s *TimeSkippingV2TestSuite) TestBoundedFastForwardPreservesSessionFields()
 	defer func() { _ = s.server.Client().CancelWorkflow(ctx, run.GetID(), "") }()
 
 	ok, err := timeskipping.FastForwardWorkflow(ctx, s.server.Client(), run,
-		timeskipping.WorkflowFastForwardOptions{Duration: time.Hour})
+		timeskipping.FastForwardWorkflowOptions{Duration: time.Hour})
 	s.NoError(err)
 	s.True(ok)
 
@@ -1167,7 +1167,7 @@ func (s *TimeSkippingV2TestSuite) TestUnboundedFastForwardPreservesSessionFields
 	run := s.startSessionFieldsRun(ctx, tq, 3600)
 
 	ok, err := timeskipping.FastForwardWorkflow(ctx, s.server.Client(), run,
-		timeskipping.WorkflowFastForwardOptions{})
+		timeskipping.FastForwardWorkflowOptions{})
 	s.NoError(err)
 	s.False(ok, "unbounded waits for the execution to end")
 

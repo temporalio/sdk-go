@@ -92,12 +92,12 @@ type (
 		HasCompleted bool
 	}
 
-	// WorkflowFastForwardOptions configures a single fast-forward on a workflow.
+	// FastForwardWorkflowOptions configures a single fast-forward on a workflow.
 	//
-	// Exposed as: [go.temporal.io/sdk/timeskipping.WorkflowFastForwardOptions]
+	// Exposed as: [go.temporal.io/sdk/timeskipping.FastForwardWorkflowOptions]
 	//
 	// NOTE: Experimental
-	WorkflowFastForwardOptions struct {
+	FastForwardWorkflowOptions struct {
 		// Duration to advance virtual time by. Must not be negative; the server
 		// requires a positive fast-forward duration.
 		//
@@ -140,13 +140,13 @@ type (
 		FailedReason string
 	}
 
-	// WorkflowPollFastForwardOptions identifies the workflow fast-forward to
+	// PollWorkflowFastForwardOptions identifies the workflow fast-forward to
 	// wait for.
 	//
-	// Exposed as: [go.temporal.io/sdk/timeskipping.WorkflowPollFastForwardOptions]
+	// Exposed as: [go.temporal.io/sdk/timeskipping.PollWorkflowFastForwardOptions]
 	//
 	// NOTE: Experimental
-	WorkflowPollFastForwardOptions struct {
+	PollWorkflowFastForwardOptions struct {
 		// FastForwardID of the fast-forward to wait for, as set in
 		// FastForwardConfig.ID. Required.
 		FastForwardID string
