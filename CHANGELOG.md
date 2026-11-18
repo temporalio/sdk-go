@@ -32,6 +32,8 @@ to docs, or any other relevant information.
 
 ### Changed
 
+- Removed an allocation when resolving workflow and activity function names.
+
 ### Deprecated
 
 ### :boom: Breaking Changes
