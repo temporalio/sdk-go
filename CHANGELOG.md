@@ -29,6 +29,9 @@ to docs, or any other relevant information.
 - Added experimental `worker.GetSlotUsage`, which returns a snapshot of a worker's task slot usage.
 - Added experimental `worker.GetInfo`, which returns a snapshot of a worker's state, currently its task
   slot usage.
+- Nexus workers decode marked System Nexus inputs with the system protobuf converter and use the
+  configured data converter and codecs for embedded user values, keeping the outer envelope out of
+  user codecs. Unrecognized system envelope types produce retryable internal handler errors.
 
 ### Changed
 

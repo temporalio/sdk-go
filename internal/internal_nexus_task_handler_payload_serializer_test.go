@@ -2,14 +2,18 @@ package internal
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/nexus-rpc/sdk-go/nexus"
 	"github.com/stretchr/testify/require"
 
 	commonpb "go.temporal.io/api/common/v1"
+	"go.temporal.io/api/proxy"
+	"google.golang.org/protobuf/proto"
 
 	"go.temporal.io/sdk/converter"
+	commonconverter "go.temporal.io/sdk/internal/common/converter"
 )
 
 // failingDataConverter fails FromPayload with a fixed error.
@@ -24,6 +28,11 @@ func (dc failingDataConverter) FromPayload(*commonpb.Payload, any) error {
 
 func TestPayloadSerializerDeserializeErrors(t *testing.T) {
 	payload, err := converter.GetDefaultDataConverter().ToPayload("input")
+	require.NoError(t, err)
+	systemPayload, err := commonconverter.WithDataConverterSystemNexusContext(
+		systemNexusDataConverter,
+		converter.GetDefaultDataConverter(),
+	).ToPayload(systemNexusModel{Value: "input"})
 	require.NoError(t, err)
 
 	violations := []map[string]string{{"path": "field", "reason": "must be an integer"}}
@@ -105,28 +114,212 @@ func TestPayloadSerializerDeserializeErrors(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			serializer := &payloadSerializer{
-				converter: failingDataConverter{
-					DataConverter: converter.GetDefaultDataConverter(),
-					err:           tt.err,
-				},
-				payload: payload,
+			for _, system := range []bool{false, true} {
+				t.Run(fmt.Sprintf("system=%v", system), func(t *testing.T) {
+					serializer := &payloadSerializer{
+						converter: failingDataConverter{
+							DataConverter: converter.GetDefaultDataConverter(),
+							err:           tt.err,
+						},
+						payload: payload,
+					}
+					var target any = new(string)
+					if system {
+						serializer.payload = systemPayload
+						target = new(systemNexusModel)
+					}
+					tt.check(t, serializer.Deserialize(nil, target))
+				})
 			}
-			var v string
-			tt.check(t, serializer.Deserialize(nil, &v))
 		})
 	}
 }
 
 func TestPayloadSerializerDeserializeSuccess(t *testing.T) {
-	payload, err := converter.GetDefaultDataConverter().ToPayload("input")
-	require.NoError(t, err)
-
-	serializer := &payloadSerializer{
-		converter: converter.GetDefaultDataConverter(),
-		payload:   payload,
+	for _, marker := range []string{"", "false", "TRUE"} {
+		t.Run("marker="+marker, func(t *testing.T) {
+			payload, err := converter.GetDefaultDataConverter().ToPayload("input")
+			require.NoError(t, err)
+			if marker != "" {
+				payload.Metadata[proxy.SystemPayloadMetadataKey] = []byte(marker)
+			}
+			serializer := &payloadSerializer{
+				converter: converter.GetDefaultDataConverter(),
+				payload:   payload,
+			}
+			var v string
+			require.NoError(t, serializer.Deserialize(nil, &v))
+			require.Equal(t, "input", v)
+		})
 	}
-	var v string
-	require.NoError(t, serializer.Deserialize(nil, &v))
-	require.Equal(t, "input", v)
+}
+
+type nexusInputDataConverter struct {
+	converter.DataConverter
+	fromPayload func(*commonpb.Payload, any) error
+}
+
+func (dc nexusInputDataConverter) FromPayload(payload *commonpb.Payload, valuePtr any) error {
+	return dc.fromPayload(payload, valuePtr)
+}
+
+func TestPayloadSerializerSystemPayloadUsesNestedConverter(t *testing.T) {
+	request := systemnexus_signalWithStartWorkflowRequest{
+		Workflow:   "workflow",
+		ID:         "workflow-id",
+		Namespace:  "namespace",
+		TaskQueue:  "task-queue",
+		Signal:     "signal",
+		Args:       []any{"first", "second"},
+		SignalArgs: []any{"signal-input"},
+	}
+	dc := converter.GetDefaultDataConverter()
+	payload, err := commonconverter.WithDataConverterSystemNexusContext(systemNexusDataConverter, dc).ToPayload(request)
+	require.NoError(t, err)
+	original := proto.Clone(payload)
+	decodeCount := 0
+	serializer := payloadSerializer{
+		payload: payload,
+		converter: nexusInputDataConverter{
+			DataConverter: dc,
+			fromPayload: func(payload *commonpb.Payload, valuePtr any) error {
+				require.NotContains(t, payload.Metadata, proxy.SystemPayloadMetadataKey)
+				require.IsType(t, new(any), valuePtr)
+				decodeCount++
+				var value string
+				if err := dc.FromPayload(payload, &value); err != nil {
+					return err
+				}
+				*valuePtr.(*any) = "converted-" + value
+				return nil
+			},
+		},
+	}
+	var result systemnexus_signalWithStartWorkflowRequest
+	require.NoError(t, serializer.Deserialize(nil, &result))
+	require.Equal(t, 3, decodeCount)
+	request.Args = []any{"converted-first", "converted-second"}
+	request.SignalArgs = []any{"converted-signal-input"}
+	require.Equal(t, request, result)
+	require.True(t, proto.Equal(original, payload), "deserialization must not modify the input envelope")
+}
+
+type nexusInputCodec struct {
+	converter.PayloadCodec
+	decode func([]*commonpb.Payload) ([]*commonpb.Payload, error)
+}
+
+func (c nexusInputCodec) Decode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	return c.decode(payloads)
+}
+
+func TestPayloadSerializerSystemPayloadCodecReplacement(t *testing.T) {
+	dc := converter.GetDefaultDataConverter()
+	payload, err := commonconverter.WithDataConverterSystemNexusContext(systemNexusDataConverter, dc).
+		ToPayload(systemNexusModel{Value: "input"})
+	require.NoError(t, err)
+	replacement, err := dc.ToPayload("decoded-input")
+	require.NoError(t, err)
+	decodeCount := 0
+	serializer := payloadSerializer{
+		payload: payload,
+		converter: converter.NewCodecDataConverter(dc, nexusInputCodec{
+			decode: func(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+				require.Len(t, payloads, 1)
+				require.NotContains(t, payloads[0].Metadata, proxy.SystemPayloadMetadataKey)
+				decodeCount++
+				return []*commonpb.Payload{replacement}, nil
+			},
+		}),
+	}
+	var result systemNexusModel
+	require.NoError(t, serializer.Deserialize(nil, &result))
+	require.Equal(t, systemNexusModel{Value: "decoded-input"}, result)
+	require.Equal(t, 1, decodeCount)
+}
+
+func TestPayloadSerializerSystemPayloadWithCodec(t *testing.T) {
+	dc := converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), newSystemEnvelopeRejectingCodec())
+	payload, err := commonconverter.WithDataConverterSystemNexusContext(systemNexusDataConverter, dc).
+		ToPayload(systemNexusModel{Value: "input"})
+	require.NoError(t, err)
+	serializer := payloadSerializer{converter: dc, payload: payload}
+	var result systemNexusModel
+	require.NoError(t, serializer.Deserialize(nil, &result))
+	require.Equal(t, systemNexusModel{Value: "input"}, result)
+}
+
+func TestPayloadSerializerInvalidSystemPayload(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		messageType string
+		encoding    string
+		data        []byte
+		errorType   nexus.HandlerErrorType
+		message     string
+	}{
+		{
+			name:        "unknown type",
+			messageType: "temporal.api.workflowservice.v1.UnknownRequest",
+			encoding:    converter.MetadataEncodingProto,
+			errorType:   nexus.HandlerErrorTypeInternal,
+			message:     `unrecognized system Nexus envelope message type "temporal.api.workflowservice.v1.UnknownRequest"`,
+		},
+		{
+			name:      "missing type",
+			encoding:  converter.MetadataEncodingProto,
+			errorType: nexus.HandlerErrorTypeInternal,
+			message:   `unrecognized system Nexus envelope message type "<missing>"`,
+		},
+		{
+			name:        "invalid encoding",
+			messageType: "temporal.api.common.v1.Payload",
+			encoding:    converter.MetadataEncodingJSON,
+			errorType:   nexus.HandlerErrorTypeBadRequest,
+			message:     `cannot deserialize system Nexus operation input: expected encoding "binary/protobuf", got "json/plain"`,
+		},
+		{
+			name:        "malformed protobuf",
+			messageType: "temporal.api.common.v1.Payload",
+			encoding:    converter.MetadataEncodingProto,
+			data:        []byte{0xff},
+			errorType:   nexus.HandlerErrorTypeBadRequest,
+			message:     `cannot deserialize system Nexus envelope "temporal.api.common.v1.Payload"`,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			for _, withCodec := range []bool{false, true} {
+				t.Run(fmt.Sprintf("codec=%v", withCodec), func(t *testing.T) {
+					dc := converter.GetDefaultDataConverter()
+					if withCodec {
+						dc = converter.NewCodecDataConverter(dc, nexusInputCodec{
+							decode: func([]*commonpb.Payload) ([]*commonpb.Payload, error) {
+								t.Fatal("invalid system payload must not reach the codec")
+								return nil, nil
+							},
+						})
+					}
+					serializer := payloadSerializer{
+						converter: dc,
+						payload: &commonpb.Payload{
+							Metadata: map[string][]byte{
+								proxy.SystemPayloadMetadataKey: []byte("true"),
+								converter.MetadataEncoding:     []byte(test.encoding),
+								converter.MetadataMessageType:  []byte(test.messageType),
+							},
+							Data: test.data,
+						},
+					}
+					var result systemNexusModel
+					var handlerErr *nexus.HandlerError
+					require.ErrorAs(t, serializer.Deserialize(nil, &result), &handlerErr)
+					require.Equal(t, test.errorType, handlerErr.Type)
+					require.Equal(t, test.message, handlerErr.Message)
+					if test.errorType == nexus.HandlerErrorTypeInternal {
+						require.Equal(t, nexus.HandlerErrorRetryBehaviorRetryable, handlerErr.RetryBehavior)
+					}
+				})
+			}
+		})
+	}
 }
