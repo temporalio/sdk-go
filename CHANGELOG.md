@@ -38,6 +38,8 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- Activity execution information returned by `ListActivities` and `ActivityHandle.Describe` now
+  reports unset timestamps as the zero time instead of 1970-01-01 UTC.
 - Workers no longer advertise a worker control task queue unless worker heartbeats and commands
   are supported and the shared namespace command poller is running.
 
