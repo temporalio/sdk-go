@@ -176,7 +176,6 @@ type (
 		versionStamp                     *commonpb.WorkerVersionStamp
 		deployment                       *deploymentpb.Deployment
 		workerDeploymentOptions          *deploymentpb.WorkerDeploymentOptions
-		inboundPayloadVisitor            PayloadVisitor
 		outboundPayloadVisitor           PayloadVisitor
 		storageParams                    extstore.StorageParameters
 		activityCancellationCallbacks    *activityCancellationCallbacks
@@ -2184,7 +2183,6 @@ func newActivityTaskHandlerWithCustomProvider(
 			params.UseBuildIDForVersioning,
 			params.DeploymentOptions.Version,
 		),
-		inboundPayloadVisitor:         params.inboundPayloadVisitor,
 		outboundPayloadVisitor:        params.outboundPayloadVisitor,
 		storageParams:                 params.storageParams,
 		activityCancellationCallbacks: params.activityCancellationCallbacks,
@@ -2481,11 +2479,12 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 	// task with the activity's, so their storage references are resolved separately.
 	var visitErr error
 	if details := t.GetHeartbeatDetails(); details != nil {
-		visitErr = visitProtoPayloads(canCtx, bindReferenceSerializationContext(ath.inboundPayloadVisitor, serializationContext),
+		visitErr = visitProtoPayloads(canCtx, newInboundPayloadVisitor(dataConverter, ath.storageParams),
 			details, ath.storageParams.MaxOperationsPerMessage())
 	}
 	if visitErr == nil {
-		visitErr = visitProtoPayloads(canCtx, bindReferenceSerializationContext(ath.inboundPayloadVisitor, activityContext),
+		activityDataConverter := converter.WithDataConverterSerializationContext(ath.dataConverter, activityContext)
+		visitErr = visitProtoPayloads(canCtx, newInboundPayloadVisitor(activityDataConverter, ath.storageParams),
 			t, ath.storageParams.MaxOperationsPerMessage())
 	}
 	if visitErr != nil {

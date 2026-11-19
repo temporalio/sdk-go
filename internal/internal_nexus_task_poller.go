@@ -10,7 +10,9 @@ import (
 	enumspb "go.temporal.io/api/enums/v1"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
+	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
+	"go.temporal.io/sdk/internal/extstore"
 	"go.temporal.io/sdk/log"
 )
 
@@ -23,7 +25,7 @@ type nexusTaskPoller struct {
 	taskHandler            *nexusTaskHandler
 	logger                 log.Logger
 	numPollerMetric        *numPollerMetric
-	inboundPayloadVisitor  PayloadVisitor
+	storageParams          extstore.StorageParameters
 	outboundPayloadVisitor PayloadVisitor
 	backgroundContext      context.Context
 	pollerGroups           *pollerGroupManager
@@ -67,7 +69,7 @@ func newNexusTaskPoller(
 		logger:          params.Logger,
 		numPollerMetric: newNumPollerMetric(params.MetricsHandler, metrics.PollerTypeNexusTask),
 
-		inboundPayloadVisitor:  params.inboundPayloadVisitor,
+		storageParams:          params.storageParams,
 		outboundPayloadVisitor: params.outboundPayloadVisitor,
 		backgroundContext:      backgroundContext,
 		pollerGroups:           pollerGroups,
@@ -183,7 +185,9 @@ func (ntp *nexusTaskPoller) ProcessTask(task any) error {
 	// before the handler consumes them. A Nexus task carries at most one input and
 	// one result payload, so payload visits are unconcurrent (the configurable
 	// visit concurrency is scoped to workflow tasks).
-	inboundPayloadVisitor := bindReferenceSerializationContext(ntp.inboundPayloadVisitor, nctx.nexusSerializationContext)
+	inboundPayloadVisitor := newInboundPayloadVisitor(
+		converter.WithDataConverterSerializationContext(ntp.taskHandler.dataConverter, nctx.nexusSerializationContext),
+		ntp.storageParams)
 	if visitErr := visitProtoPayloads(ntp.backgroundContext, inboundPayloadVisitor, response, 0); visitErr != nil {
 		return ntp.reportExternalStorageFailure(response, "retrieve Nexus operation input from external storage", visitErr)
 	}

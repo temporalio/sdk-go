@@ -9,6 +9,7 @@ import (
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
 	"go.temporal.io/api/proxy"
+	"go.temporal.io/api/workflowservice/v1"
 	"google.golang.org/protobuf/proto"
 
 	"go.temporal.io/sdk/converter"
@@ -24,7 +25,14 @@ type workflowReferenceContexts struct {
 	workflowID         string
 	workflowType       string
 	taskQueue          string
-	byScheduledEventID map[int64]converter.SerializationContext
+	byScheduledEventID map[int64]*scheduledReferenceContext
+}
+
+type scheduledReferenceContext struct {
+	serializationContext converter.SerializationContext
+	// resultEventID is the ID of the operation's result event once it has been
+	// seen, or 0.
+	resultEventID int64
 }
 
 func newWorkflowReferenceContexts(namespace, workflowID, workflowType string) *workflowReferenceContexts {
@@ -32,7 +40,17 @@ func newWorkflowReferenceContexts(namespace, workflowID, workflowType string) *w
 		namespace:          namespace,
 		workflowID:         workflowID,
 		workflowType:       workflowType,
-		byScheduledEventID: map[int64]converter.SerializationContext{},
+		byScheduledEventID: map[int64]*scheduledReferenceContext{},
+	}
+}
+
+// deleteFinished deletes entries whose result event is at or before
+// previousStartedEventID.
+func (c *workflowReferenceContexts) deleteFinished(previousStartedEventID int64) {
+	for scheduledEventID, entry := range c.byScheduledEventID {
+		if entry.resultEventID != 0 && entry.resultEventID <= previousStartedEventID {
+			delete(c.byScheduledEventID, scheduledEventID)
+		}
 	}
 }
 
@@ -44,11 +62,27 @@ func (c *workflowReferenceContexts) otherWorkflowContext(namespace, workflowID s
 	return converter.WorkflowSerializationContext{Namespace: cmp.Or(namespace, c.namespace), WorkflowID: workflowID}
 }
 
+func (c *workflowReferenceContexts) recordScheduled(event *historypb.HistoryEvent, sc converter.SerializationContext) converter.SerializationContext {
+	c.byScheduledEventID[event.GetEventId()] = &scheduledReferenceContext{serializationContext: sc}
+	return sc
+}
+
+// scheduledContext is for events of an activity or Nexus operation that come
+// before its result event.
 func (c *workflowReferenceContexts) scheduledContext(scheduledEventID int64) converter.SerializationContext {
-	if sc, ok := c.byScheduledEventID[scheduledEventID]; ok {
-		return sc
+	if entry, ok := c.byScheduledEventID[scheduledEventID]; ok {
+		return entry.serializationContext
 	}
 	return c.workflowContext()
+}
+
+func (c *workflowReferenceContexts) resultContext(resultEvent *historypb.HistoryEvent, scheduledEventID int64) converter.SerializationContext {
+	entry, ok := c.byScheduledEventID[scheduledEventID]
+	if !ok {
+		return c.workflowContext()
+	}
+	entry.resultEventID = resultEvent.GetEventId()
+	return entry.serializationContext
 }
 
 func (c *workflowReferenceContexts) eventContext(event *historypb.HistoryEvent) converter.SerializationContext {
@@ -64,16 +98,17 @@ func (c *workflowReferenceContexts) eventContext(event *historypb.HistoryEvent) 
 			ActivityType: attrs.GetActivityType().GetName(),
 			TaskQueue:    attrs.GetTaskQueue().GetName(),
 		}
-		c.byScheduledEventID[event.GetEventId()] = sc
-		return sc
+		return c.recordScheduled(event, sc)
+	case enumspb.EVENT_TYPE_ACTIVITY_TASK_STARTED:
+		return c.scheduledContext(event.GetActivityTaskStartedEventAttributes().GetScheduledEventId())
 	case enumspb.EVENT_TYPE_ACTIVITY_TASK_COMPLETED:
-		return c.scheduledContext(event.GetActivityTaskCompletedEventAttributes().GetScheduledEventId())
+		return c.resultContext(event, event.GetActivityTaskCompletedEventAttributes().GetScheduledEventId())
 	case enumspb.EVENT_TYPE_ACTIVITY_TASK_FAILED:
-		return c.scheduledContext(event.GetActivityTaskFailedEventAttributes().GetScheduledEventId())
+		return c.resultContext(event, event.GetActivityTaskFailedEventAttributes().GetScheduledEventId())
 	case enumspb.EVENT_TYPE_ACTIVITY_TASK_TIMED_OUT:
-		return c.scheduledContext(event.GetActivityTaskTimedOutEventAttributes().GetScheduledEventId())
+		return c.resultContext(event, event.GetActivityTaskTimedOutEventAttributes().GetScheduledEventId())
 	case enumspb.EVENT_TYPE_ACTIVITY_TASK_CANCELED:
-		return c.scheduledContext(event.GetActivityTaskCanceledEventAttributes().GetScheduledEventId())
+		return c.resultContext(event, event.GetActivityTaskCanceledEventAttributes().GetScheduledEventId())
 	case enumspb.EVENT_TYPE_NEXUS_OPERATION_SCHEDULED:
 		attrs := event.GetNexusOperationScheduledEventAttributes()
 		sc := converter.NexusSerializationContext{
@@ -81,16 +116,17 @@ func (c *workflowReferenceContexts) eventContext(event *historypb.HistoryEvent) 
 			Service:   attrs.GetService(),
 			Operation: attrs.GetOperation(),
 		}
-		c.byScheduledEventID[event.GetEventId()] = sc
-		return sc
+		return c.recordScheduled(event, sc)
+	case enumspb.EVENT_TYPE_NEXUS_OPERATION_CANCEL_REQUEST_FAILED:
+		return c.scheduledContext(event.GetNexusOperationCancelRequestFailedEventAttributes().GetScheduledEventId())
 	case enumspb.EVENT_TYPE_NEXUS_OPERATION_COMPLETED:
-		return c.scheduledContext(event.GetNexusOperationCompletedEventAttributes().GetScheduledEventId())
+		return c.resultContext(event, event.GetNexusOperationCompletedEventAttributes().GetScheduledEventId())
 	case enumspb.EVENT_TYPE_NEXUS_OPERATION_FAILED:
-		return c.scheduledContext(event.GetNexusOperationFailedEventAttributes().GetScheduledEventId())
+		return c.resultContext(event, event.GetNexusOperationFailedEventAttributes().GetScheduledEventId())
 	case enumspb.EVENT_TYPE_NEXUS_OPERATION_CANCELED:
-		return c.scheduledContext(event.GetNexusOperationCanceledEventAttributes().GetScheduledEventId())
+		return c.resultContext(event, event.GetNexusOperationCanceledEventAttributes().GetScheduledEventId())
 	case enumspb.EVENT_TYPE_NEXUS_OPERATION_TIMED_OUT:
-		return c.scheduledContext(event.GetNexusOperationTimedOutEventAttributes().GetScheduledEventId())
+		return c.resultContext(event, event.GetNexusOperationTimedOutEventAttributes().GetScheduledEventId())
 	case enumspb.EVENT_TYPE_START_CHILD_WORKFLOW_EXECUTION_INITIATED:
 		attrs := event.GetStartChildWorkflowExecutionInitiatedEventAttributes()
 		return c.otherWorkflowContext(attrs.GetNamespace(), attrs.GetWorkflowId())
@@ -150,6 +186,11 @@ func (v *workflowTaskInboundVisitor) ContextHook(ctx context.Context, msg proto.
 			sc = laContext
 		}
 		ctx = withReferenceSerializationContext(ctx, sc)
+	} else if req, ok := msg.(*workflowservice.SignalWithStartWorkflowExecutionRequest); ok {
+		ctx = withReferenceSerializationContext(ctx, converter.WorkflowSerializationContext{
+			Namespace:  req.GetNamespace(),
+			WorkflowID: req.GetWorkflowId(),
+		})
 	} else if _, ok := ctx.Value(referenceSerializationContextKey{}).(converter.SerializationContext); !ok {
 		// Payloads outside history events, such as queries and update requests,
 		// are decoded with the workflow context.

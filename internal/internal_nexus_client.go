@@ -784,13 +784,11 @@ func (w *workflowClientInterceptor) PollNexusOperationResult(
 	// Servers without propagation support do not return the context, so fall back to the start
 	// request's context, which detached handles do not have.
 	serializationContext := serializationContextFor(in.nexusSerializationContext, resp.GetPropagatedNexusSerializationContext())
-	inboundPayloadVisitor := w.inboundPayloadVisitor
 	if serializationContext != nil {
 		dataConverter = converter.WithDataConverterSerializationContext(dataConverter, serializationContext)
 		failureConverter = converter.WithFailureConverterSerializationContext(failureConverter, serializationContext)
-		inboundPayloadVisitor = bindReferenceSerializationContext(inboundPayloadVisitor, serializationContext)
 	}
-	if err := visitProtoPayloads(ctx, inboundPayloadVisitor, resp, 0); err != nil {
+	if err := visitProtoPayloads(ctx, w.client.newInboundPayloadVisitor(dataConverter), resp, 0); err != nil {
 		return nil, err
 	}
 
@@ -832,6 +830,8 @@ func (w *workflowClientInterceptor) DescribeNexusOperation(
 		Operation: info.Operation,
 	}
 	failureConverter := converter.WithFailureConverterSerializationContext(w.client.failureConverter, nexusContext)
+	dc := WithContext(ctx, w.client.dataConverter)
+	failurePayloadVisitor := w.client.newInboundPayloadVisitor(converter.WithDataConverterSerializationContext(dc, nexusContext))
 
 	var cancellationInfo *ClientNexusOperationCancellationInfo
 	if info.CancellationInfo != nil {
@@ -846,7 +846,7 @@ func (w *workflowClientInterceptor) DescribeNexusOperation(
 			Reason:                  info.CancellationInfo.Reason,
 			lastAttemptFailure:      info.CancellationInfo.LastAttemptFailure,
 			failureConverter:        failureConverter,
-			inboundPayloadVisitor:   bindReferenceSerializationContext(w.inboundPayloadVisitor, nexusContext),
+			inboundPayloadVisitor:   failurePayloadVisitor,
 		}
 	}
 
@@ -880,10 +880,10 @@ func (w *workflowClientInterceptor) DescribeNexusOperation(
 			OperationToken:          info.OperationToken,
 			Identity:                info.Identity,
 			CancellationInfo:        cancellationInfo,
-			dc:                      WithContext(ctx, w.client.dataConverter),
+			dc:                      dc,
 			failureConverter:        failureConverter,
-			inboundPayloadVisitor:   w.inboundPayloadVisitor,
-			failurePayloadVisitor:   bindReferenceSerializationContext(w.inboundPayloadVisitor, nexusContext),
+			inboundPayloadVisitor:   w.client.newInboundPayloadVisitor(dc),
+			failurePayloadVisitor:   failurePayloadVisitor,
 		},
 	}, nil
 }

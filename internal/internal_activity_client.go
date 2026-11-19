@@ -989,12 +989,12 @@ func (w *workflowClientInterceptor) PollActivityResult(
 
 	serializationContext := serializationContextFor(converter.ActivitySerializationContext{Namespace: w.client.namespace},
 		resp.GetPropagatedNexusSerializationContext())
-	if err := visitProtoPayloads(ctx, bindReferenceSerializationContext(w.inboundPayloadVisitor, serializationContext), resp, 0); err != nil {
+	dataConverter := converter.WithDataConverterSerializationContext(
+		WithContext(ctx, w.client.dataConverter), serializationContext)
+	if err := visitProtoPayloads(ctx, w.client.newInboundPayloadVisitor(dataConverter), resp, 0); err != nil {
 		return nil, err
 	}
 
-	dataConverter := converter.WithDataConverterSerializationContext(
-		WithContext(ctx, w.client.dataConverter), serializationContext)
 	failureConverter := converter.WithFailureConverterSerializationContext(
 		w.client.failureConverter, serializationContext)
 
@@ -1046,6 +1046,10 @@ func (w *workflowClientInterceptor) DescribeActivity(
 	}
 	// The result, failures, and heartbeat details are returned to a Nexus caller and use its propagated context.
 	resultContext := serializationContextFor(activityContext, info.GetPropagatedNexusSerializationContext())
+	dataConverter := converter.WithDataConverterSerializationContext(
+		WithContext(ctx, w.client.dataConverter), activityContext)
+	callerFacingDataConverter := converter.WithDataConverterSerializationContext(
+		WithContext(ctx, w.client.dataConverter), resultContext)
 
 	return &ClientDescribeActivityOutput{
 		Description: &ClientActivityExecutionDescription{
@@ -1062,34 +1066,32 @@ func (w *workflowClientInterceptor) DescribeActivity(
 				ExecutionDuration:     info.ExecutionDuration.AsDuration(),
 				ExecutionTime:         info.ExecutionTime.AsTime(),
 			},
-			RawResponse:             resp,
-			ScheduleToCloseTimeout:  info.ScheduleToCloseTimeout.AsDuration(),
-			ScheduleToStartTimeout:  info.ScheduleToStartTimeout.AsDuration(),
-			StartToCloseTimeout:     info.StartToCloseTimeout.AsDuration(),
-			HeartbeatTimeout:        info.HeartbeatTimeout.AsDuration(),
-			StartDelay:              info.StartDelay.AsDuration(),
-			RunState:                info.RunState,
-			LastHeartbeatTime:       info.LastHeartbeatTime.AsTime(),
-			LastStartedTime:         info.LastStartedTime.AsTime(),
-			Attempt:                 info.Attempt,
-			TotalHeartbeatCount:     info.TotalHeartbeatCount,
-			RetryPolicy:             convertFromPBRetryPolicy(info.RetryPolicy),
-			ExpirationTime:          info.ExpirationTime.AsTime(),
-			LastWorkerIdentity:      info.LastWorkerIdentity,
-			CurrentRetryInterval:    info.CurrentRetryInterval.AsDuration(),
-			LastAttemptCompleteTime: info.LastAttemptCompleteTime.AsTime(),
-			NextAttemptScheduleTime: info.NextAttemptScheduleTime.AsTime(),
-			LastDeploymentVersion:   lastDeploymentVersion,
-			Priority:                convertFromPBPriority(info.Priority),
-			CanceledReason:          info.CanceledReason,
-			dataConverter: converter.WithDataConverterSerializationContext(
-				WithContext(ctx, w.client.dataConverter), activityContext),
-			callerFacingDataConverter: converter.WithDataConverterSerializationContext(
-				WithContext(ctx, w.client.dataConverter), resultContext),
+			RawResponse:               resp,
+			ScheduleToCloseTimeout:    info.ScheduleToCloseTimeout.AsDuration(),
+			ScheduleToStartTimeout:    info.ScheduleToStartTimeout.AsDuration(),
+			StartToCloseTimeout:       info.StartToCloseTimeout.AsDuration(),
+			HeartbeatTimeout:          info.HeartbeatTimeout.AsDuration(),
+			StartDelay:                info.StartDelay.AsDuration(),
+			RunState:                  info.RunState,
+			LastHeartbeatTime:         info.LastHeartbeatTime.AsTime(),
+			LastStartedTime:           info.LastStartedTime.AsTime(),
+			Attempt:                   info.Attempt,
+			TotalHeartbeatCount:       info.TotalHeartbeatCount,
+			RetryPolicy:               convertFromPBRetryPolicy(info.RetryPolicy),
+			ExpirationTime:            info.ExpirationTime.AsTime(),
+			LastWorkerIdentity:        info.LastWorkerIdentity,
+			CurrentRetryInterval:      info.CurrentRetryInterval.AsDuration(),
+			LastAttemptCompleteTime:   info.LastAttemptCompleteTime.AsTime(),
+			NextAttemptScheduleTime:   info.NextAttemptScheduleTime.AsTime(),
+			LastDeploymentVersion:     lastDeploymentVersion,
+			Priority:                  convertFromPBPriority(info.Priority),
+			CanceledReason:            info.CanceledReason,
+			dataConverter:             dataConverter,
+			callerFacingDataConverter: callerFacingDataConverter,
 			failureConverter: converter.WithFailureConverterSerializationContext(
 				w.client.failureConverter, resultContext),
-			inboundPayloadVisitor:      bindReferenceSerializationContext(w.inboundPayloadVisitor, activityContext),
-			callerFacingPayloadVisitor: bindReferenceSerializationContext(w.inboundPayloadVisitor, resultContext),
+			inboundPayloadVisitor:      w.client.newInboundPayloadVisitor(dataConverter),
+			callerFacingPayloadVisitor: w.client.newInboundPayloadVisitor(callerFacingDataConverter),
 		},
 	}, nil
 }

@@ -4,8 +4,6 @@ import (
 	"context"
 
 	commonpb "go.temporal.io/api/common/v1"
-	"go.temporal.io/api/proxy"
-	"google.golang.org/protobuf/proto"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/extstore"
@@ -81,42 +79,4 @@ func newOutboundStorageVisitor(dc converter.DataConverter, params extstore.Stora
 		extstore.NewExternalStorageVisitor(params),
 		extstore.NewReferenceEncodingVisitor(newReferenceCodecProvider(dc)),
 	)
-}
-
-// bindReferenceSerializationContext belongs wherever a DataConverter is bound to
-// sc. An enclosing binding takes precedence, so a call site can override the
-// context a stored visitor was bound with.
-func bindReferenceSerializationContext(visitor PayloadVisitor, sc converter.SerializationContext) PayloadVisitor {
-	if visitor == nil {
-		return nil
-	}
-	return &referenceSerializationContextVisitor{inner: visitor, sc: sc}
-}
-
-type referenceSerializationContextVisitor struct {
-	inner PayloadVisitor
-	sc    converter.SerializationContext
-}
-
-func (v *referenceSerializationContextVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
-	if _, ok := ctx.Value(referenceSerializationContextKey{}).(converter.SerializationContext); ok {
-		return v.inner.Visit(ctx, payloads)
-	}
-	bound := *ctx
-	bound.Context = withReferenceSerializationContext(ctx.Context, v.sc)
-	return v.inner.Visit(&bound, payloads)
-}
-
-func (v *referenceSerializationContextVisitor) WithMessageLimit(ctx context.Context) context.Context {
-	if limited, ok := v.inner.(PayloadVisitorWithMessageLimit); ok {
-		return limited.WithMessageLimit(ctx)
-	}
-	return ctx
-}
-
-func (v *referenceSerializationContextVisitor) ContextHook(ctx context.Context, msg proto.Message) (context.Context, error) {
-	if hookVisitor, ok := v.inner.(PayloadVisitorWithContextHook); ok {
-		return hookVisitor.ContextHook(ctx, msg)
-	}
-	return ctx, nil
 }

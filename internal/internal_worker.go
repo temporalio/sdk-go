@@ -2276,22 +2276,20 @@ func (aw *WorkflowReplayer) replayWorkflowHistoryRoot(
 	if aw.disableDeadlockDetection {
 		params.DeadlockDetectionTimeout = math.MaxInt64
 	}
-	// Resolve externally stored payloads in the history before passing to the
-	// task handler. This mirrors what processWorkflowTask does for live workers.
-	referenceContexts := newWorkflowReferenceContexts(
-		namespace, task.WorkflowExecution.GetWorkflowId(), task.WorkflowType.GetName())
-	inboundPayloadVisitor := newWorkflowTaskInboundVisitor(aw.inboundPayloadVisitor, aw.dataConverter, referenceContexts)
-	if err := visitProtoPayloads(context.Background(), inboundPayloadVisitor, task, 0); err != nil {
-		return err
-	}
-
 	taskHandler := newWorkflowTaskHandler(params, nil, aw.registry)
 	wfctx, err := taskHandler.GetOrCreateWorkflowContext(task, iterator)
 	defer wfctx.Unlock(err)
 	if err != nil {
 		return err
 	}
-	resp, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task, historyIterator: iterator}, wfctx, nil)
+	// Like processWorkflowTask, resolve externally stored payloads once the run's
+	// context is held, so they are decoded with the run's reference contexts.
+	wfTask := &workflowTask{task: task, historyIterator: iterator}
+	if err := resolveWorkflowTaskPayloads(context.Background(), aw.inboundPayloadVisitor, aw.dataConverter, wfTask, wfctx,
+		aw.storageParams.MaxOperationsPerMessage()); err != nil {
+		return err
+	}
+	resp, err := taskHandler.ProcessWorkflowTask(wfTask, wfctx, nil)
 	if err != nil {
 		return err
 	}

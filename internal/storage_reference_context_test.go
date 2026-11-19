@@ -7,9 +7,12 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
+	"go.temporal.io/api/proxy"
 	sdkpb "go.temporal.io/api/sdk/v1"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
+	"go.temporal.io/api/workflowservice/v1"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/extstore"
@@ -98,6 +101,19 @@ func TestWorkflowReferenceContexts_EventContexts(t *testing.T) {
 		},
 	}))
 
+	require.Equal(t, nexusContext, contexts.eventContext(&historypb.HistoryEvent{
+		EventType: enumspb.EVENT_TYPE_NEXUS_OPERATION_CANCEL_REQUEST_FAILED,
+		Attributes: &historypb.HistoryEvent_NexusOperationCancelRequestFailedEventAttributes{
+			NexusOperationCancelRequestFailedEventAttributes: &historypb.NexusOperationCancelRequestFailedEventAttributes{ScheduledEventId: 7},
+		},
+	}))
+	require.Equal(t, activityContext, contexts.eventContext(&historypb.HistoryEvent{
+		EventType: enumspb.EVENT_TYPE_ACTIVITY_TASK_STARTED,
+		Attributes: &historypb.HistoryEvent_ActivityTaskStartedEventAttributes{
+			ActivityTaskStartedEventAttributes: &historypb.ActivityTaskStartedEventAttributes{ScheduledEventId: 5},
+		},
+	}))
+
 	require.Equal(t, converter.WorkflowSerializationContext{Namespace: "ns", WorkflowID: "child"}, contexts.eventContext(&historypb.HistoryEvent{
 		EventType: enumspb.EVENT_TYPE_CHILD_WORKFLOW_EXECUTION_COMPLETED,
 		Attributes: &historypb.HistoryEvent_ChildWorkflowExecutionCompletedEventAttributes{
@@ -126,6 +142,70 @@ func TestWorkflowTaskInboundVisitor_ActivityResultInLaterTask(t *testing.T) {
 	require.Equal(t, []converter.SerializationContext{converter.ActivitySerializationContext{
 		Namespace: "ns", WorkflowID: "wf", WorkflowType: "WorkflowType", ActivityType: "MyActivity", TaskQueue: "activity-tq",
 	}}, decoded)
+}
+
+func TestWorkflowReferenceContexts_DeletesResultsOnlyOnceTheyCannotBeResent(t *testing.T) {
+	var decoded []converter.SerializationContext
+	codec := contextRecordingCodec{decoded: &decoded}
+	dc := converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), codec)
+	contexts := newTestReferenceContexts()
+	activityContext := converter.ActivitySerializationContext{
+		Namespace: "ns", WorkflowID: "wf", WorkflowType: "WorkflowType", ActivityType: "MyActivity", TaskQueue: "activity-tq",
+	}
+	completed := func() *historypb.HistoryEvent {
+		event := activityCompletedEvent(5, encodedReference(t, codec))
+		event.EventId = 8
+		return event
+	}
+
+	resolveHistory(t, contexts, dc, activityScheduledEvent(5))
+	resolveHistory(t, contexts, dc, completed())
+	// The server discarded the speculative task that carried event 8 and sends it
+	// again, so the worker's last started event is still before it.
+	contexts.deleteFinished(7)
+	resolveHistory(t, contexts, dc, completed())
+	require.Equal(t, []converter.SerializationContext{activityContext, activityContext}, decoded)
+
+	contexts.deleteFinished(8)
+	require.Empty(t, contexts.byScheduledEventID)
+}
+
+func TestWorkflowTaskInboundVisitor_SystemNexusSignalWithStartUsesTargetWorkflowContext(t *testing.T) {
+	var decoded []converter.SerializationContext
+	codec := contextRecordingCodec{decoded: &decoded}
+	dc := converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), codec)
+	contexts := newTestReferenceContexts()
+
+	request := &workflowservice.SignalWithStartWorkflowExecutionRequest{
+		Namespace:   "ns",
+		WorkflowId:  "target",
+		Input:       &commonpb.Payloads{Payloads: []*commonpb.Payload{encodedReference(t, codec)}},
+		SignalInput: &commonpb.Payloads{Payloads: []*commonpb.Payload{encodedReference(t, codec)}},
+	}
+	data, err := proto.Marshal(request)
+	require.NoError(t, err)
+	resolveHistory(t, contexts, dc, &historypb.HistoryEvent{
+		EventId:   5,
+		EventType: enumspb.EVENT_TYPE_NEXUS_OPERATION_SCHEDULED,
+		Attributes: &historypb.HistoryEvent_NexusOperationScheduledEventAttributes{
+			NexusOperationScheduledEventAttributes: &historypb.NexusOperationScheduledEventAttributes{
+				Endpoint:  systemNexusEndpoint,
+				Service:   "temporal.api.workflowservice.v1.WorkflowService",
+				Operation: "SignalWithStartWorkflowExecution",
+				Input: &commonpb.Payload{
+					Metadata: map[string][]byte{
+						proxy.SystemPayloadMetadataKey: []byte("true"),
+						converter.MetadataEncoding:     []byte("binary/protobuf"),
+						converter.MetadataMessageType:  []byte(proto.MessageName(request)),
+					},
+					Data: data,
+				},
+			},
+		},
+	})
+
+	targetContext := converter.WorkflowSerializationContext{Namespace: "ns", WorkflowID: "target"}
+	require.Equal(t, []converter.SerializationContext{targetContext, targetContext}, decoded)
 }
 
 func TestWorkflowTaskInboundVisitor_LocalActivityResult(t *testing.T) {

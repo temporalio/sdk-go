@@ -614,9 +614,11 @@ func (wtp *workflowTaskProcessor) processWorkflowTask(task *workflowTask) (retEr
 	}()
 
 	// Payloads are resolved once the run's context is held, so storage references
-	// can be decoded with contexts recorded from earlier workflow tasks.
-	if err := wtp.resolveWorkflowTaskPayloads(ctx, task, wfctx); err != nil {
-		wtp.handleInboundVisitorError(task.task, err)
+	// can be decoded with contexts recorded from earlier workflow tasks. A failure
+	// sets taskErr so the deferred Unlock evicts the run's context, like any other task failure.
+	if taskErr = resolveWorkflowTaskPayloads(ctx, wtp.inboundPayloadVisitor, wtp.dataConverter, task, wfctx,
+		wtp.storageParams.MaxOperationsPerMessage()); taskErr != nil {
+		wtp.handleInboundVisitorError(task.task, taskErr)
 		return nil
 	}
 
@@ -645,7 +647,7 @@ func (wtp *workflowTaskProcessor) processWorkflowTask(task *workflowTask) (retEr
 					return nil, nil
 				}
 				task := wtp.toWorkflowTask(heartbeatResponse.WorkflowTask)
-				if err := wtp.resolveWorkflowTaskPayloads(ctx, task, wfctx); err != nil {
+				if err := resolveWorkflowTaskPayloads(ctx, wtp.inboundPayloadVisitor, wtp.dataConverter, task, wfctx, wtp.storageParams.MaxOperationsPerMessage()); err != nil {
 					wtp.handleInboundVisitorError(task.task, err)
 					return nil, nil
 				}
@@ -684,7 +686,7 @@ func (wtp *workflowTaskProcessor) processWorkflowTask(task *workflowTask) (retEr
 
 		// we are getting new workflow task, so reset the workflowTask and continue process the new one
 		task = wtp.toWorkflowTask(response.WorkflowTask)
-		if err := wtp.resolveWorkflowTaskPayloads(ctx, task, wfctx); err != nil {
+		if err := resolveWorkflowTaskPayloads(ctx, wtp.inboundPayloadVisitor, wtp.dataConverter, task, wfctx, wtp.storageParams.MaxOperationsPerMessage()); err != nil {
 			wtp.handleInboundVisitorError(task.task, err)
 			return nil
 		}
@@ -1049,10 +1051,18 @@ func (wtp *workflowTaskProcessor) reportGrpcMessageTooLarge(
 }
 
 // resolveWorkflowTaskPayloads requires the caller to hold wfctx's lock.
-func (wtp *workflowTaskProcessor) resolveWorkflowTaskPayloads(ctx context.Context, task *workflowTask, wfctx *workflowExecutionContextImpl) error {
+func resolveWorkflowTaskPayloads(
+	ctx context.Context,
+	inboundPayloadVisitor PayloadVisitor,
+	dataConverter converter.DataConverter,
+	task *workflowTask,
+	wfctx *workflowExecutionContextImpl,
+	concurrencyLimit int,
+) error {
+	wfctx.referenceContexts.deleteFinished(wfctx.previousStartedEventID)
 	useReferenceContexts(task.historyIterator, wfctx.referenceContexts)
-	visitor := newWorkflowTaskInboundVisitor(wtp.inboundPayloadVisitor, wtp.dataConverter, wfctx.referenceContexts)
-	return visitProtoPayloads(ctx, visitor, task.task, wtp.storageParams.MaxOperationsPerMessage())
+	visitor := newWorkflowTaskInboundVisitor(inboundPayloadVisitor, dataConverter, wfctx.referenceContexts)
+	return visitProtoPayloads(ctx, visitor, task.task, concurrencyLimit)
 }
 
 func (wtp *workflowTaskProcessor) handleInboundVisitorError(task *workflowservice.PollWorkflowTaskQueueResponse, visitErr error) {

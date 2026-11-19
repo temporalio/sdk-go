@@ -51,7 +51,7 @@ func (c contextRecordingCodec) Decode(payloads []*commonpb.Payload) ([]*commonpb
 	return result, nil
 }
 
-func TestBindReferenceSerializationContext_DecodesWithBoundContext(t *testing.T) {
+func TestReferenceCodecProvider_DecodesWithDataConverterContext(t *testing.T) {
 	var decoded []converter.SerializationContext
 	codec := contextRecordingCodec{decoded: &decoded}
 	dc := converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), codec)
@@ -69,10 +69,8 @@ func TestBindReferenceSerializationContext_DecodesWithBoundContext(t *testing.T)
 	encoded[0].Metadata["__temporal_external_storage_reference"] = []byte("true")
 
 	sc := converter.WorkflowSerializationContext{Namespace: "ns", WorkflowID: "wf"}
-	visitor := bindReferenceSerializationContext(
-		newCompositePayloadVisitor(extstore.NewReferenceOnlyDecodingVisitor(newReferenceCodecProvider(dc))),
-		sc,
-	)
+	boundDC := converter.WithDataConverterSerializationContext(dc, sc)
+	visitor := newCompositePayloadVisitor(extstore.NewReferenceOnlyDecodingVisitor(newReferenceCodecProvider(boundDC)))
 	result, err := visitPayload(t.Context(), visitor, encoded[0])
 	require.NoError(t, err)
 
