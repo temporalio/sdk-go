@@ -1,7 +1,9 @@
 package internal
 
 import (
+	"context"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/require"
@@ -21,9 +23,63 @@ func TestChannelBuilderOptions(t *testing.T) {
 	require.Equal(t, time.Minute, builder.Timeout)
 }
 
+func TestNewGRPCContextTimeout(t *testing.T) {
+	for _, tc := range []struct {
+		name            string
+		rpcTimeout      time.Duration
+		callerTimeout   time.Duration
+		explicitTimeout time.Duration
+		wantTimeout     time.Duration
+	}{
+		{name: "default", wantTimeout: 10 * time.Second},
+		{name: "raised", rpcTimeout: time.Minute, wantTimeout: time.Minute},
+		{name: "lowered", rpcTimeout: 500 * time.Millisecond, wantTimeout: 500 * time.Millisecond},
+		{name: "shorter caller", rpcTimeout: time.Minute, callerTimeout: 20 * time.Second, wantTimeout: 20 * time.Second},
+		{name: "longer caller", rpcTimeout: time.Minute, callerTimeout: 2 * time.Minute, wantTimeout: time.Minute},
+		{name: "default cap", callerTimeout: time.Minute, wantTimeout: 10 * time.Second},
+		{name: "subsecond caller", rpcTimeout: time.Minute, callerTimeout: time.Millisecond, wantTimeout: time.Millisecond},
+		{name: "expired caller", rpcTimeout: time.Minute, callerTimeout: -time.Second, wantTimeout: -time.Second},
+		{name: "dedicated timeout", rpcTimeout: time.Minute, explicitTimeout: 65 * time.Second, wantTimeout: 65 * time.Second},
+		{name: "dedicated shorter timeout", rpcTimeout: time.Minute, explicitTimeout: 5 * time.Second, wantTimeout: 5 * time.Second},
+		{name: "caller overrides dedicated timeout", rpcTimeout: time.Minute, explicitTimeout: 65 * time.Second,
+			callerTimeout: time.Second, wantTimeout: time.Second},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				ctx := t.Context()
+				if tc.callerTimeout != 0 {
+					var cancel context.CancelFunc
+					ctx, cancel = context.WithTimeout(ctx, tc.callerTimeout)
+					defer cancel()
+				}
+				var options []func(*grpcContextBuilder)
+				if tc.explicitTimeout != 0 {
+					options = append(options, grpcTimeout(tc.explicitTimeout))
+				}
+				start := time.Now()
+				rpcCtx, cancel := newGRPCContext(ctx, tc.rpcTimeout, options...)
+				defer cancel()
+				deadline, ok := rpcCtx.Deadline()
+				require.True(t, ok)
+				require.Equal(t, start.Add(tc.wantTimeout), deadline)
+				<-rpcCtx.Done()
+				require.ErrorIs(t, rpcCtx.Err(), context.DeadlineExceeded)
+			})
+		})
+	}
+}
+
+func TestNewGRPCContextCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	rpcCtx, rpcCancel := newGRPCContext(ctx, time.Minute)
+	defer rpcCancel()
+	require.ErrorIs(t, rpcCtx.Err(), context.Canceled)
+}
+
 func TestNewValues(t *testing.T) {
 	t.Parallel()
-	var details []interface{}
+	var details []any
 	heartbeatDetail := "status-report-to-workflow"
 	heartbeatDetail2 := 1
 	heartbeatDetail3 := testStruct{
@@ -70,7 +126,7 @@ func TestFailureToError_ApplicationError(t *testing.T) {
 	require.Equal(t, val.values, failure.GetApplicationFailureInfo().GetDetails())
 
 	applicationErr2 := NewApplicationError(applicationErrReasonA, "", false, nil, testErrorDetails1)
-	val2, err := encodeArgs(dc, []interface{}{testErrorDetails1})
+	val2, err := encodeArgs(dc, []any{testErrorDetails1})
 	require.NoError(t, err)
 	failure = fc.ErrorToFailure(applicationErr2)
 	require.Equal(t, applicationErrReasonA, failure.GetMessage())
@@ -91,7 +147,7 @@ func TestFailureToError_CancelError(t *testing.T) {
 	require.Equal(t, val.values, failure.GetCanceledFailureInfo().GetDetails())
 
 	canceledErr2 := NewCanceledError(testErrorDetails1)
-	val2, err := encodeArgs(dc, []interface{}{testErrorDetails1})
+	val2, err := encodeArgs(dc, []any{testErrorDetails1})
 	require.NoError(t, err)
 	failure = fc.ErrorToFailure(canceledErr2)
 	require.NotNil(t, failure.GetCanceledFailureInfo())
@@ -113,7 +169,7 @@ func TestErrorToFailure_TimeoutError(t *testing.T) {
 	require.Equal(t, val.values, failure.GetTimeoutFailureInfo().GetLastHeartbeatDetails())
 
 	timeoutErr2 := NewTimeoutError("timeout", enumspb.TIMEOUT_TYPE_HEARTBEAT, nil, testErrorDetails4)
-	val2, err := encodeArgs(dc, []interface{}{testErrorDetails4})
+	val2, err := encodeArgs(dc, []any{testErrorDetails4})
 	require.NoError(t, err)
 	failure = fc.ErrorToFailure(timeoutErr2)
 	require.NotNil(t, failure.GetTimeoutFailureInfo())

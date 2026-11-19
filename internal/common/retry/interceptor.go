@@ -3,14 +3,19 @@ package retry
 import (
 	"context"
 	"math"
+	"slices"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
 
-	grpc_retry "github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/retry"
 	"github.com/grpc-ecosystem/go-grpc-middleware/v2/util/backoffutils"
+	errordetailspb "go.temporal.io/api/errordetails/v1"
+	"go.temporal.io/api/serviceerror"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
@@ -60,7 +65,7 @@ func (g *GrpcRetryConfig) SetBackoffCoefficient(backoffCoefficient float64) {
 	g.backoffCoefficient = backoffCoefficient
 }
 
-// SetMaximumInterval defines maximum amount of time between attempts.
+// SetMaximumInterval caps the client backoff. A server RetryInfo delay can exceed this interval.
 func (g *GrpcRetryConfig) SetMaximumInterval(maximumInterval time.Duration) {
 	g.maximumInterval = maximumInterval
 }
@@ -108,56 +113,102 @@ var (
 	retryableCodesWithoutInternal = []codes.Code{codes.Aborted, codes.ResourceExhausted, codes.Unavailable, codes.Unknown}
 )
 
-// NewRetryOptionsInterceptor creates a new gRPC interceptor that populates retry options for each call based on values
-// provided in the context. The atomic bool is checked each call to determine whether internals are included in retry.
-// If not present or false, internals are assumed to be included.
+// NewRetryOptionsInterceptor retries calls when a GrpcRetryConfig is present in the context. The atomic bool is
+// checked each call to determine whether internal errors are included in retry. If not present or false, internals
+// are assumed to be included. A positive google.rpc.RetryInfo delay on ResourceExhausted errors floors the next wait.
 func NewRetryOptionsInterceptor(excludeInternal *atomic.Bool) grpc.UnaryClientInterceptor {
-	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-		if rc, ok := ctx.Value(ConfigKey).(*GrpcRetryConfig); ok {
-			if _, ok := ctx.Deadline(); !ok {
-				deadlineCtx, cancel := context.WithDeadline(ctx, time.Now().Add(rc.expirationInterval))
-				defer cancel()
-				ctx = deadlineCtx
-			}
-			// Populate backoff function, which provides retrier with the delay for each attempt.
-			opts = append(opts, grpc_retry.WithBackoff(func(_ context.Context, attempt uint) time.Duration {
-				next := float64(rc.initialInterval) * math.Pow(rc.backoffCoefficient, float64(attempt))
-				if rc.maximumInterval != UnlimitedInterval {
-					next = math.Min(next, float64(rc.maximumInterval))
-				}
-				return backoffutils.JitterUp(time.Duration(next), rc.jitter)
-			}))
-			// Max attempts is a required parameter in grpc retry interceptor,
-			// if it's set to zero then no retries will be made.
-			if rc.maximumAttempts != UnlimitedMaximumAttempts {
-				opts = append(opts, grpc_retry.WithMax(uint(rc.maximumAttempts)))
-			} else {
-				opts = append(opts, grpc_retry.WithMax(math.MaxUint32))
-			}
-			opts = append(opts, grpc_retry.WithRetriable(func(err error) bool {
-				return IsRetryable(err, excludeInternal)
-			}))
-		} else {
+	return func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+		rc, ok := ctx.Value(ConfigKey).(*GrpcRetryConfig)
+		if !ok {
 			// Do not retry if retry config is not set.
-			opts = append(opts, grpc_retry.Disable())
+			return invoker(ctx, method, req, reply, cc, opts...)
 		}
-		return invoker(ctx, method, req, reply, cc, opts...)
+		if _, ok := ctx.Deadline(); !ok {
+			deadlineCtx, cancel := context.WithDeadline(ctx, time.Now().Add(rc.expirationInterval))
+			defer cancel()
+			ctx = deadlineCtx
+		}
+
+		// Retries run serially, so each response directly determines the next delay.
+		for attempt := uint(0); ; attempt++ {
+			attemptCtx := ctx
+			if attempt > 0 {
+				md, _ := metadata.FromOutgoingContext(ctx)
+				md = md.Copy()
+				md.Set("x-retry-attempt", strconv.FormatUint(uint64(attempt), 10))
+				attemptCtx = metadata.NewOutgoingContext(ctx, md)
+			}
+
+			err := invoker(attemptCtx, method, req, reply, cc, opts...)
+			if err == nil || !IsRetryable(err, excludeInternal) {
+				return err
+			}
+			if rc.maximumAttempts != UnlimitedMaximumAttempts && attempt+1 >= uint(rc.maximumAttempts) {
+				return err
+			}
+
+			serverDelayFloor := resourceExhaustedRetryDelayFloor(err)
+			if serverDelayFloor > 0 {
+				if deadline, ok := ctx.Deadline(); ok && serverDelayFloor >= time.Until(deadline) {
+					return err
+				}
+			}
+
+			next := float64(rc.initialInterval) * math.Pow(rc.backoffCoefficient, float64(attempt+1))
+			if rc.maximumInterval != UnlimitedInterval {
+				next = math.Min(next, float64(rc.maximumInterval))
+			}
+			delay := max(backoffutils.JitterUp(time.Duration(next), rc.jitter), serverDelayFloor)
+			if delay <= 0 {
+				continue
+			}
+
+			timer := time.NewTimer(delay)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return status.FromContextError(ctx.Err()).Err()
+			case <-timer.C:
+			}
+		}
 	}
+}
+
+func resourceExhaustedRetryDelayFloor(err error) time.Duration {
+	grpcStatus := status.Convert(err)
+	if grpcStatus == nil || grpcStatus.Code() != codes.ResourceExhausted {
+		return 0
+	}
+
+	var floor time.Duration
+	for _, detail := range grpcStatus.Details() {
+		retryInfo, ok := detail.(*errdetails.RetryInfo)
+		if !ok || retryInfo.GetRetryDelay() == nil || retryInfo.GetRetryDelay().CheckValid() != nil {
+			continue
+		}
+		if delay := retryInfo.GetRetryDelay().AsDuration(); delay > floor {
+			floor = delay
+		}
+	}
+	return floor
 }
 
 func IsRetryable(err error, excludeInternalFromRetry *atomic.Bool) bool {
 	if _, ok := err.(*GrpcMessageTooLargeError); ok {
 		return false
 	}
-	grpcStatus := status.Convert(err)
+	// Buffer loss on a paginated completion is recovered by resending every page from page 0, not by
+	// retrying the single failed request, so it must never be retried at the gRPC layer.
+	if IsWorkflowTaskCompletionBufferLost(err) {
+		return false
+	}
+	grpcStatus := serviceerror.ToStatus(err)
 	if grpcStatus == nil {
 		return false
 	}
 	errCode := grpcStatus.Code()
-	for _, retryable := range retryableCodesWithoutInternal {
-		if errCode == retryable {
-			return true
-		}
+	if slices.Contains(retryableCodesWithoutInternal, errCode) {
+		return true
 	}
 	if errCode == codes.Internal {
 		return !excludeInternalFromRetry.Load()
@@ -165,8 +216,28 @@ func IsRetryable(err error, excludeInternalFromRetry *atomic.Bool) bool {
 	return false
 }
 
+// IsWorkflowTaskCompletionBufferLost reports whether err carries the server's
+// WorkflowTaskCompletionBufferLostFailure detail, meaning it dropped the buffered pages of a
+// paginated RespondWorkflowTaskCompleted and they must be resent from page 0.
+func IsWorkflowTaskCompletionBufferLost(err error) bool {
+	// serviceerror.ToStatus (not status.Convert) is required because the client's errorInterceptor has
+	// already converted the error into a *serviceerror.WorkflowTaskCompletionBufferLost by the time it
+	// reaches the resend loop; that type carries the detail on its Status() but not via gRPC's
+	// GRPCStatus(), so status.Convert would drop it and report codes.Unknown.
+	grpcStatus := serviceerror.ToStatus(err)
+	if grpcStatus == nil {
+		return false
+	}
+	for _, detail := range grpcStatus.Details() {
+		if _, ok := detail.(*errordetailspb.WorkflowTaskCompletionBufferLostFailure); ok {
+			return true
+		}
+	}
+	return false
+}
+
 // GrpcMessageTooLargeErrorInterceptor checks if the error is caused by gRPC message being too large and converts it into GrpcMessageTooLargeError.
-func GrpcMessageTooLargeErrorInterceptor(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+func GrpcMessageTooLargeErrorInterceptor(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 	err := invoker(ctx, method, req, reply, cc, opts...)
 	if grpcStatus := status.Convert(err); isGrpcMessageTooLargeStatus(grpcStatus) {
 		err = &GrpcMessageTooLargeError{err: err, status: grpcStatus}

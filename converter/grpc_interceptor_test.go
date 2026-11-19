@@ -60,7 +60,7 @@ func TestPayloadCodecGRPCClientInterceptor(t *testing.T) {
 	client := workflowservice.NewWorkflowServiceClient(c)
 
 	_, err = client.StartWorkflowExecution(
-		context.Background(),
+		t.Context(),
 		&workflowservice.StartWorkflowExecutionRequest{
 			Input: unencodedPayloads(),
 		},
@@ -70,7 +70,7 @@ func TestPayloadCodecGRPCClientInterceptor(t *testing.T) {
 	require.Equal("binary/zlib", payloadEncoding(server.startWorkflowExecutionRequest.Input))
 
 	response, err := client.PollActivityTaskQueue(
-		context.Background(),
+		t.Context(),
 		&workflowservice.PollActivityTaskQueueRequest{},
 	)
 	require.NoError(err)
@@ -101,7 +101,7 @@ func TestFailureGRPCClientInterceptor(t *testing.T) {
 	client := workflowservice.NewWorkflowServiceClient(c)
 
 	_, err = client.RespondWorkflowTaskFailed(
-		context.Background(),
+		t.Context(),
 		&workflowservice.RespondWorkflowTaskFailedRequest{
 			Failure: &failure.Failure{
 				Message:    "internal error: code 123",
@@ -115,7 +115,7 @@ func TestFailureGRPCClientInterceptor(t *testing.T) {
 	require.Equal("", server.respondWorkflowTaskFailedRequest.Failure.StackTrace)
 
 	res, err := client.PollWorkflowTaskQueue(
-		context.Background(),
+		t.Context(),
 		&workflowservice.PollWorkflowTaskQueueRequest{},
 	)
 	require.NoError(err)
@@ -156,7 +156,7 @@ func startTestGRPCServer() (*testGRPCServer, error) {
 func (t *testGRPCServer) waitUntilServing() error {
 	// Try 20 times, waiting 100ms between
 	var lastErr error
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		conn, err := grpc.NewClient(t.addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
 			lastErr = err

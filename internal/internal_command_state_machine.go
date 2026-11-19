@@ -41,16 +41,17 @@ type (
 		handleInitiatedEvent()
 
 		handleCommandSent()
-		setData(data interface{})
-		getData() interface{}
+		setData(data any)
+		getData() any
 	}
 
 	commandStateMachineBase struct {
-		id      commandID
-		state   commandState
-		history []string
-		data    interface{}
-		helper  *commandsHelper
+		id                commandID
+		state             commandState
+		history           []string
+		data              any
+		helper            *commandsHelper
+		eventGroupMarkers []*sdk.EventGroupMarker
 	}
 
 	activityCommandStateMachine struct {
@@ -411,33 +412,37 @@ func (h *commandsHelper) newNaiveCommandStateMachine(commandType commandType, id
 	}
 }
 
-func (h *commandsHelper) newMarkerCommandStateMachine(id string, attributes *commandpb.RecordMarkerCommandAttributes, userMetadata *sdk.UserMetadata) *markerCommandStateMachine {
+func (h *commandsHelper) newMarkerCommandStateMachine(id string, attributes *commandpb.RecordMarkerCommandAttributes, userMetadata *sdk.UserMetadata, eventGroupMarkers []*sdk.EventGroupMarker) *markerCommandStateMachine {
 	d := createNewCommandWithMetadata(enumspb.COMMAND_TYPE_RECORD_MARKER, userMetadata)
 	d.Attributes = &commandpb.Command_RecordMarkerCommandAttributes{RecordMarkerCommandAttributes: attributes}
+	d.EventGroupMarkers = eventGroupMarkers
 	return &markerCommandStateMachine{
 		naiveCommandStateMachine: h.newNaiveCommandStateMachine(commandTypeMarker, id, d),
 	}
 }
 
-func (h *commandsHelper) newCancelExternalWorkflowStateMachine(attributes *commandpb.RequestCancelExternalWorkflowExecutionCommandAttributes, cancellationID string) *cancelExternalWorkflowCommandStateMachine {
+func (h *commandsHelper) newCancelExternalWorkflowStateMachine(attributes *commandpb.RequestCancelExternalWorkflowExecutionCommandAttributes, cancellationID string, eventGroupMarkers []*sdk.EventGroupMarker) *cancelExternalWorkflowCommandStateMachine {
 	d := createNewCommand(enumspb.COMMAND_TYPE_REQUEST_CANCEL_EXTERNAL_WORKFLOW_EXECUTION)
 	d.Attributes = &commandpb.Command_RequestCancelExternalWorkflowExecutionCommandAttributes{RequestCancelExternalWorkflowExecutionCommandAttributes: attributes}
+	d.EventGroupMarkers = eventGroupMarkers
 	return &cancelExternalWorkflowCommandStateMachine{
 		naiveCommandStateMachine: h.newNaiveCommandStateMachine(commandTypeCancellation, cancellationID, d),
 	}
 }
 
-func (h *commandsHelper) newSignalExternalWorkflowStateMachine(attributes *commandpb.SignalExternalWorkflowExecutionCommandAttributes, signalID string) *signalExternalWorkflowCommandStateMachine {
+func (h *commandsHelper) newSignalExternalWorkflowStateMachine(attributes *commandpb.SignalExternalWorkflowExecutionCommandAttributes, signalID string, eventGroupMarkers []*sdk.EventGroupMarker) *signalExternalWorkflowCommandStateMachine {
 	d := createNewCommand(enumspb.COMMAND_TYPE_SIGNAL_EXTERNAL_WORKFLOW_EXECUTION)
 	d.Attributes = &commandpb.Command_SignalExternalWorkflowExecutionCommandAttributes{SignalExternalWorkflowExecutionCommandAttributes: attributes}
+	d.EventGroupMarkers = eventGroupMarkers
 	return &signalExternalWorkflowCommandStateMachine{
 		naiveCommandStateMachine: h.newNaiveCommandStateMachine(commandTypeSignal, signalID, d),
 	}
 }
 
-func (h *commandsHelper) newUpsertSearchAttributesStateMachine(attributes *commandpb.UpsertWorkflowSearchAttributesCommandAttributes, upsertID string) *completeOnSendStateMachine {
+func (h *commandsHelper) newUpsertSearchAttributesStateMachine(attributes *commandpb.UpsertWorkflowSearchAttributesCommandAttributes, upsertID string, eventGroupMarkers []*sdk.EventGroupMarker) *completeOnSendStateMachine {
 	d := createNewCommand(enumspb.COMMAND_TYPE_UPSERT_WORKFLOW_SEARCH_ATTRIBUTES)
 	d.Attributes = &commandpb.Command_UpsertWorkflowSearchAttributesCommandAttributes{UpsertWorkflowSearchAttributesCommandAttributes: attributes}
+	d.EventGroupMarkers = eventGroupMarkers
 	return &completeOnSendStateMachine{
 		naiveCommandStateMachine: h.newNaiveCommandStateMachine(commandTypeUpsertSearchAttributes, upsertID, d),
 	}
@@ -446,11 +451,13 @@ func (h *commandsHelper) newUpsertSearchAttributesStateMachine(attributes *comma
 func (h *commandsHelper) newModifyPropertiesStateMachine(
 	attributes *commandpb.ModifyWorkflowPropertiesCommandAttributes,
 	changeID string,
+	eventGroupMarkers []*sdk.EventGroupMarker,
 ) *modifyPropertiesCommandStateMachine {
 	d := createNewCommand(enumspb.COMMAND_TYPE_MODIFY_WORKFLOW_PROPERTIES)
 	d.Attributes = &commandpb.Command_ModifyWorkflowPropertiesCommandAttributes{
 		ModifyWorkflowPropertiesCommandAttributes: attributes,
 	}
+	d.EventGroupMarkers = eventGroupMarkers
 	return &modifyPropertiesCommandStateMachine{
 		naiveCommandStateMachine: h.newNaiveCommandStateMachine(
 			commandTypeModifyProperties,
@@ -472,11 +479,11 @@ func (d *commandStateMachineBase) isDone() bool {
 	return d.state == commandStateCompleted || d.state == commandStateCompletedAfterCancellationCommandSent
 }
 
-func (d *commandStateMachineBase) setData(data interface{}) {
+func (d *commandStateMachineBase) setData(data any) {
 	d.data = data
 }
 
-func (d *commandStateMachineBase) getData() interface{} {
+func (d *commandStateMachineBase) getData() any {
 	return d.data
 }
 
@@ -517,6 +524,8 @@ func (d *commandStateMachineBase) cancel() {
 	switch d.state {
 	case commandStateCompleted, commandStateCompletedAfterCancellationCommandSent:
 		// No op. This is legit. People could cancel context after timer/activity is done.
+	case commandStateCanceledAfterInitiated, commandStateCancellationCommandSent:
+		// No op. Already canceled.
 	case commandStateCreated:
 		d.moveState(commandStateCanceledBeforeSent, eventCancel)
 	case commandStateCommandSent:
@@ -567,7 +576,9 @@ func (d *commandStateMachineBase) handleCancelInitiatedEvent() {
 	d.history = append(d.history, eventCancelInitiated)
 	switch d.state {
 	case commandStateCancellationCommandSent, commandStateCanceledAfterInitiated:
-	// No state change
+		// No state change
+	case commandStateInitiated:
+		d.moveState(commandStateCanceledAfterInitiated, eventCancelInitiated)
 	default:
 		d.failStateTransition(eventCancelInitiated)
 	}
@@ -602,6 +613,7 @@ func (d *activityCommandStateMachine) getCommand() *commandpb.Command {
 		command := createNewCommand(enumspb.COMMAND_TYPE_SCHEDULE_ACTIVITY_TASK)
 		command.Attributes = &commandpb.Command_ScheduleActivityTaskCommandAttributes{ScheduleActivityTaskCommandAttributes: d.attributes}
 		command.UserMetadata = d.startMetadata
+		command.EventGroupMarkers = d.eventGroupMarkers
 		return command
 	default:
 		return nil
@@ -631,6 +643,7 @@ func (d *activityCommandStateMachine) cancel() {
 			ScheduledEventId: d.scheduleID,
 		}
 		cancelCmd := d.helper.newCancelActivityStateMachine(attribs)
+		cancelCmd.eventGroupMarkers = d.eventGroupMarkers
 		d.helper.addCommand(cancelCmd)
 		// We also mark the schedule command as not eager if we haven't sent it yet.
 		// Server behavior differs on eager vs non-eager when scheduling and
@@ -652,6 +665,7 @@ func (d *timerCommandStateMachine) cancel() {
 			TimerId: d.attributes.TimerId,
 		}
 		cancelCmd := d.helper.newCancelTimerCommandStateMachine(attribs)
+		cancelCmd.eventGroupMarkers = d.eventGroupMarkers
 		d.helper.addCommand(cancelCmd)
 	}
 
@@ -676,6 +690,7 @@ func (d *cancelActivityStateMachine) getCommand() *commandpb.Command {
 	case commandStateCreated:
 		command := createNewCommand(enumspb.COMMAND_TYPE_REQUEST_CANCEL_ACTIVITY_TASK)
 		command.Attributes = &commandpb.Command_RequestCancelActivityTaskCommandAttributes{RequestCancelActivityTaskCommandAttributes: d.attributes}
+		command.EventGroupMarkers = d.eventGroupMarkers
 		return command
 	default:
 		return nil
@@ -688,6 +703,7 @@ func (d *timerCommandStateMachine) getCommand() *commandpb.Command {
 		command := createNewCommand(enumspb.COMMAND_TYPE_START_TIMER)
 		command.Attributes = &commandpb.Command_StartTimerCommandAttributes{StartTimerCommandAttributes: d.attributes}
 		command.UserMetadata = d.startMetadata
+		command.EventGroupMarkers = d.eventGroupMarkers
 		return command
 	default:
 		return nil
@@ -699,6 +715,7 @@ func (d *cancelTimerCommandStateMachine) getCommand() *commandpb.Command {
 	case commandStateCreated:
 		command := createNewCommand(enumspb.COMMAND_TYPE_CANCEL_TIMER)
 		command.Attributes = &commandpb.Command_CancelTimerCommandAttributes{CancelTimerCommandAttributes: d.attributes}
+		command.EventGroupMarkers = d.eventGroupMarkers
 		return command
 	default:
 		return nil
@@ -711,14 +728,16 @@ func (d *childWorkflowCommandStateMachine) getCommand() *commandpb.Command {
 		command := createNewCommand(enumspb.COMMAND_TYPE_START_CHILD_WORKFLOW_EXECUTION)
 		command.Attributes = &commandpb.Command_StartChildWorkflowExecutionCommandAttributes{StartChildWorkflowExecutionCommandAttributes: d.attributes}
 		command.UserMetadata = d.startMetadata
+		command.EventGroupMarkers = d.eventGroupMarkers
 		return command
 	case commandStateCanceledAfterStarted:
 		command := createNewCommand(enumspb.COMMAND_TYPE_REQUEST_CANCEL_EXTERNAL_WORKFLOW_EXECUTION)
 		command.Attributes = &commandpb.Command_RequestCancelExternalWorkflowExecutionCommandAttributes{RequestCancelExternalWorkflowExecutionCommandAttributes: &commandpb.RequestCancelExternalWorkflowExecutionCommandAttributes{
-			Namespace:         d.attributes.Namespace,
+			Namespace:         d.attributes.Namespace, //lint:ignore SA1019 deprecated namespace field
 			WorkflowId:        d.attributes.WorkflowId,
 			ChildWorkflowOnly: true,
 		}}
+		command.EventGroupMarkers = d.eventGroupMarkers
 		return command
 	default:
 		return nil
@@ -920,13 +939,15 @@ func (d *modifyPropertiesCommandStateMachine) handleCommandSent() {
 func (sm *nexusOperationStateMachine) getCommand() *commandpb.Command {
 	if sm.state == commandStateCreated && sm.cancelation == nil {
 		// Only create the command in this state unlike other machines that also create it if canceled before sent.
-		return &commandpb.Command{
-			CommandType:  enumspb.COMMAND_TYPE_SCHEDULE_NEXUS_OPERATION,
-			UserMetadata: sm.startMetadata,
+		command := &commandpb.Command{
+			CommandType:       enumspb.COMMAND_TYPE_SCHEDULE_NEXUS_OPERATION,
+			UserMetadata:      sm.startMetadata,
+			EventGroupMarkers: sm.eventGroupMarkers,
 			Attributes: &commandpb.Command_ScheduleNexusOperationCommandAttributes{
 				ScheduleNexusOperationCommandAttributes: sm.attributes,
 			},
 		}
+		return command
 	}
 	return nil
 }
@@ -960,6 +981,7 @@ func (sm *nexusOperationStateMachine) cancel() {
 		ScheduledEventId: sm.scheduledEventID,
 	}
 	cancelCmd := sm.helper.newRequestCancelNexusOperationStateMachine(attribs)
+	cancelCmd.eventGroupMarkers = sm.eventGroupMarkers
 	sm.cancelation = cancelCmd
 	sm.helper.addCommand(cancelCmd)
 
@@ -974,6 +996,7 @@ func (d *requestCancelNexusOperationStateMachine) getCommand() *commandpb.Comman
 	case commandStateCreated:
 		command := createNewCommand(enumspb.COMMAND_TYPE_REQUEST_CANCEL_NEXUS_OPERATION)
 		command.Attributes = &commandpb.Command_RequestCancelNexusOperationCommandAttributes{RequestCancelNexusOperationCommandAttributes: d.attributes}
+		command.EventGroupMarkers = d.eventGroupMarkers
 		return command
 	default:
 		return nil
@@ -1115,9 +1138,11 @@ func (h *commandsHelper) scheduleActivityTask(
 	scheduleID int64,
 	attributes *commandpb.ScheduleActivityTaskCommandAttributes,
 	metadata *sdk.UserMetadata,
+	eventGroupMarkers []*sdk.EventGroupMarker,
 ) commandStateMachine {
 	h.scheduledEventIDToActivityID[scheduleID] = attributes.GetActivityId()
 	command := h.newActivityCommandStateMachine(scheduleID, attributes, metadata)
+	command.eventGroupMarkers = eventGroupMarkers
 	h.addCommand(command)
 	return command
 }
@@ -1133,7 +1158,7 @@ func (h *commandsHelper) handleActivityTaskClosed(activityID string, scheduledEv
 	command := h.getCommand(makeCommandID(commandTypeActivity, activityID))
 	// If, for whatever reason, we were going to send an activity cancel request, don't do that anymore
 	// since we already know the activity is resolved.
-	possibleCancelID := makeCommandID(commandTypeRequestCancelActivityTask, activityID)
+	possibleCancelID := makeCommandID(commandTypeRequestCancelActivityTask, strconv.FormatInt(scheduledEventID, 10))
 	h.removeCancelOfResolvedCommand(possibleCancelID)
 	command.handleCompletionEvent()
 	delete(h.scheduledEventIDToActivityID, scheduledEventID)
@@ -1193,8 +1218,10 @@ func (h *commandsHelper) scheduleNexusOperation(
 	seq int64,
 	attributes *commandpb.ScheduleNexusOperationCommandAttributes,
 	startMetadata *sdk.UserMetadata,
+	eventGroupMarkers []*sdk.EventGroupMarker,
 ) *nexusOperationStateMachine {
 	command := h.newNexusOperationStateMachine(seq, attributes, startMetadata)
+	command.eventGroupMarkers = eventGroupMarkers
 	h.addCommand(command)
 	return command
 }
@@ -1211,12 +1238,16 @@ func (h *commandsHelper) handleNexusOperationScheduled(event *historypb.HistoryE
 	command.handleInitiatedEvent()
 }
 
+func (h *commandsHelper) getNexusOperationCommand(seq int64) commandStateMachine {
+	return h.getCommand(makeCommandID(commandTypeNexusOperation, strconv.FormatInt(seq, 10)))
+}
+
 func (h *commandsHelper) handleNexusOperationStarted(scheduledEventID int64) commandStateMachine {
 	seq, ok := h.scheduledEventIDToNexusSeq[scheduledEventID]
 	if !ok {
 		panicIllegalState(fmt.Sprintf("[TMPRL1100] unable to find nexus operation state machine for event ID: %v", scheduledEventID))
 	}
-	command := h.getCommand(makeCommandID(commandTypeNexusOperation, strconv.FormatInt(seq, 10)))
+	command := h.getNexusOperationCommand(seq)
 	command.handleStartedEvent()
 	return command
 }
@@ -1228,7 +1259,7 @@ func (h *commandsHelper) handleNexusOperationCompleted(scheduledEventID int64) c
 	}
 	// We don't need this anymore, the state will not transition after completion.
 	delete(h.scheduledEventIDToNexusSeq, scheduledEventID)
-	command := h.getCommand(makeCommandID(commandTypeNexusOperation, strconv.FormatInt(seq, 10)))
+	command := h.getNexusOperationCommand(seq)
 	command.handleCompletionEvent()
 	return command
 }
@@ -1238,7 +1269,7 @@ func (h *commandsHelper) handleNexusOperationCancelRequested(scheduledEventID in
 	if !ok {
 		panicIllegalState(fmt.Sprintf("[TMPRL1100] unable to find nexus operation state machine for event ID: %v", scheduledEventID))
 	}
-	command := h.getCommand(makeCommandID(commandTypeNexusOperation, strconv.FormatInt(seq, 10)))
+	command := h.getNexusOperationCommand(seq)
 	sm := command.(*nexusOperationStateMachine)
 	sm.cancelation.handleInitiatedEvent()
 	return command
@@ -1249,14 +1280,14 @@ func (h *commandsHelper) handleNexusOperationCancelRequestDelivered(scheduledEve
 	if !ok {
 		panicIllegalState(fmt.Sprintf("[TMPRL1100] unable to find nexus operation state machine for event ID: %v", scheduledEventID))
 	}
-	command := h.getCommand(makeCommandID(commandTypeNexusOperation, strconv.FormatInt(seq, 10)))
+	command := h.getNexusOperationCommand(seq)
 	sm := command.(*nexusOperationStateMachine)
 	sm.cancelation.handleCompletionEvent()
 	return command
 }
 
 func (h *commandsHelper) requestCancelNexusOperation(seq int64) commandStateMachine {
-	command := h.getCommand(makeCommandID(commandTypeNexusOperation, strconv.FormatInt(seq, 10)))
+	command := h.getNexusOperationCommand(seq)
 	command.cancel()
 	// If we haven't sent the command yet, ensure that it doesn't get mapped to the wrong scheduledEventID.
 	if command.getState() != commandStateCanceledBeforeSent {
@@ -1272,7 +1303,7 @@ func (h *commandsHelper) requestCancelNexusOperation(seq int64) commandStateMach
 	return command
 }
 
-func (h *commandsHelper) recordVersionMarker(changeID string, version Version, dc converter.DataConverter, searchAttributeWasUpdated bool) commandStateMachine {
+func (h *commandsHelper) recordVersionMarker(changeID string, version Version, dc converter.DataConverter, searchAttributeWasUpdated bool, eventGroupMarkers []*sdk.EventGroupMarker) commandStateMachine {
 	markerID := fmt.Sprintf("%v_%v", versionMarkerName, changeID)
 
 	changeIDPayload, err := dc.ToPayloads(changeID)
@@ -1301,7 +1332,7 @@ func (h *commandsHelper) recordVersionMarker(changeID string, version Version, d
 		recordMarker.Details[versionSearchAttributeUpdatedName] = searchAttributeWasUpdatedPayload
 	}
 
-	command := h.newMarkerCommandStateMachine(markerID, recordMarker, nil)
+	command := h.newMarkerCommandStateMachine(markerID, recordMarker, nil, eventGroupMarkers)
 	h.addCommand(command)
 	return command
 }
@@ -1322,7 +1353,7 @@ func (h *commandsHelper) handleVersionMarker(eventID int64, changeID string, sea
 	}
 }
 
-func (h *commandsHelper) recordSideEffectMarker(sideEffectID int64, data *commonpb.Payloads, dc converter.DataConverter, userMetadata *sdk.UserMetadata) commandStateMachine {
+func (h *commandsHelper) recordSideEffectMarker(sideEffectID int64, data *commonpb.Payloads, dc converter.DataConverter, userMetadata *sdk.UserMetadata, eventGroupMarkers []*sdk.EventGroupMarker) commandStateMachine {
 	markerID := fmt.Sprintf("%v_%v", sideEffectMarkerName, sideEffectID)
 	sideEffectIDPayload, err := dc.ToPayloads(sideEffectID)
 	if err != nil {
@@ -1336,19 +1367,19 @@ func (h *commandsHelper) recordSideEffectMarker(sideEffectID int64, data *common
 			sideEffectMarkerDataName: data,
 		},
 	}
-	command := h.newMarkerCommandStateMachine(markerID, attributes, userMetadata)
+	command := h.newMarkerCommandStateMachine(markerID, attributes, userMetadata, eventGroupMarkers)
 	h.addCommand(command)
 	return command
 }
 
-func (h *commandsHelper) recordLocalActivityMarker(activityID string, details map[string]*commonpb.Payloads, failure *failurepb.Failure, metadata *sdk.UserMetadata) commandStateMachine {
+func (h *commandsHelper) recordLocalActivityMarker(activityID string, details map[string]*commonpb.Payloads, failure *failurepb.Failure, metadata *sdk.UserMetadata, eventGroupMarkers []*sdk.EventGroupMarker) commandStateMachine {
 	markerID := fmt.Sprintf("%v_%v", localActivityMarkerName, activityID)
 	attributes := &commandpb.RecordMarkerCommandAttributes{
 		MarkerName: localActivityMarkerName,
 		Failure:    failure,
 		Details:    details,
 	}
-	command := h.newMarkerCommandStateMachine(markerID, attributes, metadata)
+	command := h.newMarkerCommandStateMachine(markerID, attributes, metadata, eventGroupMarkers)
 	// LocalActivity marker is added only when it completes and schedule logic never relies on GenerateSequence to
 	// create a unique activity id like in the case of ExecuteActivity.  This causes the problem as we only perform
 	// the check to increment counter to account for GetVersion special handling as part of it.  This will result
@@ -1359,7 +1390,7 @@ func (h *commandsHelper) recordLocalActivityMarker(activityID string, details ma
 	return command
 }
 
-func (h *commandsHelper) recordMutableSideEffectMarker(mutableSideEffectID string, callCountHint int, data *commonpb.Payloads, dc converter.DataConverter, userMetadata *sdk.UserMetadata) commandStateMachine {
+func (h *commandsHelper) recordMutableSideEffectMarker(mutableSideEffectID string, callCountHint int, data *commonpb.Payloads, dc converter.DataConverter, userMetadata *sdk.UserMetadata, eventGroupMarkers []*sdk.EventGroupMarker) commandStateMachine {
 	// In order to avoid duplicate marker IDs, we must append the counter to the
 	// user-provided ID
 	mutableSideEffectID = fmt.Sprintf("%v_%v", mutableSideEffectID, h.getNextID())
@@ -1383,7 +1414,7 @@ func (h *commandsHelper) recordMutableSideEffectMarker(mutableSideEffectID strin
 			mutableSideEffectCallCounterName: mutableSideEffectCounterPayload,
 		},
 	}
-	command := h.newMarkerCommandStateMachine(markerID, attributes, userMetadata)
+	command := h.newMarkerCommandStateMachine(markerID, attributes, userMetadata, eventGroupMarkers)
 	h.addCommand(command)
 	return command
 }
@@ -1396,8 +1427,10 @@ func (h *commandsHelper) recordMutableSideEffectMarker(mutableSideEffectID strin
 func (h *commandsHelper) startChildWorkflowExecution(
 	attributes *commandpb.StartChildWorkflowExecutionCommandAttributes,
 	startMetadata *sdk.UserMetadata,
+	eventGroupMarkers []*sdk.EventGroupMarker,
 ) (commandStateMachine, error) {
 	command := h.newChildWorkflowCommandStateMachine(attributes, startMetadata)
+	command.eventGroupMarkers = eventGroupMarkers
 	if h.commands[command.getID()] != nil {
 		return nil, &childWorkflowExistsWithId{id: attributes.WorkflowId}
 	}
@@ -1416,7 +1449,7 @@ func (h *commandsHelper) handleStartChildWorkflowExecutionFailed(workflowID stri
 	return command
 }
 
-func (h *commandsHelper) requestCancelExternalWorkflowExecution(namespace, workflowID, runID string, cancellationID string, childWorkflowOnly bool) commandStateMachine {
+func (h *commandsHelper) requestCancelExternalWorkflowExecution(namespace, workflowID, runID string, cancellationID string, childWorkflowOnly bool, eventGroupMarkers []*sdk.EventGroupMarker) commandStateMachine {
 	if childWorkflowOnly {
 		// For cancellation of child workflow only, we do not use cancellation ID
 		// since the child workflow cancellation go through the existing child workflow
@@ -1449,13 +1482,15 @@ func (h *commandsHelper) requestCancelExternalWorkflowExecution(namespace, workf
 		panic("cancellation on external workflow should use cancellation ID")
 	}
 	attributes := &commandpb.RequestCancelExternalWorkflowExecutionCommandAttributes{
-		Namespace:         namespace,
-		WorkflowId:        workflowID,
-		RunId:             runID,
+		//lint:ignore SA1019 preserve cross-namespace command compatibility
+		Namespace:  namespace,
+		WorkflowId: workflowID,
+		RunId:      runID,
+		//lint:ignore SA1019 control correlates command state with initiated history
 		Control:           cancellationID,
 		ChildWorkflowOnly: false,
 	}
-	command := h.newCancelExternalWorkflowStateMachine(attributes, cancellationID)
+	command := h.newCancelExternalWorkflowStateMachine(attributes, cancellationID, eventGroupMarkers)
 	h.addCommand(command)
 
 	return command
@@ -1513,20 +1548,23 @@ func (h *commandsHelper) signalExternalWorkflowExecution(
 	header *commonpb.Header,
 	signalID string,
 	childWorkflowOnly bool,
+	eventGroupMarkers []*sdk.EventGroupMarker,
 ) commandStateMachine {
 	attributes := &commandpb.SignalExternalWorkflowExecutionCommandAttributes{
+		//lint:ignore SA1019 preserve cross-namespace command compatibility
 		Namespace: namespace,
 		Execution: &commonpb.WorkflowExecution{
 			WorkflowId: workflowID,
 			RunId:      runID,
 		},
-		SignalName:        signalName,
-		Input:             input,
+		SignalName: signalName,
+		Input:      input,
+		//lint:ignore SA1019 control correlates command state with initiated history
 		Control:           signalID,
 		ChildWorkflowOnly: childWorkflowOnly,
 		Header:            header,
 	}
-	command := h.newSignalExternalWorkflowStateMachine(attributes, signalID)
+	command := h.newSignalExternalWorkflowStateMachine(attributes, signalID, eventGroupMarkers)
 	h.addCommand(command)
 	return command
 }
@@ -1543,20 +1581,20 @@ func (h *commandsHelper) addProtocolMessage(msgID string) commandStateMachine {
 	return sm
 }
 
-func (h *commandsHelper) upsertSearchAttributes(upsertID string, searchAttr *commonpb.SearchAttributes) commandStateMachine {
+func (h *commandsHelper) upsertSearchAttributes(upsertID string, searchAttr *commonpb.SearchAttributes, eventGroupMarkers []*sdk.EventGroupMarker) commandStateMachine {
 	attributes := &commandpb.UpsertWorkflowSearchAttributesCommandAttributes{
 		SearchAttributes: searchAttr,
 	}
-	command := h.newUpsertSearchAttributesStateMachine(attributes, upsertID)
+	command := h.newUpsertSearchAttributesStateMachine(attributes, upsertID, eventGroupMarkers)
 	h.addCommand(command)
 	return command
 }
 
-func (h *commandsHelper) modifyProperties(changeID string, memo *commonpb.Memo) commandStateMachine {
+func (h *commandsHelper) modifyProperties(changeID string, memo *commonpb.Memo, eventGroupMarkers []*sdk.EventGroupMarker) commandStateMachine {
 	attributes := &commandpb.ModifyWorkflowPropertiesCommandAttributes{
 		UpsertedMemo: memo,
 	}
-	command := h.newModifyPropertiesStateMachine(attributes, changeID)
+	command := h.newModifyPropertiesStateMachine(attributes, changeID, eventGroupMarkers)
 	h.addCommand(command)
 	return command
 }
@@ -1591,12 +1629,14 @@ func (h *commandsHelper) startTimer(
 	attributes *commandpb.StartTimerCommandAttributes,
 	options TimerOptions,
 	dc converter.DataConverter,
+	eventGroupMarkers []*sdk.EventGroupMarker,
 ) commandStateMachine {
-	startMetadata, err := buildUserMetadata(options.Summary, "", dc)
+	startMetadata, err := BuildUserMetadata(options.Summary, "", dc)
 	if err != nil {
 		panic(err)
 	}
 	command := h.newTimerCommandStateMachine(attributes, startMetadata)
+	command.eventGroupMarkers = eventGroupMarkers
 	h.addCommand(command)
 	return command
 }

@@ -1,0 +1,111 @@
+package converter
+
+import commonconverter "go.temporal.io/sdk/internal/common/converter"
+
+// SerializationContext provides metadata about where serialization is occurring,
+// with the concrete type depending on the context:
+//
+//   - [WorkflowSerializationContext] for workflow-level payloads.
+//   - [ActivitySerializationContext] for activity-level payloads.
+//   - [NexusSerializationContext] for Nexus-level payloads.
+type SerializationContext = commonconverter.SerializationContext
+
+// WorkflowSerializationContext is the serialization context for workflow-level payloads.
+// This includes: workflow input/result, child workflow input/result, signal input,
+// query input/result, update input/result, memo, continue-as-new args, and
+// external signal payloads.
+//
+// For child workflows, WorkflowID is the child's ID, not the parent's.
+// For external signals, WorkflowID is the target workflow's ID.
+type WorkflowSerializationContext = commonconverter.WorkflowSerializationContext
+
+// ActivitySerializationContext is the serialization context for activity-level payloads.
+// This includes: activity input/result, heartbeat details, and activity failure details.
+type ActivitySerializationContext = commonconverter.ActivitySerializationContext
+
+// NexusSerializationContext is used when serializing Nexus operation payloads.
+// Callers receive it when encoding inputs and decoding results or failures.
+// Handlers receive it when decoding inputs, encoding synchronous results, and
+// encoding failures produced while handling a Nexus task.
+//
+// Operation is the resolved operation name. Workflows, workflow updates, and standalone activities
+// started by a Nexus handler use this context for payloads returned to the caller: results,
+// failures, and, for standalone activities, heartbeat details. When completing or heartbeating such
+// an activity from a client, pass activity.Info.NexusSerializationContext in the options.
+//
+// For failures, callers receive this context in [FailureConverter.FailureToError],
+// while handlers receive it in [FailureConverter.ErrorToFailure]. Implementations
+// must not assume symmetric failure conversion. Context-dependent encodings should
+// be self-describing and support legacy payloads without context.
+//
+// NOTE: Experimental
+type NexusSerializationContext = commonconverter.NexusSerializationContext
+
+// DataConverterWithSerializationContext is an optional interface that [DataConverter]
+// implementations can implement to receive serialization context.
+//
+// When implemented, the SDK calls WithSerializationContext before serializing/deserializing
+// payloads. The returned DataConverter should use the context to vary its behavior
+// (e.g. using workflow ID as associated data for encryption).
+//
+// Implementations must work correctly without context — the SDK and user code may use
+// the DataConverter directly without calling WithSerializationContext first.
+//
+// This method should be cheap and fast. The SDK does not cache returned instances
+// and may call this method frequently. Avoid recreating expensive objects on every call.
+type DataConverterWithSerializationContext = commonconverter.DataConverterWithSerializationContext
+
+// PayloadCodecWithSerializationContext is an optional interface that [PayloadCodec]
+// implementations can implement to receive serialization context.
+//
+// When implemented, the SDK calls WithSerializationContext before encoding/decoding payloads.
+// The returned PayloadCodec should use the context to vary its behavior
+// (e.g. using workflow ID as associated data for encoding).
+//
+// Implementations must work correctly without context — the SDK and user code may use
+// the PayloadCodec directly without calling WithSerializationContext first.
+//
+// This method should be cheap and fast. The SDK does not cache returned instances
+// and may call this method frequently. Avoid recreating expensive objects on every call.
+type PayloadCodecWithSerializationContext interface {
+	WithSerializationContext(SerializationContext) PayloadCodec
+}
+
+// FailureConverterWithSerializationContext is an optional interface that [FailureConverter]
+// implementations can implement to receive serialization context.
+//
+// When implemented, the SDK calls WithSerializationContext before converting errors to/from
+// failures. The returned FailureConverter should use the context to vary its behavior
+// (e.g. encrypting failure details using a workflow-ID-derived key).
+//
+// Implementations must work correctly without context — the SDK and user code may use
+// the FailureConverter directly without calling WithSerializationContext first.
+//
+// This method should be cheap and fast. The SDK does not cache returned instances
+// and may call this method frequently. Avoid recreating expensive objects on every call.
+type FailureConverterWithSerializationContext interface {
+	WithSerializationContext(SerializationContext) FailureConverter
+}
+
+// WithDataConverterSerializationContext returns a DataConverter that is aware of the given
+// serialization context. If the DataConverter implements
+// [DataConverterWithSerializationContext], it delegates to that implementation;
+// otherwise it returns the original DataConverter unchanged.
+func WithDataConverterSerializationContext(dc DataConverter, ctx SerializationContext) DataConverter {
+	return commonconverter.WithDataConverterSerializationContext(dc, ctx)
+}
+
+// WithFailureConverterSerializationContext returns a FailureConverter that is aware of the given
+// serialization context. If the FailureConverter implements
+// [FailureConverterWithSerializationContext], it delegates to that implementation;
+// otherwise it returns the original FailureConverter unchanged.
+func WithFailureConverterSerializationContext(fc FailureConverter, ctx SerializationContext) FailureConverter {
+	if sc, ok := fc.(FailureConverterWithSerializationContext); ok {
+		result := sc.WithSerializationContext(ctx)
+		if result == nil {
+			panic("FailureConverterWithSerializationContext.WithSerializationContext must not return nil")
+		}
+		return result
+	}
+	return fc
+}

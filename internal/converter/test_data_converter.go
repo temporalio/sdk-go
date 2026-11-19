@@ -23,7 +23,7 @@ func NewTestDataConverter() converter.DataConverter {
 }
 
 // ToPayloads converts a list of values.
-func (dc *TestDataConverter) ToPayloads(values ...interface{}) (*commonpb.Payloads, error) {
+func (dc *TestDataConverter) ToPayloads(values ...any) (*commonpb.Payloads, error) {
 	result := &commonpb.Payloads{}
 
 	for i, value := range values {
@@ -39,7 +39,7 @@ func (dc *TestDataConverter) ToPayloads(values ...interface{}) (*commonpb.Payloa
 }
 
 // FromPayloads converts to a list of values of different types.
-func (dc *TestDataConverter) FromPayloads(payloads *commonpb.Payloads, valuePtrs ...interface{}) error {
+func (dc *TestDataConverter) FromPayloads(payloads *commonpb.Payloads, valuePtrs ...any) error {
 	for i, payload := range payloads.GetPayloads() {
 		err := dc.FromPayload(payload, valuePtrs[i])
 
@@ -52,7 +52,7 @@ func (dc *TestDataConverter) FromPayloads(payloads *commonpb.Payloads, valuePtrs
 }
 
 // ToPayload converts single value to payload.
-func (dc *TestDataConverter) ToPayload(value interface{}) (*commonpb.Payload, error) {
+func (dc *TestDataConverter) ToPayload(value any) (*commonpb.Payload, error) {
 	var buf bytes.Buffer
 	enc := gob.NewEncoder(&buf)
 	if err := enc.Encode(value); err != nil {
@@ -70,7 +70,7 @@ func (dc *TestDataConverter) ToPayload(value interface{}) (*commonpb.Payload, er
 }
 
 // FromPayload converts single value from payload.
-func (dc *TestDataConverter) FromPayload(payload *commonpb.Payload, valuePtr interface{}) error {
+func (dc *TestDataConverter) FromPayload(payload *commonpb.Payload, valuePtr any) error {
 	enc, ok := payload.GetMetadata()[converter.MetadataEncoding]
 
 	if !ok {

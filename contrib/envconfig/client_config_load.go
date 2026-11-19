@@ -59,13 +59,21 @@ type LoadClientOptionsRequest struct {
 
 	// Override the environment variable lookup. If nil, defaults to [EnvLookupOS].
 	EnvLookup EnvLookup
+
+	// Extensions to apply to the loaded profile. After the profile is converted to client options, each extension is
+	// called in order and any plugin it returns is appended to [client.Options.Plugins]. Extension names must be unique.
+	Extensions []ClientConfigExtension
 }
 
 // LoadClientOptions loads client options from file and then applies environment variable overrides. This will not fail
 // if the config file does not exist. This is effectively a shortcut for [LoadClientConfigProfile] +
-// [ClientConfigProfile.ToClientOptions]. See [LoadClientOptionsRequest] and [ClientConfigProfile] on how files and
-// environment variables are applied.
+// [ClientConfigProfile.ToClientOptions], plus applying any [LoadClientOptionsRequest.Extensions]. See
+// [LoadClientOptionsRequest] and [ClientConfigProfile] on how files and environment variables are applied.
 func LoadClientOptions(options LoadClientOptionsRequest) (client.Options, error) {
+	if err := validateExtensions(options.Extensions); err != nil {
+		return client.Options{}, err
+	}
+
 	// Load profile
 	prof, err := LoadClientConfigProfile(LoadClientConfigProfileOptions{
 		ConfigFilePath:    options.ConfigFilePath,
@@ -80,8 +88,24 @@ func LoadClientOptions(options LoadClientOptionsRequest) (client.Options, error)
 		return client.Options{}, err
 	}
 
-	// Convert to client options
-	return prof.ToClientOptions(ToClientOptionsRequest{IncludeRemoteCodec: options.IncludeRemoteCodec})
+	opts, err := prof.ToClientOptions(ToClientOptionsRequest{IncludeRemoteCodec: options.IncludeRemoteCodec})
+	if err != nil {
+		return client.Options{}, err
+	}
+
+	if len(options.Extensions) > 0 {
+		req := ClientConfigExtensionRequest{Profile: &prof}
+		if !options.DisableEnv {
+			req.Env = options.EnvLookup
+			if req.Env == nil {
+				req.Env = EnvLookupOS
+			}
+		}
+		if err := applyExtensions(&opts, options.Extensions, req); err != nil {
+			return client.Options{}, err
+		}
+	}
+	return opts, nil
 }
 
 // [LoadClientConfigOptions] are options for [LoadClientConfig].
@@ -127,10 +151,8 @@ func LoadClientConfig(options LoadClientConfigOptions) (ClientConfig, error) {
 			file, _ = env.LookupEnv("TEMPORAL_CONFIG_FILE")
 		}
 		if file == "" {
-			var err error
-			if file, err = DefaultConfigFilePath(); err != nil {
-				return ClientConfig{}, err
-			}
+			// Get the default config file path. If it doesn't exist, the file path will be empty.
+			file = DefaultConfigFilePath()
 		}
 		// Load file, not exist is ok
 		if b, err := os.ReadFile(file); err == nil {
@@ -239,12 +261,13 @@ func LoadClientConfigProfile(options LoadClientConfigProfileOptions) (ClientConf
 const DefaultConfigFileProfile = "default"
 
 // DefaultConfigFilePath is the default config file path used. It is [os.UserConfigDir]/temporalio/temporal.toml.
-func DefaultConfigFilePath() (string, error) {
+// If the path does not exist, fallback to an empty file path.
+func DefaultConfigFilePath() string {
 	userDir, err := os.UserConfigDir()
 	if err != nil {
-		return "", fmt.Errorf("failed getting user config dir: %w", err)
+		return ""
 	}
-	return filepath.Join(userDir, "temporalio", "temporal.toml"), nil
+	return filepath.Join(userDir, "temporalio", "temporal.toml")
 }
 
 // EnvLookup abstracts environment variable lookup for [ClientConfigProfile.ApplyEnvVars]. [EnvLookupOS] is the common
@@ -278,6 +301,9 @@ func (c *ClientConfigProfile) ApplyEnvVars(env EnvLookup) error {
 	}
 	if s, ok := env.LookupEnv("TEMPORAL_API_KEY"); ok {
 		c.APIKey = s
+	}
+	if s, ok := env.LookupEnv("TEMPORAL_CLIENT_AUTHORITY"); ok {
+		c.Authority = s
 	}
 	if s, ok := env.LookupEnv("TEMPORAL_TLS"); ok {
 		if v, ok := envVarToBool(s); ok {

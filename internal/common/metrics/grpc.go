@@ -24,8 +24,8 @@ func NewGRPCInterceptor(defaultHandler Handler, suffix string, disableRequestFai
 	return func(
 		ctx context.Context,
 		method string,
-		req interface{},
-		reply interface{},
+		req any,
+		reply any,
 		cc *grpc.ClientConn,
 		invoker grpc.UnaryInvoker,
 		opts ...grpc.CallOption,

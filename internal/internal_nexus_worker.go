@@ -2,7 +2,9 @@ package internal
 
 import (
 	"github.com/nexus-rpc/sdk-go/nexus"
+	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/workflowservice/v1"
+	"go.temporal.io/sdk/internal/common/metrics"
 )
 
 type nexusWorkerOptions struct {
@@ -17,7 +19,9 @@ type nexusWorker struct {
 	executionParameters workerExecutionParameters
 	workflowService     workflowservice.WorkflowServiceClient
 	worker              *baseWorker
-	stopC               chan struct{}
+	// stopC is created by newNexusWorker, exposed to the Nexus task poller through
+	// WorkerStopChannel, and closed by nexusWorker.Stop() during shutdown.
+	stopC chan struct{}
 }
 
 func newNexusWorker(opts nexusWorkerOptions) (*nexusWorker, error) {
@@ -25,6 +29,10 @@ func newNexusWorker(opts nexusWorkerOptions) (*nexusWorker, error) {
 	params := opts.executionParameters
 	params.WorkerStopChannel = getReadOnlyChannel(workerStopChannel)
 	ensureRequiredParams(&params)
+	var pollerGroups *pollerGroupManager
+	if _, ok := params.NexusTaskPollerBehavior.(*pollerBehaviorAutoscaling); ok {
+		pollerGroups = newPollerGroupManager(params.pollerGroupSnapshotStore)
+	}
 	poller := newNexusTaskPoller(
 		newNexusTaskHandler(
 			opts.handler,
@@ -40,6 +48,7 @@ func newNexusWorker(opts nexusWorkerOptions) (*nexusWorker, error) {
 		),
 		opts.workflowService,
 		params,
+		pollerGroups,
 	)
 
 	bwo := baseWorkerOptions{
@@ -50,18 +59,25 @@ func newNexusWorker(opts nexusWorkerOptions) (*nexusWorker, error) {
 			newScalableTaskPoller(
 				poller,
 				opts.executionParameters.Logger,
-				params.NexusTaskPollerBehavior),
+				params.NexusTaskPollerBehavior,
+				metrics.PollerTypeNexusTask,
+				params.serverSupportsAutoscaling,
+				pollerGroups,
+			),
 		},
-		taskProcessor:  poller,
-		workerType:     "NexusWorker",
-		identity:       params.Identity,
-		buildId:        params.getBuildID(),
-		logger:         params.Logger,
-		stopTimeout:    params.WorkerStopTimeout,
-		fatalErrCb:     params.WorkerFatalErrorCallback,
-		metricsHandler: params.MetricsHandler,
+		taskProcessor:                poller,
+		workerType:                   "NexusWorker",
+		identity:                     params.Identity,
+		buildId:                      params.getBuildID(),
+		logger:                       params.Logger,
+		stopTimeout:                  params.WorkerStopTimeout,
+		fatalErrCb:                   params.WorkerFatalErrorCallback,
+		noRepoll:                     params.noRepoll,
+		metricsHandler:               params.MetricsHandler,
+		workerPollCompleteOnShutdown: params.workerPollCompleteOnShutdown,
 		slotReservationData: slotReservationData{
-			taskQueue: params.TaskQueue,
+			taskQueue:     params.TaskQueue,
+			taskQueueKind: enumspb.TASK_QUEUE_KIND_NORMAL,
 		},
 		isInternalWorker: params.isInternalWorker(),
 	}

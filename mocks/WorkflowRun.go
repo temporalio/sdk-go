@@ -18,7 +18,7 @@ type WorkflowRun struct {
 }
 
 // Get provides a mock function with given fields: ctx, valuePtr
-func (_m *WorkflowRun) Get(ctx context.Context, valuePtr interface{}) error {
+func (_m *WorkflowRun) Get(ctx context.Context, valuePtr any) error {
 	ret := _m.Called(ctx, valuePtr)
 
 	if len(ret) == 0 {
@@ -26,7 +26,7 @@ func (_m *WorkflowRun) Get(ctx context.Context, valuePtr interface{}) error {
 	}
 
 	var r0 error
-	if rf, ok := ret.Get(0).(func(context.Context, interface{}) error); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, any) error); ok {
 		r0 = rf(ctx, valuePtr)
 	} else {
 		r0 = ret.Error(0)
@@ -41,6 +41,24 @@ func (_m *WorkflowRun) GetID() string {
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetID")
+	}
+
+	var r0 string
+	if rf, ok := ret.Get(0).(func() string); ok {
+		r0 = rf()
+	} else {
+		r0 = ret.Get(0).(string)
+	}
+
+	return r0
+}
+
+// GetFirstExecutionRunID provides a mock function with given fields:
+func (_m *WorkflowRun) GetFirstExecutionRunID() string {
+	ret := _m.Called()
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetFirstExecutionRunID")
 	}
 
 	var r0 string
@@ -72,7 +90,7 @@ func (_m *WorkflowRun) GetRunID() string {
 }
 
 // GetWithOptions provides a mock function with given fields: ctx, valuePtr, options
-func (_m *WorkflowRun) GetWithOptions(ctx context.Context, valuePtr interface{}, options client.WorkflowRunGetOptions) error {
+func (_m *WorkflowRun) GetWithOptions(ctx context.Context, valuePtr any, options client.WorkflowRunGetOptions) error {
 	ret := _m.Called(ctx, valuePtr, options)
 
 	if len(ret) == 0 {
@@ -80,7 +98,7 @@ func (_m *WorkflowRun) GetWithOptions(ctx context.Context, valuePtr interface{},
 	}
 
 	var r0 error
-	if rf, ok := ret.Get(0).(func(context.Context, interface{}, client.WorkflowRunGetOptions) error); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, any, client.WorkflowRunGetOptions) error); ok {
 		r0 = rf(ctx, valuePtr, options)
 	} else {
 		r0 = ret.Error(0)

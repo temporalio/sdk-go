@@ -140,6 +140,8 @@ type (
 	// DeploymentListIterator is an iterator for deployments.
 	//
 	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/client.DeploymentListIterator]
 	DeploymentListIterator interface {
 		// HasNext - Return whether this iterator has next value.
 		HasNext() bool
@@ -193,7 +195,7 @@ type (
 		// UpsertEntries - Metadata entries inserted or modified. When values are not
 		// of type *commonpb.Payload, the client data converter will be used to generate
 		// payloads.
-		UpsertEntries map[string]interface{}
+		UpsertEntries map[string]any
 
 		// RemoveEntries - List of keys to remove from the metadata.
 		RemoveEntries []string
@@ -269,6 +271,8 @@ type (
 	// DeploymentClient is the client that manages deployments.
 	//
 	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/client.DeploymentClient]
 	DeploymentClient interface {
 		// Describes an existing deployment.
 		//

@@ -31,6 +31,10 @@ import (
 
 // TracerOptions are options provided to NewInterceptor
 type TracerOptions struct {
+	// EncodeHeaders uses the configured client's payload codec for tracing
+	// headers. Defaults to false; other producers' headers are unchanged.
+	EncodeHeaders bool
+
 	// DisableSignalTracing can be set to disable signal tracing.
 	DisableSignalTracing bool
 
@@ -69,6 +73,7 @@ func NewTracer(opts TracerOptions) interceptor.Tracer {
 
 	return &tracerImpl{
 		opts: TracerOptions{
+			EncodeHeaders:        opts.EncodeHeaders,
 			DisableSignalTracing: opts.DisableSignalTracing,
 			DisableQueryTracing:  opts.DisableQueryTracing,
 			DisableUpdateTracing: opts.DisableUpdateTracing,
@@ -92,10 +97,12 @@ type tracerImpl struct {
 
 func (t *tracerImpl) Options() interceptor.TracerOptions {
 	return interceptor.TracerOptions{
+		EncodeHeaders:        t.opts.EncodeHeaders,
 		SpanContextKey:       activeSpanContextKey,
 		HeaderKey:            headerKey,
 		DisableSignalTracing: t.opts.DisableSignalTracing,
 		DisableQueryTracing:  t.opts.DisableQueryTracing,
+		DisableUpdateTracing: t.opts.DisableUpdateTracing,
 	}
 }
 
@@ -137,14 +144,14 @@ func (t *tracerImpl) ContextWithSpan(ctx context.Context, span interceptor.Trace
 func SpanFromWorkflowContext(ctx workflow.Context) (*tracer.Span, bool) {
 	val := ctx.Value(activeSpanContextKey)
 	if val == nil {
-		return tracer.SpanFromContext(nil)
+		return nil, false
 	}
 
 	if span, ok := val.(*tracerSpan); ok {
 		return span.Span, true
 	}
 
-	return tracer.SpanFromContext(nil)
+	return nil, false
 }
 
 func genSpanID(idempotencyKey string) uint64 {

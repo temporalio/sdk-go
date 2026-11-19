@@ -16,6 +16,10 @@ const (
 	resourceSlotsMemUsage = "temporal_resource_slots_mem_usage"
 )
 
+// retryReserveInterval is how long ReserveSlot waits before re-asking the controller for a slot
+// after it has declined one.
+const retryReserveInterval = 10 * time.Millisecond
+
 // SysInfoProvider implementations provide information about system resources.
 //
 // Exposed as: [go.temporal.io/sdk/worker.SysInfoProvider]
@@ -32,6 +36,7 @@ type SysInfoProvider interface {
 //
 // Exposed as: [go.temporal.io/sdk/worker.SysInfoContext]
 type SysInfoContext struct {
+	// Logger is the logger to use for the SysInfoContext calls.
 	Logger log.Logger
 }
 
@@ -179,28 +184,37 @@ func NewResourceBasedSlotSupplier(
 
 func (r *ResourceBasedSlotSupplier) ReserveSlot(ctx context.Context, info SlotReservationInfo) (*SlotPermit, error) {
 	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		if info.NumIssuedSlots() < r.options.MinSlots {
 			return &SlotPermit{}, nil
 		}
 		if r.options.RampThrottle > 0 {
 			r.lastIssuedMu.Lock()
 			mustWaitFor := r.options.RampThrottle - time.Since(r.lastSlotIssuedAt)
+			// Release before waiting: holding lastIssuedMu across the wait would stall the
+			// non-blocking TryReserveSlot used for eager dispatch. The throttle is still
+			// enforced by TryReserveSlot's own lastSlotIssuedAt check.
+			r.lastIssuedMu.Unlock()
 			if mustWaitFor > 0 {
 				select {
 				case <-time.After(mustWaitFor):
 				case <-ctx.Done():
-					r.lastIssuedMu.Unlock()
 					return nil, ctx.Err()
 				}
 			}
-			r.lastIssuedMu.Unlock()
 		}
 
 		maybePermit := r.TryReserveSlot(info)
 		if maybePermit != nil {
 			return maybePermit, nil
 		}
-		time.Sleep(10 * time.Millisecond)
+		select {
+		case <-time.After(retryReserveInterval):
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
 	}
 }
 
@@ -237,7 +251,7 @@ func (r *ResourceBasedSlotSupplier) SysInfoProvider() SysInfoProvider {
 
 // ResourceControllerOptions contains configurable parameters for a ResourceController.
 // It is recommended to use DefaultResourceControllerOptions to create a ResourceControllerOptions
-// and only modify the mem/cpu target percent fields.
+// and only modify the mem/CPU target percent fields.
 //
 // Exposed as: [go.temporal.io/sdk/worker.ResourceControllerOptions]
 type ResourceControllerOptions struct {
@@ -250,14 +264,22 @@ type ResourceControllerOptions struct {
 	// InfoSupplier is the supplier that the controller will use to get system resources.
 	InfoSupplier SysInfoProvider
 
+	// MemOutputThreshold is the memory output threshold limit.
 	MemOutputThreshold float64
+	// CpuOutputThreshold is the CPU output threshold limit.
 	CpuOutputThreshold float64
 
+	// MemPGain is the memory Proportional gain limit threshold.
 	MemPGain float64
+	// MemIGain is the memory Integral gain limit threshold.
 	MemIGain float64
+	// MemDGain is the memory Derivative gain limit threshold.
 	MemDGain float64
+	// CpuPGain is the CPU Proportional gain limit threshold.
 	CpuPGain float64
+	// CpuIGain is the CPU Integral gain limit threshold.
 	CpuIGain float64
+	// CpuDGain is the CPU Derivative gain limit threshold.
 	CpuDGain float64
 }
 

@@ -29,17 +29,24 @@ func TestGetChildWorkflowOptions(t *testing.T) {
 		WorkflowIDReusePolicy:    enums.WORKFLOW_ID_REUSE_POLICY_REJECT_DUPLICATE,
 		RetryPolicy:              newTestRetryPolicy(),
 		CronSchedule:             "todo",
-		Memo: map[string]interface{}{
+		Memo: map[string]any{
 			"foo": "bar",
 		},
-		SearchAttributes: map[string]interface{}{
+		SearchAttributes: map[string]any{
 			"foo": "bar",
 		},
 		ParentClosePolicy: enums.PARENT_CLOSE_POLICY_REQUEST_CANCEL,
 		VersioningIntent:  VersioningIntentDefault,
-		StaticSummary:     "child workflow summary",
-		StaticDetails:     "child workflow details",
-		Priority:          newPriority(),
+		VersioningOverride: &PinnedVersioningOverride{
+			Version: WorkerDeploymentVersion{
+				DeploymentName: "deployment",
+				BuildID:        "build",
+			},
+		},
+		StaticSummary: "child workflow summary",
+		StaticDetails: "child workflow details",
+		Priority:      newPriority(),
+		EventGroups:   []EventGroup{NewEventGroup("child-group")},
 	}
 
 	// Require test options to have non-zero value for each field. This ensures that we update tests (and the
@@ -63,6 +70,7 @@ func TestGetActivityOptions(t *testing.T) {
 		VersioningIntent:       VersioningIntentDefault,
 		Summary:                "activity summary",
 		Priority:               newPriority(),
+		EventGroups:            []EventGroup{NewEventGroup("activity-group")},
 	}
 
 	assertNonZero(t, opts)
@@ -75,6 +83,7 @@ func TestGetLocalActivityOptions(t *testing.T) {
 		StartToCloseTimeout:    time.Hour,
 		RetryPolicy:            newTestRetryPolicy(),
 		Summary:                "local activity summary",
+		EventGroups:            []EventGroup{NewEventGroup("local-activity-group")},
 	}
 
 	assertNonZero(t, opts)
@@ -93,7 +102,7 @@ func TestConvertRetryPolicy(t *testing.T) {
 
 	assertNonZero(t, &pbRetryPolicy)
 	// Check that converting from/to commonpb.RetryPolicy is transparent
-	assert.Equal(t, &pbRetryPolicy, convertToPBRetryPolicy(convertFromPBRetryPolicy(&pbRetryPolicy)))
+	assert.Equal(t, &pbRetryPolicy, ConvertToPBRetryPolicy(convertFromPBRetryPolicy(&pbRetryPolicy)))
 }
 
 func newTestWorkflowContext() Context {
@@ -129,7 +138,7 @@ func newPriority() Priority {
 }
 
 // assertNonZero checks that every top level value, struct field, and item in a slice is a non-zero value.
-func assertNonZero(t *testing.T, i interface{}) {
+func assertNonZero(t *testing.T, i any) {
 	_assertNonZero(t, i, reflect.ValueOf(i).Type().Name())
 }
 
@@ -137,7 +146,7 @@ func assertNonZero(t *testing.T, i interface{}) {
 // Sure, this only works for latin characters. It's fine enough for the test
 var isPrivate = regexp.MustCompile("^[a-z]")
 
-func _assertNonZero(t *testing.T, i interface{}, prefix string) {
+func _assertNonZero(t *testing.T, i any, prefix string) {
 	v := reflect.ValueOf(i)
 	vt := v.Type()
 	switch v.Kind() {
@@ -167,7 +176,7 @@ func _assertNonZero(t *testing.T, i interface{}, prefix string) {
 		for i := 0; i < v.Len(); i++ {
 			_assertNonZero(t, v.Index(i).Interface(), fmt.Sprintf("%s[%d]", prefix, i))
 		}
-	case reflect.Ptr:
+	case reflect.Pointer:
 		if v.IsNil() {
 			t.Errorf("%s: value of type %T must be non-nil", prefix, i)
 		} else {
@@ -250,4 +259,22 @@ func TestDeterministicKeysFunc(t *testing.T) {
 			}))
 		})
 	}
+}
+
+func TestWithLocalActivityOptionsDoesNotModifyRetryPolicy(t *testing.T) {
+	policy := &RetryPolicy{MaximumAttempts: 3}
+	opts := LocalActivityOptions{
+		StartToCloseTimeout: time.Minute,
+		RetryPolicy:         policy,
+	}
+
+	got := GetLocalActivityOptions(WithLocalActivityOptions(newTestWorkflowContext(), opts))
+
+	// The defaults apply to the options on the context.
+	assert.Equal(t, 2.0, got.RetryPolicy.BackoffCoefficient)
+	assert.Equal(t, time.Second, got.RetryPolicy.InitialInterval)
+	assert.Equal(t, 100*time.Second, got.RetryPolicy.MaximumInterval)
+	assert.Equal(t, int32(3), got.RetryPolicy.MaximumAttempts)
+	// The policy the caller passed in is unchanged.
+	assert.Equal(t, &RetryPolicy{MaximumAttempts: 3}, policy)
 }

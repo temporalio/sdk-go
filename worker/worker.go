@@ -37,17 +37,19 @@ type (
 		// Pass nil to stop the worker with external Stop() call.
 		// Pass any other `<-chan interface{}` and Run will wait for signal from that channel.
 		// Returns error if the worker fails to start or there is a fatal error
-		// during execution.
+		// during execution, including when interruption races with that error.
+		// After a successful start, Run waits for SDK stop cleanup before returning.
 		//
 		// Users are encouraged to use Start() instead of this call if they plan to
 		// manually Stop(). Otherwise a race can occur if shutdown occurs before the
 		// worker is started. This Run() call is only best if shutdown is initiated
 		// via the interrupt channel.
-		Run(interruptCh <-chan interface{}) error
+		Run(interruptCh <-chan any) error
 
-		// Stop the worker.
+		// Stop the worker and wait for SDK stop cleanup to return.
 		//
-		// This may panic if called a second time.
+		// Concurrent calls wait for the same cleanup operation. Stop does not
+		// wait for Options.OnFatalError; that callback may itself call Stop.
 		Stop()
 	}
 
@@ -62,15 +64,18 @@ type (
 	WorkflowRegistry interface {
 		// RegisterWorkflow - registers a workflow function with the worker.
 		// A workflow takes a [workflow.Context] and input and returns a (result, error) or just error.
+		//
 		// Examples:
 		//	func sampleWorkflow(ctx workflow.Context, input []byte) (result []byte, err error)
 		//	func sampleWorkflow(ctx workflow.Context, arg1 int, arg2 string) (result []byte, err error)
 		//	func sampleWorkflow(ctx workflow.Context) (result []byte, err error)
 		//	func sampleWorkflow(ctx workflow.Context, arg1 int) (result string, err error)
+		//
 		// Serialization of all primitive types, structures is supported ... except channels, functions, variadic, unsafe pointer.
-		// For global registration consider workflow.Register
-		// This method panics if workflowFunc doesn't comply with the expected format or tries to register the same workflow
-		RegisterWorkflow(w interface{})
+		// For global registration consider workflow.Register.
+		// This method panics if workflowFunc doesn't comply with the expected format or tries to register the same workflow.
+		// To register function literals (closures), use [WorkflowRegistry.RegisterWorkflowWithOptions] to assign a type name explicitly.
+		RegisterWorkflow(w any)
 
 		// RegisterWorkflowWithOptions registers the workflow function with options.
 		// The user can use options to provide an external name for the workflow or leave it empty if no
@@ -79,10 +84,10 @@ type (
 		//  worker.RegisterWorkflowWithOptions(sampleWorkflow, RegisterWorkflowOptions{Name: "foo"})
 		// This method panics if workflowFunc doesn't comply with the expected format or tries to register the same workflow
 		// type name twice. Use workflow.RegisterOptions.DisableAlreadyRegisteredCheck to allow multiple registrations.
-		RegisterWorkflowWithOptions(w interface{}, options workflow.RegisterOptions)
+		RegisterWorkflowWithOptions(w any, options workflow.RegisterOptions)
 
 		// RegisterDynamicWorkflow registers the dynamic workflow function with options.
-		RegisterDynamicWorkflow(w interface{}, options workflow.DynamicRegisterOptions)
+		RegisterDynamicWorkflow(w any, options workflow.DynamicRegisterOptions)
 	}
 
 	// ActivityRegistry exposes activity registration functions to consumers.
@@ -90,7 +95,7 @@ type (
 		// RegisterActivity - register an activity function or a pointer to a structure with the worker.
 		// An activity function takes a context and input and returns a (result, error) or just error.
 		//
-		// And activity struct is a structure with all its exported methods treated as activities. The default
+		// An activity struct is a structure with all its exported methods treated as activities. The default
 		// name of each activity is the method name.
 		//
 		// Examples:
@@ -115,7 +120,8 @@ type (
 		// Serialization of all primitive types, structures is supported ... except channels, functions, variadic, unsafe pointer.
 		// This method panics if activityFunc doesn't comply with the expected format or an activity with the same
 		// type name is registered more than once.
-		RegisterActivity(a interface{})
+		// To register function literals (closures), use [ActivityRegistry.RegisterActivityWithOptions] to assign a type name explicitly.
+		RegisterActivity(a any)
 
 		// RegisterActivityWithOptions registers the activity function or struct pointer with options.
 		// The user can use options to provide an external name for the activity or leave it empty if no
@@ -133,11 +139,11 @@ type (
 		// The other use of options is to disable duplicated activity registration check
 		// which might be useful for integration tests.
 		// worker.RegisterActivityWithOptions(barActivity, RegisterActivityOptions{DisableAlreadyRegisteredCheck: true})
-		RegisterActivityWithOptions(a interface{}, options activity.RegisterOptions)
+		RegisterActivityWithOptions(a any, options activity.RegisterOptions)
 
 		// RegisterDynamicActivity registers the dynamic activity function with options.
 		// Registering activities via a structure is not supported for dynamic activities.
-		RegisterDynamicActivity(a interface{}, options activity.DynamicRegisterOptions)
+		RegisterDynamicActivity(a any, options activity.DynamicRegisterOptions)
 	}
 
 	// NexusServiceRegistry exposes Nexus Service registration functions.
@@ -157,13 +163,13 @@ type (
 	// to ensure that new deployments are not going to break open workflows.
 	WorkflowReplayer interface {
 		// RegisterWorkflow registers workflow that is going to be replayed
-		RegisterWorkflow(w interface{})
+		RegisterWorkflow(w any)
 
 		// RegisterWorkflowWithOptions registers workflow that is going to be replayed with user provided name
-		RegisterWorkflowWithOptions(w interface{}, options workflow.RegisterOptions)
+		RegisterWorkflowWithOptions(w any, options workflow.RegisterOptions)
 
 		// RegisterDynamicWorkflow registers dynamic workflow that is going to be replayed
-		RegisterDynamicWorkflow(w interface{}, options workflow.DynamicRegisterOptions)
+		RegisterDynamicWorkflow(w any, options workflow.DynamicRegisterOptions)
 
 		// ReplayWorkflowHistory executes a single workflow task for the given json history file.
 		// Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
@@ -182,7 +188,7 @@ type (
 
 		// ReplayWorkflowHistoryFromJSONFile executes a single workflow task for the json history file downloaded from the cli.
 		// To download the history file: temporal workflow show --workflow-id <workflow_id> --output json > <output_file>
-		// See https://github.com/temporalio/temporal/blob/master/tools/cli/README.md for full documentation
+		// See https://docs.temporal.io/cli and https://github.com/temporalio/cli for full documentation.
 		// Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
 		// The logger is an optional parameter. Defaults to the noop logger.
 		ReplayWorkflowHistoryFromJSONFile(logger log.Logger, jsonfileName string) error
@@ -190,7 +196,7 @@ type (
 		// ReplayPartialWorkflowHistoryFromJSONFile executes a single workflow task for the json history file upto provided
 		// lastEventID(inclusive), downloaded from the cli.
 		// To download the history file: temporal workflow show --workflow-id <workflow_id> --output json > <output_file>
-		// See https://github.com/temporalio/temporal/blob/master/tools/cli/README.md for full documentation
+		// See https://docs.temporal.io/cli and https://github.com/temporalio/cli for full documentation.
 		// Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
 		// The logger is an optional parameter. Defaults to the noop logger.
 		ReplayPartialWorkflowHistoryFromJSONFile(logger log.Logger, jsonfileName string, lastEventID int64) error
@@ -207,6 +213,21 @@ type (
 
 	// WorkerDeploymentVersion represents a specific version of a worker in a deployment.
 	WorkerDeploymentVersion = internal.WorkerDeploymentVersion
+
+	// PreferredVersionProvider provides the version to record when a [workflow.GetVersion] marker is first created.
+	//
+	// NOTE: Experimental
+	PreferredVersionProvider = internal.PreferredVersionProvider
+
+	// PreferredVersionProviderInput is the input passed to a PreferredVersionProvider.
+	//
+	// NOTE: Experimental
+	PreferredVersionProviderInput = internal.PreferredVersionProviderInput
+
+	// VersionPreference is the version preference returned by a PreferredVersionProvider.
+	//
+	// NOTE: Experimental
+	VersionPreference = internal.VersionPreference
 
 	// Options is used to configure a worker instance.
 	Options = internal.WorkerOptions
@@ -235,6 +256,7 @@ type (
 )
 
 var _ WorkflowRegistry = (WorkflowReplayer)(nil)
+var _ ActivityRegistry = (*internal.TestActivityEnvironment)(nil)
 
 const (
 	// BlockWorkflow is the default WorkflowPanicPolicy policy for handling workflow panics and detected non-determinism.
@@ -310,7 +332,7 @@ func SetBinaryChecksum(checksum string) {
 }
 
 // InterruptCh returns channel which will get data when system receives interrupt signal from OS. Pass it to worker.Run() func to stop worker with Ctrl+C.
-func InterruptCh() <-chan interface{} {
+func InterruptCh() <-chan any {
 	return internal.InterruptCh()
 }
 
@@ -321,8 +343,10 @@ func NewPollerBehaviorSimpleMaximum(
 	return internal.NewPollerBehaviorSimpleMaximum(options)
 }
 
-// NewPollerBehaviorAutoscaling creates a PollerBehavior that allows the worker to scale the number of pollers within a given range.
-// based on the workflow and feedback from the server.
+// NewPollerBehaviorAutoscaling scales pollers within the configured range using
+// server feedback. The worker may exceed the configured maximum when the server
+// requires a poll open against more locations than the maximum allows. See
+// [PollerBehaviorAutoscalingOptions.MaximumNumberOfPollers].
 func NewPollerBehaviorAutoscaling(
 	options PollerBehaviorAutoscalingOptions,
 ) PollerBehavior {

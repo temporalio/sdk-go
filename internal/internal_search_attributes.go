@@ -2,6 +2,7 @@ package internal
 
 import (
 	"fmt"
+	"maps"
 	"reflect"
 	"time"
 
@@ -14,7 +15,7 @@ import (
 type (
 	// SearchAttributes represents a collection of typed search attributes
 	SearchAttributes struct {
-		untypedValue map[SearchAttributeKey]interface{}
+		untypedValue map[SearchAttributeKey]any
 	}
 
 	// SearchAttributeUpdate represents a change to SearchAttributes
@@ -92,7 +93,7 @@ func NewSearchAttributeKeyString(name string) SearchAttributeKeyString {
 		baseSearchAttributeKey: baseSearchAttributeKey{
 			name:        name,
 			valueType:   enumspb.INDEXED_VALUE_TYPE_TEXT,
-			reflectType: reflect.TypeOf(""),
+			reflectType: reflect.TypeFor[string](),
 		},
 	}
 }
@@ -116,7 +117,7 @@ func NewSearchAttributeKeyKeyword(name string) SearchAttributeKeyKeyword {
 		baseSearchAttributeKey: baseSearchAttributeKey{
 			name:        name,
 			valueType:   enumspb.INDEXED_VALUE_TYPE_KEYWORD,
-			reflectType: reflect.TypeOf(""),
+			reflectType: reflect.TypeFor[string](),
 		},
 	}
 }
@@ -140,7 +141,7 @@ func NewSearchAttributeKeyBool(name string) SearchAttributeKeyBool {
 		baseSearchAttributeKey: baseSearchAttributeKey{
 			name:        name,
 			valueType:   enumspb.INDEXED_VALUE_TYPE_BOOL,
-			reflectType: reflect.TypeOf(false),
+			reflectType: reflect.TypeFor[bool](),
 		},
 	}
 }
@@ -164,7 +165,7 @@ func NewSearchAttributeKeyInt64(name string) SearchAttributeKeyInt64 {
 		baseSearchAttributeKey: baseSearchAttributeKey{
 			name:        name,
 			valueType:   enumspb.INDEXED_VALUE_TYPE_INT,
-			reflectType: reflect.TypeOf(int64(0)),
+			reflectType: reflect.TypeFor[int64](),
 		},
 	}
 }
@@ -188,7 +189,7 @@ func NewSearchAttributeKeyFloat64(name string) SearchAttributeKeyFloat64 {
 		baseSearchAttributeKey: baseSearchAttributeKey{
 			name:        name,
 			valueType:   enumspb.INDEXED_VALUE_TYPE_DOUBLE,
-			reflectType: reflect.TypeOf(float64(0)),
+			reflectType: reflect.TypeFor[float64](),
 		},
 	}
 }
@@ -212,7 +213,7 @@ func NewSearchAttributeKeyTime(name string) SearchAttributeKeyTime {
 		baseSearchAttributeKey: baseSearchAttributeKey{
 			name:        name,
 			valueType:   enumspb.INDEXED_VALUE_TYPE_DATETIME,
-			reflectType: reflect.TypeOf(time.Time{}),
+			reflectType: reflect.TypeFor[time.Time](),
 		},
 	}
 }
@@ -236,7 +237,7 @@ func NewSearchAttributeKeyKeywordList(name string) SearchAttributeKeyKeywordList
 		baseSearchAttributeKey: baseSearchAttributeKey{
 			name:        name,
 			valueType:   enumspb.INDEXED_VALUE_TYPE_KEYWORD_LIST,
-			reflectType: reflect.TypeOf([]string{}),
+			reflectType: reflect.TypeFor[[]string](),
 		},
 	}
 }
@@ -258,7 +259,7 @@ func (k SearchAttributeKeyKeywordList) ValueUnset() SearchAttributeUpdate {
 
 func NewSearchAttributes(attributes ...SearchAttributeUpdate) SearchAttributes {
 	sa := SearchAttributes{
-		untypedValue: make(map[SearchAttributeKey]interface{}),
+		untypedValue: make(map[SearchAttributeKey]any),
 	}
 	for _, attr := range attributes {
 		attr(&sa)
@@ -343,8 +344,8 @@ func (sa SearchAttributes) Size() int {
 }
 
 // GetUntypedValues gets a copy of the collection with raw types.
-func (sa SearchAttributes) GetUntypedValues() map[SearchAttributeKey]interface{} {
-	untypedValueCopy := make(map[SearchAttributeKey]interface{}, len(sa.untypedValue))
+func (sa SearchAttributes) GetUntypedValues() map[SearchAttributeKey]any {
+	untypedValueCopy := make(map[SearchAttributeKey]any, len(sa.untypedValue))
 	for key, value := range sa.untypedValue {
 		// Filter out nil values
 		if value == nil {
@@ -368,13 +369,11 @@ func (sa SearchAttributes) Copy() SearchAttributeUpdate {
 		// GetUntypedValues returns a copy of the map without nil values
 		// so the copy won't delete any existing values
 		untypedValues := sa.GetUntypedValues()
-		for key, value := range untypedValues {
-			s.untypedValue[key] = value
-		}
+		maps.Copy(s.untypedValue, untypedValues)
 	}
 }
 
-func serializeUntypedSearchAttributes(input map[string]interface{}) (*commonpb.SearchAttributes, error) {
+func serializeUntypedSearchAttributes(input map[string]any) (*commonpb.SearchAttributes, error) {
 	if input == nil {
 		return nil, nil
 	}
@@ -396,7 +395,7 @@ func serializeUntypedSearchAttributes(input map[string]interface{}) (*commonpb.S
 	return &commonpb.SearchAttributes{IndexedFields: attr}, nil
 }
 
-func serializeTypedSearchAttributes(searchAttributes map[SearchAttributeKey]interface{}) (*commonpb.SearchAttributes, error) {
+func serializeTypedSearchAttributes(searchAttributes map[SearchAttributeKey]any) (*commonpb.SearchAttributes, error) {
 	if searchAttributes == nil {
 		return nil, nil
 	}
@@ -416,8 +415,40 @@ func serializeTypedSearchAttributes(searchAttributes map[SearchAttributeKey]inte
 	return &commonpb.SearchAttributes{IndexedFields: serializedAttr}, nil
 }
 
-func serializeSearchAttributes(
-	untypedAttributes map[string]interface{},
+// sanitizeSearchAttributesForStart removes null or unset search attributes from
+// Start-like requests, even though workflow info may still contain them in the
+// current run.
+func sanitizeSearchAttributesForStart(attributes *commonpb.SearchAttributes) *commonpb.SearchAttributes {
+	indexedFields := attributes.GetIndexedFields()
+	if len(indexedFields) == 0 {
+		return attributes
+	}
+
+	var filteredAttributes map[string]*commonpb.Payload
+	for _, payload := range indexedFields {
+		if string(payload.GetMetadata()[converter.MetadataEncoding]) == converter.MetadataEncodingNil {
+			filteredAttributes = make(map[string]*commonpb.Payload, len(indexedFields)-1)
+			break
+		}
+	}
+	if filteredAttributes == nil {
+		return attributes
+	}
+
+	for key, payload := range indexedFields {
+		if string(payload.GetMetadata()[converter.MetadataEncoding]) == converter.MetadataEncodingNil {
+			continue
+		}
+		filteredAttributes[key] = payload
+	}
+	if len(filteredAttributes) == 0 {
+		return nil
+	}
+	return &commonpb.SearchAttributes{IndexedFields: filteredAttributes}
+}
+
+func SerializeSearchAttributes(
+	untypedAttributes map[string]any,
 	typedAttributes SearchAttributes,
 ) (*commonpb.SearchAttributes, error) {
 	var searchAttr *commonpb.SearchAttributes
@@ -435,7 +466,7 @@ func serializeSearchAttributes(
 			return nil, err
 		}
 	}
-	return searchAttr, nil
+	return sanitizeSearchAttributesForStart(searchAttr), nil
 }
 
 func convertToTypedSearchAttributes(logger log.Logger, attributes map[string]*commonpb.Payload) SearchAttributes {

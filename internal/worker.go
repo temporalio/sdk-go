@@ -49,7 +49,12 @@ type (
 		// Default: 1
 		MinimumNumberOfPollers int
 
-		// MaximumNumberOfPollers is the maximum number of pollers the worker is allowed scale up to.
+		// MaximumNumberOfPollers is the maximum number of pollers the worker is allowed to scale up to.
+		// The server may route a task queue's tasks through several locations and require
+		// the worker to keep at least one poll open against each so no tasks are left
+		// unpolled. If the server reports more locations than this value, the worker
+		// exceeds it to cover all of them. For workflow tasks, this applies separately
+		// to normal and sticky pollers.
 		//
 		// Default: 100
 		MaximumNumberOfPollers int
@@ -94,6 +99,53 @@ type (
 		DefaultVersioningBehavior VersioningBehavior
 	}
 
+	// PreferredVersionProvider provides the version to record for a GetVersion call when the
+	// version marker is created for the first time.
+	//
+	// It is called only during non-replay workflow task execution, before the SDK records a
+	// version marker for the change ID. It is not called during replay or after a version was
+	// already recorded for the same change ID. Returning nil is equivalent to choosing
+	// [PreferredVersionProviderInput.MaxSupported].
+	//
+	// The provider runs on a workflow goroutine. It can read a configuration file or another
+	// nondeterministic source because the selected version is recorded in workflow history.
+	// A panic from the provider fails the current workflow task, which Temporal retries.
+	//
+	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/worker.PreferredVersionProvider]
+	PreferredVersionProvider func(PreferredVersionProviderInput) *VersionPreference
+
+	// PreferredVersionProviderInput is the input passed to a PreferredVersionProvider.
+	//
+	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/worker.PreferredVersionProviderInput]
+	PreferredVersionProviderInput struct {
+		// WorkflowInfo is information about the workflow execution handling the GetVersion call.
+		WorkflowInfo *WorkflowInfo
+		// ChangeID is the change ID passed to GetVersion.
+		ChangeID string
+		// MinSupported is the minimum version supported by the GetVersion call.
+		MinSupported Version
+		// MaxSupported is the maximum version supported by the GetVersion call.
+		MaxSupported Version
+	}
+
+	// VersionPreference is the version preference returned by a PreferredVersionProvider.
+	//
+	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/worker.VersionPreference]
+	VersionPreference struct {
+		// Version is the version to record. It must be in the range passed to GetVersion unless
+		// ClampToSupportedRange is true.
+		Version Version
+		// ClampToSupportedRange controls whether Version is clamped to the range passed to
+		// GetVersion instead of failing the workflow task when it is out of range.
+		ClampToSupportedRange bool
+	}
+
 	// WorkerOptions is used to configure a worker instance.
 	// The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
 	// subjected to change in the future.
@@ -109,9 +161,12 @@ type (
 		// Optional: Sets the rate limiting on number of activities that can be executed per second per
 		// worker. This can be used to limit resources used by the worker.
 		// Notice that the number is represented in float, so that you can set it to less than
-		// 1 if needed. For example, set the number to 0.1 means you want your activity to be executed
-		// once for every 10 seconds. This can be used to protect down stream services from flooding.
-		// The zero value of this uses the default value
+		// 1 if needed. For example, setting the number to 0.1 means activities execute
+		// once every 10 seconds. This can be used to protect downstream services from flooding.
+		// This rate limit is applied after activity tasks are received by the worker. If this
+		// value is set very low, server-side timeouts may continue to elapse while tasks wait
+		// behind this worker-side rate limiter.
+		// The zero value of this uses the default value.
 		//
 		// default: 100k
 		WorkerActivitiesPerSecond float64
@@ -149,7 +204,12 @@ type (
 		// temporal-server to retrieve activity tasks. Changing this value will affect the
 		// rate at which the worker is able to consume tasks from a task queue.
 		//
-		// NOTE: This option is mutually exclusive with WorkflowTaskPollerBehavior.
+		// NOTE: This option is mutually exclusive with ActivityTaskPollerBehavior.
+		//
+		// NOTE: If neither this nor ActivityTaskPollerBehavior is set and the worker's
+		// namespace is configured to auto-enroll workers into poller autoscaling, the
+		// worker will automatically use poller autoscaling for activity tasks instead of
+		// a fixed number of pollers.
 		//
 		// default: 2
 		MaxConcurrentActivityTaskPollers int
@@ -170,6 +230,11 @@ type (
 		//
 		// NOTE: This option is mutually exclusive with WorkflowTaskPollerBehavior.
 		//
+		// NOTE: If neither this nor WorkflowTaskPollerBehavior is set and the worker's
+		// namespace is configured to auto-enroll workers into poller autoscaling, the
+		// worker will automatically use poller autoscaling for workflow tasks instead of
+		// a fixed number of pollers.
+		//
 		// default: 2
 		MaxConcurrentWorkflowTaskPollers int
 
@@ -184,6 +249,11 @@ type (
 		// rate at which the worker is able to consume tasks from a task queue.
 		//
 		// NOTE: This option is mutually exclusive with NexusTaskPollerBehavior.
+		//
+		// NOTE: If neither this nor NexusTaskPollerBehavior is set and the worker's
+		// namespace is configured to auto-enroll workers into poller autoscaling, the
+		// worker will automatically use poller autoscaling for nexus tasks instead of
+		// a fixed number of pollers.
 		//
 		// default: 2
 		MaxConcurrentNexusTaskPollers int
@@ -289,12 +359,21 @@ type (
 		// here and in client options.
 		Interceptors []WorkerInterceptor
 
-		// Optional: Callback invoked on fatal error. Immediately after this
-		// returns, Worker.Stop() will be called.
+		// Optional: Callback invoked once for the first fatal error. The worker
+		// records that error and signals remote-task polling to stop before
+		// scheduling the callback on a goroutine outside the worker's polling
+		// and task shutdown waits. Attempts already past their final stop check
+		// may still start or complete. After the callback returns, Worker.Stop()
+		// is called.
+		//
+		// The callback may call Worker.Stop(). An independently requested Stop
+		// or Run may finish before this callback finishes; stop completion does
+		// not mean the callback has delivered its notification.
 		OnFatalError func(error)
 
 		// Optional: Disable eager activities. If set to true, activities will not
 		// be requested to execute eagerly from the same workflow regardless of
+		// MaxEagerActivityReservationsPerWorkflowTask or
 		// MaxConcurrentEagerActivityExecutionSize.
 		//
 		// Eager activity execution means the server returns requested eager
@@ -303,6 +382,13 @@ type (
 		//
 		// NOTE: Eager activities will automatically be disabled if TaskQueueActivitiesPerSecond is set.
 		DisableEagerActivities bool
+
+		// Optional: Maximum number of activity slots that may be reserved for
+		// eager execution when completing a workflow task.
+		//
+		// The default is 3. A configured value must be positive. To disable eager
+		// activity execution, set DisableEagerActivities.
+		MaxEagerActivityReservationsPerWorkflowTask *int
 
 		// Optional: Maximum number of eager activities that can be running.
 		//
@@ -350,6 +436,15 @@ type (
 		// for more.
 		DeploymentOptions WorkerDeploymentOptions
 
+		// Optional: Provides the version to record the first time a non-replay
+		// workflow.GetVersion call is encountered for a change ID. If unset, or if the provider
+		// returns nil, the SDK records GetVersion's maxSupported argument. This can support a rolling deployment that
+		// introduces a GetVersion call: initially return workflow.DefaultVersion so workers with
+		// the old code can replay, then return the desired version after the new code is deployed.
+		//
+		// NOTE: Experimental
+		PreferredVersionProvider PreferredVersionProvider
+
 		// Optional: If set, use a custom tuner for this worker. See WorkerTuner for more.
 		// Mutually exclusive with MaxConcurrentWorkflowTaskExecutionSize,
 		// MaxConcurrentActivityExecutionSize, and MaxConcurrentLocalActivityExecutionSize.
@@ -357,12 +452,26 @@ type (
 		// NOTE: Experimental
 		Tuner WorkerTuner
 
+		// Optional: If set, provides CPU and memory usage information for worker heartbeats.
+		// Use contrib/sysinfo.SysInfoProvider() for a gopsutil-based implementation, or provide
+		// your own. When unset, the worker will use the Tuner's SysInfoProvider if it exposes one
+		// (e.g. a resource-based tuner); otherwise heartbeats report 0 for CPU/memory usage.
+		//
+		// It is an error to provide a SysInfoProvider here that differs from the one used by the
+		// Tuner.
+		//
+		// NOTE: Experimental
+		SysInfoProvider SysInfoProvider
+
 		// Optional: If set, the worker will use the provided poller behavior when polling for workflow tasks.
 		// This is mutually exclusive with MaxConcurrentWorkflowTaskPollers.
 		//
 		// NOTE: This option is mutually exclusive with MaxConcurrentWorkflowTaskPollers.
 		//
-		// NOTE: Experimental
+		// NOTE: If neither this nor MaxConcurrentWorkflowTaskPollers is set and the worker's
+		// namespace is configured to auto-enroll workers into poller autoscaling, the worker
+		// will automatically use poller autoscaling for workflow tasks instead of a fixed
+		// number of pollers.
 		WorkflowTaskPollerBehavior PollerBehavior
 
 		// Optional: If set, the worker will use the provided poller behavior when polling for activity tasks.
@@ -370,7 +479,10 @@ type (
 		//
 		// NOTE: This option is mutually exclusive with MaxConcurrentActivityTaskPollers.
 		//
-		// NOTE: Experimental
+		// NOTE: If neither this nor MaxConcurrentActivityTaskPollers is set and the worker's
+		// namespace is configured to auto-enroll workers into poller autoscaling, the worker
+		// will automatically use poller autoscaling for activity tasks instead of a fixed
+		// number of pollers.
 		ActivityTaskPollerBehavior PollerBehavior
 
 		// Optional: If set, the worker will use the provided poller behavior when polling for nexus tasks.
@@ -378,7 +490,10 @@ type (
 		//
 		// NOTE: This option is mutually exclusive with MaxConcurrentNexusTaskPollers.
 		//
-		// NOTE: Experimental
+		// NOTE: If neither this nor MaxConcurrentNexusTaskPollers is set and the worker's
+		// namespace is configured to auto-enroll workers into poller autoscaling, the worker
+		// will automatically use poller autoscaling for nexus tasks instead of a fixed
+		// number of pollers.
 		NexusTaskPollerBehavior PollerBehavior
 
 		// Plugins that can configure options and intercept start/stop worker.
@@ -389,9 +504,19 @@ type (
 		//
 		// Plugins themselves should never mutate this field, the behavior is
 		// undefined.
+		Plugins []WorkerPlugin
+
+		// Optional: Disable payload size error limit enforcement in the worker.
+		//
+		// When false, the worker will validate the payload size before submitting
+		// to the Temporal server, and cause a task failure if the size limit is
+		// exceeded. When true, the worker will not perform this validation.
+		//
+		// See https://docs.temporal.io/troubleshooting/blob-size-limit-error for more
+		// details.
 		//
 		// NOTE: Experimental
-		Plugins []WorkerPlugin
+		DisablePayloadErrorLimit bool
 	}
 )
 
@@ -487,8 +612,10 @@ func NewPollerBehaviorSimpleMaximum(
 	}
 }
 
-// NewPollerBehaviorAutoscaling creates a PollerBehavior that allows the worker to scale the number of pollers within a given range.
-// based on the workflow and feedback from the server.
+// NewPollerBehaviorAutoscaling scales pollers within the configured range using
+// server feedback. The worker may exceed the configured maximum when the server
+// requires a poll open against more locations than the maximum allows. See
+// [PollerBehaviorAutoscalingOptions.MaximumNumberOfPollers].
 //
 // Exposed as: [go.temporal.io/sdk/worker.NewPollerBehaviorAutoscaling]
 func NewPollerBehaviorAutoscaling(
@@ -505,6 +632,11 @@ func NewPollerBehaviorAutoscaling(
 	maximumNumberOfPollers := options.MaximumNumberOfPollers
 	if maximumNumberOfPollers <= 0 {
 		maximumNumberOfPollers = defaultAutoscalingMaximumNumberOfPollers // Default maximum number of pollers.
+	}
+	if initialNumberOfPollers < minimumNumberOfPollers {
+		initialNumberOfPollers = minimumNumberOfPollers
+	} else if initialNumberOfPollers > maximumNumberOfPollers {
+		initialNumberOfPollers = maximumNumberOfPollers
 	}
 	return &pollerBehaviorAutoscaling{
 		initialNumberOfPollers: initialNumberOfPollers,

@@ -3,10 +3,10 @@ package log
 type (
 	// Logger is an interface that can be passed to ClientOptions.Logger.
 	Logger interface {
-		Debug(msg string, keyvals ...interface{})
-		Info(msg string, keyvals ...interface{})
-		Warn(msg string, keyvals ...interface{})
-		Error(msg string, keyvals ...interface{})
+		Debug(msg string, keyvals ...any)
+		Info(msg string, keyvals ...any)
+		Warn(msg string, keyvals ...any)
+		Error(msg string, keyvals ...any)
 	}
 
 	// WithSkipCallers is an optional interface that a Logger can implement that
@@ -19,6 +19,6 @@ type (
 	// WithLogger is an optional interface that prepend every log entry with keyvals.
 	// This call must not mutate the original logger.
 	WithLogger interface {
-		With(keyvals ...interface{}) Logger
+		With(keyvals ...any) Logger
 	}
 )

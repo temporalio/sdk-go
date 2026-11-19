@@ -1,0 +1,1671 @@
+package extstore
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"sync"
+	"testing"
+	"testing/synctest"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/require"
+	commonpb "go.temporal.io/api/common/v1"
+	"go.temporal.io/api/proxy"
+	sdkpb "go.temporal.io/api/sdk/v1"
+	"golang.org/x/sync/errgroup"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
+)
+
+// ---------------------------------------------------------------------------
+// testStorageDriver — in-memory StorageDriver for testing
+// ---------------------------------------------------------------------------
+
+type testStorageDriver struct {
+	name          string
+	mu            sync.Mutex
+	data          map[string]*commonpb.Payload
+	storeCount    int
+	retrieveCount int
+	storeErr      error
+	retrieveErr   error
+	storeDelay    time.Duration
+	retrieveDelay time.Duration
+	storeGate     <-chan struct{} // if non-nil, Store waits for this before proceeding
+	retrieveGate  <-chan struct{} // if non-nil, Retrieve waits for this before proceeding
+}
+
+func newTestDriver(name string) *testStorageDriver {
+	return &testStorageDriver{name: name, data: map[string]*commonpb.Payload{}}
+}
+
+func (d *testStorageDriver) Name() string { return d.name }
+func (d *testStorageDriver) Type() string { return "test" }
+
+func (d *testStorageDriver) Store(_ StorageDriverStoreContext, payloads []*commonpb.Payload) ([]StorageDriverClaim, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.storeCount++
+	if d.storeDelay > 0 {
+		time.Sleep(d.storeDelay)
+	}
+	if d.storeGate != nil {
+		d.mu.Unlock()
+		<-d.storeGate
+		d.mu.Lock()
+	}
+	if d.storeErr != nil {
+		return nil, d.storeErr
+	}
+	claims := make([]StorageDriverClaim, len(payloads))
+	for i, p := range payloads {
+		key := uuid.NewString()
+		d.data[key] = proto.Clone(p).(*commonpb.Payload)
+		claims[i] = StorageDriverClaim{ClaimData: map[string]string{"key": key}}
+	}
+	return claims, nil
+}
+
+func (d *testStorageDriver) Retrieve(_ StorageDriverRetrieveContext, claims []StorageDriverClaim) ([]*commonpb.Payload, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.retrieveCount++
+	if d.retrieveDelay > 0 {
+		time.Sleep(d.retrieveDelay)
+	}
+	if d.retrieveGate != nil {
+		d.mu.Unlock()
+		<-d.retrieveGate
+		d.mu.Lock()
+	}
+	if d.retrieveErr != nil {
+		return nil, d.retrieveErr
+	}
+	payloads := make([]*commonpb.Payload, len(claims))
+	for i, c := range claims {
+		p, ok := d.data[c.ClaimData["key"]]
+		if !ok {
+			return nil, fmt.Errorf("key not found: %q", c.ClaimData["key"])
+		}
+		payloads[i] = proto.Clone(p).(*commonpb.Payload)
+	}
+	return payloads, nil
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+func makePayload(t *testing.T, data string) *commonpb.Payload {
+	t.Helper()
+	jsonBytes, err := json.Marshal(data)
+	require.NoError(t, err)
+	return &commonpb.Payload{
+		Metadata: map[string][]byte{metadataEncoding: []byte("json/plain")},
+		Data:     jsonBytes,
+	}
+}
+
+// makeOversizedPayload returns a payload whose proto.Size() is >= threshold.
+func makeOversizedPayload(t *testing.T, threshold int) *commonpb.Payload {
+	t.Helper()
+	data := make([]byte, threshold)
+	for i := range data {
+		data[i] = 'x'
+	}
+	return &commonpb.Payload{Data: data}
+}
+
+func visitPayloads(ctx context.Context, visitor PayloadVisitor, payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	vpc := &proxy.VisitPayloadsContext{Context: ctx}
+	return visitor.Visit(vpc, payloads)
+}
+
+// ---------------------------------------------------------------------------
+// ExternalStorageToParams
+// ---------------------------------------------------------------------------
+
+func TestExternalStorageToParams_NegativeThreshold(t *testing.T) {
+	_, err := ExternalStorageToParams(ExternalStorage{
+		Drivers:              []StorageDriver{newTestDriver("d")},
+		PayloadSizeThreshold: -1,
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "PayloadSizeThreshold")
+}
+
+func TestExternalStorageToParams_ZeroThresholdUsesDefault(t *testing.T) {
+	params, err := ExternalStorageToParams(ExternalStorage{
+		Drivers: []StorageDriver{newTestDriver("d")},
+	})
+	require.NoError(t, err)
+	require.Equal(t, defaultPayloadSizeThreshold, params.payloadSizeThreshold)
+}
+
+func TestExternalStorageToParams_ExplicitThreshold(t *testing.T) {
+	params, err := ExternalStorageToParams(ExternalStorage{
+		Drivers:              []StorageDriver{newTestDriver("d")},
+		PayloadSizeThreshold: 1024,
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1024, params.payloadSizeThreshold)
+}
+
+func TestExternalStorageToParams_MultipleDriversRequireSelector(t *testing.T) {
+	_, err := ExternalStorageToParams(ExternalStorage{
+		Drivers: []StorageDriver{newTestDriver("a"), newTestDriver("b")},
+	})
+	require.EqualError(t, err, "DriverSelector must be set when more than one driver is provided")
+}
+
+func TestExternalStorageToParams_DuplicateDriverNames(t *testing.T) {
+	_, err := ExternalStorageToParams(ExternalStorage{
+		Drivers: []StorageDriver{newTestDriver("same"), newTestDriver("same")},
+	})
+	require.EqualError(t, err, `duplicate storage driver name: "same"`)
+}
+
+func TestExternalStorageToParams_PointerAndValueReceiverDrivers(t *testing.T) {
+	// ptrDriver satisfies StorageDriver via pointer receivers (*testStorageDriver).
+	ptrDriver := newTestDriver("ptr-driver")
+	// valDriver satisfies StorageDriver via value receivers (valueReceiverDriver).
+	// Both the plain value and a pointer to it implement the interface; here we
+	// register the plain value to confirm that path works too.
+	//valDriver := valueReceiverDriver{name: "val-driver"}
+	valDriver := newValDriver("val-driver")
+
+	selector := &funcDriverSelector{fn: func(_ StorageDriverSelectContext, _ *commonpb.Payload) (StorageDriver, error) {
+		return ptrDriver, nil
+	}}
+	params, err := ExternalStorageToParams(ExternalStorage{
+		Drivers:              []StorageDriver{ptrDriver, valDriver},
+		DriverSelector:       selector,
+		PayloadSizeThreshold: 1, // store everything
+	})
+	require.NoError(t, err)
+	require.True(t, driversEqual(params.driverMap["ptr-driver"], ptrDriver), "pointer receiver driver should be in the registered set")
+	require.True(t, driversEqual(params.driverMap["val-driver"], valDriver), "value receiver driver should be in the registered set")
+}
+
+func TestExternalStorageToParams_EmptyDrivers(t *testing.T) {
+	params, err := ExternalStorageToParams(ExternalStorage{})
+	require.NoError(t, err)
+	require.Nil(t, params.driverSelector)
+}
+
+func TestExternalStorageToParams_SingleDriverSynthesizesSelector(t *testing.T) {
+	driver := newTestDriver("d")
+	params, err := ExternalStorageToParams(ExternalStorage{
+		Drivers: []StorageDriver{driver},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, params.driverSelector)
+	selected, err := params.driverSelector.SelectDriver(StorageDriverSelectContext{Context: t.Context()}, nil)
+	require.NoError(t, err)
+	require.Equal(t, driver, selected)
+}
+
+// ---------------------------------------------------------------------------
+// storageReferenceToPayload / payloadToStorageReference
+// ---------------------------------------------------------------------------
+
+func TestStorageReferenceRoundTrip(t *testing.T) {
+	ref := &sdkpb.ExternalStorageReference{
+		DriverName: "mydriver",
+		ClaimData:  map[string]string{"key": "abc123"},
+	}
+	p, err := storageReferenceToPayload(ref, 512)
+	require.NoError(t, err)
+	require.Equal(t, metadataEncodingProtoJSON, string(p.Metadata[metadataEncoding]))
+	require.Len(t, p.ExternalPayloads, 1)
+	require.Equal(t, int64(512), p.ExternalPayloads[0].SizeBytes)
+
+	decoded, err := payloadToStorageReference(p)
+	require.NoError(t, err)
+	require.Equal(t, ref.DriverName, decoded.DriverName)
+	require.Equal(t, ref.ClaimData, decoded.ClaimData)
+}
+
+func TestPayloadToStorageReference_WrongEncoding(t *testing.T) {
+	p := &commonpb.Payload{
+		Metadata: map[string][]byte{metadataEncoding: []byte("json/plain")},
+		Data:     []byte(`{}`),
+	}
+	_, err := payloadToStorageReference(p)
+	require.Error(t, err)
+}
+
+func TestPayloadToStorageReference_CorruptJSON(t *testing.T) {
+	p := &commonpb.Payload{
+		Metadata: map[string][]byte{metadataEncoding: []byte(metadataEncodingStorageRefLegacy)},
+		Data:     []byte(`not json`),
+	}
+	_, err := payloadToStorageReference(p)
+	require.Error(t, err)
+}
+
+func TestPayloadToStorageReference_ProtoJSONFormat(t *testing.T) {
+	want := &sdkpb.ExternalStorageReference{
+		DriverName: "mydriver",
+		ClaimData:  map[string]string{"bucket": "b", "key": "k"},
+	}
+	p, err := storageReferenceToPayload(want, 0)
+	require.NoError(t, err)
+	require.Equal(t, metadataEncodingProtoJSON, string(p.Metadata[metadataEncoding]))
+	require.Equal(t, externalStorageReferenceMessageType, string(p.Metadata[metadataMessageType]))
+
+	got, err := payloadToStorageReference(p)
+	require.NoError(t, err)
+	require.Equal(t, want.DriverName, got.DriverName)
+	require.Equal(t, want.ClaimData, got.ClaimData)
+}
+
+func TestPayloadToStorageReference_LegacyFormat(t *testing.T) {
+	legacyData, err := json.Marshal(legacyStorageReference{
+		DriverName:  "mydriver",
+		DriverClaim: StorageDriverClaim{ClaimData: map[string]string{"bucket": "b", "key": "k"}},
+	})
+	require.NoError(t, err)
+	p := &commonpb.Payload{
+		Metadata: map[string][]byte{metadataEncoding: []byte(metadataEncodingStorageRefLegacy)},
+		Data:     legacyData,
+	}
+
+	got, err := payloadToStorageReference(p)
+	require.NoError(t, err)
+	require.Equal(t, "mydriver", got.DriverName)
+	require.Equal(t, map[string]string{"bucket": "b", "key": "k"}, got.ClaimData)
+}
+
+func TestPayloadToStorageReference_ProtoJSON_WrongMessageType(t *testing.T) {
+	p := &commonpb.Payload{
+		Metadata: map[string][]byte{
+			metadataEncoding:    []byte(metadataEncodingProtoJSON),
+			metadataMessageType: []byte("some.other.MessageType"),
+		},
+		Data: []byte(`{}`),
+	}
+	_, err := payloadToStorageReference(p)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "some.other.MessageType")
+}
+
+// ---------------------------------------------------------------------------
+// IsStorageReference
+// ---------------------------------------------------------------------------
+
+func TestIsStorageReference_ProtoJSONFormat(t *testing.T) {
+	p, err := storageReferenceToPayload(&sdkpb.ExternalStorageReference{DriverName: "d"}, 0)
+	require.NoError(t, err)
+	require.True(t, IsStorageReference(p))
+}
+
+func TestIsStorageReference_LegacyFormat(t *testing.T) {
+	p := &commonpb.Payload{
+		Metadata: map[string][]byte{metadataEncoding: []byte(metadataEncodingStorageRefLegacy)},
+		Data:     []byte(`{"driver_name":"d","driver_claim":{}}`),
+	}
+	require.True(t, IsStorageReference(p))
+}
+
+func TestIsStorageReference_ProtoJSON_WrongMessageType(t *testing.T) {
+	p := &commonpb.Payload{
+		Metadata: map[string][]byte{
+			metadataEncoding:    []byte(metadataEncodingProtoJSON),
+			metadataMessageType: []byte("some.other.MessageType"),
+		},
+	}
+	require.False(t, IsStorageReference(p))
+}
+
+func TestIsStorageReference_NotStorageReference(t *testing.T) {
+	require.False(t, IsStorageReference(makePayload(t, "hello")))
+	require.False(t, IsStorageReference(&commonpb.Payload{}))
+}
+
+// ---------------------------------------------------------------------------
+// storageStoreVisitor
+// ---------------------------------------------------------------------------
+
+func TestStoreVisitor_NoDriverNoop(t *testing.T) {
+	params, err := ExternalStorageToParams(ExternalStorage{})
+	require.NoError(t, err)
+	visitor := NewExternalStorageVisitor(params)
+
+	p := makePayload(t, "hello")
+	result, err := visitPayloads(t.Context(), visitor, []*commonpb.Payload{p})
+	require.NoError(t, err)
+	require.True(t, proto.Equal(p, result[0]))
+}
+
+func TestStoreVisitor_BelowThreshold_NotStored(t *testing.T) {
+	driver := newTestDriver("d")
+	// Use a large threshold so the payload stays inline.
+	params, err := ExternalStorageToParams(ExternalStorage{
+		Drivers:              []StorageDriver{driver},
+		PayloadSizeThreshold: 1 << 20, // 1 MiB
+	})
+	require.NoError(t, err)
+	visitor := NewExternalStorageVisitor(params)
+
+	p := makePayload(t, "small")
+	result, err := visitPayloads(t.Context(), visitor, []*commonpb.Payload{p})
+	require.NoError(t, err)
+	require.True(t, proto.Equal(p, result[0]), "small payload should be unchanged")
+	require.Equal(t, 0, driver.storeCount)
+}
+
+func TestStoreVisitor_AtThreshold_Stored(t *testing.T) {
+	const threshold = 100
+	driver := newTestDriver("d")
+	params, err := ExternalStorageToParams(ExternalStorage{
+		Drivers:              []StorageDriver{driver},
+		PayloadSizeThreshold: threshold,
+	})
+	require.NoError(t, err)
+	visitor := NewExternalStorageVisitor(params)
+
+	p := makeOversizedPayload(t, threshold)
+	require.GreaterOrEqual(t, proto.Size(p), threshold)
+
+	result, err := visitPayloads(t.Context(), visitor, []*commonpb.Payload{p})
+	require.NoError(t, err)
+	require.Equal(t, metadataEncodingProtoJSON, string(result[0].Metadata[metadataEncoding]))
+	require.Equal(t, 1, driver.storeCount)
+}
+
+func TestStoreVisitor_AboveThreshold_Stored(t *testing.T) {
+	const threshold = 10
+	driver := newTestDriver("d")
+	params, err := ExternalStorageToParams(ExternalStorage{
+		Drivers:              []StorageDriver{driver},
+		PayloadSizeThreshold: threshold,
+	})
+	require.NoError(t, err)
+	visitor := NewExternalStorageVisitor(params)
+
+	p := makeOversizedPayload(t, threshold+1)
+	result, err := visitPayloads(t.Context(), visitor, []*commonpb.Payload{p})
+	require.NoError(t, err)
+	require.Equal(t, metadataEncodingProtoJSON, string(result[0].Metadata[metadataEncoding]))
+	require.Equal(t, 1, driver.storeCount)
+}
+
+func TestStoreVisitor_MultiplePayloads_Batched(t *testing.T) {
+	const threshold = 500
+	driver := newTestDriver("d")
+	params, err := ExternalStorageToParams(ExternalStorage{
+		Drivers:              []StorageDriver{driver},
+		PayloadSizeThreshold: threshold,
+	})
+	require.NoError(t, err)
+	visitor := NewExternalStorageVisitor(params)
+
+	big1 := makeOversizedPayload(t, threshold)
+	small := &commonpb.Payload{Data: []byte("x")} // proto.Size ≈ 3, well below threshold
+	big2 := makeOversizedPayload(t, threshold)
+
+	result, err := visitPayloads(t.Context(), visitor, []*commonpb.Payload{big1, small, big2})
+	require.NoError(t, err)
+	require.Len(t, result, 3)
+	require.Equal(t, metadataEncodingProtoJSON, string(result[0].Metadata[metadataEncoding]))
+	require.Equal(t, metadataEncodingProtoJSON, string(result[2].Metadata[metadataEncoding]))
+	// small payload is inline
+	require.Empty(t, result[1].ExternalPayloads)
+	// both big payloads batched in a single Store call
+	require.Equal(t, 1, driver.storeCount)
+}
+
+func TestStoreVisitor_SelectorNil_PayloadInline(t *testing.T) {
+	driver := newTestDriver("d")
+	selector := &funcDriverSelector{fn: func(_ StorageDriverSelectContext, _ *commonpb.Payload) (StorageDriver, error) {
+		return nil, nil
+	}}
+	params, err := ExternalStorageToParams(ExternalStorage{
+		Drivers:        []StorageDriver{driver},
+		DriverSelector: selector,
+	})
+	require.NoError(t, err)
+	visitor := NewExternalStorageVisitor(params)
+
+	p := makeOversizedPayload(t, defaultPayloadSizeThreshold+1)
+	result, err := visitPayloads(t.Context(), visitor, []*commonpb.Payload{p})
+	require.NoError(t, err)
+	require.Empty(t, result[0].ExternalPayloads, "selector returned nil so payload should be inline")
+	require.Equal(t, 0, driver.storeCount)
+}
+
+func TestStoreVisitor_SelectorReceivesSelectContextWithTarget(t *testing.T) {
+	driver := newTestDriver("d")
+	target := StorageDriverWorkflowInfo{
+		Namespace:    "ns",
+		WorkflowType: "MyWorkflow",
+		WorkflowID:   "wf-id",
+		RunID:        "run-id",
+	}
+	var selectCtx StorageDriverSelectContext
+	selector := &funcDriverSelector{fn: func(ctx StorageDriverSelectContext, _ *commonpb.Payload) (StorageDriver, error) {
+		selectCtx = ctx
+		return driver, nil
+	}}
+	params, err := ExternalStorageToParams(ExternalStorage{
+		Drivers:        []StorageDriver{driver},
+		DriverSelector: selector,
+	})
+	require.NoError(t, err)
+	visitor := NewExternalStorageVisitor(params)
+
+	ctx := WithStorageTarget(t.Context(), target)
+	p := makeOversizedPayload(t, defaultPayloadSizeThreshold+1)
+	_, err = visitPayloads(ctx, visitor, []*commonpb.Payload{p})
+	require.NoError(t, err)
+	require.Equal(t, target, selectCtx.Target)
+	require.NotNil(t, selectCtx.Context)
+}
+
+type storeContextRecordingDriver struct {
+	*testStorageDriver
+	storeCtx StorageDriverStoreContext
+}
+
+func (d *storeContextRecordingDriver) Store(ctx StorageDriverStoreContext, payloads []*commonpb.Payload) ([]StorageDriverClaim, error) {
+	d.storeCtx = ctx
+	return d.testStorageDriver.Store(ctx, payloads)
+}
+
+func TestStoreVisitor_ContextsCarryNamespace(t *testing.T) {
+	target := StorageDriverWorkflowInfo{Namespace: "target-ns", WorkflowID: "wf-id"}
+	for _, tc := range []struct {
+		name   string
+		target StorageDriverTargetInfo
+	}{
+		{name: "with target", target: target},
+		{name: "without target"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			driver := &storeContextRecordingDriver{testStorageDriver: newTestDriver("d")}
+			var selectCtx StorageDriverSelectContext
+			selector := &funcDriverSelector{fn: func(ctx StorageDriverSelectContext, _ *commonpb.Payload) (StorageDriver, error) {
+				selectCtx = ctx
+				return driver, nil
+			}}
+			params, err := ExternalStorageToParams(ExternalStorage{
+				Drivers:        []StorageDriver{driver},
+				DriverSelector: selector,
+			})
+			require.NoError(t, err)
+			visitor := NewExternalStorageVisitor(params.WithNamespace("ambient-ns"))
+
+			ctx := t.Context()
+			if tc.target != nil {
+				ctx = WithStorageTarget(ctx, tc.target)
+			}
+			p := makeOversizedPayload(t, defaultPayloadSizeThreshold+1)
+			_, err = visitPayloads(ctx, visitor, []*commonpb.Payload{p})
+			require.NoError(t, err)
+			require.Equal(t, "ambient-ns", selectCtx.Namespace)
+			require.Equal(t, tc.target, selectCtx.Target)
+			require.Equal(t, "ambient-ns", driver.storeCtx.Namespace)
+			require.Equal(t, tc.target, driver.storeCtx.Target)
+		})
+	}
+}
+
+func TestStoreVisitor_SelectorBelowThreshold_NotCalled(t *testing.T) {
+	driver := newTestDriver("d")
+	selectorCalled := false
+	selector := &funcDriverSelector{fn: func(_ StorageDriverSelectContext, _ *commonpb.Payload) (StorageDriver, error) {
+		selectorCalled = true
+		return driver, nil
+	}}
+	params, err := ExternalStorageToParams(ExternalStorage{
+		Drivers:              []StorageDriver{driver},
+		DriverSelector:       selector,
+		PayloadSizeThreshold: 1 << 20, // 1 MiB
+	})
+	require.NoError(t, err)
+	visitor := NewExternalStorageVisitor(params)
+
+	p := makePayload(t, "small")
+	result, err := visitPayloads(t.Context(), visitor, []*commonpb.Payload{p})
+	require.NoError(t, err)
+	require.False(t, selectorCalled, "selector must not be invoked for sub-threshold payloads")
+	require.Empty(t, result[0].ExternalPayloads)
+	require.Equal(t, 0, driver.storeCount)
+}
+
+func TestStoreVisitor_SelectorRoutes_TwoDrivers(t *testing.T) {
+	d1 := newTestDriver("d1")
+	d2 := newTestDriver("d2")
+	i := 0
+	selector := &funcDriverSelector{fn: func(_ StorageDriverSelectContext, _ *commonpb.Payload) (StorageDriver, error) {
+		defer func() { i++ }()
+		if i%2 == 0 {
+			return d1, nil
+		}
+		return d2, nil
+	}}
+	params, err := ExternalStorageToParams(ExternalStorage{
+		Drivers:              []StorageDriver{d1, d2},
+		DriverSelector:       selector,
+		PayloadSizeThreshold: 1,
+	})
+	require.NoError(t, err)
+	visitor := NewExternalStorageVisitor(params)
+
+	p1 := makePayload(t, "a")
+	p2 := makePayload(t, "b")
+	_, err = visitPayloads(t.Context(), visitor, []*commonpb.Payload{p1, p2})
+	require.NoError(t, err)
+	require.Equal(t, 1, d1.storeCount)
+	require.Equal(t, 1, d2.storeCount)
+}
+
+func TestStoreVisitor_SelectorUnregisteredDriver(t *testing.T) {
+	unregistered := newTestDriver("my-unregistered-driver")
+	selector := &funcDriverSelector{fn: func(_ StorageDriverSelectContext, _ *commonpb.Payload) (StorageDriver, error) {
+		return unregistered, nil
+	}}
+	params, err := ExternalStorageToParams(ExternalStorage{
+		Drivers:              []StorageDriver{newTestDriver("registered")},
+		DriverSelector:       selector,
+		PayloadSizeThreshold: 1,
+	})
+	require.NoError(t, err)
+	visitor := NewExternalStorageVisitor(params)
+
+	_, err = visitPayloads(t.Context(), visitor, []*commonpb.Payload{makePayload(t, "x")})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "my-unregistered-driver")
+}
+
+func TestStoreVisitor_SelectorError(t *testing.T) {
+	selector := &funcDriverSelector{fn: func(_ StorageDriverSelectContext, _ *commonpb.Payload) (StorageDriver, error) {
+		return nil, errors.New("selector error")
+	}}
+	params, err := ExternalStorageToParams(ExternalStorage{
+		Drivers:              []StorageDriver{newTestDriver("d")},
+		DriverSelector:       selector,
+		PayloadSizeThreshold: 1,
+	})
+	require.NoError(t, err)
+	visitor := NewExternalStorageVisitor(params)
+
+	_, err = visitPayloads(t.Context(), visitor, []*commonpb.Payload{makePayload(t, "x")})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "selector error")
+}
+
+func TestStoreVisitor_WrongClaimCount(t *testing.T) {
+	driver := &badCountDriver{name: "my-bad-count-driver"}
+	params, err := ExternalStorageToParams(ExternalStorage{
+		Drivers:              []StorageDriver{driver},
+		PayloadSizeThreshold: 1,
+	})
+	require.NoError(t, err)
+	visitor := NewExternalStorageVisitor(params)
+
+	_, err = visitPayloads(t.Context(), visitor, []*commonpb.Payload{makePayload(t, "x")})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "my-bad-count-driver")
+}
+
+func TestStoreVisitor_StoreError(t *testing.T) {
+	driver := newTestDriver("my-bad-error-driver")
+	driver.storeErr = errors.New("store failed")
+	params, err := ExternalStorageToParams(ExternalStorage{
+		Drivers:              []StorageDriver{driver},
+		PayloadSizeThreshold: 1,
+	})
+	require.NoError(t, err)
+	visitor := NewExternalStorageVisitor(params)
+
+	_, err = visitPayloads(t.Context(), visitor, []*commonpb.Payload{makePayload(t, "x")})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "my-bad-error-driver")
+	require.Contains(t, err.Error(), "store failed")
+}
+
+func TestStoreVisitor_StorePanic(t *testing.T) {
+	driver := &panicDriver{name: "my-panic-store-driver", panicOnStore: true}
+	params, err := ExternalStorageToParams(ExternalStorage{
+		Drivers:              []StorageDriver{driver},
+		PayloadSizeThreshold: 1,
+	})
+	require.NoError(t, err)
+	visitor := NewExternalStorageVisitor(params)
+
+	_, err = visitPayloads(t.Context(), visitor, []*commonpb.Payload{makePayload(t, "x")})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "my-panic-store-driver")
+	require.Contains(t, err.Error(), "store panic")
+}
+
+func TestStoreVisitor_CancelOnError(t *testing.T) {
+	errD := newTestDriver("err-driver")
+	errD.storeErr = errors.New("store error")
+	blockD := &blockingDriver{name: "block-driver", startedCh: make(chan struct{}), cancelledCh: make(chan struct{})}
+	errD.storeGate = blockD.startedCh
+
+	i := 0
+	selector := &funcDriverSelector{fn: func(_ StorageDriverSelectContext, _ *commonpb.Payload) (StorageDriver, error) {
+		defer func() { i++ }()
+		if i%2 == 0 {
+			return errD, nil
+		}
+		return blockD, nil
+	}}
+	params, err := ExternalStorageToParams(ExternalStorage{
+		Drivers:              []StorageDriver{errD, blockD},
+		DriverSelector:       selector,
+		PayloadSizeThreshold: 1,
+	})
+	require.NoError(t, err)
+	visitor := NewExternalStorageVisitor(params)
+
+	p1, p2 := makePayload(t, "a"), makePayload(t, "b")
+	_, err = visitPayloads(t.Context(), visitor, []*commonpb.Payload{p1, p2})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "store error")
+
+	select {
+	case <-blockD.cancelledCh:
+	default:
+		t.Fatal("blocking driver context was not cancelled after sibling driver error")
+	}
+}
+
+func TestStoreVisitor_Callback(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		driver := newTestDriver("d")
+		driver.storeDelay = time.Millisecond
+		params, err := ExternalStorageToParams(ExternalStorage{
+			Drivers:              []StorageDriver{driver},
+			PayloadSizeThreshold: 1,
+		})
+		require.NoError(t, err)
+		visitor := NewExternalStorageVisitor(params)
+
+		cb := &testCallback{}
+		ctx := WithStorageOperationCallback(t.Context(), cb)
+		_, err = visitPayloads(ctx, visitor, []*commonpb.Payload{makePayload(t, "x"), makePayload(t, "y")})
+		require.NoError(t, err)
+		require.Equal(t, 2, cb.count)
+		require.Greater(t, cb.size, int64(0))
+		require.Equal(t, time.Millisecond, cb.duration)
+	})
+}
+
+func TestStoreVisitor_Callback_ExternalCountOnly(t *testing.T) {
+	const threshold = 50
+	driver := newTestDriver("d")
+	params, err := ExternalStorageToParams(ExternalStorage{
+		Drivers:              []StorageDriver{driver},
+		PayloadSizeThreshold: threshold,
+	})
+	require.NoError(t, err)
+	visitor := NewExternalStorageVisitor(params)
+
+	small := makePayload(t, "x")
+	big1 := makeOversizedPayload(t, threshold)
+	big2 := makeOversizedPayload(t, threshold)
+
+	cb := &testCallback{}
+	ctx := WithStorageOperationCallback(t.Context(), cb)
+	_, err = visitPayloads(ctx, visitor, []*commonpb.Payload{small, big1, big2})
+	require.NoError(t, err)
+	require.Equal(t, 2, cb.count)
+}
+
+// ---------------------------------------------------------------------------
+// storageRetrievalVisitor
+// ---------------------------------------------------------------------------
+
+func TestRetrievalVisitor_InlinePassthrough(t *testing.T) {
+	driver := newTestDriver("d")
+	params, err := ExternalStorageToParams(ExternalStorage{
+		Drivers: []StorageDriver{driver},
+	})
+	require.NoError(t, err)
+	visitor := NewExternalRetrievalVisitor(params)
+
+	p := makePayload(t, "inline")
+	result, err := visitPayloads(t.Context(), visitor, []*commonpb.Payload{p})
+	require.NoError(t, err)
+	require.True(t, proto.Equal(p, result[0]))
+	require.Equal(t, 0, driver.retrieveCount)
+}
+
+func TestRetrievalVisitor_Mixed(t *testing.T) {
+	driver := newTestDriver("d")
+	storeParams, err := ExternalStorageToParams(ExternalStorage{
+		Drivers:              []StorageDriver{driver},
+		PayloadSizeThreshold: 1,
+	})
+	require.NoError(t, err)
+	storeVisitor := NewExternalStorageVisitor(storeParams)
+
+	inline := makePayload(t, "inline")
+	big := makeOversizedPayload(t, 100)
+
+	stored, err := visitPayloads(t.Context(), storeVisitor, []*commonpb.Payload{big})
+	require.NoError(t, err)
+	ref := stored[0]
+
+	retrieveVisitor := NewExternalRetrievalVisitor(storeParams)
+	result, err := visitPayloads(t.Context(), retrieveVisitor, []*commonpb.Payload{inline, ref})
+	require.NoError(t, err)
+	require.True(t, proto.Equal(inline, result[0]))
+	require.True(t, proto.Equal(big, result[1]))
+}
+
+func TestRetrievalVisitor_BatchedByDriver(t *testing.T) {
+	driver := newTestDriver("d")
+	params, err := ExternalStorageToParams(ExternalStorage{
+		Drivers:              []StorageDriver{driver},
+		PayloadSizeThreshold: 1,
+	})
+	require.NoError(t, err)
+	storeVisitor := NewExternalStorageVisitor(params)
+	retrieveVisitor := NewExternalRetrievalVisitor(params)
+
+	p1, p2 := makePayload(t, "first"), makePayload(t, "second")
+	refs, err := visitPayloads(t.Context(), storeVisitor, []*commonpb.Payload{p1, p2})
+	require.NoError(t, err)
+
+	driver.retrieveCount = 0
+	result, err := visitPayloads(t.Context(), retrieveVisitor, refs)
+	require.NoError(t, err)
+	require.Equal(t, 1, driver.retrieveCount, "both claims should be batched into one Retrieve call")
+	require.True(t, proto.Equal(p1, result[0]))
+	require.True(t, proto.Equal(p2, result[1]))
+}
+
+func TestRetrievalVisitor_MultiDriver(t *testing.T) {
+	d1 := newTestDriver("d1")
+	d2 := newTestDriver("d2")
+	i := 0
+	selector := &funcDriverSelector{fn: func(_ StorageDriverSelectContext, _ *commonpb.Payload) (StorageDriver, error) {
+		defer func() { i++ }()
+		if i == 0 {
+			return d1, nil
+		}
+		return d2, nil
+	}}
+	params, err := ExternalStorageToParams(ExternalStorage{
+		Drivers:              []StorageDriver{d1, d2},
+		DriverSelector:       selector,
+		PayloadSizeThreshold: 1,
+	})
+	require.NoError(t, err)
+	storeVisitor := NewExternalStorageVisitor(params)
+	retrieveVisitor := NewExternalRetrievalVisitor(params)
+
+	p1, p2 := makePayload(t, "a"), makePayload(t, "b")
+	refs, err := visitPayloads(t.Context(), storeVisitor, []*commonpb.Payload{p1, p2})
+	require.NoError(t, err)
+
+	result, err := visitPayloads(t.Context(), retrieveVisitor, refs)
+	require.NoError(t, err)
+	require.True(t, proto.Equal(p1, result[0]))
+	require.True(t, proto.Equal(p2, result[1]))
+	require.Equal(t, 1, d1.retrieveCount)
+	require.Equal(t, 1, d2.retrieveCount)
+}
+
+func TestRetrievalVisitor_UnknownDriver(t *testing.T) {
+	params, err := ExternalStorageToParams(ExternalStorage{
+		Drivers: []StorageDriver{newTestDriver("registered")},
+	})
+	require.NoError(t, err)
+	visitor := NewExternalRetrievalVisitor(params)
+
+	ref, err := storageReferenceToPayload(&sdkpb.ExternalStorageReference{
+		DriverName: "unregistered-driver",
+		ClaimData:  map[string]string{"key": "k"},
+	}, 10)
+	require.NoError(t, err)
+
+	_, err = visitPayloads(t.Context(), visitor, []*commonpb.Payload{ref})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "unregistered-driver")
+}
+
+func TestRetrievalVisitor_RetrieveError(t *testing.T) {
+	driver := newTestDriver("my-bad-error-driver")
+	driver.retrieveErr = errors.New("retrieve error")
+	params, err := ExternalStorageToParams(ExternalStorage{
+		Drivers:              []StorageDriver{driver},
+		PayloadSizeThreshold: 1,
+	})
+	require.NoError(t, err)
+	storeVisitor := NewExternalStorageVisitor(params)
+	retrieveVisitor := NewExternalRetrievalVisitor(params)
+
+	refs, err := visitPayloads(t.Context(), storeVisitor, []*commonpb.Payload{makePayload(t, "x")})
+	require.NoError(t, err)
+
+	_, err = visitPayloads(t.Context(), retrieveVisitor, refs)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "my-bad-error-driver")
+	require.Contains(t, err.Error(), "retrieve error")
+}
+
+func TestRetrievalVisitor_RetrievePanic(t *testing.T) {
+	driver := &panicDriver{name: "my-panic-retrieve-driver", panicOnRetrieve: true}
+	params, err := ExternalStorageToParams(ExternalStorage{
+		Drivers: []StorageDriver{driver},
+	})
+	require.NoError(t, err)
+	visitor := NewExternalRetrievalVisitor(params)
+
+	ref, err := storageReferenceToPayload(&sdkpb.ExternalStorageReference{
+		DriverName: "my-panic-retrieve-driver",
+		ClaimData:  map[string]string{"key": "k"},
+	}, 10)
+	require.NoError(t, err)
+
+	_, err = visitPayloads(t.Context(), visitor, []*commonpb.Payload{ref})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "my-panic-retrieve-driver")
+	require.Contains(t, err.Error(), "retrieve panic")
+}
+
+func TestRetrievalVisitor_CancelOnError(t *testing.T) {
+	errD := newTestDriver("err-driver")
+	errD.retrieveErr = errors.New("retrieve error")
+	blockD := &blockingDriver{name: "block-driver", startedCh: make(chan struct{}), cancelledCh: make(chan struct{})}
+	errD.retrieveGate = blockD.startedCh
+
+	// Store via errD so we get a real reference for errD, then hand-craft a
+	// reference for blockD.
+	storeParams, err := ExternalStorageToParams(ExternalStorage{
+		Drivers:              []StorageDriver{errD},
+		PayloadSizeThreshold: 1,
+	})
+	require.NoError(t, err)
+	storeVisitor := NewExternalStorageVisitor(storeParams)
+	refs, err := visitPayloads(t.Context(), storeVisitor, []*commonpb.Payload{makePayload(t, "x")})
+	require.NoError(t, err)
+	errRef := refs[0]
+
+	blockRef, err := storageReferenceToPayload(&sdkpb.ExternalStorageReference{
+		DriverName: "block-driver",
+		ClaimData:  map[string]string{"key": "k"},
+	}, 10)
+	require.NoError(t, err)
+
+	retrieveParams, err := ExternalStorageToParams(ExternalStorage{
+		Drivers: []StorageDriver{errD, blockD},
+		DriverSelector: &funcDriverSelector{fn: func(_ StorageDriverSelectContext, _ *commonpb.Payload) (StorageDriver, error) {
+			return errD, nil
+		}},
+	})
+	require.NoError(t, err)
+	visitor := NewExternalRetrievalVisitor(retrieveParams)
+
+	_, err = visitPayloads(t.Context(), visitor, []*commonpb.Payload{errRef, blockRef})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "retrieve error")
+
+	select {
+	case <-blockD.cancelledCh:
+	default:
+		t.Fatal("blocking driver context was not cancelled after sibling driver error")
+	}
+}
+
+func TestRetrievalVisitor_WrongPayloadCount(t *testing.T) {
+	driver := &badCountRetrieveDriver{name: "my-bad-count-driver"}
+	params, err := ExternalStorageToParams(ExternalStorage{
+		Drivers: []StorageDriver{driver},
+	})
+	require.NoError(t, err)
+	visitor := NewExternalRetrievalVisitor(params)
+
+	ref, err := storageReferenceToPayload(&sdkpb.ExternalStorageReference{
+		DriverName: "my-bad-count-driver",
+		ClaimData:  map[string]string{"key": "k"},
+	}, 10)
+	require.NoError(t, err)
+
+	_, err = visitPayloads(t.Context(), visitor, []*commonpb.Payload{ref})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "my-bad-count-driver")
+}
+
+func TestRetrievalVisitor_Callback(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		driver := newTestDriver("d")
+		driver.retrieveDelay = time.Millisecond
+		params, err := ExternalStorageToParams(ExternalStorage{
+			Drivers:              []StorageDriver{driver},
+			PayloadSizeThreshold: 1,
+		})
+		require.NoError(t, err)
+		storeVisitor := NewExternalStorageVisitor(params)
+		retrieveVisitor := NewExternalRetrievalVisitor(params)
+
+		refs, err := visitPayloads(t.Context(), storeVisitor, []*commonpb.Payload{makePayload(t, "x")})
+		require.NoError(t, err)
+
+		cb := &testCallback{}
+		ctx := WithStorageOperationCallback(t.Context(), cb)
+		_, err = visitPayloads(ctx, retrieveVisitor, refs)
+		require.NoError(t, err)
+		require.Equal(t, time.Millisecond, cb.duration)
+	})
+}
+
+func TestRetrievalVisitor_Callback_ExternalCountOnly(t *testing.T) {
+	const threshold = 50
+	driver := newTestDriver("d")
+	params, err := ExternalStorageToParams(ExternalStorage{
+		Drivers:              []StorageDriver{driver},
+		PayloadSizeThreshold: threshold,
+	})
+	require.NoError(t, err)
+	storeVisitor := NewExternalStorageVisitor(params)
+	retrieveVisitor := NewExternalRetrievalVisitor(params)
+
+	big1 := makeOversizedPayload(t, threshold)
+	big2 := makeOversizedPayload(t, threshold)
+	refs, err := visitPayloads(t.Context(), storeVisitor, []*commonpb.Payload{big1, big2})
+	require.NoError(t, err)
+
+	inline := makePayload(t, "inline")
+	batch := []*commonpb.Payload{inline, refs[0], refs[1]}
+
+	cb := &testCallback{}
+	ctx := WithStorageOperationCallback(t.Context(), cb)
+	_, err = visitPayloads(ctx, retrieveVisitor, batch)
+	require.NoError(t, err)
+	require.Equal(t, 2, cb.count)
+}
+
+// ---------------------------------------------------------------------------
+// Claim Compatibility: legacy-format reference payload
+// ---------------------------------------------------------------------------
+
+// TestRetrievalVisitor_LegacyFormat verifies that the retrieval visitor can
+// resolve a payload written in the legacy json/external-storage-reference
+// format (as written by earlier prerelease SDK versions).
+func TestRetrievalVisitor_LegacyFormat(t *testing.T) {
+	driver := newTestDriver("d")
+	params, err := ExternalStorageToParams(ExternalStorage{
+		Drivers:              []StorageDriver{driver},
+		PayloadSizeThreshold: 1,
+	})
+	require.NoError(t, err)
+
+	// Store a payload to get a real claim key in the driver.
+	original := makePayload(t, "legacy-compat-value")
+	refs, err := visitPayloads(t.Context(), NewExternalStorageVisitor(params), []*commonpb.Payload{original})
+	require.NoError(t, err)
+
+	// Extract the claim data from the new-format reference and rebuild it as a
+	// legacy-format payload (encoding=json/external-storage-reference, old JSON structure).
+	newRef, err := payloadToStorageReference(refs[0])
+	require.NoError(t, err)
+	legacyData, err := json.Marshal(legacyStorageReference{
+		DriverName:  newRef.DriverName,
+		DriverClaim: StorageDriverClaim{ClaimData: newRef.ClaimData},
+	})
+	require.NoError(t, err)
+	legacyPayload := &commonpb.Payload{
+		Metadata: map[string][]byte{metadataEncoding: []byte(metadataEncodingStorageRefLegacy)},
+		Data:     legacyData,
+	}
+
+	result, err := visitPayloads(t.Context(), NewExternalRetrievalVisitor(params), []*commonpb.Payload{legacyPayload})
+	require.NoError(t, err)
+	require.True(t, proto.Equal(original, result[0]))
+}
+
+// ---------------------------------------------------------------------------
+// Claim Compatibility: legacy-format fixed claim JSON produced by another SDK
+// ---------------------------------------------------------------------------
+
+// TestClaimDeserialization_PlainJSON_OtherSdk verifies that a full plain JSON
+// payload produced by another language SDK (e.g. Python) is correctly parsed by
+// the Go SDK's payloadToStorageReference function.
+func TestClaimDeserialization_PlainJSON_OtherSdk(t *testing.T) {
+	// Full proto-JSON representation of a storage-reference payload as another
+	// SDK would serialize it onto the wire.
+	const rawPayloadJSON = `{
+  "metadata": {
+    "encoding": "anNvbi9leHRlcm5hbC1zdG9yYWdlLXJlZmVyZW5jZQ=="
+  },
+  "data": "eyJkcml2ZXJfY2xhaW0iOnsiY2xhaW1fZGF0YSI6eyJidWNrZXQiOiJ0ZXN0LWJ1Y2tldCIsImtleSI6Ii9ucy9kZWZhdWx0L3dpLzEzZjNkOWNmLTE3MDUtNGNlMS1iM2NiLTM3MDk3NGE0ODJjNy9kL3NoYTI1Ni82Y2EyMmMzNDU2MGNmMzVhYzI0NDI3ZGM3NjE5YzlhYjQ3MmE4MmNmMThmMjg2ZjI3ODcxNjQ5YTJiNTYwOGM4In19LCJkcml2ZXJfbmFtZSI6InRlbXBvcmFsaW86ZHJpdmVyOnMzIn0=",
+  "external_payloads": [
+    {
+      "size_bytes": 385
+    }
+  ]
+}`
+
+	refPayload := &commonpb.Payload{}
+	require.NoError(t, protojson.Unmarshal([]byte(rawPayloadJSON), refPayload))
+
+	ref, err := payloadToStorageReference(refPayload)
+	require.NoError(t, err)
+	require.Equal(t, metadataEncodingStorageRefLegacy, string(refPayload.GetMetadata()[metadataEncoding]))
+	require.Equal(t, 1, len(refPayload.ExternalPayloads))
+	require.Equal(t, int64(385), refPayload.ExternalPayloads[0].SizeBytes)
+	require.Equal(t, "temporalio:driver:s3", ref.DriverName)
+	require.Equal(t, "test-bucket", ref.ClaimData["bucket"])
+	require.Equal(t, "/ns/default/wi/13f3d9cf-1705-4ce1-b3cb-370974a482c7/d/sha256/6ca22c34560cf35ac24427dc7619c9ab472a82cf18f286f27871649a2b5608c8", ref.ClaimData["key"])
+}
+
+// ---------------------------------------------------------------------------
+// Claim Compatibility: current-format fixed claim JSON produced by another SDK
+// ---------------------------------------------------------------------------
+
+// TestClaimDeserialization_OtherSdk_ProtoJSON verifies that a full proto-JSON
+// payload produced by another language SDK (e.g. Python) is correctly parsed by
+// the Go SDK's payloadToStorageReference function.
+func TestClaimDeserialization_OtherSdk_ProtoJSON(t *testing.T) {
+	// Full proto-JSON representation of a storage-reference payload as another
+	// SDK would serialize it onto the wire.
+	const rawPayloadJSON = `{
+	"metadata": {
+		"encoding": "anNvbi9wcm90b2J1Zg==",
+		"messageType": "dGVtcG9yYWwuYXBpLnNkay52MS5FeHRlcm5hbFN0b3JhZ2VSZWZlcmVuY2U="
+	},
+	"data": "eyJjbGFpbURhdGEiOnsiYnVja2V0IjoidGVzdC1idWNrZXQiLCJoYXNoX2FsZ29yaXRobSI6InNoYTI1NiIsImhhc2hfdmFsdWUiOiI2Y2EyMmMzNDU2MGNmMzVhYzI0NDI3ZGM3NjE5YzlhYjQ3MmE4MmNmMThmMjg2ZjI3ODcxNjQ5YTJiNTYwOGM4Iiwia2V5IjoidjAvbnMvZGVmYXVsdC93dC9MYXJnZUlPV29ya2Zsb3cvd2kvZjFkMmE0YWMtZjhjYi00NWQzLTkwOGMtOTNhMGYzM2FiMjQ1L3JpL251bGwvZC9zaGEyNTYvNmNhMjJjMzQ1NjBjZjM1YWMyNDQyN2RjNzYxOWM5YWI0NzJhODJjZjE4ZjI4NmYyNzg3MTY0OWEyYjU2MDhjOCJ9LCJkcml2ZXJOYW1lIjoiYXdzLnMzZHJpdmVyIn0=",
+	"externalPayloads": [
+		{
+			"sizeBytes": "385"
+		}
+	]
+}`
+
+	refPayload := &commonpb.Payload{}
+	require.NoError(t, protojson.Unmarshal([]byte(rawPayloadJSON), refPayload))
+
+	ref, err := payloadToStorageReference(refPayload)
+	require.NoError(t, err)
+	require.Equal(t, metadataEncodingProtoJSON, string(refPayload.GetMetadata()[metadataEncoding]))
+	require.Equal(t, externalStorageReferenceMessageType, string(refPayload.GetMetadata()[metadataMessageType]))
+	require.Equal(t, 1, len(refPayload.ExternalPayloads))
+	require.Equal(t, int64(385), refPayload.ExternalPayloads[0].SizeBytes)
+	require.Equal(t, "aws.s3driver", ref.DriverName)
+	require.Equal(t, "v0/ns/default/wt/LargeIOWorkflow/wi/f1d2a4ac-f8cb-45d3-908c-93a0f33ab245/ri/null/d/sha256/6ca22c34560cf35ac24427dc7619c9ab472a82cf18f286f27871649a2b5608c8", ref.ClaimData["key"])
+}
+
+// ---------------------------------------------------------------------------
+// Round-trip
+// ---------------------------------------------------------------------------
+
+func TestStoreRetrieveRoundTrip_Single(t *testing.T) {
+	driver := newTestDriver("d")
+	params, err := ExternalStorageToParams(ExternalStorage{
+		Drivers:              []StorageDriver{driver},
+		PayloadSizeThreshold: 1,
+	})
+	require.NoError(t, err)
+	storeVisitor := NewExternalStorageVisitor(params)
+	retrieveVisitor := NewExternalRetrievalVisitor(params)
+
+	original := makePayload(t, "round-trip value")
+	refs, err := visitPayloads(t.Context(), storeVisitor, []*commonpb.Payload{original})
+	require.NoError(t, err)
+	require.Equal(t, metadataEncodingProtoJSON, string(refs[0].Metadata[metadataEncoding]))
+
+	restored, err := visitPayloads(t.Context(), retrieveVisitor, refs)
+	require.NoError(t, err)
+	require.True(t, proto.Equal(original, restored[0]))
+}
+
+func TestStoreRetrieveRoundTrip_MixedInline(t *testing.T) {
+	const threshold = 50
+	driver := newTestDriver("d")
+	params, err := ExternalStorageToParams(ExternalStorage{
+		Drivers:              []StorageDriver{driver},
+		PayloadSizeThreshold: threshold,
+	})
+	require.NoError(t, err)
+	storeVisitor := NewExternalStorageVisitor(params)
+	retrieveVisitor := NewExternalRetrievalVisitor(params)
+
+	small := makePayload(t, "s")
+	big := makeOversizedPayload(t, threshold+1)
+
+	refs, err := visitPayloads(t.Context(), storeVisitor, []*commonpb.Payload{small, big})
+	require.NoError(t, err)
+
+	restored, err := visitPayloads(t.Context(), retrieveVisitor, refs)
+	require.NoError(t, err)
+	require.True(t, proto.Equal(small, restored[0]), "inline payload unchanged")
+	require.True(t, proto.Equal(big, restored[1]), "stored payload restored")
+}
+
+func TestStoreRetrieveRoundTrip_PointerAndValueReceiverDrivers(t *testing.T) {
+	ptrDriver := newTestDriver("ptr-driver") // pointer receivers (*testStorageDriver)
+	valDriver := newValDriver("val-driver")  // value receivers (valueReceiverDriver)
+
+	// Route the first payload to ptrDriver and the second to valDriver.
+	i := 0
+	selector := &funcDriverSelector{fn: func(_ StorageDriverSelectContext, _ *commonpb.Payload) (StorageDriver, error) {
+		defer func() { i++ }()
+		if i == 0 {
+			return ptrDriver, nil
+		}
+		return valDriver, nil
+	}}
+
+	params, err := ExternalStorageToParams(ExternalStorage{
+		Drivers:              []StorageDriver{ptrDriver, valDriver},
+		DriverSelector:       selector,
+		PayloadSizeThreshold: 1, // store everything
+	})
+	require.NoError(t, err)
+	storeVisitor := NewExternalStorageVisitor(params)
+	retrieveVisitor := NewExternalRetrievalVisitor(params)
+
+	p1 := makePayload(t, "via-ptr-driver")
+	p2 := makePayload(t, "via-val-driver")
+
+	refs, err := visitPayloads(t.Context(), storeVisitor, []*commonpb.Payload{p1, p2})
+	require.NoError(t, err)
+
+	// Confirm each payload was routed to the expected driver.
+	ref0, err := payloadToStorageReference(refs[0])
+	require.NoError(t, err)
+	require.Equal(t, "ptr-driver", ref0.DriverName)
+
+	ref1, err := payloadToStorageReference(refs[1])
+	require.NoError(t, err)
+	require.Equal(t, "val-driver", ref1.DriverName)
+
+	// Both payloads should round-trip back to their original values.
+	result, err := visitPayloads(t.Context(), retrieveVisitor, refs)
+	require.NoError(t, err)
+	require.True(t, proto.Equal(p1, result[0]))
+	require.True(t, proto.Equal(p2, result[1]))
+}
+
+// ---------------------------------------------------------------------------
+// Test helpers (error/bad-count drivers, codecs, callback)
+// ---------------------------------------------------------------------------
+
+// panicDriver panics in Store or Retrieve when the corresponding flag is set.
+type panicDriver struct {
+	name            string
+	panicOnStore    bool
+	panicOnRetrieve bool
+}
+
+func (d *panicDriver) Name() string { return d.name }
+func (d *panicDriver) Type() string { return "panic" }
+func (d *panicDriver) Store(_ StorageDriverStoreContext, _ []*commonpb.Payload) ([]StorageDriverClaim, error) {
+	if d.panicOnStore {
+		panic("store panic")
+	}
+	return nil, nil
+}
+func (d *panicDriver) Retrieve(_ StorageDriverRetrieveContext, _ []StorageDriverClaim) ([]*commonpb.Payload, error) {
+	if d.panicOnRetrieve {
+		panic("retrieve panic")
+	}
+	return nil, nil
+}
+
+// blockingDriver blocks its Store/Retrieve call until the supplied context is
+// cancelled, then records the cancellation on cancelledCh. startedCh is closed
+// as soon as the call is entered, before blocking, so callers can synchronize
+// on the driver being in-flight.
+type blockingDriver struct {
+	name        string
+	startedCh   chan struct{}
+	cancelledCh chan struct{}
+}
+
+func (d *blockingDriver) Name() string { return d.name }
+func (d *blockingDriver) Type() string { return "blocking" }
+func (d *blockingDriver) Store(ctx StorageDriverStoreContext, _ []*commonpb.Payload) ([]StorageDriverClaim, error) {
+	if d.startedCh != nil {
+		close(d.startedCh)
+	}
+	<-ctx.Context.Done()
+	close(d.cancelledCh)
+	return nil, ctx.Context.Err()
+}
+func (d *blockingDriver) Retrieve(ctx StorageDriverRetrieveContext, _ []StorageDriverClaim) ([]*commonpb.Payload, error) {
+	close(d.startedCh)
+	<-ctx.Context.Done()
+	close(d.cancelledCh)
+	return nil, ctx.Context.Err()
+}
+
+type funcDriverSelector struct {
+	fn func(StorageDriverSelectContext, *commonpb.Payload) (StorageDriver, error)
+}
+
+func (s *funcDriverSelector) SelectDriver(ctx StorageDriverSelectContext, p *commonpb.Payload) (StorageDriver, error) {
+	return s.fn(ctx, p)
+}
+
+type badCountDriver struct{ name string }
+
+func (d *badCountDriver) Name() string { return d.name }
+func (d *badCountDriver) Type() string { return "bad" }
+func (d *badCountDriver) Store(_ StorageDriverStoreContext, _ []*commonpb.Payload) ([]StorageDriverClaim, error) {
+	return []StorageDriverClaim{}, nil // returns 0 claims instead of 1
+}
+func (d *badCountDriver) Retrieve(_ StorageDriverRetrieveContext, _ []StorageDriverClaim) ([]*commonpb.Payload, error) {
+	return nil, nil
+}
+
+type badCountRetrieveDriver struct{ name string }
+
+func (d *badCountRetrieveDriver) Name() string { return d.name }
+func (d *badCountRetrieveDriver) Type() string { return "bad" }
+func (d *badCountRetrieveDriver) Store(_ StorageDriverStoreContext, payloads []*commonpb.Payload) ([]StorageDriverClaim, error) {
+	claims := make([]StorageDriverClaim, len(payloads))
+	for i := range claims {
+		claims[i] = StorageDriverClaim{ClaimData: map[string]string{"key": "k"}}
+	}
+	return claims, nil
+}
+func (d *badCountRetrieveDriver) Retrieve(_ StorageDriverRetrieveContext, _ []StorageDriverClaim) ([]*commonpb.Payload, error) {
+	return []*commonpb.Payload{}, nil // returns 0 payloads instead of 1
+}
+
+// valueReceiverDriver implements StorageDriver entirely with value receivers.
+// NewValDriver returns *valueReceiverDriver, so the interface holds a pointer
+// (always comparable as a map key). Value receivers share the same underlying
+// map reference, so Store/Retrieve mutations on the data map persist correctly.
+type valueReceiverDriver struct {
+	name string
+	data map[string]*commonpb.Payload
+}
+
+func (d valueReceiverDriver) Name() string { return d.name }
+func (d valueReceiverDriver) Type() string { return "value" }
+func (d valueReceiverDriver) Store(_ StorageDriverStoreContext, payloads []*commonpb.Payload) ([]StorageDriverClaim, error) {
+	claims := make([]StorageDriverClaim, len(payloads))
+	for i, p := range payloads {
+		key := uuid.NewString()
+		d.data[key] = proto.Clone(p).(*commonpb.Payload)
+		claims[i] = StorageDriverClaim{ClaimData: map[string]string{"key": key}}
+	}
+	return claims, nil
+}
+func (d valueReceiverDriver) Retrieve(_ StorageDriverRetrieveContext, claims []StorageDriverClaim) ([]*commonpb.Payload, error) {
+	payloads := make([]*commonpb.Payload, len(claims))
+	for i, c := range claims {
+		p, ok := d.data[c.ClaimData["key"]]
+		if !ok {
+			return nil, fmt.Errorf("key not found: %q", c.ClaimData["key"])
+		}
+		payloads[i] = proto.Clone(p).(*commonpb.Payload)
+	}
+	return payloads, nil
+}
+
+func newValDriver(name string) StorageDriver {
+	return valueReceiverDriver{name: name, data: map[string]*commonpb.Payload{}}
+}
+
+type testCallback struct {
+	mu       sync.Mutex
+	count    int
+	size     int64
+	duration time.Duration
+}
+
+func (c *testCallback) PayloadBatchCompleted(count int, size int64, start, end time.Time, _ []string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.count = count
+	c.size = size
+	c.duration = end.Sub(start)
+}
+
+// ---------------------------------------------------------------------------
+// Concurrency limits
+// ---------------------------------------------------------------------------
+
+// permittingDriver takes a permit around every request and blocks on gate, so
+// peak concurrency is observable.
+type permittingDriver struct {
+	gate     chan struct{}
+	mu       sync.Mutex
+	inFlight int
+	peak     int
+}
+
+// namedPermittingDriver is a permittingDriver with a distinct name, so two can
+// be registered on one ExternalStorage while sharing one in-flight counter.
+type namedPermittingDriver struct {
+	*permittingDriver
+	name string
+}
+
+func (d *namedPermittingDriver) Name() string { return d.name }
+
+// newPermittingDriverPair returns two drivers that share one in-flight counter.
+func newPermittingDriverPair() (*permittingDriver, StorageDriver, StorageDriver) {
+	shared := newPermittingDriver()
+	return shared,
+		&namedPermittingDriver{permittingDriver: shared, name: "driver-a"},
+		&namedPermittingDriver{permittingDriver: shared, name: "driver-b"}
+}
+
+func newPermittingDriver() *permittingDriver {
+	return &permittingDriver{gate: make(chan struct{})}
+}
+
+func (d *permittingDriver) Name() string { return "permitting" }
+func (d *permittingDriver) Type() string { return "permitting" }
+
+func (d *permittingDriver) hold(ctx context.Context) error {
+	d.mu.Lock()
+	d.inFlight++
+	if d.inFlight > d.peak {
+		d.peak = d.inFlight
+	}
+	d.mu.Unlock()
+	defer func() {
+		d.mu.Lock()
+		d.inFlight--
+		d.mu.Unlock()
+	}()
+	select {
+	case <-d.gate:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (d *permittingDriver) peakValue() int {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.peak
+}
+
+func (d *permittingDriver) Store(
+	ctx StorageDriverStoreContext, payloads []*commonpb.Payload,
+) ([]StorageDriverClaim, error) {
+	claims := make([]StorageDriverClaim, len(payloads))
+	g, gctx := errgroup.WithContext(ctx.Context)
+	for i := range payloads {
+		g.Go(func() error {
+			return ctx.GetLimiter().Permit(gctx, payloads[i], func() error {
+				if err := d.hold(gctx); err != nil {
+					return err
+				}
+				claims[i] = StorageDriverClaim{ClaimData: map[string]string{"id": "x"}}
+				return nil
+			})
+		})
+	}
+	return claims, g.Wait()
+}
+
+func (d *permittingDriver) Retrieve(
+	ctx StorageDriverRetrieveContext, claims []StorageDriverClaim,
+) ([]*commonpb.Payload, error) {
+	out := make([]*commonpb.Payload, len(claims))
+	g, gctx := errgroup.WithContext(ctx.Context)
+	for i := range claims {
+		g.Go(func() error {
+			return ctx.GetLimiter().Permit(gctx, claims[i], func() error {
+				if err := d.hold(gctx); err != nil {
+					return err
+				}
+				out[i] = &commonpb.Payload{Data: []byte("x")}
+				return nil
+			})
+		})
+	}
+	return out, g.Wait()
+}
+
+func TestConcurrency_Defaults(t *testing.T) {
+	params, err := ExternalStorageToParams(ExternalStorage{Drivers: []StorageDriver{newTestDriver("only")}})
+	require.NoError(t, err)
+	require.Equal(t, defaultMaxOperationsPerMessage, params.maxOperationsPerMessage)
+	require.NotNil(t, params.driverOperationSemaphore)
+}
+
+func TestConcurrency_RejectsNegative(t *testing.T) {
+	for _, c := range []ExternalStorageConcurrency{
+		{MaxDriverOperations: -1},
+		{MaxOperationsPerMessage: -1},
+	} {
+		_, err := ExternalStorageToParams(ExternalStorage{
+			Drivers:     []StorageDriver{newTestDriver("only")},
+			Concurrency: c,
+		})
+		require.Error(t, err, "%+v", c)
+	}
+}
+
+// MaxOperationsPerMessage bounds the requests one message may have in flight.
+func TestConcurrency_MaxOperationsPerMessage(t *testing.T) {
+	driver := newPermittingDriver()
+	params, err := ExternalStorageToParams(ExternalStorage{
+		Drivers:              []StorageDriver{driver},
+		PayloadSizeThreshold: 1,
+		Concurrency: ExternalStorageConcurrency{
+			MaxDriverOperations: 100, MaxOperationsPerMessage: 3,
+		},
+	})
+	require.NoError(t, err)
+
+	visitor := NewExternalStorageVisitor(params)
+	payloads := make([]*commonpb.Payload, 6)
+	for i := range payloads {
+		payloads[i] = makeOversizedPayload(t, 64)
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := visitPayloads(t.Context(), visitor, payloads)
+		done <- err
+	}()
+
+	require.Eventually(t, func() bool { return driver.peakValue() == 3 }, 2*time.Second, time.Millisecond)
+	time.Sleep(50 * time.Millisecond)
+	require.Equal(t, 3, driver.peakValue(), "must not exceed the per-message limit")
+
+	close(driver.gate)
+	require.NoError(t, <-done)
+	require.Equal(t, 3, driver.peakValue())
+}
+
+// MaxOperationsPerMessage is shared by every driver handling one message.
+func TestConcurrency_MaxOperationsPerMessageSharedAcrossDrivers(t *testing.T) {
+	shared, driverA, driverB := newPermittingDriverPair()
+	selectByIndex := 0
+	params, err := ExternalStorageToParams(ExternalStorage{
+		Drivers:              []StorageDriver{driverA, driverB},
+		PayloadSizeThreshold: 1,
+		DriverSelector: &funcDriverSelector{
+			fn: func(_ StorageDriverSelectContext, _ *commonpb.Payload) (StorageDriver, error) {
+				selectByIndex++
+				if selectByIndex%2 == 1 {
+					return driverA, nil
+				}
+				return driverB, nil
+			},
+		},
+		Concurrency: ExternalStorageConcurrency{
+			MaxDriverOperations: 100, MaxOperationsPerMessage: 1,
+		},
+	})
+	require.NoError(t, err)
+
+	visitor := NewExternalStorageVisitor(params)
+	payloads := []*commonpb.Payload{makeOversizedPayload(t, 64), makeOversizedPayload(t, 64)}
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := visitPayloads(t.Context(), visitor, payloads)
+		done <- err
+	}()
+
+	require.Eventually(t, func() bool { return shared.peakValue() == 1 }, 2*time.Second, time.Millisecond)
+	time.Sleep(50 * time.Millisecond)
+	require.Equal(t, 1, shared.peakValue(), "two drivers in one message must share one per-message limit")
+
+	close(shared.gate)
+	require.NoError(t, <-done)
+	require.Equal(t, 1, shared.peakValue())
+}
+
+// MaxOperationsPerMessage is shared by every payload site in one message.
+func TestConcurrency_MaxOperationsPerMessageSharedAcrossSites(t *testing.T) {
+	driver := newPermittingDriver()
+	params, err := ExternalStorageToParams(ExternalStorage{
+		Drivers:              []StorageDriver{driver},
+		PayloadSizeThreshold: 1,
+		Concurrency: ExternalStorageConcurrency{
+			MaxDriverOperations: 100, MaxOperationsPerMessage: 3,
+		},
+	})
+	require.NoError(t, err)
+
+	visitor := NewExternalStorageVisitor(params)
+	ctx := params.WithMessageLimit(t.Context())
+
+	const sites = 3
+	sitePayloads := make([][]*commonpb.Payload, sites)
+	for i := range sitePayloads {
+		sitePayloads[i] = []*commonpb.Payload{
+			makeOversizedPayload(t, 64),
+			makeOversizedPayload(t, 64),
+		}
+	}
+
+	done := make(chan error, sites)
+	for i := 0; i < sites; i++ {
+		go func() {
+			_, err := visitPayloads(ctx, visitor, sitePayloads[i])
+			done <- err
+		}()
+	}
+
+	require.Eventually(t, func() bool { return driver.peakValue() == 3 }, 2*time.Second, time.Millisecond)
+	time.Sleep(50 * time.Millisecond)
+	require.Equal(t, 3, driver.peakValue(), "sites in one message must share one per-message limit")
+
+	close(driver.gate)
+	for i := 0; i < sites; i++ {
+		require.NoError(t, <-done)
+	}
+	require.Equal(t, 3, driver.peakValue())
+}
+
+// WithOwnDriverOperationLimit gives a client or worker a limit independent of the one it copied.
+func TestConcurrency_WithOwnDriverOperationLimitIsIndependent(t *testing.T) {
+	driver := newPermittingDriver()
+	clientParams, err := ExternalStorageToParams(ExternalStorage{
+		Drivers:              []StorageDriver{driver},
+		PayloadSizeThreshold: 1,
+		Concurrency: ExternalStorageConcurrency{
+			MaxDriverOperations: 2, MaxOperationsPerMessage: 10,
+		},
+	})
+	require.NoError(t, err)
+	workerParams := clientParams.WithOwnDriverOperationLimit()
+
+	message := func() []*commonpb.Payload {
+		p := make([]*commonpb.Payload, 3)
+		for i := range p {
+			p[i] = makeOversizedPayload(t, 64)
+		}
+		return p
+	}
+
+	done := make(chan error, 2)
+	for _, params := range []StorageParameters{clientParams, workerParams} {
+		visitor := NewExternalStorageVisitor(params)
+		payloads := message()
+		go func() {
+			_, err := visitPayloads(t.Context(), visitor, payloads)
+			done <- err
+		}()
+	}
+
+	require.Eventually(t, func() bool { return driver.peakValue() == 4 }, 2*time.Second, time.Millisecond)
+	time.Sleep(50 * time.Millisecond)
+	require.Equal(t, 4, driver.peakValue(), "each limit allows 2, so the two together allow 4")
+
+	close(driver.gate)
+	require.NoError(t, <-done)
+	require.NoError(t, <-done)
+}
+
+// MaxDriverOperations is shared by every message using the same configuration.
+func TestConcurrency_MaxDriverOperationsSharedAcrossMessages(t *testing.T) {
+	driver := newPermittingDriver()
+	params, err := ExternalStorageToParams(ExternalStorage{
+		Drivers:              []StorageDriver{driver},
+		PayloadSizeThreshold: 1,
+		Concurrency: ExternalStorageConcurrency{
+			MaxDriverOperations: 3, MaxOperationsPerMessage: 10,
+		},
+	})
+	require.NoError(t, err)
+
+	visitor := NewExternalStorageVisitor(params)
+	message := func() []*commonpb.Payload {
+		p := make([]*commonpb.Payload, 4)
+		for i := range p {
+			p[i] = makeOversizedPayload(t, 64)
+		}
+		return p
+	}
+
+	done := make(chan error, 2)
+	for i := 0; i < 2; i++ {
+		go func() {
+			_, err := visitPayloads(t.Context(), visitor, message())
+			done <- err
+		}()
+	}
+
+	require.Eventually(t, func() bool { return driver.peakValue() == 3 }, 2*time.Second, time.Millisecond)
+	time.Sleep(50 * time.Millisecond)
+	require.Equal(t, 3, driver.peakValue(), "two messages must share one driver operation limit")
+
+	close(driver.gate)
+	require.NoError(t, <-done)
+	require.NoError(t, <-done)
+	require.Equal(t, 3, driver.peakValue())
+}
+
+func TestGetLimiter_UnsetYieldsNonBlockingLimiter(t *testing.T) {
+	storeCtx := StorageDriverStoreContext{Context: t.Context()}
+	require.Nil(t, storeCtx.Limiter)
+
+	stored := false
+	require.NoError(t, storeCtx.GetLimiter().Permit(t.Context(), nil, func() error {
+		stored = true
+		return nil
+	}))
+	require.True(t, stored)
+
+	retrieveCtx := StorageDriverRetrieveContext{Context: t.Context()}
+	require.Nil(t, retrieveCtx.Limiter)
+
+	retrieved := false
+	require.NoError(t, retrieveCtx.GetLimiter().Permit(t.Context(), StorageDriverClaim{}, func() error {
+		retrieved = true
+		return nil
+	}))
+	require.True(t, retrieved)
+}
+
+func TestGetLimiter_SetIsReturnedUnchanged(t *testing.T) {
+	limiter := NoopStorageDriverLimiter[*commonpb.Payload]()
+	ctx := StorageDriverStoreContext{Context: t.Context(), Limiter: limiter}
+	require.Equal(t, limiter, ctx.GetLimiter())
+}

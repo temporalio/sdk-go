@@ -308,10 +308,15 @@ func (o *DescribeTaskQueueEnhancedOptions) validateAndConvertToProto(namespace s
 			// Sticky queues not supported
 			Name: o.TaskQueue,
 		},
-		ApiMode:                enumspb.DESCRIBE_TASK_QUEUE_MODE_ENHANCED,
-		Versions:               taskQueueVersionSelectionToProto(o.Versions),
-		TaskQueueTypes:         taskQueueTypes,
-		ReportPollers:          o.ReportPollers,
+		//lint:ignore SA1019 DescribeTaskQueueEnhanced requires the deprecated enhanced API mode
+		ApiMode: enumspb.DESCRIBE_TASK_QUEUE_MODE_ENHANCED,
+		//lint:ignore SA1019 DescribeTaskQueueEnhanced requires enhanced-mode version selection
+		Versions: taskQueueVersionSelectionToProto(o.Versions),
+		//lint:ignore SA1019 DescribeTaskQueueEnhanced requires enhanced-mode task queue types
+		TaskQueueTypes: taskQueueTypes,
+		//lint:ignore SA1019 DescribeTaskQueueEnhanced requires enhanced-mode poller reporting
+		ReportPollers: o.ReportPollers,
+		//lint:ignore SA1019 DescribeTaskQueueEnhanced requires enhanced-mode reachability reporting
 		ReportTaskReachability: o.ReportTaskReachability,
 		ReportStats:            o.ReportStats,
 	}

@@ -14,6 +14,8 @@ func WithChildOptions(ctx Context, cwo ChildWorkflowOptions) Context {
 }
 
 // WithWorkflowNamespace adds a namespace to the context.
+//
+// Deprecated: Cross-namespace operations are disabled by default as of server 1.30.1.
 func WithWorkflowNamespace(ctx Context, name string) Context {
 	return internal.WithWorkflowNamespace(ctx, name)
 }
@@ -48,8 +50,6 @@ func WithDataConverter(ctx Context, dc converter.DataConverter) Context {
 }
 
 // WithWorkflowPriority adds a priority to the context.
-//
-// WARNING: Task queue priority is currently experimental.
 func WithWorkflowPriority(ctx Context, priority internal.Priority) Context {
 	return internal.WithWorkflowPriority(ctx, priority)
 }

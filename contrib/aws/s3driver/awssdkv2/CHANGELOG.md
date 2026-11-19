@@ -1,0 +1,43 @@
+<!--
+Release notes for go.temporal.io/sdk/contrib/aws/s3driver/awssdkv2.
+Loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+
+Add user-facing changes below under the appropriate heading (create the heading
+if it does not yet exist): Added, Changed, Deprecated, Breaking Changes, Fixed,
+or Security.
+-->
+
+# Changelog
+
+## [Unreleased]
+
+### Added
+
+### Changed
+
+### Deprecated
+
+### :boom: Breaking Changes
+
+- Raised the minimum Temporal Go SDK requirement from v1.49.0 to v1.50.0 to
+  match the `s3driver` module.
+
+### Fixed
+
+### Security
+
+## [0.3.0] - 2026-10-08
+
+### Breaking Changes
+
+- Raised the minimum supported Go version from 1.25.4 to 1.26.0.
+- Raised the minimum Temporal Go SDK requirement from v1.43.1 to v1.49.0, which
+  passes the driver selector a dedicated select context instead of the store
+  context.
+
+## [0.2.1] - 2026-08-13
+
+### Fixed
+
+- Corrected the module's minimum Temporal Go SDK requirement from v1.25.1 to
+  v1.43.1.

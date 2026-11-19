@@ -46,6 +46,21 @@ const (
 	// Note that if the previous workflow had a Pinned override, that override will be inherited by the new workflow
 	// run regardless of the ContinueAsNewVersioningBehavior specified in the continue-as-new command.
 	ContinueAsNewVersioningBehaviorAutoUpgrade = internal.ContinueAsNewVersioningBehaviorAutoUpgrade
+
+	// ContinueAsNewVersioningBehaviorUseRampingVersion - Use the Ramping Version of the workflow's task queue at start time,
+	// regardless of the workflow's Target Version. After the first workflow task completes, the workflow will use whatever
+	// Versioning Behavior it is annotated with. If there is no Ramping Version by the time that the first workflow task is
+	// dispatched, it will be sent to the Current Version.
+	//
+	// It is highly discouraged to use this if the workflow is annotated with AutoUpgrade behavior, because
+	// this setting ONLY applies to the first task of the workflow. If, after the first task, the workflow
+	// is AutoUpgrade, it will behave like a normal AutoUpgrade workflow and go to the Target Version, which
+	// may be the Current Version instead of the Ramping Version.
+	//
+	// Note that if the workflow being continued has a Pinned override, that override will be inherited by the
+	// new workflow run regardless of the ContinueAsNewVersioningBehavior specified in the continue-as-new
+	// command. Versioning Override always takes precedence until it's removed manually via UpdateWorkflowExecutionOptions.
+	ContinueAsNewVersioningBehaviorUseRampingVersion = internal.ContinueAsNewVersioningBehaviorUseRampingVersion
 )
 
 // ContinueAsNewSuggestedReason specifies why ContinueAsNewSuggested is true. Multiple reasons can be true at the same time.
@@ -168,9 +183,49 @@ type (
 	// MutableSideEffectOptions are options for executing a mutable side effect.
 	MutableSideEffectOptions = internal.MutableSideEffectOptions
 
+	// SignalChildWorkflowOptions are options for [ChildWorkflowFuture.SignalChildWorkflowWithOptions].
+	//
+	// NOTE: Experimental
+	SignalChildWorkflowOptions = internal.SignalChildWorkflowOptions
+
+	// CancelExternalWorkflowOptions are options for [RequestCancelExternalWorkflowWithOptions].
+	//
+	// NOTE: Experimental
+	CancelExternalWorkflowOptions = internal.CancelExternalWorkflowOptions
+
+	// SignalExternalWorkflowOptions are options for [SignalExternalWorkflowWithOptions].
+	//
+	// NOTE: Experimental
+	SignalExternalWorkflowOptions = internal.SignalExternalWorkflowOptions
+
+	// GetVersionOptions are options for [GetVersionWithOptions].
+	//
+	// NOTE: Experimental
+	GetVersionOptions = internal.GetVersionOptions
+
+	// UpsertSearchAttributesOptions are options for [UpsertTypedSearchAttributesWithOptions].
+	//
+	// NOTE: Experimental
+	UpsertSearchAttributesOptions = internal.UpsertSearchAttributesOptions
+
+	// UpsertMemoOptions are options for [UpsertMemoWithOptions].
+	//
+	// NOTE: Experimental
+	UpsertMemoOptions = internal.UpsertMemoOptions
+
+	// WorkflowRandomStream is a deterministic pseudorandom source.
+	//
+	// Read and Uint64 may be interleaved freely on the same source: Uint64 is defined as reading the
+	// next 8 bytes off the stream and decoding them as a little-endian integer, so both methods always
+	// draw from a single, well-defined byte sequence regardless of call order.
+	//
+	// NOTE: Experimental
+	WorkflowRandomStream = internal.WorkflowRandomStream
+
 	// NOTE to maintainers, this interface definition is duplicated in the internal package to provide a better UX.
 
 	// NexusClient is a client for executing Nexus Operations from a workflow.
+	// For Nexus operations outside workflows, use client.NexusClient instead.
 	NexusClient interface {
 		// The endpoint name this client uses.
 		Endpoint() string
@@ -236,12 +291,13 @@ type (
 // *ApplicationError, *TimeoutError, *CanceledError, or *PanicError.
 //
 // You can cancel the pending activity using context(workflow.WithCancel(ctx)) and that will fail the activity with
-// *CanceledError set as cause for *ActivityError. The context in the activity only becomes aware of the cancellation
-// when a heartbeat is sent to the server. Since heartbeats may be batched internally, this could take up to the
-// HeartbeatTimeout to appear or several minutes by default if that value is not set.
+// *CanceledError set as cause for *ActivityError. On supported servers, the activity context can be canceled directly
+// by the worker. On older servers, cancellation is observed when the activity sends a heartbeat to the server. Since
+// heartbeats may be batched internally, this fallback path could take up to the HeartbeatTimeout to appear or several
+// minutes by default if that value is not set.
 //
 // ExecuteActivity immediately returns a Future that can be used to block waiting for activity result or failure.
-func ExecuteActivity(ctx Context, activity interface{}, args ...interface{}) Future {
+func ExecuteActivity(ctx Context, activity any, args ...any) Future {
 	return internal.ExecuteActivity(ctx, activity, args...)
 }
 
@@ -288,7 +344,7 @@ func ExecuteActivity(ctx Context, activity interface{}, args ...interface{}) Fut
 // *CanceledError set as cause for *ActivityError.
 //
 // ExecuteLocalActivity returns Future with local activity result or failure.
-func ExecuteLocalActivity(ctx Context, activity interface{}, args ...interface{}) Future {
+func ExecuteLocalActivity(ctx Context, activity any, args ...any) Future {
 	return internal.ExecuteLocalActivity(ctx, activity, args...)
 }
 
@@ -315,7 +371,7 @@ func ExecuteLocalActivity(ctx Context, activity interface{}, args ...interface{}
 // *CanceledError set as cause for *ChildWorkflowExecutionError.
 //
 // ExecuteChildWorkflow returns ChildWorkflowFuture.
-func ExecuteChildWorkflow(ctx Context, childWorkflow interface{}, args ...interface{}) ChildWorkflowFuture {
+func ExecuteChildWorkflow(ctx Context, childWorkflow any, args ...any) ChildWorkflowFuture {
 	return internal.ExecuteChildWorkflow(ctx, childWorkflow, args...)
 }
 
@@ -369,6 +425,14 @@ func RequestCancelExternalWorkflow(ctx Context, workflowID, runID string) Future
 	return internal.RequestCancelExternalWorkflow(ctx, workflowID, runID)
 }
 
+// RequestCancelExternalWorkflowWithOptions is [RequestCancelExternalWorkflow] with extra options like event groups.
+// See [RequestCancelExternalWorkflow] documentation for details.
+//
+// NOTE: Experimental
+func RequestCancelExternalWorkflowWithOptions(ctx Context, workflowID, runID string, options CancelExternalWorkflowOptions) Future {
+	return internal.RequestCancelExternalWorkflowWithOptions(ctx, workflowID, runID, options)
+}
+
 // SignalExternalWorkflow can be used to send signal info to an external workflow.
 // Input workflowID is the workflow ID of target workflow.
 // Input runID indicates the instance of a workflow. Input runID is optional (default is ""). When runID is not specified,
@@ -379,8 +443,16 @@ func RequestCancelExternalWorkflow(ctx Context, workflowID, runID string) Future
 //	ctx := WithWorkflowNamespace(ctx, "namespace")
 //
 // SignalExternalWorkflow return Future with failure or empty success result.
-func SignalExternalWorkflow(ctx Context, workflowID, runID, signalName string, arg interface{}) Future {
+func SignalExternalWorkflow(ctx Context, workflowID, runID, signalName string, arg any) Future {
 	return internal.SignalExternalWorkflow(ctx, workflowID, runID, signalName, arg)
+}
+
+// SignalExternalWorkflowWithOptions is [SignalExternalWorkflow] with extra options like event groups.
+// See [SignalExternalWorkflow] documentation for details.
+//
+// NOTE: Experimental
+func SignalExternalWorkflowWithOptions(ctx Context, workflowID, runID, signalName string, arg any, options SignalExternalWorkflowOptions) Future {
+	return internal.SignalExternalWorkflowWithOptions(ctx, workflowID, runID, signalName, arg, options)
 }
 
 // GetSignalChannel returns the channel corresponding to the signal name.
@@ -435,7 +507,7 @@ func GetSignalChannelWithOptions(ctx Context, signalName string, options SignalC
 //	} else {
 //	       ....
 //	}
-func SideEffect(ctx Context, f func(ctx Context) interface{}) converter.EncodedValue {
+func SideEffect(ctx Context, f func(ctx Context) any) converter.EncodedValue {
 	return internal.SideEffect(ctx, f)
 }
 
@@ -444,8 +516,33 @@ func SideEffect(ctx Context, f func(ctx Context) interface{}) converter.EncodedV
 // This guarantees the deterministic requirement for workflow as the exact same result will be returned in replay.
 //
 // The options parameter allows specifying additional options like a summary that will be displayed in UI/CLI.
-func SideEffectWithOptions(ctx Context, options SideEffectOptions, f func(ctx Context) interface{}) converter.EncodedValue {
+func SideEffectWithOptions(ctx Context, options SideEffectOptions, f func(ctx Context) any) converter.EncodedValue {
 	return internal.SideEffectWithOptions(ctx, options, f)
+}
+
+// GetRandomStream returns a deterministic pseudorandom source private to the given
+// name. Calling it again with the same name returns the same source, positioned
+// where earlier draws left it.
+//
+// Example:
+//
+//	buf := make([]byte, 32)
+//	c := workflow.GetRandomStream(ctx, "example.com/myplugin/bytes")
+//	c.Read(buf)
+//
+// A reset replays the same values up to the reset point, so decisions the
+// workflow already made still hold. Past that point the source starts a fresh
+// sequence rather than handing back the values the abandoned run drew.
+//
+// Each continue-as-new run gets an independently seeded sequence.
+//
+// Caution: each draw advances workflow state but is not recorded in history.
+// Replay must make the same draws in the same order. Do not draw in read-only
+// code; shared code can check [IsReadOnly].
+//
+// NOTE: Experimental
+func GetRandomStream(ctx Context, name string) WorkflowRandomStream {
+	return internal.GetRandomStream(ctx, name)
 }
 
 // MutableSideEffect executes the provided function once, then it looks up the history for the value with the given id.
@@ -463,13 +560,13 @@ func SideEffectWithOptions(ctx Context, options SideEffectOptions, f func(ctx Co
 // value as it was returning during the non-replay run.
 //
 // One good use case of MutableSideEffect() is to access dynamically changing config without breaking determinism.
-func MutableSideEffect(ctx Context, id string, f func(ctx Context) interface{}, equals func(a, b interface{}) bool) converter.EncodedValue {
+func MutableSideEffect(ctx Context, id string, f func(ctx Context) any, equals func(a, b any) bool) converter.EncodedValue {
 	return internal.MutableSideEffect(ctx, id, f, equals)
 }
 
 // MutableSideEffectWithOptions is like MutableSideEffect but allows specifying additional options
 // like a summary that will be displayed in UI/CLI.
-func MutableSideEffectWithOptions(ctx Context, id string, options MutableSideEffectOptions, f func(ctx Context) interface{}, equals func(a, b interface{}) bool) converter.EncodedValue {
+func MutableSideEffectWithOptions(ctx Context, id string, options MutableSideEffectOptions, f func(ctx Context) any, equals func(a, b any) bool) converter.EncodedValue {
 	return internal.MutableSideEffectWithOptions(ctx, id, options, f, equals)
 }
 
@@ -480,8 +577,9 @@ const DefaultVersion Version = internal.DefaultVersion
 // It is not allowed to update workflow code while there are workflows running as it is going to break
 // determinism. The solution is to have both old code that is used to replay existing workflows
 // as well as the new one that is used when it is executed for the first time.
-// GetVersion returns maxSupported version when is executed for the first time. This version is recorded into the
-// workflow history as a marker event. Even if maxSupported version is changed the version that was recorded is
+// GetVersion returns its maxSupported argument when executed for the first time, unless the worker configures a
+// [go.temporal.io/sdk/worker.Options.PreferredVersionProvider]. The returned version is recorded into
+// the workflow history as a marker event. Even if maxSupported version is changed, the version that was recorded is
 // returned on replay. DefaultVersion constant contains version of code that wasn't versioned before.
 // For example initially workflow has the following code:
 //
@@ -545,6 +643,14 @@ func GetVersion(ctx Context, changeID string, minSupported, maxSupported Version
 	return internal.GetVersion(ctx, changeID, minSupported, maxSupported)
 }
 
+// GetVersionWithOptions is [GetVersion] with extra options like event groups.
+// See [GetVersion] documentation for details.
+//
+// NOTE: Experimental
+func GetVersionWithOptions(ctx Context, changeID string, minSupported, maxSupported Version, options GetVersionOptions) Version {
+	return internal.GetVersionWithOptions(ctx, changeID, minSupported, maxSupported, options)
+}
+
 // SetQueryHandler sets the query handler to handle workflow query. The queryType specify which query type this handler
 // should handle. The handler must be a function that returns 2 values. The first return value must be a serializable
 // result. The second return value must be an error. The handler function could receive any number of input parameters.
@@ -586,7 +692,7 @@ func GetVersion(ctx Context, changeID string, minSupported, maxSupported Version
 //	}
 //
 // See [SetQueryHandlerWithOptions] to set additional options.
-func SetQueryHandler(ctx Context, queryType string, handler interface{}) error {
+func SetQueryHandler(ctx Context, queryType string, handler any) error {
 	return internal.SetQueryHandler(ctx, queryType, handler)
 }
 
@@ -594,14 +700,14 @@ func SetQueryHandler(ctx Context, queryType string, handler interface{}) error {
 // [SetQueryHandler] documentation for details.
 //
 // NOTE: Experimental
-func SetQueryHandlerWithOptions(ctx Context, queryType string, handler interface{}, options QueryHandlerOptions) error {
+func SetQueryHandlerWithOptions(ctx Context, queryType string, handler any, options QueryHandlerOptions) error {
 	return internal.SetQueryHandlerWithOptions(ctx, queryType, handler, options)
 }
 
 // SetUpdateHandler forwards to SetUpdateHandlerWithOptions with an
 // zero-initialized UpdateHandlerOptions struct. See SetUpdateHandlerWithOptions
 // for more details.
-func SetUpdateHandler(ctx Context, updateName string, handler interface{}) error {
+func SetUpdateHandler(ctx Context, updateName string, handler any) error {
 	return SetUpdateHandlerWithOptions(ctx, updateName, handler, UpdateHandlerOptions{})
 }
 
@@ -651,15 +757,13 @@ func SetUpdateHandler(ctx Context, updateName string, handler interface{}) error
 //		_ = ctx.Done().Receive(ctx, nil)
 //		return counter, nil
 //	}
-func SetUpdateHandlerWithOptions(ctx Context, updateName string, handler interface{}, opts UpdateHandlerOptions) error {
+func SetUpdateHandlerWithOptions(ctx Context, updateName string, handler any, opts UpdateHandlerOptions) error {
 	return internal.SetUpdateHandler(ctx, updateName, handler, opts)
 }
 
 // GetCurrentDetails gets the current details for this workflow. This is simply
 // the value set by [SetCurrentDetails] or empty if never set. See that function
 // for more details.
-//
-// NOTE: Experimental
 func GetCurrentDetails(ctx Context) string {
 	return internal.GetCurrentDetails(ctx)
 }
@@ -667,8 +771,6 @@ func GetCurrentDetails(ctx Context) string {
 // SetCurrentDetails sets the current details for this workflow. This is
 // typically an arbitrary string in Temporal markdown format may be displayed in
 // the UI or CLI.
-//
-// NOTE: Experimental
 func SetCurrentDetails(ctx Context, details string) {
 	internal.SetCurrentDetails(ctx, details)
 }
@@ -691,6 +793,14 @@ func IsReplaying(ctx Context) bool {
 	return internal.IsReplaying(ctx)
 }
 
+// IsReadOnly reports whether ctx is running where workflow state cannot be
+// mutated: a query handler, an update validator, or a side effect function.
+//
+// NOTE: Experimental
+func IsReadOnly(ctx Context) bool {
+	return internal.IsReadOnly(ctx)
+}
+
 // HasLastCompletionResult checks if there is completion result from previous runs.
 // This is used in combination with cron schedule. A workflow can be started with an optional cron schedule.
 // If a cron workflow wants to pass some data to next schedule, it can return any data and that data will become
@@ -710,7 +820,7 @@ func HasLastCompletionResult(ctx Context) bool {
 // Note, values should not be reused for extraction here because merging on top
 // of existing values may result in unexpected behavior similar to
 // json.Unmarshal.
-func GetLastCompletionResult(ctx Context, d ...interface{}) error {
+func GetLastCompletionResult(ctx Context, d ...any) error {
 	return internal.GetLastCompletionResult(ctx, d...)
 }
 
@@ -755,7 +865,7 @@ func GetLastError(ctx Context) error {
 // Deprecated: use [UpsertTypedSearchAttributes] instead.
 //
 // [Visibility]: https://docs.temporal.io/visibility
-func UpsertSearchAttributes(ctx Context, attributes map[string]interface{}) error {
+func UpsertSearchAttributes(ctx Context, attributes map[string]any) error {
 	return internal.UpsertSearchAttributes(ctx, attributes)
 }
 
@@ -780,6 +890,14 @@ func UpsertSearchAttributes(ctx Context, attributes map[string]interface{}) erro
 // [Visibility]: https://docs.temporal.io/visibility
 func UpsertTypedSearchAttributes(ctx Context, searchAttributeUpdate ...temporal.SearchAttributeUpdate) error {
 	return internal.UpsertTypedSearchAttributes(ctx, searchAttributeUpdate...)
+}
+
+// UpsertTypedSearchAttributesWithOptions is [UpsertTypedSearchAttributes] with extra options like event groups.
+// See [UpsertTypedSearchAttributes] documentation for details.
+//
+// NOTE: Experimental
+func UpsertTypedSearchAttributesWithOptions(ctx Context, options UpsertSearchAttributesOptions, attributes ...temporal.SearchAttributeUpdate) error {
+	return internal.UpsertTypedSearchAttributesWithOptions(ctx, options, attributes...)
 }
 
 // UpsertMemo is used to add or update workflow memo.
@@ -808,8 +926,16 @@ func UpsertTypedSearchAttributes(ctx Context, searchAttributeUpdate ...temporal.
 //	}
 //
 // This is only supported with Temporal Server 1.18+
-func UpsertMemo(ctx Context, memo map[string]interface{}) error {
+func UpsertMemo(ctx Context, memo map[string]any) error {
 	return internal.UpsertMemo(ctx, memo)
+}
+
+// UpsertMemoWithOptions is [UpsertMemo] with extra options like event groups.
+// See [UpsertMemo] documentation for details.
+//
+// NOTE: Experimental
+func UpsertMemoWithOptions(ctx Context, memo map[string]any, options UpsertMemoOptions) error {
+	return internal.UpsertMemoWithOptions(ctx, memo, options)
 }
 
 // NewContinueAsNewError creates ContinueAsNewError instance
@@ -824,12 +950,12 @@ func UpsertMemo(ctx Context, memo map[string]interface{}) error {
 //		  ctx := WithWorkflowTaskQueue(ctx, "example-group")
 //	 wfn - workflow function. for new execution it can be different from the currently running.
 //	 args - arguments for the new workflow.
-func NewContinueAsNewError(ctx Context, wfn interface{}, args ...interface{}) error {
+func NewContinueAsNewError(ctx Context, wfn any, args ...any) error {
 	return internal.NewContinueAsNewError(ctx, wfn, args...)
 }
 
 // NewContinueAsNewErrorWithOptions creates ContinueAsNewError instance with additional options.
-func NewContinueAsNewErrorWithOptions(ctx Context, options ContinueAsNewErrorOptions, wfn interface{}, args ...interface{}) error {
+func NewContinueAsNewErrorWithOptions(ctx Context, options ContinueAsNewErrorOptions, wfn any, args ...any) error {
 	return internal.NewContinueAsNewErrorWithOptions(ctx, options, wfn, args...)
 }
 

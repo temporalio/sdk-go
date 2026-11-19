@@ -148,6 +148,7 @@ func testTimeoutErrorDetails(t *testing.T, timeoutType enumspb.TimeoutType) {
 		callback: func(r *commonpb.Payloads, e error) {
 			actualErr = e
 		},
+		failureConverter: GetDefaultFailureConverter(),
 	})
 	context.commandsHelper.addCommand(di)
 	encodedDetails1, _ := context.dataConverter.ToPayloads(testErrorDetails1)
@@ -487,7 +488,7 @@ func Test_CanceledErrorWithOptions(t *testing.T) {
 	// Test with all options
 	err = NewCanceledErrorWithOptions(CanceledErrorOptions{
 		Message: "full cancellation",
-		Details: []interface{}{testErrorDetails3},
+		Details: []any{testErrorDetails3},
 		Cause:   causeErr,
 	})
 	require.True(t, errors.As(err, &canceledErr))
@@ -506,7 +507,7 @@ func Test_CanceledErrorWithOptions_RoundTrip(t *testing.T) {
 	causeErr := NewApplicationError("app error", "TestError", false, nil)
 	err := NewCanceledErrorWithOptions(CanceledErrorOptions{
 		Message: "operation was canceled",
-		Details: []interface{}{testErrorDetails1, testErrorDetails2, testErrorDetails3},
+		Details: []any{testErrorDetails1, testErrorDetails2, testErrorDetails3},
 		Cause:   causeErr,
 	})
 
@@ -571,6 +572,7 @@ func Test_SignalExternalWorkflowExecutionFailedError(t *testing.T) {
 	di := h.newSignalExternalWorkflowStateMachine(
 		&commandpb.SignalExternalWorkflowExecutionCommandAttributes{},
 		signalID,
+		nil,
 	)
 	di.state = commandStateInitiated
 	di.setData(&scheduledSignal{
@@ -639,13 +641,14 @@ func Test_ContinueAsNewError(t *testing.T) {
 
 func Test_ContinueAsNewErrorWithOptions(t *testing.T) {
 	const (
-		a1                        = 1234
-		a2                        = "some random input"
-		continueAsNewWfName       = "continueAsNewWorkflowFn"
-		initialInterval           = 2 * time.Second
-		backoffCoefficient        = 1.1
-		maximumAttempts     int32 = 23
-		maximumInterval           = time.Minute
+		a1                         = 1234
+		a2                         = "some random input"
+		continueAsNewWfName        = "continueAsNewWorkflowFn"
+		initialInterval            = 2 * time.Second
+		backoffStartInterval       = 3 * time.Second
+		backoffCoefficient         = 1.1
+		maximumAttempts      int32 = 23
+		maximumInterval            = time.Minute
 	)
 
 	require := require.New(t)
@@ -657,7 +660,7 @@ func Test_ContinueAsNewErrorWithOptions(t *testing.T) {
 				InitialInterval:    initialInterval,
 				MaximumAttempts:    maximumAttempts,
 				MaximumInterval:    maximumInterval,
-			}},
+			}, BackoffStartInterval: backoffStartInterval},
 			continueAsNewWfName,
 			a1,
 			a2,
@@ -670,6 +673,9 @@ func Test_ContinueAsNewErrorWithOptions(t *testing.T) {
 
 		if continueAsNewErr.RetryPolicy.MaximumAttempts != maximumAttempts {
 			return errors.New("retry policy maximum attempts is not set")
+		}
+		if continueAsNewErr.BackoffStartInterval != backoffStartInterval {
+			return errors.New("backoff start interval is not set")
 		}
 
 		return err
@@ -790,7 +796,7 @@ func Test_convertErrorToFailure_ApplicationErrorWithExtraRequests(t *testing.T) 
 		ApplicationErrorOptions{
 			NonRetryable: true,
 			Cause:        errors.New("cause error"),
-			Details:      []interface{}{"details", 2208},
+			Details:      []any{"details", 2208},
 			Category:     ApplicationErrorCategoryBenign,
 		},
 	)
@@ -1248,6 +1254,33 @@ func Test_convertFailureToError_ApplicationFailure(t *testing.T) {
 	require.Equal(ApplicationErrorCategoryUnspecified, coolErr.Category())
 }
 
+func Test_convertFailureToError_ResetWorkflowFailure(t *testing.T) {
+	require := require.New(t)
+	fc := GetDefaultFailureConverter()
+	details, err := converter.GetDefaultDataConverter().ToPayloads("details", 22)
+	assert.NoError(t, err)
+
+	f := &failurepb.Failure{
+		Message: "message",
+		FailureInfo: &failurepb.Failure_ResetWorkflowFailureInfo{ResetWorkflowFailureInfo: &failurepb.ResetWorkflowFailureInfo{
+			LastHeartbeatDetails: details,
+		}},
+	}
+
+	err = fc.FailureToError(f)
+	var applicationErr *ApplicationError
+	require.True(errors.As(err, &applicationErr))
+	require.Equal(true, applicationErr.NonRetryable())
+
+	// Before the fix, the raw *commonpb.Payloads proto was treated as a single
+	// detail value, so Details() returned ErrTooManyArg instead of decoding it.
+	var str string
+	var n int
+	require.NoError(applicationErr.Details(&str, &n))
+	require.Equal("details", str)
+	require.Equal(22, n)
+}
+
 func Test_convertFailureToError_CanceledFailure(t *testing.T) {
 	require := require.New(t)
 	fc := GetDefaultFailureConverter()
@@ -1397,8 +1430,9 @@ func TestFailureToError_NexusOperationExecution_TokenFallbackToId(t *testing.T) 
 			Endpoint:         "ep",
 			Service:          "svc",
 			Operation:        "op",
-			OperationId:      "legacy-id",
-			OperationToken:   "",
+			//lint:ignore SA1019 construct a legacy failure to verify operation ID fallback
+			OperationId:    "legacy-id",
+			OperationToken: "",
 		}},
 		Message: "failed",
 	}
@@ -1456,11 +1490,14 @@ func TestHandlerError_EncodeCommonAttributes_MultipleRoundTrips(t *testing.T) {
 	// This test verifies that common attributes (message, stack trace) are preserved
 	// even when passing through a converter that doesn't doesn't have the right codec
 
-	// Create a converter that encodes common attributes
+	// Create a converter that encodes common attributes. AlwaysEncode ensures the zlib codec
+	// actually replaces the payload — for very small inputs zlib falls back to the original
+	// payload, which would let the codec-less middle converter decode the attributes and
+	// defeat the round-trip preservation being tested here.
 	encodingConverter := NewDefaultFailureConverter(DefaultFailureConverterOptions{
 		DataConverter: converter.NewCodecDataConverter(
 			converter.GetDefaultDataConverter(),
-			converter.NewZlibCodec(converter.ZlibCodecOptions{}),
+			converter.NewZlibCodec(converter.ZlibCodecOptions{AlwaysEncode: true}),
 		),
 		EncodeCommonAttributes: true,
 	})

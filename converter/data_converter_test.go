@@ -8,11 +8,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func testDataConverterFunction(t *testing.T, dc DataConverter, f interface{}, args ...interface{}) string {
+func testDataConverterFunction(t *testing.T, dc DataConverter, f any, args ...any) string {
 	input, err := dc.ToPayloads(args...)
 	require.NoError(t, err, err)
 
-	var result []interface{}
+	var result []any
 	for _, v := range args {
 		arg := reflect.New(reflect.TypeOf(v)).Interface()
 		result = append(result, arg)
@@ -29,6 +29,11 @@ func testDataConverterFunction(t *testing.T, dc DataConverter, f interface{}, ar
 	return retValues[0].Interface().(string)
 }
 
+func serializableBackgroundContext() context.Context {
+	// This test serializes the concrete context value; testing.T's cancelable context cannot round-trip through JSON.
+	return context.Background()
+}
+
 func TestDefaultDataConverter(t *testing.T) {
 	t.Parallel()
 	t.Run("result", func(t *testing.T) {
@@ -36,7 +41,7 @@ func TestDefaultDataConverter(t *testing.T) {
 		f1 := func(ctx context.Context, r []byte) string {
 			return "result"
 		}
-		r1 := testDataConverterFunction(t, defaultDataConverter, f1, context.Background(), []byte("test"))
+		r1 := testDataConverterFunction(t, defaultDataConverter, f1, serializableBackgroundContext(), []byte("test"))
 		require.Equal(t, r1, "result")
 	})
 	t.Run("empty", func(t *testing.T) {
@@ -62,7 +67,7 @@ func TestDefaultDataConverter(t *testing.T) {
 func testToStringsFunction(
 	t *testing.T,
 	dc DataConverter,
-	args ...interface{},
+	args ...any,
 ) []string {
 	input, err := dc.ToPayloads(args...)
 	require.NoError(t, err, err)

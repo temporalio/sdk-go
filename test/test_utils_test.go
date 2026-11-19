@@ -9,6 +9,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"testing"
 	"time"
 
 	"github.com/google/uuid"
@@ -19,6 +20,7 @@ import (
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/contrib/envconfig"
 	"go.temporal.io/sdk/converter"
 	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/worker"
@@ -39,26 +41,100 @@ type (
 	// context.WithValue need this type instead of basic type string to avoid lint error
 	contextKey               string
 	ConfigAndClientSuiteBase struct {
-		config        Config
-		client        client.Client
-		taskQueueName string
+		config Config
+		// When set, envConfigClientOptions is the authoritative source for clients.
+		// config is only its initial projection for test setup and lifecycle logic.
+		// Later changes to config do not affect clients in this mode.
+		envConfigClientOptions *client.Options
+		client                 client.Client
+		taskQueueName          string
 	}
+	ConfigureConfigCallback func(*Config)
+	ConfigureClientOptions  func(*client.Options)
+	ConfigureWorkerOptions  func(*worker.Options)
 )
 
 var taskQueuePrefix = "tq-" + uuid.NewString()
 
 // NewConfig creates new Config instance
-func NewConfig() Config {
-	cfg := Config{
+func NewConfig(configCallbacks ...ConfigureConfigCallback) Config {
+	cfg := newDefaultConfig()
+	applyConfigCallbacks(&cfg, configCallbacks)
+	applyHarnessEnvironmentOverrides(&cfg)
+	return cfg
+}
+
+func (ts *ConfigAndClientSuiteBase) initConfig() {
+	if envConfigEnabled() {
+		options := loadEnvConfigClientOptions()
+		ts.config = newConfigFromClientOptions(options)
+		ts.envConfigClientOptions = &options
+		return
+	}
+	ts.config = NewConfig()
+	ts.envConfigClientOptions = nil
+}
+
+func newDefaultConfig() Config {
+	return Config{
 		ServiceAddr:             client.DefaultHostPort,
 		ServiceHTTPAddr:         "localhost:7243",
 		maxWorkflowCacheSize:    10000,
 		Namespace:               "integration-test-namespace",
 		ShouldRegisterNamespace: true,
 	}
+}
+
+func applyHarnessEnvironmentOverrides(cfg *Config) {
 	if addr := getEnvServiceAddr(); addr != "" {
 		cfg.ServiceAddr = addr
 	}
+	applySharedConfig(cfg)
+	if os.Getenv("TEMPORAL_NAMESPACE") != "" {
+		cfg.Namespace = os.Getenv("TEMPORAL_NAMESPACE")
+		cfg.ShouldRegisterNamespace = false
+	}
+	if os.Getenv("TEMPORAL_CLIENT_CERT") != "" || os.Getenv("TEMPORAL_CLIENT_KEY") != "" {
+		log.Print("Using custom client certificate")
+		cert, err := tls.X509KeyPair([]byte(os.Getenv("TEMPORAL_CLIENT_CERT")), []byte(os.Getenv("TEMPORAL_CLIENT_KEY")))
+		if err != nil {
+			panic(fmt.Sprintf("Failed loading client cert: %v", err))
+		}
+		cfg.TLS = &tls.Config{Certificates: []tls.Certificate{cert}}
+	}
+}
+
+func loadEnvConfigClientOptions() client.Options {
+	options, err := envconfig.LoadDefaultClientOptions()
+	if err != nil {
+		panic(fmt.Sprintf("Failed loading envconfig: %v", err))
+	}
+	if options.HostPort == "" {
+		options.HostPort = client.DefaultHostPort
+	}
+	if options.Namespace == "" {
+		options.Namespace = client.DefaultNamespace
+	}
+	return options
+}
+
+func newConfigFromClientOptions(options client.Options) Config {
+	cfg := newDefaultConfig()
+	cfg.ServiceAddr = options.HostPort
+	cfg.Namespace = options.Namespace
+	cfg.ShouldRegisterNamespace = false
+	cfg.TLS = options.ConnectionOptions.TLS
+	applySharedConfig(&cfg)
+	return cfg
+}
+
+func applyConfigCallbacks(cfg *Config, configCallbacks []ConfigureConfigCallback) {
+	for _, configure := range configCallbacks {
+		configure(cfg)
+	}
+}
+
+func applySharedConfig(cfg *Config) {
 	if addr := strings.TrimSpace(os.Getenv("SERVICE_HTTP_ADDR")); addr != "" {
 		cfg.ServiceHTTPAddr = addr
 	}
@@ -73,19 +149,28 @@ func NewConfig() Config {
 	if debug := getDebug(); debug != "" {
 		cfg.Debug = debug == "true"
 	}
-	if os.Getenv("TEMPORAL_NAMESPACE") != "" {
-		cfg.Namespace = os.Getenv("TEMPORAL_NAMESPACE")
-		cfg.ShouldRegisterNamespace = false
+}
+
+func (cfg Config) toClientOptions() client.Options {
+	return client.Options{
+		HostPort:  cfg.ServiceAddr,
+		Namespace: cfg.Namespace,
+		ConnectionOptions: client.ConnectionOptions{
+			TLS: cfg.TLS,
+		},
 	}
-	if os.Getenv("TEMPORAL_CLIENT_CERT") != "" || os.Getenv("TEMPORAL_CLIENT_KEY") != "" {
-		log.Print("Using custom client certificate")
-		cert, err := tls.X509KeyPair([]byte(os.Getenv("TEMPORAL_CLIENT_CERT")), []byte(os.Getenv("TEMPORAL_CLIENT_KEY")))
-		if err != nil {
-			panic(fmt.Sprintf("Failed loading client cert: %v", err))
-		}
-		cfg.TLS = &tls.Config{Certificates: []tls.Certificate{cert}}
-	}
-	return cfg
+}
+
+func WithNamespace(ns string) ConfigureConfigCallback {
+	return func(c *Config) { c.Namespace = ns }
+}
+
+func WithServiceAddr(addr string) ConfigureConfigCallback {
+	return func(c *Config) { c.ServiceAddr = addr }
+}
+
+func WithServiceHTTPAddr(addr string) ConfigureConfigCallback {
+	return func(c *Config) { c.ServiceHTTPAddr = addr }
 }
 
 func getEnvServiceAddr() string {
@@ -98,6 +183,59 @@ func getEnvCacheSize() string {
 
 func getDebug() string {
 	return strings.ToLower(strings.TrimSpace(os.Getenv("DEBUG")))
+}
+
+func envConfigEnabled() bool {
+	return strings.EqualFold(strings.TrimSpace(os.Getenv("TEMPORAL_TEST_ENV_CONFIG_SERVER")), "true")
+}
+
+type cloudTestSkipReason string
+
+const (
+	cloudRequiresLocalServer  cloudTestSkipReason = "requires_local_server"
+	cloudRequiresProvisioning cloudTestSkipReason = "requires_cloud_provisioning"
+	cloudNeedsAdaptation      cloudTestSkipReason = "needs_cloud_adaptation"
+)
+
+func skipOnCloud(t testing.TB, reason cloudTestSkipReason, rationale string) {
+	t.Helper()
+	if cloudTestEnabled() {
+		t.Skipf("skipped on Cloud (%s): %s", reason, rationale)
+	}
+}
+
+func cloudTestEnabled() bool {
+	value := strings.TrimSpace(os.Getenv("TEMPORAL_IS_CLOUD_TESTS"))
+	if value == "" {
+		return false
+	}
+	enabled, err := strconv.ParseBool(value)
+	if err != nil {
+		panic(fmt.Sprintf("TEMPORAL_IS_CLOUD_TESTS must be a boolean, was %q", value))
+	}
+	return enabled
+}
+
+func TestCloudTestEnabled(t *testing.T) {
+	t.Setenv("TEMPORAL_IS_CLOUD_TESTS", "")
+	if cloudTestEnabled() {
+		t.Fatal("expected Cloud test mode to be disabled by default")
+	}
+	t.Setenv("TEMPORAL_IS_CLOUD_TESTS", "true")
+	if !cloudTestEnabled() {
+		t.Fatal("expected Cloud test mode to be enabled")
+	}
+	t.Setenv("TEMPORAL_IS_CLOUD_TESTS", "false")
+	if cloudTestEnabled() {
+		t.Fatal("expected Cloud test mode to be disabled")
+	}
+	t.Setenv("TEMPORAL_IS_CLOUD_TESTS", "sometimes")
+	defer func() {
+		if recovered := recover(); recovered == nil {
+			t.Fatal("expected invalid TEMPORAL_IS_CLOUD_TESTS to panic")
+		}
+	}()
+	cloudTestEnabled()
 }
 
 // WaitForTCP waits until target tcp address is available.
@@ -204,7 +342,12 @@ func (s *keysPropagator) ExtractToWorkflow(ctx workflow.Context, reader workflow
 }
 
 func (ts *ConfigAndClientSuiteBase) InitConfigAndNamespace() error {
-	ts.config = NewConfig()
+	ts.initConfig()
+	return ts.InitNamespace()
+}
+
+// InitNamespace prepares the configured namespace, reusing ts.client if it is already initialized.
+func (ts *ConfigAndClientSuiteBase) InitNamespace() error {
 	var err error
 	err = WaitForTCP(time.Minute, ts.config.ServiceAddr)
 	if err != nil {
@@ -220,26 +363,57 @@ func (ts *ConfigAndClientSuiteBase) InitConfigAndNamespace() error {
 	return nil
 }
 
-func (ts *ConfigAndClientSuiteBase) InitClient() error {
+// InitClient initializes ts.client according to ts.config with the same
+// defaults as newIntegrationTestClient.
+func (ts *ConfigAndClientSuiteBase) InitClient(clientOpts ...ConfigureClientOptions) error {
 	var err error
 	if ts.client != nil {
 		return nil
 	}
-	ts.client, err = ts.newClient()
+	ts.client, err = ts.newIntegrationTestClient(clientOpts...)
 	return err
 }
 
-func (ts *ConfigAndClientSuiteBase) newClient() (client.Client, error) {
-	return client.Dial(client.Options{
-		HostPort:  ts.config.ServiceAddr,
-		Namespace: ts.config.Namespace,
-		Logger:    ilog.NewDefaultLogger(),
-		ConnectionOptions: client.ConnectionOptions{
-			TLS:                  ts.config.TLS,
-			GetSystemInfoTimeout: ctxTimeout,
-		},
-		WorkerHeartbeatInterval: -1,
+// newIntegrationTestClient creates a client according to ts.config with heartbeats disabled
+// and an extended GetSystemInfoTimeout.
+func (ts *ConfigAndClientSuiteBase) newIntegrationTestClient(clientOpts ...ConfigureClientOptions) (client.Client, error) {
+	return ts.newDefaultClient(func(options *client.Options) {
+		options.ConnectionOptions.GetSystemInfoTimeout = ctxTimeout
+		options.WorkerHeartbeatInterval = -1
+		for _, opt := range clientOpts {
+			opt(options)
+		}
 	})
+}
+
+// newDefaultClient creates a client according to ts.config with SDK defaults.
+func (ts *ConfigAndClientSuiteBase) newDefaultClient(clientOpts ...ConfigureClientOptions) (client.Client, error) {
+	return client.Dial(ts.newDefaultClientOptions(clientOpts...))
+}
+
+// newDefaultClientContext creates a client according to ts.config with SDK defaults,
+// using ctx while dialing.
+func (ts *ConfigAndClientSuiteBase) newDefaultClientContext(
+	ctx context.Context,
+	clientOpts ...ConfigureClientOptions,
+) (client.Client, error) {
+	return client.DialContext(ctx, ts.newDefaultClientOptions(clientOpts...))
+}
+
+func (ts *ConfigAndClientSuiteBase) newDefaultClientOptions(clientOpts ...ConfigureClientOptions) client.Options {
+	var options client.Options
+	if ts.envConfigClientOptions == nil {
+		options = ts.config.toClientOptions()
+	} else {
+		options = *ts.envConfigClientOptions
+	}
+	if options.Logger == nil {
+		options.Logger = ilog.NewDefaultLogger()
+	}
+	for _, opt := range clientOpts {
+		opt(&options)
+	}
+	return options
 }
 
 func SimplestWorkflow(_ workflow.Context) error {
@@ -295,7 +469,7 @@ func (ts *ConfigAndClientSuiteBase) ensureSearchAttributes() error {
 	// We have to create a client specifically for this call and close it after
 	// this call because it may not get closed externally and can trip the
 	// goroutine leak detector.
-	client, err := ts.newClient()
+	client, err := ts.newIntegrationTestClient()
 	if err != nil {
 		return fmt.Errorf("unable to create client: %w", err)
 	}
@@ -323,28 +497,35 @@ func (ts *ConfigAndClientSuiteBase) ensureSearchAttributes() error {
 	return nil
 }
 
-// executeWorkflow executes a given workflow and waits for the result
+// executeWorkflow executes a given workflow and waits for the result.
 func (ts *ConfigAndClientSuiteBase) executeWorkflow(
-	wfID string, wfFunc interface{}, retValPtr interface{}, args ...interface{}) error {
-	return ts.executeWorkflowWithOption(ts.startWorkflowOptions(wfID), wfFunc, retValPtr, args...)
+	wfID string, wfFunc any, retValPtr any, args ...any) error {
+	return ts.executeWorkflowWithOptions(executeWorkflowOptions{
+		ID:       wfID,
+		Workflow: wfFunc,
+		Result:   retValPtr,
+		Args:     args,
+	})
 }
 
-func (ts *ConfigAndClientSuiteBase) executeWorkflowWithOption(
-	options client.StartWorkflowOptions, wfFunc interface{}, retValPtr interface{}, args ...interface{}) error {
-	return ts.executeWorkflowWithContextAndOption(context.Background(), options, wfFunc, retValPtr, args...)
+type executeWorkflowOptions struct {
+	ID       string
+	Workflow any
+	Result   any
+	Args     []any
 }
 
-func (ts *ConfigAndClientSuiteBase) executeWorkflowWithContextAndOption(
-	ctx context.Context, options client.StartWorkflowOptions, wfFunc interface{}, retValPtr interface{}, args ...interface{}) error {
-	ctx, cancel := context.WithTimeout(ctx, ctxTimeout)
+func (ts *ConfigAndClientSuiteBase) executeWorkflowWithOptions(options executeWorkflowOptions) error {
+	startOptions := ts.startWorkflowOptions(options.ID)
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
-	run, err := ts.client.ExecuteWorkflow(ctx, options, wfFunc, args...)
+	run, err := ts.client.ExecuteWorkflow(ctx, startOptions, options.Workflow, options.Args...)
 	if err != nil {
 		return err
 	}
-	err = run.Get(ctx, retValPtr)
+	err = run.Get(ctx, options.Result)
 	if ts.config.Debug {
-		iter := ts.client.GetWorkflowHistory(ctx, options.ID, run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+		iter := ts.client.GetWorkflowHistory(ctx, startOptions.ID, run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
 		for iter.HasNext() {
 			event, err1 := iter.Next()
 			if err1 != nil {

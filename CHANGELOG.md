@@ -1,0 +1,479 @@
+<!--
+High-level release notes for the main Go SDK module. Changes to independently
+released modules under `contrib` belong in the `CHANGELOG.md` for that module.
+Loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+
+When your PR includes a user-facing change, add an entry below under the
+appropriate heading (create the heading if it does not yet exist). Within
+each heading content can be free-form. Feel free to include examples, links
+to docs, or any other relevant information.
+
+### Added            — new features
+### Changed          — changes in existing functionality
+### Deprecated       — soon-to-be-removed features
+### Breaking Changes — removed or backwards-incompatible features
+### Fixed            — notable bug fixes
+### Security         — notable security fixes
+-->
+
+# Changelog
+
+## [Unreleased]
+
+### Added
+
+- **Experimental**: `converter.StorageDriverStoreContext` and
+  `converter.StorageDriverSelectContext` have a `Namespace` field holding the
+  namespace of the client or worker performing the operation, so drivers and
+  selectors can partition by namespace even when there is no `Target`.
+- Added experimental `worker.GetSlotUsage`, which returns a snapshot of a worker's task slot usage.
+- Added experimental `worker.GetInfo`, which returns a snapshot of a worker's state, currently its task
+  slot usage.
+
+### Changed
+
+- `converter.NewZlibCodec` reuses zlib writers and readers across payloads instead of creating them
+  for every payload. A writer is about 1 MB of allocation, so encoding allocates far less, which
+  reduces garbage collection in workers that encode many payloads. The encoded output is unchanged.
+
+### Deprecated
+
+### :boom: Breaking Changes
+
+### Fixed
+
+- Workers no longer advertise a worker control task queue unless worker heartbeats and commands
+  are supported and the shared namespace command poller is running.
+
+### Security
+
+## [1.51.0] - 2026-11-10
+
+### Added
+
+- Added `client.Options.RPCTimeout` to configure the default RPC timeout cap,
+  including raising it above 10 seconds. Shorter caller deadlines still take
+  precedence, and calls with dedicated timeouts (such as long polls) are unchanged.
+- `converter.WorkflowTaskFailureError`: an opt-in error a `PayloadCodec` can return
+  from `Encode` or `Decode` on a workflow-side payload path to fail the current
+  Workflow Task rather than the Workflow Execution, so the server retries the task and
+  a transient codec failure can recover while the execution stays open. See the
+  `WorkflowTaskFailureError` docs for the honored paths, exclusions, and retry
+  guidance.
+- Added experimental `SignalWithStartWorkflow` API to the `workflow` package.
+- Added opt-in `EncodeHeaders` tracing options and `workflow.CodecContextPropagator` for header
+  codec processing using the configured client's codec. Only opted-in producers' output is encoded;
+  user-supplied wire-ready headers are unchanged. Receiving consumers use private decoded views.
+  Custom converter wrappers can expose codec stages through `converter.PayloadCodecProvider`.
+- Added experimental Event Groups support: `workflow.NewEventGroup`, `workflow.WithEventGroups`,
+  and `EventGroups` on workflow command options. Update handlers get an implicit group. Signal
+  handlers do not.
+- Added client interceptor hooks for `Client.GetWorkflow` (`GetWorkflowRun`),
+  `WorkflowRun.Get`/`GetWithOptions` (`GetWorkflowResult`), and
+  `Client.GetWorkflowHistory`. Handle interception runs before lazy target
+  resolution, allowing workflow IDs to be rewritten before any lookup.
+  Result interception also runs before lazy target resolution, wraps the complete
+  wait including followed runs, and returns the encoded result or workflow error
+  before result decoding; history interception can wrap the lazily fetched iterator.
+- Plugins can report a version in worker heartbeats, with `SimplePluginOptions.Version` or a
+  `Version() string` method on the plugin.
+- `client.WorkflowExecutionDescription` now includes `RawResponse`, the full
+  `workflowservice.DescribeWorkflowExecutionResponse` returned by the server.
+- Added experimental `temporalnexus.ConvertLinkCallbackToNexusLink` and `temporalnexus.ConvertNexusLinkToLinkCallback`
+  for converting `Link_Callback` to and from Nexus links.
+- Nexus handlers now propagate `NexusSerializationContext` to the workflows, workflow updates, and
+  standalone activities they start, which use it for payloads returned to the Nexus caller: results,
+  failures, and standalone activity heartbeat details. When completing or heartbeating such an
+  activity from a client, pass `activity.Info.NexusSerializationContext` in the options.
+- Poller pools now report their poller target to the server on each poll and in the worker
+  heartbeat: the current target for autoscaling pools, the configured maximum for fixed-size pools.
+  Server will use this count for load balancing pollers between workers, and for
+  creating a per-worker poller count metric
+
+### Changed
+
+- Existing gRPC retries now honor positive `google.rpc.RetryInfo` delays on `ResourceExhausted` responses as a
+  minimum wait. Retries are skipped when the delay cannot fit before the call deadline.
+- `WorkflowTaskPollerBehavior`, `ActivityTaskPollerBehavior`, and `NexusTaskPollerBehavior` worker
+  options are no longer marked experimental.
+- **Experimental**: `SignalWorkflow` and `SignalWithStartWorkflow` called through
+  `NexusClient.GetWorkflowClient()` in a Temporal operation handler now reuse the operation's request
+  ID, so a retried Nexus task no longer delivers the same signal twice. Signals sent through
+  `temporalnexus.GetClient` keep an independent request ID per call and are not deduplicated.
+
+### Deprecated
+
+- `client.Client.DescribeWorkflowExecution` is deprecated. Use `DescribeWorkflow` and
+  access its response's `RawResponse` field for the full server response instead.
+
+### :boom: Breaking Changes
+
+- When reconstructing state for a query delivered without any new history, the SDK no longer applies
+  input events, such as signals, that have not been processed by a completed workflow task. Replay stops
+  at the last completed workflow task advertised with the query, even if fetched history has advanced
+  further. This can change query results for closed workflows with pending signals. Reconstruction fails
+  if the advertised completed task is missing from history.
+- `workflow.NewContinueAsNewErrorWithOptions` now calls
+  `interceptor.WorkflowOutboundInterceptor.NewContinueAsNewErrorWithOptions`
+  directly. It previously went through `NewContinueAsNewError`, then applied
+  `ContinueAsNewErrorOptions` to the error that hook returned. An interceptor
+  that overrides only `NewContinueAsNewError` no longer runs for
+  `NewContinueAsNewErrorWithOptions` calls. Override the new method as well;
+  the SDK tracing interceptors already do. An interceptor that records workflow
+  commands inside `NewContinueAsNewError` can cause a non-determinism error on
+  replay when the workflow already called `NewContinueAsNewErrorWithOptions`.
+- **Experimental**: A Temporal operation handler (`temporalnexus.NewTemporalOperation`) can now send only
+  one signal per operation invocation through `NexusClient.GetWorkflowClient()`. `SignalWorkflow` and
+  `SignalWithStartWorkflow` count toward the same limit. While the first signal is in flight, or after it
+  succeeds, a second signal to any workflow returns a `BAD_REQUEST` handler error. If the first signal
+  returns an error, the limit resets and the handler can signal again. Signals sent through
+  `temporalnexus.GetClient` are not limited.
+- **Experimental**: `SignalWithStartWorkflow` called through `NexusClient.GetWorkflowClient()` in a
+  Temporal operation handler now requires an explicit workflow ID and returns a `BAD_REQUEST` handler
+  error when it is empty. An empty ID is defaulted to a fresh UUID per call, so the server has no
+  record to deduplicate against and each retried Nexus task would start another workflow.
+
+### Fixed
+
+- Fixed premature activity cancellation on internal heartbeat errors when using a client created
+  with `client.NewClientFromExisting` and the server supports internal error differentiation.
+- Fixed missing `temporal_activity_schedule_to_start_latency` samples for eagerly dispatched activities.
+  Like polled activities, eager activities now record this metric on receipt, including during worker shutdown.
+- Fixed a data race between dynamic workflow factory re-registration and workflow definition lookup
+  in workers and `TestWorkflowEnvironment`.
+- Fixed queries delivered without any new history failing with an invalid state transition when a
+  workflow cache miss fetches history newer than the query task's replay boundary.
+- Fixed premature activity cancellation when a heartbeat RPC returns `DeadlineExceeded`.
+  The SDK now preserves Temporal service error codes when deciding whether a heartbeat failure should cancel the activity.
+- Fixed concurrent dev-server CLI downloads failing on Windows when another process has already populated and started the cached executable.
+- Fixed a deadlock between data converter deadlock-detector pausing and workflow coroutine cleanup.
+- `workflow.DataConverterWithoutDeadlockDetection` now also exempts automatic header codec calls and their serialization-context binding from workflow deadlock detection.
+- `converter.NewRemotePayloadCodec` now handles endpoint URLs with trailing slashes.
+- Fixed race when using `log.With` without a `WithLogger` implementation, where logs could overwrite each others' buffers.
+- The default timeout for client and worker RPCs has been extended. Previously, the default timeout
+  was only half the caller's context deadline - now it uses the entire deadline, up to a maximum
+  of ten seconds. RPCs with timeout overrides, like long-poll RPCs, are unchanged.
+- Query tracing now always records inbound spans when serving queries, regardless of `IsReplaying` state.
+
+## [1.50.0] - 2026-10-15
+
+### Added
+
+- Added `workflow.ChildWorkflowOptions.VersioningOverride` for explicitly pinning,
+  auto-upgrading, or one-time routing a child workflow independently of its parent.
+  This requires Temporal Server 1.32.0 or later.
+- Added experimental `converter.NewTransferTypeConverter` API that implements transfer type conversion.
+  `converter.GetDefaultDataConverter()` now supports transfer type conversion.
+- Added autoscaling support for server poller groups, with per-group coverage and
+  sticky-backlog prioritization. `SimpleMaximum` is unchanged, and autoscaling
+  behaves as before when no poller groups are configured.
+- `TestWorkflowEnvironment` and `TestActivityEnvironment` now run worker plugins set through
+  `SetWorkerOptions(worker.Options{Plugins: ...})`, which were previously ignored. Once plugins are
+  set, `SetWorkerOptions` may not be called again on that environment, and what a plugin registers
+  in `StartWorker` is undone at `StopWorker`.
+- `TestActivityEnvironment` now has `RegisterDynamicActivity` and implements `worker.ActivityRegistry`
+  again.
+- `temporalnexus.ConvertNexusLinkToLinkWorkflow`, the decoding counterpart of
+  `ConvertWorkflowLinkToNexusLink`.
+- Added `workflow.NewLocalVar[T](ctx)` for type-safe values bound to a workflow run that can be
+  accessed from workflow code and workflow interceptors. Copies of a `workflow.LocalVar[T]` share
+  identity.
+- **Experimental**: New external storage concurrency controls. `ExternalStorage.Concurrency` sets
+  `MaxDriverOperations` (for one client or worker) and `MaxOperationsPerMessage` (for one
+  message). Drivers must use `ctx.GetLimiter()` for store and retrieve operations.
+
+### Changed
+
+- Removed experimental labels from the core plugin APIs.
+- Task queue priority is no longer marked as experimental.
+- Nexus link conversion now handles all four link types. Workflow links on an inbound Nexus
+  request are converted rather than dropped, and `temporalnexus.ConvertCommonLinkToNexusLink`
+  converts NexusOperation and Activity links rather than returning an empty `nexus.Link`.
+- The `[TMPRL1104]` workflow task duration log now uses a single warning threshold, configurable
+  with the `TEMPORAL_WORKFLOW_TASK_DURATION_WARN_SECONDS` environment variable and defaulting to 5
+  seconds. It previously warned above a fixed 10 seconds, logged at info above a fixed 5 seconds,
+  and logged at debug below that when trace logging was enabled.
+
+### :boom: Breaking Changes
+
+- Moved the Google ADK integration from `contrib/googleadk` to
+  [temporalio/ai-integrations](https://github.com/temporalio/ai-integrations/tree/main/go/googleadk).
+  Its module path is now `go.temporal.io/googleadk` instead of
+  `go.temporal.io/sdk/contrib/googleadk`; see the integration README for installation and usage.
+- Plugin cleanup must not synchronously call the same worker's `Stop`: it now waits
+  for that cleanup to finish and deadlocks. This includes `SimplePlugin.RunContextAfter`,
+  whose callback receives no `next` function.
+- Bulk sticky workflow cache cleanup, including `PurgeStickyWorkflowCache` and final-worker
+  shutdown, no longer increments `temporal_sticky_cache_total_forced_eviction`. This aligns bulk
+  cleanup with Java and Core-based SDKs. Qualifying capacity and other per-workflow removals remain
+  counted, but dashboards may report fewer forced evictions.
+- **Experimental**: Removed `WorkerOptions.MaxConcurrentWorkflowTaskExternalStorageVisits`. Use
+  `ExternalStorage.Concurrency`.
+
+### Fixed
+
+- Local activity mock lookup in `TestWorkflowEnvironment` no longer tries re-resolving the activity name.
+  This fixes a bug where two closures with different registered names would alias each other.
+- mTLS client setup and schedule creation no longer modify caller-owned TLS
+  configs or workflow actions, allowing safe reuse.
+- Fatal worker errors now signal polling to stop before notification and run
+  notification and automatic stopping outside polling goroutines to avoid waiting
+  for the reporting poller itself. Concurrent `Worker.Stop` calls and `Worker.Run`
+  wait for worker cleanup, and `Run` returns the first fatal error even when
+  interruption races with it.
+- Child context cancellation now follows creation order by default.
+- Legacy query failure responses (`RespondQueryTaskCompletedRequest`) now set
+  `WorkflowTaskFailedCause` for workflow task failures: `PAYLOADS_TOO_LARGE` for oversized payloads,
+  `NON_DETERMINISTIC_ERROR` for illegal state machine panics, and
+  `WORKFLOW_WORKER_UNHANDLED_FAILURE` when the workflow panicked.
+- Autoscaling pollers now honor configured bounds at startup, preventing excess polls and workflow
+  polling delays.
+- `workflow.WithLocalActivityOptions` no longer modifies the `RetryPolicy` passed in
+  `LocalActivityOptions`. It applies the default retry values to a copy, so sharing one policy between
+  workflows no longer writes to it from several goroutines.
+- Worker plugin registry callbacks: `RegisterDynamicWorkflow` now passes the real options to
+  `OnRegisterDynamicWorkflow`, and `RegisterDynamicActivity` no longer panics when a plugin set
+  `OnRegisterActivity` but not `OnRegisterDynamicActivity`.
+- Stopped workers now release sticky workflow cache ownership immediately. When the final worker
+  stops, cached workflow state is cleared without waiting for garbage collection.
+
+## [1.49.0] - 2026-09-14
+
+### Added
+
+- Worker heartbeats now report the Go runtime version (plus RoadRunner, when the SDK is embedded in
+  a RoadRunner binary), detected hosting environments (Docker, Kubernetes, and common cloud
+  platforms), and the operating system and architecture. This is sent
+  once per worker with the first heartbeat accepted by the server and can be turned off with
+  `client.Options.DisableWorkerEnvironmentInfo`.
+- Standalone activity client calls now supply `converter.ActivitySerializationContext` when encoding
+  and decoding activity payloads: `ExecuteActivity` (input and static summary/details),
+  `ActivityHandle.Describe` (heartbeat details, last failure, and static summary/details), and
+  `ActivityHandle.Get` (result and failure).
+- Added `converter.NexusSerializationContext` support for Nexus callers and handlers. Callers use
+  it for inputs, results, and failures; handlers use it for inputs, synchronous results, and
+  failures. Asynchronous handler results and detached standalone handles are not yet supported.
+  Standalone `USE_EXISTING` handles use their start request's context.
+- Added `temporal.NewPayloadValidationError` to create non-retryable application errors with
+  optional structured details for payload validation failures. Passing `nil` omits details.
+- Added Go 1.27+ generic methods on the experimental `temporalnexus.NexusClient` for starting
+  workflow-, activity-, and workflow-update-backed Nexus operations.
+- Workflow task completions larger than the gRPC request size limit are now paginated automatically
+  when the namespace supports it. Paginated workflow task completions require Temporal Server 1.32.0
+  or later.
+- The `temporal_activity_execution_failed` and `temporal_local_activity_execution_failed` worker
+  metrics now carry a `failure_reason` attribute. Each is now split into one time series per
+  reason, which may affect existing dashboards.
+- Added support for Workflow Queries as Nexus Operations.
+
+#### Standalone Activity operator commands
+
+- `client.ActivityHandle` now supports operator commands for standalone activities: `Pause`,
+  `Unpause`, `UpdateOptions` and `RestoreOriginalOptions`.
+- Added opt-in payload fields to `client.DescribeActivityOptions`: `IncludeInput`,
+  `IncludeOutcome`, `IncludeHeartbeatDetails` and `IncludeLastFailure`.
+- Added missing description fields: `ExecutionTime` and `TotalHeartbeatCount`.
+
+### Changed
+
+- Standalone Activities are now generally available (GA). (Standalone Activities as Nexus operations
+  and Standalone Activities operator commands remain experimental. Operator commands are `pause`,
+  `unpause`, `updateOptions`, `restoreOriginal`.)
+
+### :boom: Breaking Changes
+
+- Description payload fields that previously came back unconditionally are now opt-in and must be
+  requested via `client.DescribeActivityOptions`: `GetHeartbeatDetails` (`IncludeHeartbeatDetails`)
+  and `GetLastFailure` (`IncludeLastFailure`).
+- Renamed the standalone activity `client.StartActivityOptions.Details` option to `StaticDetails`,
+  and `client.ActivityExecutionDescription.GetDetails` to `GetStaticDetails`.
+- Raised the minimum supported Go version from 1.25.4 to 1.26.0.
+- Experimental external storage: `converter.StorageDriverSelector.SelectDriver` now receives a
+  `converter.StorageDriverSelectContext` instead of a `converter.StorageDriverStoreContext`.
+  Update the parameter type; the new type carries the same `Context` and `Target` fields.
+- Local activity results are now serialized with the local activity's `ActivitySerializationContext`
+  (`IsLocal=true`) instead of the workflow serialization context. Users of a context-aware
+  `DataConverter` or `PayloadCodec` whose encoding depends on the serialization context (for example
+  context-derived encryption keys or AAD) may fail to decode local activity results recorded in
+  histories written by earlier SDK versions, both on replay and when continuing an open workflow.
+- Experimental `workflow.WorkflowRandomStream`'s `Uint64` now derives its value by calling `Read`
+  internally instead of the underlying generator's `Uint64` method directly, giving `Read`/`Uint64`
+  interleaving on the same stream a stable, well-defined byte ordering (previously undefined per the
+  standard library `ChaCha8.Read` doc). This only changes output for a `Uint64` call that immediately
+  follows a `Read` call whose length is not a multiple of 8 bytes on the same stream; pure `Uint64`
+  streams and 8-byte-aligned interleaving are unaffected. Open workflows created on SDK v1.48.0+ that
+  hit the affected pattern may compute a different value, and therefore may make a different decision,
+  on replay after upgrading.
+- Activity, local activity and child workflow serialization contexts are now applied to the
+  worker-configured `DataConverter` and `FailureConverter` instead of the converter already carrying
+  the current workflow context. A context-aware converter that composed contexts (deriving its state
+  from both the workflow and the activity context) now sees only the activity or child workflow
+  context, and one whose `WithSerializationContext` returned a converter that is no longer
+  context-aware now receives the activity or child workflow context it previously never saw.
+
+### Fixed
+
+- Local activity scheduling no longer uses a fixed 100,000-entry task queue. The queue now grows
+  with demand, avoiding both the up-front allocation and a possible worker deadlock when the queue
+  and all local activity execution slots were full.
+- Workflow autoscaling now favors sticky polls when sticky work is backlogged, while allowing
+  normal polls to use spare slots once sticky reaches its autoscaling target.
+- The `PayloadDownloadDuration` and `PayloadUploadDuration` fields on the workflow task duration log
+  now report the wall-clock time external storage was in flight. Previously each batch's duration was
+  summed, over-reporting the time whenever storage operations ran concurrently.
+- Stand-alone activities started from a redelivered Nexus operation handler now reuse the Nexus
+  request ID, preventing duplicate Nexus links when an idempotent start resolves to the original run.
+- `temporal.IsWorkflowExecutionAlreadyStartedError` now detects wrapped
+  `serviceerror.WorkflowExecutionAlreadyStarted` errors.
+- Malformed Nexus link errors now log the link URL and parse error under stable structured fields.
+- Legacy query task processing failures are now reported through `RespondQueryTaskCompleted` instead of
+  `RespondWorkflowTaskFailed`, allowing query callers to receive the failure instead of timing out.
+- Local activity results are now serialized with the local activity's `ActivitySerializationContext`
+  (`IsLocal=true`) on both ends. Previously the result was encoded with the plain worker data converter
+  but decoded through the workflow serialization context, so a context-aware `DataConverter` or
+  `PayloadCodec` saw mismatched contexts for local activity results.
+- Workflow replays no longer retain one-shot workflow state in the process-wide sticky cache.
+- Corrected stand-alone activity API documentation to use activity terminology, document that
+  `GetActivityHandleOptions.RunID` may be empty to target the latest run, and describe
+  `TerminateActivityOptions.Reason` as a termination reason.
+- Added disabled-by-default SDK flag 9 for deterministic workflow child-context cancellation.
+  Currently no behavior is changed by default, a future PR will flip this flag on by 
+  default.
+- `DefaultFailureConverter.FailureToError` now correctly decodes `LastHeartbeatDetails` for a
+  reset-workflow failure. Previously the raw payload proto was treated as a single detail value,
+  so calling `Details()` on the resulting `ApplicationError` returned `ErrTooManyArg` instead of
+  decoding it.
+- Added documentation that function literals (closures) shouldn't be registered as
+  workflow functions or activity functions without an alias.
+- Query results are now checked against the server's blob-size error limit after
+  external storage has had a chance to offload them, matching how update and activity
+  results of the same size already behaved. A query result large enough to be offloaded
+  to `client.Options.ExternalStorage` is now stored instead of failing locally with
+  `TMPRL1103`. As a consequence, a `StorageDriver` failure while storing an oversized
+  query result now fails the workflow task instead of returning a failed query result.
+
+## [1.48.0] - 2026-08-18
+
+### Added
+
+- Added `-envconfig` support to the integration test harness, allowing integration tests to use
+  standard client settings from `contrib/envconfig`.
+- Added `client.Options.SdkName` and `client.Options.SdkVersion` to override the SDK name and version reported in worker heartbeats.
+- Added `client.WorkflowRun.GetFirstExecutionRunID` to expose the first execution run ID returned by the server when starting a workflow.
+- Added `client.Client.CancelWorkflowWithOptions` and `client.Client.TerminateWorkflowWithOptions` to target a workflow execution chain by its first execution run ID. Cancellation options can also specify a reason.
+- Added experimental `workflow.GetRandomStream` for named deterministic pseudorandom values in workflows.
+- Added experimental `workflow.IsReadOnly` to report whether the workflow context is in a read-only
+  path.
+- Added `go.temporal.io/sdk/interceptor/tracing`, a reworked tracing interceptor with
+  corrected span parenting and span directions for span-kind mapping. It backs the new
+  `contrib/opentelemetry-v2` module and is not span-compatible with the tracing interceptor
+  used by `contrib/opentelemetry` (v1).
+
+### Changed
+
+- Improved the performance of yield-heavy workloads by eliminating unnecessary computation and heap allocations.
+- Replaced the internal `OnceCell` implementation with `sync.OnceValue` for lazy workflow run ID lookup.
+
+### Fixed
+
+- Data converter errors raised while deserializing Nexus operation input are no longer replaced with
+  a generic `BAD_REQUEST` handler error. A `temporal.ApplicationError` or a `nexus.HandlerError` is
+  now propagated to the caller as-is, and any other error is wrapped in a `BAD_REQUEST`
+  `nexus.HandlerError` that retains the original error as its cause. As an exception, a
+  non-retryable `temporal.ApplicationError` with type `PayloadValidationError` is reported as a
+  `BAD_REQUEST` `nexus.HandlerError` with the original error as its cause, since it indicates the
+  operation input itself is invalid.
+- Prevent workflow task failures when an activity with a custom ID completes while its cancellation
+  command is pending.
+- `TestWorkflowEnvironment.MutableSideEffect` now honors the provided equals function and only
+  updates the recorded value when it changes, matching the real worker. Previously it ignored
+  equals and returned a freshly computed value on every call.
+- Nexus operation link propagation for stand-alone activities. When a Nexus operation handler uses
+  `client.ExecuteActivity`, inbound Nexus request links are forwarded to the activity and the
+  activity link returned by the server is propagated back to the Nexus operation caller.
+
+## [1.47.0] - 2026-07-28
+
+### Added
+
+- Added `worker.Options.MaxEagerActivityReservationsPerWorkflowTask` to configure the maximum
+  number of eager activity slots reserved per workflow task. The default remains three. Configured
+  values must be positive; use `DisableEagerActivities` to disable eager activity execution.
+- Automatically enroll workers into poller autoscaling when the namespace advertises the
+  `PollerAutoscalingAutoEnroll` capability. This only applies to poller types left at their default
+  (i.e. the worker set neither `MaxConcurrent<Type>TaskPollers` nor `<Type>TaskPollerBehavior`);
+  explicitly configured pollers are left unchanged.
+- Added `worker.Options.PreferredVersionProvider`, which can select the version recorded by a
+  newly encountered `workflow.GetVersion` call. This supports gradual rollout of a new
+  `GetVersion` call before activating its new behavior.
+- Add support for Workflow Updates as Nexus Operations 
+- Add support for external storage to Nexus task handling.
+
+### Changed
+
+- User metadata fields (StaticSummary, StaticDetails, CurrentDetails, Activity Summary, Timer
+  Summary, AwaitOptions) are no longer marked as experimental.
+- Send the initial Worker heartbeat immediately on startup, include the client identity, and omit
+  elapsed-since-last-heartbeat until a previous heartbeat exists.
+
+### Fixed
+
+- Prevent a background panic during worker shutdown when the local activity tunnel closes while a
+  poller is waiting for a task.
+- Allow query results to use external storage before payload size enforcement.
+- Correct schedule catch-up window documentation to state that an unset value is omitted and the
+  server applies its one-year default.
+- Resource-based tuner: `ReserveSlot` now honors context cancellation while the resource controller is
+  declining slots. Previously the retry loop observed the context only while the ramp throttle was making
+  the caller wait, so a poller goroutine could outlive worker shutdown, keeping the worker's stop
+  `WaitGroup` from draining and continuing to sample system resources for the life of the process.
+- Resource-based tuner: `TryReserveSlot` (used for eager task dispatch) no longer blocks for up to
+  `RampThrottle` while a concurrent `ReserveSlot` waits out the ramp throttle. The throttle behavior
+  is unchanged; only the unnecessary lock contention on the eager path is removed.
+- Stand-alone activity-backed Nexus operations. `temporalnexus.MustNewTemporalOperation` can now
+  back an async Nexus operation with a stand-alone activity execution via `StartActivity` /
+  `StartUntypedActivity`. Activity-backed Nexus operations are also supported in `TestWorkflowEnvironment`.
+- Fixed worker task slot metrics reporting stale values when slot state changes concurrently.
+- Dynamic workflows registered as a `WorkflowDefinitionFactory` are now executed via
+  `NewWorkflowDefinition()` rather than being wrapped as a function and reflected on (which panicked
+  with `reflect: call of reflect.Value.Call on ptr Value`), in both the worker registry and the test
+  environment. This lets host processes that register a single shared factory (e.g.
+  `roadrunner-temporal` / the PHP SDK) use dynamic workflows.
+- Merged link-converter class in the server and sdk-go and moved it to api-go
+- Nexus operations with `NexusOperationCancellationTypeAbandon` no longer panic the workflow task when
+  the operation later starts or completes after the caller is canceled.
+- Session worker: stopping a worker while it is at its maximum concurrent session count no longer blocks
+  for the stop timeout. The session creation poller waited for an available session token without
+  observing the stop signal, so shutdown could not interrupt it and the poller goroutine leaked.
+
+## [1.46.0] - 2026-07-07
+
+### Fixed
+
+- Respect SDK flags already recorded in workflow history even when `GetSystemInfo` does not report
+  SDK metadata support.
+- Only treat `GetSystemInfo` `UNIMPLEMENTED` responses as missing server capability support when
+  the error indicates an unknown method.
+- Retry server RPCs without gzip compression when a method reports that gzip decompression is
+  unsupported, while continuing to use gzip for other methods.
+- Populate `Priority` on `ScheduleWorkflowAction` values returned by `ScheduleHandle.Describe()`.
+- Report the configured deadlock detection timeout in potential deadlock errors instead of always
+  saying "over a second".
+- Register all poller types before starting autoscaling pollers to avoid an autoscaling worker
+  startup race.
+- Treat `workflow.SideEffectWithOptions` and `workflow.MutableSideEffectWithOptions` as valid
+  deterministic wrappers in `workflowcheck`.
+
+### Added
+
+- Added `OneTimeVersioningOverride` support for workflow start and workflow execution options,
+  allowing a workflow to route to a target Worker Deployment Version until one Workflow Task
+  completes there.
+- Nexus operation link propagation for signals. When a Nexus operation handler signals a workflow
+  (including signal-with-start), the inbound Nexus request links are now forwarded onto the signaled
+  workflow so its history events link back to the caller, and the link the server returns for the
+  signaled event is attached to the caller workflow's Nexus operation history event. This makes the
+  caller and callee mutually navigable in the UI for signal-based Nexus operations.
+- Support propagating standalone Nexus operation links.
+- OpenTelemetry tracing support for standalone activities started from the client.
+- Doclink now links interfaces when they're re-exported from `private` to a public package.

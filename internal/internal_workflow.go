@@ -18,7 +18,7 @@ import (
 
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
-	"go.temporal.io/api/sdk/v1"
+	sdk "go.temporal.io/api/sdk/v1"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
@@ -52,7 +52,7 @@ type (
 	}
 
 	futureImpl struct {
-		value   interface{}
+		value   any
 		err     error
 		ready   bool
 		channel *channelImpl
@@ -105,23 +105,23 @@ type (
 	}
 
 	sendCallback struct {
-		value interface{}
+		value any
 		fn    func() bool // false indicates that callback didn't accept the value
 	}
 
 	receiveCallback struct {
 		// false result means that callback didn't accept the value and it is still up for delivery
-		fn func(v interface{}, more bool) bool
+		fn func(v any, more bool) bool
 	}
 
 	channelImpl struct {
 		name            string                  // human readable channel name
 		size            int                     // Channel buffer size. 0 for non buffered.
-		buffer          []interface{}           // buffered messages
+		buffer          []any                   // buffered messages
 		blockedSends    []*sendCallback         // puts waiting when buffer is full.
 		blockedReceives []*receiveCallback      // receives waiting when no messages are available.
 		closed          bool                    // true if channel is closed.
-		recValue        *interface{}            // Used only while receiving value, this is used as pre-fetch buffer value from the channel.
+		recValue        *any                    // Used only while receiving value, this is used as pre-fetch buffer value from the channel.
 		dataConverter   converter.DataConverter // for decode data
 		env             WorkflowEnvironment
 	}
@@ -132,7 +132,7 @@ type (
 		receiveFunc *func(c ReceiveChannel, more bool) // function to call when channel has a message. nil for send case.
 
 		sendFunc   *func()         // function to call when channel accepted a message. nil for receive case.
-		sendValue  *interface{}    // value to send to the channel. Used only for send case.
+		sendValue  *any            // value to send to the channel. Used only for send case.
 		future     asyncFuture     // Used for future case
 		futureFunc *func(f Future) // function to call when Future is ready
 	}
@@ -195,16 +195,19 @@ type (
 		WorkflowIDConflictPolicy enumspb.WorkflowIdConflictPolicy
 		OnConflictOptions        *OnConflictOptions
 		DataConverter            converter.DataConverter
+		RootDataConverter        converter.DataConverter
+		headerCodec              converter.PayloadCodec
 		RetryPolicy              *commonpb.RetryPolicy
 		Priority                 *commonpb.Priority
 		CronSchedule             string
 		ContextPropagators       []ContextPropagator
-		Memo                     map[string]interface{}
-		SearchAttributes         map[string]interface{}
+		Memo                     map[string]any
+		SearchAttributes         map[string]any
 		TypedSearchAttributes    SearchAttributes
 		ParentClosePolicy        enumspb.ParentClosePolicy
 		StaticSummary            string
 		StaticDetails            string
+		eventGroups              []EventGroup
 		signalChannels           map[string]Channel
 		requestedSignalChannels  map[string]*requestedSignalChannel
 		queryHandlers            map[string]*queryHandler
@@ -212,6 +215,7 @@ type (
 		// runningUpdatesHandles is a map of update handlers that are currently running.
 		runningUpdatesHandles     map[string]UpdateInfo
 		VersioningIntent          VersioningIntent
+		VersioningOverride        VersioningOverride
 		InitialVersioningBehavior ContinueAsNewVersioningBehavior
 		// currentDetails is the user-set string returned on metadata query as
 		// WorkflowMetadata.current_details
@@ -224,15 +228,19 @@ type (
 		WorkflowType         *WorkflowType
 		Input                *commonpb.Payloads
 		Header               *commonpb.Header
-		attempt              int32              // used by test framework to support child workflow retry
-		scheduledTime        time.Time          // used by test framework to support child workflow retry
-		lastCompletionResult *commonpb.Payloads // used by test framework to support cron
+		dataConverter        converter.DataConverter    // context-aware DC from ExecuteChildWorkflow
+		failureConverter     converter.FailureConverter // context-aware FC from ExecuteChildWorkflow
+		attempt              int32                      // used by test framework to support child workflow retry
+		scheduledTime        time.Time                  // used by test framework to support child workflow retry
+		lastCompletionResult *commonpb.Payloads         // used by test framework to support cron
+		EventGroupMarkers    []*sdk.EventGroupMarker
 	}
 
 	// decodeFutureImpl
 	decodeFutureImpl struct {
 		*futureImpl
-		fn interface{}
+		fn            any
+		dataConverter converter.DataConverter // optional: if set, used instead of ctx DC
 	}
 
 	childWorkflowFutureImpl struct {
@@ -250,7 +258,7 @@ type (
 		// Used by selectorImpl
 		// If Future is ready returns its value immediately.
 		// If not registers callback which is called when it is ready.
-		GetAsync(callback *receiveCallback) (v interface{}, ok bool, err error)
+		GetAsync(callback *receiveCallback) (v any, ok bool, err error)
 
 		// Used by selectorImpl
 		RemoveReceiveCallback(callback *receiveCallback)
@@ -260,9 +268,9 @@ type (
 
 		// Gets the current value and error.
 		// Make sure this is called once the future is ready.
-		GetValueAndError() (v interface{}, err error)
+		GetValueAndError() (v any, err error)
 
-		Set(value interface{}, err error)
+		Set(value any, err error)
 	}
 
 	requestedSignalChannel struct {
@@ -270,7 +278,7 @@ type (
 	}
 
 	queryHandler struct {
-		fn            interface{}
+		fn            any
 		queryType     string
 		dataConverter converter.DataConverter
 		options       QueryHandlerOptions
@@ -316,7 +324,7 @@ func getWorkflowResultPointerPointer(ctx Context) **workflowResult {
 	return rpp.(**workflowResult)
 }
 
-func getWorkflowEnvironment(ctx Context) WorkflowEnvironment {
+func GetWorkflowEnvironment(ctx Context) WorkflowEnvironment {
 	wc := ctx.Value(workflowEnvironmentContextKey)
 	if wc == nil {
 		panic("getWorkflowContext: Not a workflow context")
@@ -336,7 +344,7 @@ type workflowEnvironmentInterceptor struct {
 	env                 WorkflowEnvironment
 	dispatcher          dispatcher
 	inboundInterceptor  WorkflowInboundInterceptor
-	fn                  interface{}
+	fn                  any
 	outboundInterceptor WorkflowOutboundInterceptor
 }
 
@@ -352,7 +360,7 @@ func getWorkflowOutboundInterceptor(ctx Context) WorkflowOutboundInterceptor {
 	return wc.(WorkflowOutboundInterceptor)
 }
 
-func (f *futureImpl) Get(ctx Context, valuePtr interface{}) error {
+func (f *futureImpl) Get(ctx Context, valuePtr any) error {
 	assertNotInReadOnlyState(ctx)
 	more := f.channel.Receive(ctx, nil)
 	if more {
@@ -365,13 +373,13 @@ func (f *futureImpl) Get(ctx Context, valuePtr interface{}) error {
 		return f.err
 	}
 	rf := reflect.ValueOf(valuePtr)
-	if rf.Type().Kind() != reflect.Ptr {
+	if rf.Type().Kind() != reflect.Pointer {
 		return errors.New("valuePtr parameter is not a pointer")
 	}
 
 	if payload, ok := f.value.(*commonpb.Payloads); ok {
 		if _, ok2 := valuePtr.(**commonpb.Payloads); !ok2 {
-			if err := decodeArg(getDataConverterFromWorkflowContext(ctx), payload, valuePtr); err != nil {
+			if err := decodeArg(GetDataConverterFromWorkflowContext(ctx), payload, valuePtr); err != nil {
 				return err
 			}
 			return f.err
@@ -382,7 +390,7 @@ func (f *futureImpl) Get(ctx Context, valuePtr interface{}) error {
 	// If the value set was a pointer and is the same type as the wanted result,
 	// instead of panicking because it is not a pointer to a pointer, we will just
 	// set the pointer
-	if fv.Kind() == reflect.Ptr && fv.Type() == rf.Type() {
+	if fv.Kind() == reflect.Pointer && fv.Type() == rf.Type() {
 		rf.Elem().Set(fv.Elem())
 	} else {
 		rf.Elem().Set(fv)
@@ -393,7 +401,7 @@ func (f *futureImpl) Get(ctx Context, valuePtr interface{}) error {
 // Used by selectorImpl
 // If Future is ready returns its value immediately.
 // If not registers callback which is called when it is ready.
-func (f *futureImpl) GetAsync(callback *receiveCallback) (v interface{}, ok bool, err error) {
+func (f *futureImpl) GetAsync(callback *receiveCallback) (v any, ok bool, err error) {
 	_, _, more := f.channel.receiveAsyncImpl(callback)
 	// Future uses Channel.Close to indicate that it is ready.
 	// So more being true (channel is still open) indicates future is not ready.
@@ -416,7 +424,7 @@ func (f *futureImpl) IsReady() bool {
 	return f.ready
 }
 
-func (f *futureImpl) Set(value interface{}, err error) {
+func (f *futureImpl) Set(value any, err error) {
 	if f.ready {
 		panic("already set")
 	}
@@ -429,7 +437,7 @@ func (f *futureImpl) Set(value interface{}, err error) {
 	}
 }
 
-func (f *futureImpl) SetValue(value interface{}) {
+func (f *futureImpl) SetValue(value any) {
 	if f.ready {
 		panic("already set")
 	}
@@ -457,16 +465,14 @@ func (f *futureImpl) Chain(future Future) {
 		return
 	}
 	val, err := ch.GetValueAndError()
-	f.value = val
-	f.err = err
-	f.ready = true
+	f.Set(val, err)
 }
 
 func (f *futureImpl) ChainFuture(future Future) {
 	f.chained = append(f.chained, future.(asyncFuture))
 }
 
-func (f *futureImpl) GetValueAndError() (interface{}, error) {
+func (f *futureImpl) GetValueAndError() (any, error) {
 	return f.value, f.err
 }
 
@@ -474,7 +480,7 @@ func (f *childWorkflowFutureImpl) GetChildWorkflowExecution() Future {
 	return f.executionFuture
 }
 
-func (f *childWorkflowFutureImpl) SignalChildWorkflow(ctx Context, signalName string, data interface{}) Future {
+func (f *childWorkflowFutureImpl) SignalChildWorkflow(ctx Context, signalName string, data any) Future {
 	assertNotInReadOnlyState(ctx)
 	var childExec WorkflowExecution
 	if err := f.GetChildWorkflowExecution().Get(ctx, &childExec); err != nil {
@@ -487,6 +493,19 @@ func (f *childWorkflowFutureImpl) SignalChildWorkflow(ctx Context, signalName st
 	return i.SignalChildWorkflow(ctx, childExec.ID, signalName, data)
 }
 
+func (f *childWorkflowFutureImpl) SignalChildWorkflowWithOptions(ctx Context, signalName string, data any, options SignalChildWorkflowOptions) Future {
+	assertNotInReadOnlyState(ctx)
+	var childExec WorkflowExecution
+	if err := f.GetChildWorkflowExecution().Get(ctx, &childExec); err != nil {
+		return f.GetChildWorkflowExecution()
+	}
+
+	i := getWorkflowOutboundInterceptor(ctx)
+	// Put header on context before executing
+	ctx = workflowContextWithNewHeader(ctx)
+	return i.SignalChildWorkflowWithOptions(ctx, childExec.ID, signalName, data, options)
+}
+
 func (f *nexusOperationFutureImpl) GetNexusOperationExecution() Future {
 	return f.executionFuture
 }
@@ -497,6 +516,7 @@ func newWorkflowContext(
 ) (*workflowEnvironmentInterceptor, Context, error) {
 	// Create context with default values
 	ctx := WithValue(background, workflowEnvironmentContextKey, env)
+	ctx = workflowContextWithLocalStore(ctx)
 	var resultPtr *workflowResult
 	ctx = WithValue(ctx, workflowResultContextKey, &resultPtr)
 	info := env.WorkflowInfo()
@@ -507,6 +527,8 @@ func newWorkflowContext(
 	ctx = WithWorkflowTaskTimeout(ctx, info.WorkflowTaskTimeout)
 	ctx = WithTaskQueue(ctx, info.TaskQueueName)
 	ctx = WithDataConverter(ctx, env.GetDataConverter())
+	getWorkflowEnvOptions(ctx).RootDataConverter = rootDataConverterFromEnvironment(env)
+	getWorkflowEnvOptions(ctx).headerCodec = headerCodecFromDataConverter(getWorkflowEnvOptions(ctx).RootDataConverter)
 	ctx = withContextPropagators(ctx, env.GetContextPropagators())
 	getActivityOptions(ctx).OriginalTaskQueueName = info.TaskQueueName
 
@@ -552,7 +574,7 @@ func (d *syncWorkflowDefinition) Execute(env WorkflowEnvironment, header *common
 			r.workflowResult, r.error = d.workflow.Execute(d.rootCtx, input)
 			rpp := getWorkflowResultPointerPointer(ctx)
 			*rpp = r
-		}, getWorkflowEnvironment(rootCtx).DrainUnhandledUpdates)
+		}, GetWorkflowEnvironment(rootCtx).DrainUnhandledUpdates)
 
 	// set the information from the headers that is to be propagated in the workflow context
 	rootCtx, err = workflowContextWithHeaderPropagated(rootCtx, header, env.GetContextPropagators())
@@ -564,13 +586,13 @@ func (d *syncWorkflowDefinition) Execute(env WorkflowEnvironment, header *common
 	d.dispatcher = dispatcher
 	envInterceptor.dispatcher = dispatcher
 
-	getWorkflowEnvironment(d.rootCtx).RegisterCancelHandler(func() {
+	GetWorkflowEnvironment(d.rootCtx).RegisterCancelHandler(func() {
 		// It is ok to call this method multiple times.
 		// it doesn't do anything new, the context remains canceled.
 		d.cancel()
 	})
 
-	getWorkflowEnvironment(d.rootCtx).RegisterSignalHandler(
+	GetWorkflowEnvironment(d.rootCtx).RegisterSignalHandler(
 		func(name string, input *commonpb.Payloads, header *commonpb.Header) error {
 			// Put the header on context
 			rootCtx, err := workflowContextWithHeaderPropagated(d.rootCtx, header, env.GetContextPropagators())
@@ -581,12 +603,12 @@ func (d *syncWorkflowDefinition) Execute(env WorkflowEnvironment, header *common
 		},
 	)
 
-	getWorkflowEnvironment(d.rootCtx).RegisterUpdateHandler(
+	GetWorkflowEnvironment(d.rootCtx).RegisterUpdateHandler(
 		func(name string, id string, serializedArgs *commonpb.Payloads, header *commonpb.Header, callbacks UpdateCallbacks) {
 			defaultUpdateHandler(d.rootCtx, name, id, serializedArgs, header, callbacks, updateSchedulerImpl{d.dispatcher})
 		})
 
-	getWorkflowEnvironment(d.rootCtx).RegisterQueryHandler(
+	GetWorkflowEnvironment(d.rootCtx).RegisterQueryHandler(
 		func(queryType string, queryArgs *commonpb.Payloads, header *commonpb.Header) (*commonpb.Payloads, error) {
 			// Put the header on context if server supports it
 			rootCtx, err := workflowContextWithHeaderPropagated(d.rootCtx, header, env.GetContextPropagators())
@@ -607,7 +629,7 @@ func (d *syncWorkflowDefinition) Execute(env WorkflowEnvironment, header *common
 					if err != nil {
 						return nil, err
 					}
-					return encodeArg(getDataConverterFromWorkflowContext(rootCtx), converter.NewRawValue(resultPayload))
+					return encodeArg(GetDataConverterFromWorkflowContext(rootCtx), converter.NewRawValue(resultPayload))
 				}
 			}
 
@@ -630,10 +652,18 @@ func (d *syncWorkflowDefinition) Execute(env WorkflowEnvironment, header *common
 			}
 
 			// Invoke
-			result, err := envInterceptor.inboundInterceptor.HandleQuery(
-				rootCtx,
-				&HandleQueryInput{QueryType: queryType, Args: args},
-			)
+			result, err := func() (any, error) {
+				state := getCoroutineState(rootCtx)
+
+				prev := state.dispatcher.getIsReadOnly()
+				state.dispatcher.setIsReadOnly(true)
+				defer state.dispatcher.setIsReadOnly(prev)
+
+				return envInterceptor.inboundInterceptor.HandleQuery(
+					rootCtx,
+					&HandleQueryInput{QueryType: queryType, Args: args},
+				)
+			}()
 
 			// Encode the result
 			var serializedResult *commonpb.Payloads
@@ -663,7 +693,7 @@ func (d *syncWorkflowDefinition) Close() {
 // Context passed to the root function is child of the passed rootCtx.
 // This way rootCtx can be used to pass values to the coroutine code.
 func newDispatcher(rootCtx Context, interceptor *workflowEnvironmentInterceptor, root func(ctx Context), allBlockedCallback func() bool) (*dispatcherImpl, Context) {
-	env := getWorkflowEnvironment(rootCtx)
+	env := GetWorkflowEnvironment(rootCtx)
 
 	result := &dispatcherImpl{
 		interceptor:        interceptor.outboundInterceptor,
@@ -679,7 +709,7 @@ func newDispatcher(rootCtx Context, interceptor *workflowEnvironmentInterceptor,
 // executeDispatcher executed coroutines in the calling thread and calls workflow completion callbacks
 // if root workflow function returned
 func executeDispatcher(ctx Context, dispatcher dispatcher, timeout time.Duration) {
-	env := getWorkflowEnvironment(ctx)
+	env := GetWorkflowEnvironment(ctx)
 	panicErr := dispatcher.ExecuteUntilAllBlocked(timeout)
 	if panicErr != nil {
 		env.Complete(nil, panicErr)
@@ -725,6 +755,14 @@ func executeDispatcher(ctx Context, dispatcher dispatcher, timeout time.Duration
 // For troubleshooting stack pretty printing only.
 // Set to true to see full stack trace that includes framework methods.
 const disableCleanStackTraces = false
+
+func getCoroutineState(ctx Context) *coroutineState {
+	s := ctx.Value(coroutinesContextKey)
+	if s == nil {
+		panic("getCoroutineState: not workflow context")
+	}
+	return s.(*coroutineState)
+}
 
 func getState(ctx Context) *coroutineState {
 	s := ctx.Value(coroutinesContextKey)
@@ -792,13 +830,13 @@ func (c *channelImpl) CanSendWithoutBlocking() bool {
 	return len(c.buffer) < c.size || len(c.blockedReceives) > 0
 }
 
-func (c *channelImpl) Receive(ctx Context, valuePtr interface{}) (more bool) {
+func (c *channelImpl) Receive(ctx Context, valuePtr any) (more bool) {
 	assertNotInReadOnlyState(ctx)
 	state := getState(ctx)
 	hasResult := false
-	var result interface{}
+	var result any
 	callback := &receiveCallback{
-		fn: func(v interface{}, m bool) bool {
+		fn: func(v any, m bool) bool {
 			result = v
 			hasResult = true
 			more = m
@@ -837,7 +875,7 @@ func (c *channelImpl) Receive(ctx Context, valuePtr interface{}) (more bool) {
 
 }
 
-func (c *channelImpl) ReceiveWithTimeout(ctx Context, timeout time.Duration, valuePtr interface{}) (ok, more bool) {
+func (c *channelImpl) ReceiveWithTimeout(ctx Context, timeout time.Duration, valuePtr any) (ok, more bool) {
 	okAwait, err := AwaitWithTimeout(ctx, timeout, func() bool { return c.Len() > 0 })
 	if err != nil { // context canceled
 		return false, true
@@ -852,12 +890,12 @@ func (c *channelImpl) ReceiveWithTimeout(ctx Context, timeout time.Duration, val
 	return true, more
 }
 
-func (c *channelImpl) ReceiveAsync(valuePtr interface{}) (ok bool) {
+func (c *channelImpl) ReceiveAsync(valuePtr any) (ok bool) {
 	ok, _ = c.ReceiveAsyncWithMoreFlag(valuePtr)
 	return ok
 }
 
-func (c *channelImpl) ReceiveAsyncWithMoreFlag(valuePtr interface{}) (ok bool, more bool) {
+func (c *channelImpl) ReceiveAsyncWithMoreFlag(valuePtr any) (ok bool, more bool) {
 	for {
 		v, ok, more := c.receiveAsyncImpl(nil)
 		if !ok && !more { // channel closed and empty
@@ -883,7 +921,7 @@ func (c *channelImpl) Len() int {
 
 // ok = true means that value was received
 // more = true means that channel is not closed and more deliveries are possible
-func (c *channelImpl) receiveAsyncImpl(callback *receiveCallback) (v interface{}, ok bool, more bool) {
+func (c *channelImpl) receiveAsyncImpl(callback *receiveCallback) (v any, ok bool, more bool) {
 	if c.recValue != nil {
 		r := *c.recValue
 		c.recValue = nil
@@ -942,7 +980,7 @@ func (c *channelImpl) removeSendCallback(callback *sendCallback) {
 	}
 }
 
-func (c *channelImpl) Send(ctx Context, v interface{}) {
+func (c *channelImpl) Send(ctx Context, v any) {
 	state := getState(ctx)
 	valueConsumed := false
 	callback := &sendCallback{
@@ -971,11 +1009,11 @@ func (c *channelImpl) Send(ctx Context, v interface{}) {
 	}
 }
 
-func (c *channelImpl) SendAsync(v interface{}) (ok bool) {
+func (c *channelImpl) SendAsync(v any) (ok bool) {
 	return c.sendAsyncImpl(v, nil)
 }
 
-func (c *channelImpl) sendAsyncImpl(v interface{}, pair *sendCallback) (ok bool) {
+func (c *channelImpl) sendAsyncImpl(v any, pair *sendCallback) (ok bool) {
 	if c.closed {
 		panic("Closed channel")
 	}
@@ -1009,7 +1047,7 @@ func (c *channelImpl) Close() {
 }
 
 // Takes a value and assigns that 'to' value. logs a metric if it is unable to deserialize
-func (c *channelImpl) assignValue(from interface{}, to interface{}) error {
+func (c *channelImpl) assignValue(from any, to any) error {
 	err := decodeAndAssignValue(c.dataConverter, from, to)
 	// add to metrics
 	if err != nil {
@@ -1035,9 +1073,33 @@ func (s *coroutineState) initialYield(stackDepth int, status string) {
 	s.blocked.Swap(false)
 }
 
+// isPanicking reports whether the current goroutine is executing during panic
+// unwinding. It checks for runtime.gopanic on the call stack using
+// runtime.Callers() and runtime.FuncForPC().
+func isPanicking() bool {
+	var pcs [20]uintptr
+	n := runtime.Callers(1, pcs[:])
+	for i := range n {
+		// Subtract 1 from the PC to get the call site rather than the
+		// return address, which ensures FuncForPC resolves the correct
+		// function even at function boundaries.
+		if fn := runtime.FuncForPC(pcs[i] - 1); fn != nil && fn.Name() == "runtime.gopanic" {
+			return true
+		}
+	}
+	return false
+}
+
 // yield indicates that coroutine cannot make progress and should sleep
 // this call blocks
 func (s *coroutineState) yield(status string) {
+	if isPanicking() {
+		// Unfortunately we lose the real panic message here, but the stack trace will still contain
+		// the right lines.
+		panic(errors.New(
+			"yield during panic unwinding: a deferred function attempted to block " +
+				"the coroutine while a panic was in progress"))
+	}
 	s.aboutToBlock <- true
 	s.initialYield(3, status) // omit three levels of stack. To adjust change to 0 and count the lines to remove.
 	s.keptBlocked = true
@@ -1078,9 +1140,9 @@ func getCoroStackTrace(crt *coroutineState, status string, stackDepth int) (stri
 	// in its function arguments. To avoid false positives, we also match on the fixed
 	// member function name.
 	stacks := stackBuf[:runtime.Stack(stackBuf[:], true)]
-	needle := []byte(fmt.Sprintf("/internal.(*coroutineState).run(%p,", crt))
-	idx := bytes.Index(stacks, needle)
-	if idx == -1 {
+	needle := fmt.Appendf(nil, "/internal.(*coroutineState).run(%p,", crt)
+	before, _, ok := bytes.Cut(stacks, needle)
+	if !ok {
 		if len(stacks) == len(stackBuf) {
 			return "", fmt.Errorf("coroutine not found: %w", errStackTraceTruncated)
 		}
@@ -1092,7 +1154,7 @@ func getCoroStackTrace(crt *coroutineState, status string, stackDepth int) (stri
 	// coroStack spans from the stackDelim before idx to the stackDelim after idx
 	stackDelim := []byte("\n\n")
 	coroStack := stacks
-	if start := bytes.LastIndex(stacks[:idx], stackDelim); start != -1 {
+	if start := bytes.LastIndex(before, stackDelim); start != -1 {
 		start += len(stackDelim) // skip over delimiter
 		coroStack = stacks[start:]
 	}
@@ -1136,7 +1198,7 @@ func (s *coroutineState) call(timeout time.Duration) {
 			st = fmt.Sprintf("<%s>", err)
 		}
 		msg := fmt.Sprintf("[TMPRL1101] Potential deadlock detected: "+
-			"workflow goroutine %q didn't yield for over a second", s.name)
+			"workflow goroutine %q didn't yield for over %s", s.name, timeout)
 		s.closed.Store(true)
 		s.panicError = newWorkflowPanicError(msg, st)
 	}
@@ -1356,7 +1418,7 @@ func (s *selectorImpl) AddReceive(c ReceiveChannel, f func(c ReceiveChannel, mor
 	return s
 }
 
-func (s *selectorImpl) AddSend(c SendChannel, v interface{}, f func()) Selector {
+func (s *selectorImpl) AddSend(c SendChannel, v any, f func()) Selector {
 	s.cases = append(s.cases, &selectCase{channel: c.(*channelImpl), sendFunc: &f, sendValue: &v})
 	return s
 }
@@ -1404,11 +1466,11 @@ func (s *selectorImpl) Select(ctx Context) {
 			c := pair.channel
 			hasDefault := s.defaultFunc != nil
 			callback := &receiveCallback{
-				fn: func(v interface{}, more bool) bool {
+				fn: func(v any, more bool) bool {
 					if readyBranch != nil {
 						return false
 					}
-					env := getWorkflowEnvironment(ctx)
+					env := GetWorkflowEnvironment(ctx)
 					dropSignalFlag := env.TryUse(SDKFlagBlockedSelectorSignalReceive)
 					channelLostMsgFlag := env.TryUse(SDKFlagWorkflowNewChannelLostMessages)
 
@@ -1485,7 +1547,7 @@ func (s *selectorImpl) Select(ctx Context) {
 			p := pair
 			f := *p.futureFunc
 			callback := &receiveCallback{
-				fn: func(v interface{}, more bool) bool {
+				fn: func(v any, more bool) bool {
 					if readyBranch != nil {
 						return false
 					}
@@ -1534,12 +1596,12 @@ func newSyncWorkflowDefinition(workflow workflow) *syncWorkflowDefinition {
 	return &syncWorkflowDefinition{workflow: workflow}
 }
 
-func getValidatedWorkflowFunction(workflowFunc interface{}, args []interface{}, dataConverter converter.DataConverter, r *registry) (*WorkflowType, *commonpb.Payloads, error) {
+func getValidatedWorkflowFunction(workflowFunc any, args []any, dataConverter converter.DataConverter, r *registry) (*WorkflowType, *commonpb.Payloads, error) {
 	if err := validateFunctionArgs(workflowFunc, args, true); err != nil {
 		return nil, nil, err
 	}
 
-	fnName, err := getWorkflowFunctionName(r, workflowFunc)
+	fnName, err := GetWorkflowFunctionName(r, workflowFunc)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1581,7 +1643,7 @@ func setWorkflowEnvOptionsIfNotExist(ctx Context) Context {
 	return WithValue(ctx, workflowEnvOptionsContextKey, &newOptions)
 }
 
-func getDataConverterFromWorkflowContext(ctx Context) converter.DataConverter {
+func GetDataConverterFromWorkflowContext(ctx Context) converter.DataConverter {
 	options := getWorkflowEnvOptions(ctx)
 	var dataConverter converter.DataConverter
 
@@ -1594,8 +1656,65 @@ func getDataConverterFromWorkflowContext(ctx Context) converter.DataConverter {
 	return WithWorkflowContext(ctx, dataConverter)
 }
 
+// withRootDataConverterSerializationContext applies sc to the effective root
+// data converter and then binds it to the workflow context.
+func withRootDataConverterSerializationContext(ctx Context, sc converter.SerializationContext) converter.DataConverter {
+	options := getWorkflowEnvOptions(ctx)
+	var dc converter.DataConverter
+
+	if options != nil && options.RootDataConverter != nil {
+		dc = options.RootDataConverter
+	} else if options != nil && options.DataConverter != nil {
+		dc = options.DataConverter
+	} else {
+		dc = converter.GetDefaultDataConverter()
+	}
+
+	if sc != nil {
+		dc = converter.WithDataConverterSerializationContext(dc, sc)
+	}
+	return WithWorkflowContext(ctx, dc)
+}
+
+func withRootFailureConverterSerializationContext(ctx Context, sc converter.SerializationContext) converter.FailureConverter {
+	env := GetWorkflowEnvironment(ctx)
+	fc := rootFailureConverterFromEnvironment(env)
+	if sc != nil {
+		fc = converter.WithFailureConverterSerializationContext(fc, sc)
+	}
+	return fc
+}
+
+// resultDataConverter returns the data converter for the workflow's result, which is forwarded to
+// the Nexus caller when the workflow was started by a Nexus handler. See serializationContextFor.
+func resultDataConverter(ctx Context) converter.DataConverter {
+	propagated := GetWorkflowEnvironment(ctx).WorkflowInfo().propagatedNexusSerializationContext
+	if propagated == nil {
+		return GetDataConverterFromWorkflowContext(ctx)
+	}
+	return withRootDataConverterSerializationContext(ctx, nexusSerializationContextFromProto(propagated))
+}
+
+func rootDataConverterFromEnvironment(env WorkflowEnvironment) converter.DataConverter {
+	if root, ok := env.(interface {
+		GetRootDataConverter() converter.DataConverter
+	}); ok {
+		return root.GetRootDataConverter()
+	}
+	return env.GetDataConverter()
+}
+
+func rootFailureConverterFromEnvironment(env WorkflowEnvironment) converter.FailureConverter {
+	if root, ok := env.(interface {
+		GetRootFailureConverter() converter.FailureConverter
+	}); ok {
+		return root.GetRootFailureConverter()
+	}
+	return env.GetFailureConverter()
+}
+
 func getRegistryFromWorkflowContext(ctx Context) *registry {
-	env := getWorkflowEnvironment(ctx)
+	env := GetWorkflowEnvironment(ctx)
 	return env.GetRegistry()
 }
 
@@ -1701,7 +1820,7 @@ func (w *WorkflowOptions) getRunningUpdateHandles() map[string]UpdateInfo {
 	return w.runningUpdatesHandles
 }
 
-func (d *decodeFutureImpl) Get(ctx Context, valuePtr interface{}) error {
+func (d *decodeFutureImpl) Get(ctx Context, valuePtr any) error {
 	more := d.futureImpl.channel.Receive(ctx, nil)
 	if more {
 		panic("not closed")
@@ -1713,12 +1832,16 @@ func (d *decodeFutureImpl) Get(ctx Context, valuePtr interface{}) error {
 		return d.futureImpl.err
 	}
 	rf := reflect.ValueOf(valuePtr)
-	if rf.Type().Kind() != reflect.Ptr {
+	if rf.Type().Kind() != reflect.Pointer {
 		return errors.New("valuePtr parameter is not a pointer")
 	}
-	dataConverter := getDataConverterFromWorkflowContext(ctx)
+	dataConverter := d.dataConverter
+	if dataConverter == nil {
+		dataConverter = GetDataConverterFromWorkflowContext(ctx)
+	}
 	err := dataConverter.FromPayloads(d.futureImpl.value.(*commonpb.Payloads), valuePtr)
 	if err != nil {
+		panicOnCodecWorkflowTaskFailure(err)
 		return err
 	}
 	return d.futureImpl.err
@@ -1726,18 +1849,20 @@ func (d *decodeFutureImpl) Get(ctx Context, valuePtr interface{}) error {
 
 // newDecodeFuture creates a new future as well as associated Settable that is used to set its value.
 // fn - the decoded value needs to be validated against a function.
-func newDecodeFuture(ctx Context, fn interface{}) (Future, Settable) {
+func newDecodeFuture(ctx Context, fn any) (Future, Settable) {
 	impl := &decodeFutureImpl{
-		&futureImpl{channel: NewChannel(ctx).(*channelImpl)}, fn}
+		&futureImpl{channel: NewChannel(ctx).(*channelImpl)}, fn, nil}
 	return impl, impl
 }
 
 // setQueryHandler sets query handler for given queryType.
-func setQueryHandler(ctx Context, queryType string, handler interface{}, options QueryHandlerOptions) error {
+func setQueryHandler(ctx Context, queryType string, handler any, options QueryHandlerOptions) error {
+	eo := getWorkflowEnvOptions(ctx)
+	dataConverter := GetDataConverterFromWorkflowContext(ctx)
 	qh := &queryHandler{
 		fn:            handler,
 		queryType:     queryType,
-		dataConverter: getDataConverterFromWorkflowContext(ctx),
+		dataConverter: dataConverter,
 		options:       options,
 	}
 	err := validateQueryHandlerFn(qh.fn)
@@ -1745,19 +1870,22 @@ func setQueryHandler(ctx Context, queryType string, handler interface{}, options
 		return err
 	}
 
-	getWorkflowEnvOptions(ctx).queryHandlers[queryType] = qh
+	eo.queryHandlers[queryType] = qh
 	return nil
 }
 
 // setUpdateHandler sets update handler for a given update name.
-func setUpdateHandler(ctx Context, updateName string, handler interface{}, opts UpdateHandlerOptions) error {
+func setUpdateHandler(ctx Context, updateName string, handler any, opts UpdateHandlerOptions) error {
 	uh, err := newUpdateHandler(updateName, handler, opts)
 	if err != nil {
 		return err
 	}
-	getWorkflowEnvOptions(ctx).updateHandlers[updateName] = uh
-	if getWorkflowEnvironment(ctx).TryUse(SDKPriorityUpdateHandling) {
-		getWorkflowEnvironment(ctx).HandleQueuedUpdates(updateName)
+	eo := getWorkflowEnvOptions(ctx)
+	// Data converter wrapped with WorkflowSerializationContext in newWorkflowExecutionEventHandler.
+	uh.dataConverter = GetWorkflowEnvironment(ctx).GetDataConverter()
+	eo.updateHandlers[updateName] = uh
+	if GetWorkflowEnvironment(ctx).TryUse(SDKPriorityUpdateHandling) {
+		GetWorkflowEnvironment(ctx).HandleQueuedUpdates(updateName)
 		state := getState(ctx)
 		defer state.unblocked()
 		state.yield("letting any updates waiting on a handler run")
@@ -1769,7 +1897,7 @@ func setUpdateHandler(ctx Context, updateName string, handler interface{}, opts 
 // said functions take the exact same parameter types in the same order but not
 // considering the presence or absence of a workflow.Context parameter in the
 // zeroth position.
-func validateEquivalentParams(fn1, fn2 interface{}) error {
+func validateEquivalentParams(fn1, fn2 any) error {
 	fn1Type := reflect.TypeOf(fn1)
 	fn2Type := reflect.TypeOf(fn2)
 
@@ -1781,7 +1909,7 @@ func validateEquivalentParams(fn1, fn2 interface{}) error {
 		return fmt.Errorf("type must be function but was %s", fn1Type.Kind())
 	}
 
-	ctxType := reflect.TypeOf(new(Context)).Elem()
+	ctxType := reflect.TypeFor[Context]()
 	extractRelevantParamTypes := func(t reflect.Type) []reflect.Type {
 		out := make([]reflect.Type, 0, t.NumIn())
 		for i := 0; i < t.NumIn(); i++ {
@@ -1802,7 +1930,7 @@ func validateEquivalentParams(fn1, fn2 interface{}) error {
 		return errors.New("functions have different numbers of parameters")
 	}
 
-	for i := 0; i < len(fn1ParamTypes); i++ {
+	for i := range fn1ParamTypes {
 		fn1ParamType := fn1ParamTypes[i]
 		fn2ParamType := fn2ParamTypes[i]
 		if fn1ParamType != fn2ParamType {
@@ -1812,7 +1940,7 @@ func validateEquivalentParams(fn1, fn2 interface{}) error {
 	return nil
 }
 
-func validateQueryHandlerFn(fn interface{}) error {
+func validateQueryHandlerFn(fn any) error {
 	fnType := reflect.TypeOf(fn)
 	if fnType.Kind() != reflect.Func {
 		return fmt.Errorf("handler must be function but was %s", fnType.Kind())
@@ -1837,7 +1965,7 @@ func validateQueryHandlerFn(fn interface{}) error {
 	return nil
 }
 
-func (h *queryHandler) execute(input []interface{}) (result interface{}, err error) {
+func (h *queryHandler) execute(input []any) (result any, err error) {
 	// if query handler panic, convert it to error
 	defer func() {
 		if p := recover(); p != nil {

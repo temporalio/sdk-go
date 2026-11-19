@@ -124,7 +124,7 @@ func RecreateSession(ctx Context, recreateToken []byte, sessionOptions *SessionO
 // CompleteSession won't do anything if the context passed in doesn't contain any session information or the
 // session has already completed or failed.
 //
-// After a session has completed, user can continue to use the context, but the activities will be scheduled
+// After a session has completed, you can continue to use the context, but the activities will be scheduled
 // on the normal taskQueue (as user specified in ActivityOptions) and may be picked up by another worker since
 // it's not in a session.
 //

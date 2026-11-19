@@ -1,0 +1,597 @@
+package extstore
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"sync/atomic"
+	"time"
+
+	commonpb "go.temporal.io/api/common/v1"
+	"go.temporal.io/api/proxy"
+	sdkpb "go.temporal.io/api/sdk/v1"
+	"go.temporal.io/sdk/log"
+	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/semaphore"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
+)
+
+const (
+	defaultPayloadSizeThreshold    = 256 * 1024
+	defaultMaxDriverOperations     = 64
+	defaultMaxOperationsPerMessage = 8
+)
+
+// StorageParameters holds the validated, ready-to-use storage configuration
+// built from a [ExternalStorage] value via [ExternalStorageToParams].
+type StorageParameters struct {
+	driverMap            map[string]StorageDriver
+	driverSelector       StorageDriverSelector
+	payloadSizeThreshold int
+
+	maxOperationsPerMessage  int
+	maxDriverOperations      int
+	driverOperationSemaphore *semaphore.Weighted
+
+	logger    log.Logger
+	namespace string
+}
+
+// WithOwnDriverOperationLimit returns a copy of p with its own MaxDriverOperations limit,
+// independent of the limit p uses.
+func (p StorageParameters) WithOwnDriverOperationLimit() StorageParameters {
+	maxDriverOperations := p.maxDriverOperations
+	if maxDriverOperations <= 0 {
+		maxDriverOperations = defaultMaxDriverOperations
+	}
+	p.driverOperationSemaphore = semaphore.NewWeighted(int64(maxDriverOperations))
+	return p
+}
+
+// WithLogger returns a copy of p that logs through logger.
+func (p StorageParameters) WithLogger(logger log.Logger) StorageParameters {
+	p.logger = logger
+	return p
+}
+
+// WithNamespace returns a copy of p that reports namespace to selectors and
+// drivers as the namespace performing the operation.
+func (p StorageParameters) WithNamespace(namespace string) StorageParameters {
+	p.namespace = namespace
+	return p
+}
+
+// semaphoreLimiter applies the storage limits to a single driver call.
+type semaphoreLimiter[T any] struct {
+	perMessageSemaphore      *semaphore.Weighted
+	driverOperationSemaphore *semaphore.Weighted
+	permitTaken              atomic.Bool
+}
+
+func (l *semaphoreLimiter[T]) Permit(ctx context.Context, item T, fn func() error) error {
+	l.permitTaken.Store(true)
+	if err := l.perMessageSemaphore.Acquire(ctx, 1); err != nil {
+		return err
+	}
+	defer l.perMessageSemaphore.Release(1)
+	if err := l.driverOperationSemaphore.Acquire(ctx, 1); err != nil {
+		return err
+	}
+	defer l.driverOperationSemaphore.Release(1)
+	return fn()
+}
+
+// MaxOperationsPerMessage returns the resolved per message operation limit.
+func (p StorageParameters) MaxOperationsPerMessage() int {
+	if p.maxOperationsPerMessage <= 0 {
+		return defaultMaxOperationsPerMessage
+	}
+	return p.maxOperationsPerMessage
+}
+
+// messageSemaphoreKey is the context key for a message's operation limit.
+type messageSemaphoreKey struct{}
+
+// WithMessageLimit returns ctx carrying one MaxOperationsPerMessage limit.
+func (p StorageParameters) WithMessageLimit(ctx context.Context) context.Context {
+	limit := semaphore.NewWeighted(int64(p.MaxOperationsPerMessage()))
+	return context.WithValue(ctx, messageSemaphoreKey{}, limit)
+}
+
+// messageSemaphoreFrom returns the semaphore on ctx, or a new one if ctx carries none.
+func messageSemaphoreFrom(ctx context.Context, p StorageParameters) *semaphore.Weighted {
+	if limit, ok := ctx.Value(messageSemaphoreKey{}).(*semaphore.Weighted); ok && limit != nil {
+		return limit
+	}
+	return semaphore.NewWeighted(int64(p.MaxOperationsPerMessage()))
+}
+
+// newLimiter builds the limiter for one driver call. Every driver called while
+// visiting one message shares messageSemaphore.
+func newLimiter[T any](messageSemaphore *semaphore.Weighted, p StorageParameters) *semaphoreLimiter[T] {
+	driverOperationSemaphore := p.driverOperationSemaphore
+	if driverOperationSemaphore == nil {
+		driverOperationSemaphore = semaphore.NewWeighted(defaultMaxDriverOperations)
+	}
+	return &semaphoreLimiter[T]{
+		perMessageSemaphore:      messageSemaphore,
+		driverOperationSemaphore: driverOperationSemaphore,
+	}
+}
+
+// permitUsage reports whether a limiter was used.
+type permitUsage interface{ tookPermit() bool }
+
+func (l *semaphoreLimiter[T]) tookPermit() bool { return l.permitTaken.Load() }
+
+func warnIfLimiterUnused(logger log.Logger, l permitUsage, driverName, operation string) {
+	if logger == nil || l.tookPermit() {
+		return
+	}
+	logger.Warn("Storage driver performed an operation without using Limiter. "+
+		"Its operations are not limited.",
+		"DriverName", driverName, "Operation", operation)
+}
+
+// IsStorageReference reports whether p is an external-storage reference payload.
+// It recognizes both the current protojson format (encoding=json/protobuf,
+// messageType=temporal.api.sdk.v1.ExternalStorageReference) and the legacy
+// format (encoding=json/external-storage-reference) written by earlier releases.
+func IsStorageReference(p *commonpb.Payload) bool {
+	switch string(p.GetMetadata()[metadataEncoding]) {
+	case metadataEncodingProtoJSON:
+		return string(p.GetMetadata()[metadataMessageType]) == externalStorageReferenceMessageType
+	case metadataEncodingStorageRefLegacy:
+		return true
+	}
+	return false
+}
+
+func ExternalStorageToParams(options ExternalStorage) (StorageParameters, error) {
+	if options.PayloadSizeThreshold < 0 {
+		return StorageParameters{}, fmt.Errorf("PayloadSizeThreshold must not be negative")
+	}
+
+	driverMap := make(map[string]StorageDriver, len(options.Drivers))
+	for _, d := range options.Drivers {
+		if _, exists := driverMap[d.Name()]; exists {
+			return StorageParameters{}, fmt.Errorf("duplicate storage driver name: %q", d.Name())
+		}
+		driverMap[d.Name()] = d
+	}
+
+	if len(options.Drivers) > 1 && options.DriverSelector == nil {
+		return StorageParameters{}, fmt.Errorf("DriverSelector must be set when more than one driver is provided")
+	}
+
+	selector := options.DriverSelector
+	if selector == nil && len(options.Drivers) > 0 {
+		selector = singleDriverSelector{driver: options.Drivers[0]}
+	}
+
+	sizeThreshold := options.PayloadSizeThreshold
+	if sizeThreshold == 0 {
+		sizeThreshold = defaultPayloadSizeThreshold
+	}
+
+	maxDriverOperations := options.Concurrency.MaxDriverOperations
+	if maxDriverOperations == 0 {
+		maxDriverOperations = defaultMaxDriverOperations
+	}
+	if maxDriverOperations < 0 {
+		return StorageParameters{}, fmt.Errorf("Concurrency.MaxDriverOperations must not be negative")
+	}
+	maxOperationsPerMessage := options.Concurrency.MaxOperationsPerMessage
+	if maxOperationsPerMessage == 0 {
+		maxOperationsPerMessage = defaultMaxOperationsPerMessage
+	}
+	if maxOperationsPerMessage < 0 {
+		return StorageParameters{}, fmt.Errorf("Concurrency.MaxOperationsPerMessage must not be negative")
+	}
+
+	return StorageParameters{
+		driverMap:                driverMap,
+		driverSelector:           selector,
+		payloadSizeThreshold:     sizeThreshold,
+		maxOperationsPerMessage:  maxOperationsPerMessage,
+		maxDriverOperations:      maxDriverOperations,
+		driverOperationSemaphore: semaphore.NewWeighted(int64(maxDriverOperations)),
+	}, nil
+}
+
+// singleDriverSelector is a StorageDriverSelector that always returns the same driver.
+type singleDriverSelector struct {
+	driver StorageDriver
+}
+
+func (s singleDriverSelector) SelectDriver(_ StorageDriverSelectContext, _ *commonpb.Payload) (StorageDriver, error) {
+	return s.driver, nil
+}
+
+// driversEqual compares two StorageDriver interface values. It uses == when
+// the dynamic type is comparable (pointer types, simple value types) and
+// falls back to name equality for non-comparable value types (e.g. structs
+// with map fields).
+func driversEqual(a, b StorageDriver) (equal bool) {
+	defer func() {
+		if recover() != nil {
+			equal = a.Name() == b.Name()
+		}
+	}()
+	return a == b
+}
+
+// StorageOperationCallback is notified as each batch of storage operations completes. Batches
+// may run concurrently, so a batch reports the start and end of its span rather than a duration,
+// leaving the caller to decide how overlapping spans combine.
+type StorageOperationCallback interface {
+	PayloadBatchCompleted(count int, size int64, start, end time.Time, driverNames []string)
+}
+
+type contextKey string
+
+const storageOperationCallbackContextKey contextKey = "storageOperationCallback"
+
+func WithStorageOperationCallback(ctx context.Context, cb StorageOperationCallback) context.Context {
+	return context.WithValue(ctx, storageOperationCallbackContextKey, cb)
+}
+
+const storageTargetContextKey contextKey = "storageTarget"
+
+func WithStorageTarget(ctx context.Context, target StorageDriverTargetInfo) context.Context {
+	return context.WithValue(ctx, storageTargetContextKey, target)
+}
+
+func StorageTargetFromContext(ctx context.Context) StorageDriverTargetInfo {
+	t, _ := ctx.Value(storageTargetContextKey).(StorageDriverTargetInfo)
+	return t
+}
+
+// metadataEncoding is the key used in payload metadata to identify the encoding
+// format. Mirrors converter.MetadataEncoding without importing converter package.
+const metadataEncoding = "encoding"
+
+// metadataMessageType is the key used in payload metadata to identify the proto
+// message type. Mirrors converter.MetadataMessageType without importing converter package.
+const metadataMessageType = "messageType"
+
+// metadataEncodingProtoJSON is the standard protojson encoding value, shared with
+// ProtoJSONPayloadConverter. Mirrors converter.MetadataEncodingProtoJSON.
+const metadataEncodingProtoJSON = "json/protobuf"
+
+// metadataEncodingStorageRefLegacy is the encoding written by earlier prerelease
+// SDK versions. Retained solely for backward-compatible reads.
+const metadataEncodingStorageRefLegacy = "json/external-storage-reference"
+
+// legacyStorageReference is the old wire format retained for backward compatibility
+// with payloads written by earlier prerelease SDK versions.
+type legacyStorageReference struct {
+	DriverName  string             `json:"driver_name"`
+	DriverClaim StorageDriverClaim `json:"driver_claim"`
+}
+
+var (
+	// compile-time assertion that ExternalStorageReference implements proto.Message.
+	_ proto.Message = (*sdkpb.ExternalStorageReference)(nil)
+
+	// externalStorageReferenceMessageType is the fully-qualified proto message name,
+	// derived from the descriptor so it stays in sync with the generated code.
+	externalStorageReferenceMessageType = string((*sdkpb.ExternalStorageReference)(nil).ProtoReflect().Descriptor().FullName())
+
+	protoMarshalOptions   = protojson.MarshalOptions{}
+	protoUnmarshalOptions = protojson.UnmarshalOptions{
+		DiscardUnknown: true,
+	}
+)
+
+func storageReferenceToPayload(ref *sdkpb.ExternalStorageReference, storedSizeBytes int64) (*commonpb.Payload, error) {
+	data, err := protoMarshalOptions.Marshal(ref)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal storage reference: %w", err)
+	}
+	return &commonpb.Payload{
+		Metadata: map[string][]byte{
+			metadataEncoding:    []byte(metadataEncodingProtoJSON),
+			metadataMessageType: []byte(externalStorageReferenceMessageType),
+		},
+		Data: data,
+		ExternalPayloads: []*commonpb.Payload_ExternalPayloadDetails{
+			{SizeBytes: storedSizeBytes},
+		},
+	}, nil
+}
+
+// payloadToStorageReference decodes a storage reference from a payload.
+// The current format uses encoding=json/protobuf with the ExternalStorageReference
+// message type. The legacy format uses encoding=json/external-storage-reference.
+func payloadToStorageReference(p *commonpb.Payload) (*sdkpb.ExternalStorageReference, error) {
+	switch string(p.GetMetadata()[metadataEncoding]) {
+	case metadataEncodingProtoJSON:
+		if string(p.GetMetadata()[metadataMessageType]) != externalStorageReferenceMessageType {
+			return nil, fmt.Errorf("payload is not a storage reference: unexpected message type %q", string(p.GetMetadata()[metadataMessageType]))
+		}
+		ref := &sdkpb.ExternalStorageReference{}
+		if err := protoUnmarshalOptions.Unmarshal(p.GetData(), ref); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal storage reference: %w", err)
+		}
+		return ref, nil
+	case metadataEncodingStorageRefLegacy:
+		var legacy legacyStorageReference
+		if err := json.Unmarshal(p.Data, &legacy); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal storage reference: %w", err)
+		}
+		return &sdkpb.ExternalStorageReference{
+			DriverName: legacy.DriverName,
+			ClaimData:  legacy.DriverClaim.ClaimData,
+		}, nil
+	default:
+		return nil, fmt.Errorf("payload is not a storage reference: unexpected encoding %q", string(p.GetMetadata()[metadataEncoding]))
+	}
+}
+
+type externalRetrievalVisitor struct {
+	params StorageParameters
+}
+
+// WithMessageLimit gives every driver called while visiting one message a
+// single MaxOperationsPerMessage limit.
+func (v *externalRetrievalVisitor) WithMessageLimit(ctx context.Context) context.Context {
+	return v.params.WithMessageLimit(ctx)
+}
+
+func (v *externalRetrievalVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	startTime := time.Now()
+
+	// Identify which payloads are storage references and group them by driver.
+	type driverBatch struct {
+		driver  StorageDriver
+		indices []int
+		claims  []StorageDriverClaim
+	}
+	var driverOrder []string
+	driverBatches := map[string]*driverBatch{}
+
+	result := make([]*commonpb.Payload, len(payloads))
+
+	for i, p := range payloads {
+		if !IsStorageReference(p) {
+			result[i] = p
+			continue
+		}
+
+		// No storage drivers configured at all — fail immediately with a clear error
+		// rather than passing through an unresolved reference.
+		if len(v.params.driverMap) == 0 {
+			return nil, fmt.Errorf("[TMPRL1105] Externally stored payload encountered but no storage driver is configured")
+		}
+
+		ref, err := payloadToStorageReference(p)
+		if err != nil {
+			return nil, err
+		}
+
+		driver, ok := v.params.driverMap[ref.DriverName]
+		if !ok {
+			return nil, fmt.Errorf("no storage driver registered with name %q", ref.DriverName)
+		}
+
+		batch, exists := driverBatches[ref.DriverName]
+		if !exists {
+			batch = &driverBatch{driver: driver}
+			driverBatches[ref.DriverName] = batch
+			driverOrder = append(driverOrder, ref.DriverName)
+		}
+		batch.indices = append(batch.indices, i)
+		batch.claims = append(batch.claims, StorageDriverClaim{ClaimData: ref.ClaimData})
+	}
+
+	// Fan out to each driver concurrently. The errgroup context is used as the
+	// StorageDriverRetrieveContext so a failing driver cancels in-flight siblings.
+	// Intentionally creating an empty context so the retrieval path cannot use ambient
+	// information for determing how to retrieve payloads. Drivers should only use information
+	// from the StorageDriverClaim to retrieve payloads.
+	messageSemaphore := messageSemaphoreFrom(ctx.Context, v.params)
+	eg, egCtx := errgroup.WithContext(context.Background())
+	limiters := make([]*semaphoreLimiter[StorageDriverClaim], len(driverOrder))
+	sizes := make([]int64, len(driverOrder))
+
+	externalCount := 0
+	for i, name := range driverOrder {
+		batch := driverBatches[name]
+		externalCount += len(batch.claims)
+		limiter := newLimiter[StorageDriverClaim](messageSemaphore, v.params)
+		limiters[i] = limiter
+		driverCtx := StorageDriverRetrieveContext{Context: egCtx, Limiter: limiter}
+		eg.Go(func() error {
+			retrieved, err := callDriverRetrieve(batch.driver, driverCtx, batch.claims)
+			if err != nil {
+				return fmt.Errorf("storage driver %q retrieve failed: %w", name, err)
+			}
+			warnIfLimiterUnused(v.params.logger, limiter, name, "retrieve")
+			if len(retrieved) != len(batch.claims) {
+				return fmt.Errorf("storage driver %q returned %d payloads for %d claims", name, len(retrieved), len(batch.claims))
+			}
+			var batchSize int64
+			for j, p := range retrieved {
+				batchSize += int64(len(p.GetData()))
+				result[batch.indices[j]] = p
+			}
+			sizes[i] = batchSize
+			return nil
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+
+	externalTotalSize := int64(0)
+	for _, s := range sizes {
+		externalTotalSize += s
+	}
+
+	if callbackValue := ctx.Value(storageOperationCallbackContextKey); callbackValue != nil {
+		if callback, isCallback := callbackValue.(StorageOperationCallback); isCallback {
+			callback.PayloadBatchCompleted(externalCount, externalTotalSize, startTime, time.Now(), driverOrder)
+		}
+	}
+	return result, nil
+}
+
+func NewExternalRetrievalVisitor(params StorageParameters) PayloadVisitor {
+	return &externalRetrievalVisitor{params: params}
+}
+
+type externalStorageVisitor struct {
+	params StorageParameters
+}
+
+// WithMessageLimit gives every driver called while visiting one message a
+// single MaxOperationsPerMessage limit.
+func (v *externalStorageVisitor) WithMessageLimit(ctx context.Context) context.Context {
+	return v.params.WithMessageLimit(ctx)
+}
+
+func (v *externalStorageVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	startTime := time.Now()
+
+	if v.params.driverSelector == nil {
+		return payloads, nil
+	}
+
+	// Determine which driver (if any) should store each payload.
+	type driverBatch struct {
+		driver   StorageDriver
+		indices  []int
+		payloads []*commonpb.Payload
+	}
+	var driverOrder []string
+	driverBatches := map[string]*driverBatch{}
+
+	result := make([]*commonpb.Payload, len(payloads))
+	target := StorageTargetFromContext(ctx.Context)
+	selectCtx := StorageDriverSelectContext{Context: ctx.Context, Target: target, Namespace: v.params.namespace}
+
+	for i, p := range payloads {
+		if proto.Size(p) < v.params.payloadSizeThreshold {
+			result[i] = p
+			continue
+		}
+
+		selected, err := callDriverSelector(v.params.driverSelector, selectCtx, p)
+		if err != nil {
+			return nil, fmt.Errorf("storage driver selector failed: %w", err)
+		}
+		var driver StorageDriver
+		if selected != nil {
+			registered, ok := v.params.driverMap[selected.Name()]
+			if !ok || !driversEqual(registered, selected) {
+				return nil, fmt.Errorf("storage driver selector returned unregistered driver %q", selected.Name())
+			}
+			driver = selected
+		}
+
+		if driver == nil {
+			result[i] = p
+			continue
+		}
+
+		name := driver.Name()
+		batch, exists := driverBatches[name]
+		if !exists {
+			batch = &driverBatch{driver: driver}
+			driverBatches[name] = batch
+			driverOrder = append(driverOrder, name)
+		}
+		batch.indices = append(batch.indices, i)
+		batch.payloads = append(batch.payloads, p)
+	}
+
+	// Fan out to each driver concurrently. The errgroup context is used as the
+	// StorageDriverStoreContext so a failing driver cancels in-flight siblings.
+	messageSemaphore := messageSemaphoreFrom(ctx.Context, v.params)
+	eg, egCtx := errgroup.WithContext(ctx.Context)
+	limiters := make([]*semaphoreLimiter[*commonpb.Payload], len(driverOrder))
+	sizes := make([]int64, len(driverOrder))
+
+	externalCount := 0
+	for i, name := range driverOrder {
+		batch := driverBatches[name]
+		externalCount += len(batch.payloads)
+		limiter := newLimiter[*commonpb.Payload](messageSemaphore, v.params)
+		limiters[i] = limiter
+		storeDrCtx := StorageDriverStoreContext{Context: egCtx, Target: target, Namespace: v.params.namespace, Limiter: limiter}
+		eg.Go(func() error {
+			claims, err := callDriverStore(batch.driver, storeDrCtx, batch.payloads)
+			if err != nil {
+				return fmt.Errorf("storage driver %q store failed: %w", name, err)
+			}
+			warnIfLimiterUnused(v.params.logger, limiter, name, "store")
+			if len(claims) != len(batch.payloads) {
+				return fmt.Errorf("storage driver %q returned %d claims for %d payloads", name, len(claims), len(batch.payloads))
+			}
+			var batchSize int64
+			for j, claim := range claims {
+				ref := &sdkpb.ExternalStorageReference{
+					DriverName: name,
+					ClaimData:  claim.ClaimData,
+				}
+				storedSize := int64(batch.payloads[j].Size())
+				batchSize += storedSize
+				refPayload, err := storageReferenceToPayload(ref, storedSize)
+				if err != nil {
+					return err
+				}
+				result[batch.indices[j]] = refPayload
+			}
+			sizes[i] = batchSize
+			return nil
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+
+	externalTotalSize := int64(0)
+	for _, s := range sizes {
+		externalTotalSize += s
+	}
+
+	if callbackValue := ctx.Value(storageOperationCallbackContextKey); callbackValue != nil {
+		if callback, isCallback := callbackValue.(StorageOperationCallback); isCallback {
+			callback.PayloadBatchCompleted(externalCount, externalTotalSize, startTime, time.Now(), driverOrder)
+		}
+	}
+	return result, nil
+}
+
+func NewExternalStorageVisitor(params StorageParameters) PayloadVisitor {
+	return &externalStorageVisitor{params: params}
+}
+
+func callDriverSelector(s StorageDriverSelector, ctx StorageDriverSelectContext, p *commonpb.Payload) (driver StorageDriver, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("panicked: %v", r)
+		}
+	}()
+	return s.SelectDriver(ctx, p)
+}
+
+func callDriverStore(d StorageDriver, ctx StorageDriverStoreContext, payloads []*commonpb.Payload) (claims []StorageDriverClaim, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("panicked: %v", r)
+		}
+	}()
+	return d.Store(ctx, payloads)
+}
+
+func callDriverRetrieve(d StorageDriver, ctx StorageDriverRetrieveContext, claims []StorageDriverClaim) (payloads []*commonpb.Payload, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("panicked: %v", r)
+		}
+	}()
+	return d.Retrieve(ctx, claims)
+}

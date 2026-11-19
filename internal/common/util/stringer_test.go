@@ -25,7 +25,7 @@ func TestValueToString(t *testing.T) {
 
 	testValue := "test"
 	testSlice := []string{"a", "b", "c"}
-	var emptyInter interface{}
+	var emptyInter any
 	var testFloat64 float64 = 5.55
 
 	tempStruct := struct {

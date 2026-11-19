@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"go.temporal.io/api/workflowservice/v1"
+	"go.temporal.io/sdk/internal/common/metrics"
 )
 
 // eagerActivityExecutor is a worker-scoped executor for eager activities that
@@ -18,24 +19,30 @@ type eagerActivityExecutor struct {
 }
 
 type eagerActivityExecutorOptions struct {
-	disabled  bool
-	taskQueue string
+	disabled       bool
+	taskQueue      string
+	metricsHandler metrics.Handler
 	// If 0, there is no maximum
 	maxConcurrent int
+	maxPerTask    int
 }
 
 // newEagerActivityExecutor creates a new worker-scoped executor without an
 // activityWorker set. The activityWorker must be set on the responding executor
 // before it will be able to execute activities.
 func newEagerActivityExecutor(options eagerActivityExecutorOptions) *eagerActivityExecutor {
+	if options.maxPerTask <= 0 {
+		panic("maxPerTask must be positive")
+	}
+	if options.metricsHandler == nil {
+		options.metricsHandler = metrics.NopHandler
+	}
 	return &eagerActivityExecutor{eagerActivityExecutorOptions: options}
 }
 
 func (e *eagerActivityExecutor) applyToRequest(
 	req *workflowservice.RespondWorkflowTaskCompletedRequest,
 ) []*SlotPermit {
-	// Don't allow more than this hardcoded amount per workflow task for now
-	const maxPerTask = 3
 	reservedPermits := make([]*SlotPermit, 0)
 
 	// Go over every command checking for activities that can be eagerly executed
@@ -50,7 +57,7 @@ func (e *eagerActivityExecutor) applyToRequest(
 				!attrs.RequestEagerExecution ||
 				e.activityWorker == nil ||
 				e.taskQueue != attrs.TaskQueue.GetName() ||
-				eagerRequestsThisTask >= maxPerTask
+				eagerRequestsThisTask >= e.maxPerTask
 			if eagerDisallowed {
 				attrs.RequestEagerExecution = false
 			} else {
@@ -109,7 +116,7 @@ func (e *eagerActivityExecutor) handleResponse(
 	// Give back unfulfilled slots and record for later use
 	unfulfilledSlots := amountSlotsReserved - len(resp.GetActivityTasks())
 	// Release unneeded permits
-	for i := 0; i < unfulfilledSlots; i++ {
+	for range unfulfilledSlots {
 		unneededPermit := reservedPermits[len(reservedPermits)-1]
 		reservedPermits = reservedPermits[:len(reservedPermits)-1]
 		e.activityWorker.releaseSlot(unneededPermit, SlotReleaseReasonUnused)
@@ -117,6 +124,12 @@ func (e *eagerActivityExecutor) handleResponse(
 
 	// Start each activity asynchronously
 	for i, activity := range resp.GetActivityTasks() {
+		// Match polling: record receipt even if shutdown prevents execution.
+		metricsHandler := e.metricsHandler.WithTags(metrics.ActivityTags(
+			activity.WorkflowType.GetName(), activity.ActivityType.GetName(), e.taskQueue))
+		scheduleToStartLatency := activity.GetStartedTime().AsTime().Sub(activity.GetCurrentAttemptScheduledTime().AsTime())
+		metricsHandler.Timer(metrics.ActivityScheduleToStartLatency).Record(scheduleToStartLatency)
+
 		// Asynchronously execute
 		e.activityWorker.pushEagerTask(
 			eagerTask{

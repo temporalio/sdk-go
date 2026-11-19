@@ -37,6 +37,14 @@ type ClientConfigProfile struct {
 	// lowercased and hyphens are replaced with underscores. This is used for deduplicating/overriding too, so manually
 	// set values that are not normalized may not get overridden with [ClientConfigProfile.ApplyEnvVars].
 	GRPCMeta map[string]string
+	// Authority specifies the value to be used as the :authority pseudo-header and virtual host name.
+	// See [client.ConnectionOptions.Authority] for more.
+	Authority string
+	// Raw extension config, keyed by extension name. Loaded from TOML tables at profile.<profile>.ext.<name>, which are
+	// not interpreted or validated by this package (even in strict mode). Each [ClientConfigExtension] decodes its own
+	// entry. This data may be shared between copies of the profile, so it should be treated as read-only after initial
+	// load.
+	Ext map[string]map[string]any
 }
 
 // ClientConfigTLS is TLS configuration for a client.
@@ -116,6 +124,7 @@ func (c *ClientConfigProfile) ToClientOptions(options ToClientOptionsRequest) (c
 	if len(c.GRPCMeta) > 0 {
 		opts.HeadersProvider = fixedHeaders(c.GRPCMeta)
 	}
+	opts.ConnectionOptions.Authority = c.Authority
 	return opts, nil
 }
 

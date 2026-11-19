@@ -90,7 +90,7 @@ func NewProtoJSONPayloadConverterWithOptions(options ProtoJSONPayloadConverterOp
 }
 
 // ToPayload converts single proto value to payload.
-func (c *ProtoJSONPayloadConverter) ToPayload(value interface{}) (*commonpb.Payload, error) {
+func (c *ProtoJSONPayloadConverter) ToPayload(value any) (*commonpb.Payload, error) {
 	// Proto golang structs might be generated with 4 different protoc plugin versions:
 	//   1. github.com/golang/protobuf - ~v1.3.5 is the most recent pre-APIv2 version of APIv1.
 	//   2. github.com/golang/protobuf - ^v1.4.0 is a version of APIv1 implemented in terms of APIv2.
@@ -133,9 +133,9 @@ func (c *ProtoJSONPayloadConverter) ToPayload(value interface{}) (*commonpb.Payl
 }
 
 // FromPayload converts single proto value from payload.
-func (c *ProtoJSONPayloadConverter) FromPayload(payload *commonpb.Payload, valuePtr interface{}) error {
+func (c *ProtoJSONPayloadConverter) FromPayload(payload *commonpb.Payload, valuePtr any) error {
 	originalValue := reflect.ValueOf(valuePtr)
-	if originalValue.Kind() != reflect.Ptr {
+	if originalValue.Kind() != reflect.Pointer {
 		return fmt.Errorf("type: %T: %w", valuePtr, ErrValuePtrIsNotPointer)
 	}
 
@@ -155,7 +155,7 @@ func (c *ProtoJSONPayloadConverter) FromPayload(payload *commonpb.Payload, value
 
 	value := originalValue
 	// If original value is of value type (i.e. commonpb.WorkflowType), create a pointer to it.
-	if originalValue.Kind() != reflect.Ptr {
+	if originalValue.Kind() != reflect.Pointer {
 		value = pointerTo(originalValue.Interface())
 	}
 
@@ -167,7 +167,7 @@ func (c *ProtoJSONPayloadConverter) FromPayload(payload *commonpb.Payload, value
 	}
 
 	// If original value is nil, create new instance.
-	if originalValue.Kind() == reflect.Ptr && originalValue.IsNil() {
+	if originalValue.Kind() == reflect.Pointer && originalValue.IsNil() {
 		value = newOfSameType(originalValue)
 		protoValue = value.Interface()
 		if isProtoMessage {
@@ -188,7 +188,7 @@ func (c *ProtoJSONPayloadConverter) FromPayload(payload *commonpb.Payload, value
 		err = c.gogoUnmarshaler.Unmarshal(bytes.NewReader(payload.GetData()), gogoProtoMessage)
 	}
 	// If original value wasn't a pointer then set value back to where valuePtr points to.
-	if originalValue.Kind() != reflect.Ptr {
+	if originalValue.Kind() != reflect.Pointer {
 		originalValue.Set(value.Elem())
 	}
 

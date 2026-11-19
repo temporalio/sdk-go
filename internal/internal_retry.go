@@ -28,10 +28,7 @@ func createDynamicServiceRetryPolicy(ctx context.Context) backoff.RetryPolicy {
 		}
 	}
 	initialInterval := retryServiceOperationInitialInterval
-	maximumInterval := timeout / 10
-	if maximumInterval < retryServiceOperationInitialInterval {
-		maximumInterval = retryServiceOperationInitialInterval
-	}
+	maximumInterval := max(timeout/10, retryServiceOperationInitialInterval)
 
 	policy := backoff.NewExponentialRetryPolicy(initialInterval)
 	policy.SetBackoffCoefficient(retryServiceOperationBackoff)

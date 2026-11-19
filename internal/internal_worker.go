@@ -6,13 +6,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	workerpb "go.temporal.io/api/worker/v1"
-	"google.golang.org/protobuf/types/known/durationpb"
-	"google.golang.org/protobuf/types/known/timestamppb"
 	"io"
 	"math"
 	"os"
 	"reflect"
+	"regexp"
 	"runtime"
 	"sort"
 	"strconv"
@@ -30,14 +28,18 @@ import (
 	historypb "go.temporal.io/api/history/v1"
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/api/temporalproto"
+	workerpb "go.temporal.io/api/worker/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/durationpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/common/serializer"
 	"go.temporal.io/sdk/internal/common/util"
+	"go.temporal.io/sdk/internal/extstore"
 	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/log"
 )
@@ -66,12 +68,20 @@ const (
 
 	defaultMaxConcurrentSessionExecutionSize = 1000 // Large concurrent session execution size (1k)
 
+	defaultMaxEagerActivityReservationsPerWorkflowTask = 3
+
 	defaultDeadlockDetectionTimeout = time.Second // By default kill workflow tasks that are running more than 1 sec.
 	// Unlimited deadlock detection timeout is used when we want to allow workflow tasks to run indefinitely, such
 	// as during debugging.
 	unlimitedDeadlockDetectionTimeout = math.MaxInt64
 
 	testTagsContextKey = "temporal-testTags"
+
+	workflowLiteralRegistrationHint = "It looks like you registered a function literal (closure) without giving it an alias. " +
+		"Register it with RegisterWorkflowWithOptions and set Name to a stable, unique name."
+
+	activityLiteralRegistrationHint = "It looks like you registered a function literal (closure) without giving it an alias. " +
+		"Register it with RegisterActivityWithOptions and set Name to a stable, unique name."
 )
 
 type (
@@ -81,12 +91,19 @@ type (
 	workflowWorker struct {
 		executionParameters workerExecutionParameters
 		workflowService     workflowservice.WorkflowServiceClient
+		taskProcessor       *workflowTaskProcessor
 		worker              *baseWorker
 		localActivityWorker *baseWorker
 		identity            string
-		stopC               chan struct{}
-		localActivityStopC  chan struct{}
-		stickyUUID          string // Used for ShutdownWorker call
+		// stopC is created by newWorkflowWorkerInternal, exposed through
+		// WorkerStopChannel to workflow task handling, passed to local activity
+		// contexts as the worker stop channel, and closed by workflowWorker.Stop().
+		stopC chan struct{}
+		// localActivityStopC is created by newWorkflowTaskWorkerInternal and exposed
+		// to the local activity tunnel. workflowWorker.Stop() closes it after the
+		// workflow worker stops, causing the tunnel to stop accepting local activity work.
+		localActivityStopC chan struct{}
+		stickyUUID         string // Used for ShutdownWorker call
 	}
 
 	// ActivityWorker wraps the code for hosting activity types.
@@ -97,7 +114,9 @@ type (
 		poller              taskPoller
 		worker              *baseWorker
 		identity            string
-		stopC               chan struct{}
+		// stopC is created by newActivityWorker, exposed through WorkerStopChannel
+		// to activity task polling/handling, and closed by activityWorker.Stop().
+		stopC chan struct{}
 	}
 
 	// sessionWorker wraps the code for hosting session creation, completion and
@@ -119,6 +138,8 @@ type (
 	workerExecutionParameters struct {
 		// Namespace name.
 		Namespace string
+
+		RPCTimeout time.Duration
 
 		// Task queue name to poll.
 		TaskQueue string
@@ -151,6 +172,8 @@ type (
 
 		// Worker deployment options containing all deployment versioning configuration.
 		DeploymentOptions WorkerDeploymentOptions
+
+		PreferredVersionProvider PreferredVersionProvider
 
 		MetricsHandler metrics.Handler
 
@@ -187,6 +210,10 @@ type (
 		// the worker.
 		WorkerFatalErrorCallback func(error)
 
+		// noRepoll is shared by the aggregate worker's remote-task pollers.
+		// Local activities keep polling so accepted workflow tasks can finish.
+		noRepoll *atomic.Bool
+
 		// SessionResourceID is a unique identifier of the resource the session will consume
 		SessionResourceID string
 
@@ -208,6 +235,12 @@ type (
 		// NexusTaskPollerBehavior defines the behavior of the nexus task poller.
 		NexusTaskPollerBehavior PollerBehavior
 
+		// pollerAutoEnrollEligibility records, per poller type, whether the poller
+		// was left at its default and is therefore eligible for poller-autoscaling
+		// auto-enrollment when the namespace advertises the
+		// PollerAutoscalingAutoEnroll capability.
+		pollerAutoEnrollEligibility autoEnrollEligibility
+
 		// Pointer to the shared worker cache
 		cache *WorkerCache
 
@@ -218,6 +251,27 @@ type (
 		pollTimeTracker *pollTimeTracker
 
 		workerInstanceKey string
+
+		namespaceWorker          *sharedNamespaceWorker
+		pollerGroupSnapshotStore *pollerGroupSnapshotStore
+
+		activityCancellationCallbacks *activityCancellationCallbacks
+
+		workerPollCompleteOnShutdown *atomic.Bool
+
+		// Set to true during start() when the namespace has the poller_autoscaling capability.
+		serverSupportsAutoscaling *atomic.Bool
+
+		// Resolved during start() from the namespace's pagination capability and size limit.
+		workflowTaskCompletionPagination *workflowTaskCompletionPaginationConfig
+
+		inboundPayloadVisitor PayloadVisitor
+
+		outboundPayloadVisitor PayloadVisitor
+
+		storageParams extstore.StorageParameters
+
+		setErrorLimits func(*payloadLimits)
 	}
 
 	// HistoryJSONOptions are options for HistoryFromJSON.
@@ -251,7 +305,6 @@ func ensureRequiredParams(params *workerExecutionParameters) {
 	if params.Logger == nil {
 		// create default logger if user does not supply one (should happen in tests only).
 		params.Logger = ilog.NewDefaultLogger()
-		params.Logger.Info("No logger configured for temporal worker. Created default one.")
 	}
 	if params.MetricsHandler == nil {
 		params.MetricsHandler = metrics.NopHandler
@@ -293,6 +346,10 @@ func (params *workerExecutionParameters) isInternalWorker() bool {
 	return params.Namespace == "temporal-system" || params.TaskQueue == "temporal-sys-per-ns-tq"
 }
 
+func workerControlTaskQueue(namespace, groupingKey string) string {
+	return fmt.Sprintf("temporal-sys/worker-commands/%s/%s", namespace, groupingKey)
+}
+
 func newWorkflowWorkerInternal(client *WorkflowClient, params workerExecutionParameters, ppMgr pressurePointMgr, overrides *workerOverrides, registry *registry) *workflowWorker {
 	workerStopChannel := make(chan struct{})
 	params.WorkerStopChannel = getReadOnlyChannel(workerStopChannel)
@@ -319,42 +376,30 @@ func newWorkflowTaskWorkerInternal(
 	var service workflowservice.WorkflowServiceClient
 	if client != nil {
 		service = client.workflowService
+		params.RPCTimeout = client.rpcTimeout
 	}
 	// Generate stickyUUID here so it can be stored in workflowWorker for ShutdownWorker call
 	stickyUUID := uuid.NewString()
 	taskProcessor := newWorkflowTaskProcessor(taskHandler, contextManager, service, params, stickyUUID)
 
-	var scalableTaskPollers []scalableTaskPoller
-	switch params.WorkflowTaskPollerBehavior.(type) {
-	case *pollerBehaviorSimpleMaximum:
-		scalableTaskPollers = []scalableTaskPoller{
-			newScalableTaskPoller(taskProcessor.createPoller(Mixed), params.Logger, params.WorkflowTaskPollerBehavior),
-		}
-	case *pollerBehaviorAutoscaling:
-		scalableTaskPollers = []scalableTaskPoller{
-			newScalableTaskPoller(taskProcessor.createPoller(NonSticky), params.Logger, params.WorkflowTaskPollerBehavior),
-		}
-		if taskProcessor.stickyCacheSize > 0 {
-			scalableTaskPollers = append(scalableTaskPollers, newScalableTaskPoller(taskProcessor.createPoller(Sticky), params.Logger, params.WorkflowTaskPollerBehavior))
-		}
-	}
-
 	bwo := baseWorkerOptions{
-		pollerRate:        defaultPollerRate,
-		slotSupplier:      params.Tuner.GetWorkflowTaskSlotSupplier(),
-		maxTaskPerSecond:  defaultWorkerTaskExecutionRate,
-		taskPollers:       scalableTaskPollers,
-		taskProcessor:     taskProcessor,
-		workerType:        "WorkflowWorker",
-		identity:          params.Identity,
-		buildId:           params.getBuildID(),
-		deploymentOptions: params.DeploymentOptions,
-		logger:            params.Logger,
-		stopTimeout:       params.WorkerStopTimeout,
-		fatalErrCb:        params.WorkerFatalErrorCallback,
-		metricsHandler:    params.MetricsHandler,
+		pollerRate:                   defaultPollerRate,
+		slotSupplier:                 params.Tuner.GetWorkflowTaskSlotSupplier(),
+		maxTaskPerSecond:             defaultWorkerTaskExecutionRate,
+		taskProcessor:                taskProcessor,
+		workerType:                   "WorkflowWorker",
+		identity:                     params.Identity,
+		buildId:                      params.getBuildID(),
+		deploymentOptions:            params.DeploymentOptions,
+		logger:                       params.Logger,
+		stopTimeout:                  params.WorkerStopTimeout,
+		fatalErrCb:                   params.WorkerFatalErrorCallback,
+		noRepoll:                     params.noRepoll,
+		metricsHandler:               params.MetricsHandler,
+		workerPollCompleteOnShutdown: params.workerPollCompleteOnShutdown,
 		slotReservationData: slotReservationData{
-			taskQueue: params.TaskQueue,
+			taskQueue:     params.TaskQueue,
+			taskQueueKind: enumspb.TASK_QUEUE_KIND_UNSPECIFIED,
 		},
 	}
 
@@ -381,11 +426,18 @@ func newWorkflowTaskWorkerInternal(
 		slotSupplier:     laParams.Tuner.GetLocalActivitySlotSupplier(),
 		maxTaskPerSecond: laParams.WorkerLocalActivitiesPerSecond,
 		taskPollers: []scalableTaskPoller{
-			newScalableTaskPoller(localActivityTaskPoller, params.Logger, NewPollerBehaviorSimpleMaximum(
-				PollerBehaviorSimpleMaximumOptions{
-					MaximumNumberOfPollers: 2,
-				},
-			)),
+			newScalableTaskPoller(
+				localActivityTaskPoller,
+				params.Logger,
+				NewPollerBehaviorSimpleMaximum(
+					PollerBehaviorSimpleMaximumOptions{
+						MaximumNumberOfPollers: 2,
+					},
+				),
+				"",
+				nil,
+				nil,
+			),
 		},
 		taskProcessor:  localActivityTaskPoller,
 		workerType:     "LocalActivityWorker",
@@ -396,7 +448,8 @@ func newWorkflowTaskWorkerInternal(
 		fatalErrCb:     laParams.WorkerFatalErrorCallback,
 		metricsHandler: laParams.MetricsHandler,
 		slotReservationData: slotReservationData{
-			taskQueue: params.TaskQueue,
+			taskQueue:     params.TaskQueue,
+			taskQueueKind: enumspb.TASK_QUEUE_KIND_NORMAL,
 		},
 	},
 	)
@@ -407,6 +460,7 @@ func newWorkflowTaskWorkerInternal(
 	return &workflowWorker{
 		executionParameters: params,
 		workflowService:     service,
+		taskProcessor:       taskProcessor,
 		worker:              worker,
 		localActivityWorker: localActivityWorker,
 		identity:            params.Identity,
@@ -418,6 +472,11 @@ func newWorkflowTaskWorkerInternal(
 
 // Start the worker.
 func (ww *workflowWorker) Start() error {
+	// AggregatedWorker initializes pollers after resolving namespace capabilities.
+	// Fall back to the configured behavior for direct internal starts.
+	if ww.worker.options.taskPollers == nil {
+		ww.initializeTaskPollers(ww.executionParameters.WorkflowTaskPollerBehavior)
+	}
 	ww.localActivityWorker.Start()
 	ww.worker.Start()
 	return nil // TODO: propagate error
@@ -430,6 +489,89 @@ func (ww *workflowWorker) Stop() {
 	ww.worker.Stop()
 	close(ww.localActivityStopC)
 	ww.localActivityWorker.Stop()
+}
+
+// buildWorkflowScalableTaskPollers builds the set of workflow task pollers for
+// the given behavior. A simple-maximum behavior uses a single Mixed poller,
+// while an autoscaling behavior uses a NonSticky poller plus a Sticky poller
+// when the sticky cache is enabled. Each returned poller is a reusable object
+// with independent concurrency control, not one object per poll attempt.
+func buildWorkflowScalableTaskPollers(
+	taskProcessor *workflowTaskProcessor,
+	behavior PollerBehavior,
+	params workerExecutionParameters,
+	maxSlots int,
+) []scalableTaskPoller {
+	switch behavior := behavior.(type) {
+	case *pollerBehaviorAutoscaling:
+		var pollerGroups *pollerGroupManager
+		if taskProcessor.stickyCacheSize <= 0 && params.pollerGroupSnapshotStore != nil {
+			pollerGroups = newPollerGroupManager(params.pollerGroupSnapshotStore)
+		}
+
+		normalTaskPoller := taskProcessor.createPoller(NonSticky, pollerGroups)
+		normalScalablePoller := newScalableTaskPoller(
+			normalTaskPoller,
+			params.Logger,
+			behavior,
+			metrics.PollerTypeWorkflowTask,
+			params.serverSupportsAutoscaling,
+			pollerGroups,
+		)
+		if taskProcessor.stickyCacheSize <= 0 {
+			return []scalableTaskPoller{normalScalablePoller}
+		}
+
+		balancer := newWorkflowAutoscalingBalancer(
+			maxSlots,
+			int64(behavior.initialNumberOfPollers),
+			params.pollerGroupSnapshotStore,
+		)
+		stickyTaskPoller := taskProcessor.createPoller(Sticky, nil)
+		stickyScalablePoller := newScalablePollerWithTarget(
+			stickyTaskPoller,
+			params.Logger,
+			behavior,
+			metrics.PollerTypeWorkflowStickyTask,
+			params.serverSupportsAutoscaling,
+			nil,
+			balancer.setStickyTarget,
+		)
+		normalScalablePoller.autoscalingBalancer = balancer
+		normalScalablePoller.pollKind = enumspb.TASK_QUEUE_KIND_NORMAL
+		stickyScalablePoller.autoscalingBalancer = balancer
+		stickyScalablePoller.pollKind = enumspb.TASK_QUEUE_KIND_STICKY
+		normalTaskPoller.autoscalingBalancer = balancer
+		stickyTaskPoller.autoscalingBalancer = balancer
+
+		return []scalableTaskPoller{normalScalablePoller, stickyScalablePoller}
+	default: // *pollerBehaviorSimpleMaximum
+		mixedScalablePoller := newScalableTaskPoller(
+			taskProcessor.createPoller(Mixed, nil),
+			params.Logger,
+			behavior,
+			metrics.PollerTypeWorkflowTask,
+			params.serverSupportsAutoscaling,
+			nil,
+		)
+		if taskProcessor.stickyCacheSize > 0 {
+			// One pool polls both queues, so the heartbeat's sticky slot reports the same
+			// target. Leaving it unset would pair a real current_pollers with a zero target.
+			mixedScalablePoller.alsoTargetsPollerType = metrics.PollerTypeWorkflowStickyTask
+		}
+		return []scalableTaskPoller{mixedScalablePoller}
+	}
+}
+
+func (ww *workflowWorker) initializeTaskPollers(behavior PollerBehavior) {
+	taskProcessor := ww.worker.options.taskProcessor.(*workflowTaskProcessor)
+	ww.executionParameters.WorkflowTaskPollerBehavior = behavior
+	ww.worker.initializeTaskPollers(buildWorkflowScalableTaskPollers(
+		taskProcessor,
+		behavior,
+		ww.executionParameters,
+		ww.worker.slotSupplier.inner.MaxSlots(),
+	))
 }
 
 func newSessionWorker(client *WorkflowClient, params workerExecutionParameters, env *registry, maxConcurrentSessionExecutionSize int) *sessionWorker {
@@ -445,6 +587,7 @@ func newSessionWorker(client *WorkflowClient, params workerExecutionParameters, 
 	creationTaskqueue := getCreationTaskqueue(params.TaskQueue)
 	params.BackgroundContext = context.WithValue(params.BackgroundContext, sessionEnvironmentContextKey, sessionEnvironment)
 	params.TaskQueue = sessionEnvironment.GetResourceSpecificTaskqueue()
+	params.pollerGroupSnapshotStore = newPollerGroupSnapshotStore()
 	// For the resource specific task queue, we don't need to include deployment options
 	// Save them to restore later
 	deployments := params.DeploymentOptions
@@ -463,6 +606,7 @@ func newSessionWorker(client *WorkflowClient, params workerExecutionParameters, 
 		},
 	)
 	params.TaskQueue = creationTaskqueue
+	params.pollerGroupSnapshotStore = nil
 	params.DeploymentOptions = deployments
 	params.UseBuildIDForVersioning = useBuildIDForVersioning
 	// Although we have session token bucket to limit session size across creation
@@ -496,6 +640,14 @@ func (sw *sessionWorker) Stop() {
 	sw.activityWorker.Stop()
 }
 
+func (sw *sessionWorker) getCreationWorkerTaskQueue() string {
+	return sw.creationWorker.executionParameters.TaskQueue
+}
+
+func (sw *sessionWorker) getActivityWorkerTaskQueue() string {
+	return sw.activityWorker.executionParameters.TaskQueue
+}
+
 func newActivityWorker(
 	client *WorkflowClient,
 	params workerExecutionParameters,
@@ -506,6 +658,7 @@ func newActivityWorker(
 	var service workflowservice.WorkflowServiceClient
 	if client != nil {
 		service = client.workflowService
+		params.RPCTimeout = client.rpcTimeout
 	}
 	workerStopChannel := make(chan struct{}, 1)
 	params.WorkerStopChannel = getReadOnlyChannel(workerStopChannel)
@@ -519,7 +672,7 @@ func newActivityWorker(
 		taskHandler = newActivityTaskHandler(client, params, env)
 	}
 
-	poller := newActivityTaskPoller(taskHandler, service, params)
+	poller := newActivityTaskPoller(taskHandler, service, params, nil)
 	var slotSupplier SlotSupplier
 	if overrides != nil && overrides.slotSupplier != nil {
 		slotSupplier = overrides.slotSupplier
@@ -527,24 +680,24 @@ func newActivityWorker(
 		slotSupplier = params.Tuner.GetActivityTaskSlotSupplier()
 	}
 	bwo := baseWorkerOptions{
-		pollerRate:       defaultPollerRate,
-		slotSupplier:     slotSupplier,
-		maxTaskPerSecond: params.WorkerActivitiesPerSecond,
-		taskPollers: []scalableTaskPoller{
-			newScalableTaskPoller(poller, params.Logger, params.ActivityTaskPollerBehavior),
-		},
-		taskProcessor:           poller,
-		workerType:              "ActivityWorker",
-		identity:                params.Identity,
-		buildId:                 params.getBuildID(),
-		logger:                  params.Logger,
-		stopTimeout:             params.WorkerStopTimeout,
-		fatalErrCb:              params.WorkerFatalErrorCallback,
-		backgroundContextCancel: params.BackgroundContextCancel,
-		metricsHandler:          params.MetricsHandler,
-		sessionTokenBucket:      sessionTokenBucket,
+		pollerRate:                   defaultPollerRate,
+		slotSupplier:                 slotSupplier,
+		maxTaskPerSecond:             params.WorkerActivitiesPerSecond,
+		taskProcessor:                poller,
+		workerType:                   "ActivityWorker",
+		identity:                     params.Identity,
+		buildId:                      params.getBuildID(),
+		logger:                       params.Logger,
+		stopTimeout:                  params.WorkerStopTimeout,
+		fatalErrCb:                   params.WorkerFatalErrorCallback,
+		noRepoll:                     params.noRepoll,
+		backgroundContextCancel:      params.BackgroundContextCancel,
+		metricsHandler:               params.MetricsHandler,
+		sessionTokenBucket:           sessionTokenBucket,
+		workerPollCompleteOnShutdown: params.workerPollCompleteOnShutdown,
 		slotReservationData: slotReservationData{
-			taskQueue: params.TaskQueue,
+			taskQueue:     params.TaskQueue,
+			taskQueueKind: enumspb.TASK_QUEUE_KIND_NORMAL,
 		},
 	}
 
@@ -561,6 +714,11 @@ func newActivityWorker(
 
 // Start the worker.
 func (aw *activityWorker) Start() error {
+	// AggregatedWorker initializes pollers after resolving namespace capabilities.
+	// Fall back to the configured behavior for direct internal starts.
+	if aw.worker.options.taskPollers == nil {
+		aw.initializeTaskPollers(aw.executionParameters.ActivityTaskPollerBehavior)
+	}
 	aw.worker.Start()
 	return nil // TODO: propagate errors
 }
@@ -571,15 +729,36 @@ func (aw *activityWorker) Stop() {
 	aw.worker.Stop()
 }
 
+func (aw *activityWorker) initializeTaskPollers(behavior PollerBehavior) {
+	aw.executionParameters.ActivityTaskPollerBehavior = behavior
+	var pollerGroups *pollerGroupManager
+	if _, ok := behavior.(*pollerBehaviorAutoscaling); ok {
+		pollerGroups = newPollerGroupManager(aw.executionParameters.pollerGroupSnapshotStore)
+	}
+	if poller, ok := aw.poller.(*activityTaskPoller); ok {
+		poller.pollerGroups = pollerGroups
+	}
+	aw.worker.initializeTaskPollers([]scalableTaskPoller{
+		newScalableTaskPoller(
+			aw.poller,
+			aw.executionParameters.Logger,
+			behavior,
+			metrics.PollerTypeActivityTask,
+			aw.executionParameters.serverSupportsAutoscaling,
+			pollerGroups,
+		),
+	})
+}
+
 type registry struct {
 	sync.Mutex
 	nexusServices                 map[string]*nexus.Service
-	workflowFuncMap               map[string]interface{}
+	workflowFuncMap               map[string]any
 	workflowAliasMap              map[string]string
 	workflowVersioningBehaviorMap map[string]VersioningBehavior
 	activityFuncMap               map[string]activity
 	activityAliasMap              map[string]string
-	dynamicWorkflow               interface{}
+	dynamicWorkflow               any
 	dynamicWorkflowOptions        DynamicRegisterWorkflowOptions
 	dynamicActivity               activity
 	_                             DynamicRegisterActivityOptions
@@ -590,12 +769,12 @@ type registryOptions struct {
 	disableAliasing bool
 }
 
-func (r *registry) RegisterWorkflow(af interface{}) {
+func (r *registry) RegisterWorkflow(af any) {
 	r.RegisterWorkflowWithOptions(af, RegisterWorkflowOptions{})
 }
 
 func (r *registry) RegisterWorkflowWithOptions(
-	wf interface{},
+	wf any,
 	options RegisterWorkflowOptions,
 ) {
 	// Support direct registration of WorkflowDefinition
@@ -634,7 +813,11 @@ func (r *registry) RegisterWorkflowWithOptions(
 
 	if !options.DisableAlreadyRegisteredCheck {
 		if _, ok := r.workflowFuncMap[registerName]; ok {
-			panic(fmt.Sprintf("workflow name \"%v\" is already registered", registerName))
+			message := fmt.Sprintf("workflow name \"%v\" is already registered", registerName)
+			if mightBeFunctionLiteral(wf) && len(alias) == 0 {
+				message += ". " + workflowLiteralRegistrationHint
+			}
+			panic(message)
 		}
 	}
 	r.workflowFuncMap[registerName] = wf
@@ -645,7 +828,7 @@ func (r *registry) RegisterWorkflowWithOptions(
 	}
 }
 
-func (r *registry) RegisterDynamicWorkflow(wf interface{}, options DynamicRegisterWorkflowOptions) {
+func (r *registry) RegisterDynamicWorkflow(wf any, options DynamicRegisterWorkflowOptions) {
 	r.Lock()
 	defer r.Unlock()
 	// Support direct registration of WorkflowDefinition
@@ -668,12 +851,12 @@ func (r *registry) RegisterDynamicWorkflow(wf interface{}, options DynamicRegist
 	r.dynamicWorkflowOptions = options
 }
 
-func (r *registry) RegisterActivity(af interface{}) {
+func (r *registry) RegisterActivity(af any) {
 	r.RegisterActivityWithOptions(af, RegisterActivityOptions{})
 }
 
 func (r *registry) RegisterActivityWithOptions(
-	af interface{},
+	af any,
 	options RegisterActivityOptions,
 ) {
 	// Support direct registration of activity
@@ -690,7 +873,7 @@ func (r *registry) RegisterActivityWithOptions(
 	}
 	// Validate that it is a function
 	fnType := reflect.TypeOf(af)
-	if fnType.Kind() == reflect.Ptr && fnType.Elem().Kind() == reflect.Struct {
+	if fnType.Kind() == reflect.Pointer && fnType.Elem().Kind() == reflect.Struct {
 		registerErr := r.registerActivityStructWithOptions(af, options)
 		if registerErr != nil {
 			panic(registerErr)
@@ -716,7 +899,11 @@ func (r *registry) RegisterActivityWithOptions(
 
 	if !options.DisableAlreadyRegisteredCheck {
 		if _, ok := r.activityFuncMap[registerName]; ok {
-			panic(fmt.Sprintf("activity type \"%v\" is already registered", registerName))
+			message := fmt.Sprintf("activity type \"%v\" is already registered", registerName)
+			if mightBeFunctionLiteral(af) && len(alias) == 0 {
+				message += ". " + activityLiteralRegistrationHint
+			}
+			panic(message)
 		}
 	}
 	r.activityFuncMap[registerName] = &activityExecutor{name: registerName, fn: af}
@@ -725,7 +912,7 @@ func (r *registry) RegisterActivityWithOptions(
 	}
 }
 
-func (r *registry) registerActivityStructWithOptions(aStruct interface{}, options RegisterActivityOptions) error {
+func (r *registry) registerActivityStructWithOptions(aStruct any, options RegisterActivityOptions) error {
 	r.Lock()
 	defer r.Unlock()
 
@@ -762,7 +949,7 @@ func (r *registry) registerActivityStructWithOptions(aStruct interface{}, option
 	return nil
 }
 
-func (r *registry) RegisterDynamicActivity(af interface{}, options DynamicRegisterActivityOptions) {
+func (r *registry) RegisterDynamicActivity(af any, options DynamicRegisterActivityOptions) {
 	r.Lock()
 	defer r.Unlock()
 	// Support direct registration of activity
@@ -803,7 +990,7 @@ func (r *registry) getWorkflowAlias(fnName string) (string, bool) {
 	return alias, ok
 }
 
-func (r *registry) getWorkflowFn(fnName string) (interface{}, bool) {
+func (r *registry) getWorkflowFn(fnName string) (any, bool) {
 	r.Lock()
 	defer r.Unlock()
 	if fn, ok := r.workflowFuncMap[fnName]; ok {
@@ -899,8 +1086,17 @@ func (r *registry) getWorkflowDefinition(wt WorkflowType) (WorkflowDefinition, e
 	}
 	var dynamic bool
 	if d, ok := wf.(string); ok && d == "dynamic" {
+		r.Lock()
 		wf = r.dynamicWorkflow
+		r.Unlock()
 		dynamic = true
+	}
+	// A dynamic workflow may itself be a WorkflowDefinitionFactory (e.g. the
+	// RoadRunner PHP host process registers one shared factory). Honor it here,
+	// as the named-workflow path above does, rather than wrapping it in a
+	// reflection-based workflowExecutor, which panics on the non-func value.
+	if wdf, ok := wf.(WorkflowDefinitionFactory); ok {
+		return wdf.NewWorkflowDefinition(), nil
 	}
 	executor := &workflowExecutor{workflowType: lookup, fn: wf, interceptors: r.interceptors, dynamic: dynamic}
 	return newSyncWorkflowDefinition(executor), nil
@@ -973,7 +1169,7 @@ func validateFnFormat(fnType reflect.Type, isWorkflow, isDynamic bool) error {
 				"expected function to have two arguments, first being workflow.Context and second being an EncodedValues type, found %d arguments", fnType.NumIn(),
 			)
 		}
-		if fnType.In(1) != reflect.TypeOf((*converter.EncodedValues)(nil)).Elem() {
+		if fnType.In(1) != reflect.TypeFor[converter.EncodedValues]() {
 			return fmt.Errorf("expected function to EncodedValues as second argument, got %s", fnType.In(1).Elem())
 		}
 	}
@@ -1004,7 +1200,7 @@ func newRegistry() *registry { return newRegistryWithOptions(registryOptions{}) 
 
 func newRegistryWithOptions(options registryOptions) *registry {
 	r := &registry{
-		workflowFuncMap:               make(map[string]interface{}),
+		workflowFuncMap:               make(map[string]any),
 		workflowVersioningBehaviorMap: make(map[string]VersioningBehavior),
 		activityFuncMap:               make(map[string]activity),
 		nexusServices:                 make(map[string]*nexus.Service),
@@ -1019,7 +1215,7 @@ func newRegistryWithOptions(options registryOptions) *registry {
 // Wrapper to execute workflow functions.
 type workflowExecutor struct {
 	workflowType string
-	fn           interface{}
+	fn           any
 	interceptors []WorkerInterceptor
 	dynamic      bool
 }
@@ -1028,11 +1224,11 @@ func (we *workflowExecutor) Execute(ctx Context, input *commonpb.Payloads) (*com
 	dataConverter := WithWorkflowContext(ctx, getWorkflowEnvOptions(ctx).DataConverter)
 	fnType := reflect.TypeOf(we.fn)
 
-	var args []interface{}
+	var args []any
 	var err error
 	if we.dynamic {
 		// Dynamic workflows take in a single EncodedValues, encode all data into single EncodedValues
-		args = []interface{}{newEncodedValues(input, dataConverter)}
+		args = []any{newEncodedValues(input, dataConverter)}
 	} else {
 		args, err = decodeArgsToRawValues(dataConverter, fnType, input)
 		if err != nil {
@@ -1049,7 +1245,7 @@ func (we *workflowExecutor) Execute(ctx Context, input *commonpb.Payloads) (*com
 	result, err := envInterceptor.inboundInterceptor.ExecuteWorkflow(ctx, &ExecuteWorkflowInput{Args: args})
 	var serializedResult *commonpb.Payloads
 	if err == nil && result != nil {
-		serializedResult, err = encodeArg(dataConverter, result)
+		serializedResult, err = encodeArg(resultDataConverter(ctx), result)
 	}
 	return serializedResult, err
 }
@@ -1057,7 +1253,7 @@ func (we *workflowExecutor) Execute(ctx Context, input *commonpb.Payloads) (*com
 // Wrapper to execute activity functions.
 type activityExecutor struct {
 	name             string
-	fn               interface{}
+	fn               any
 	skipInterceptors bool
 	dynamic          bool
 }
@@ -1066,7 +1262,7 @@ func (ae *activityExecutor) ActivityType() ActivityType {
 	return ActivityType{Name: ae.name}
 }
 
-func (ae *activityExecutor) GetFunction() interface{} {
+func (ae *activityExecutor) GetFunction() any {
 	return ae.fn
 }
 
@@ -1074,11 +1270,11 @@ func (ae *activityExecutor) Execute(ctx context.Context, input *commonpb.Payload
 	fnType := reflect.TypeOf(ae.fn)
 	dataConverter := getDataConverterFromActivityCtx(ctx)
 
-	var args []interface{}
+	var args []any
 	var err error
 	if ae.dynamic {
 		// Dynamic activities take in a single EncodedValues, encode all data into single EncodedValues
-		args = []interface{}{newEncodedValues(input, dataConverter)}
+		args = []any{newEncodedValues(input, dataConverter)}
 	} else {
 		args, err = decodeArgsToRawValues(dataConverter, fnType, input)
 		if err != nil {
@@ -1091,8 +1287,8 @@ func (ae *activityExecutor) Execute(ctx context.Context, input *commonpb.Payload
 	return ae.ExecuteWithActualArgs(ctx, args)
 }
 
-func (ae *activityExecutor) ExecuteWithActualArgs(ctx context.Context, args []interface{}) (*commonpb.Payloads, error) {
-	dataConverter := getDataConverterFromActivityCtx(ctx)
+func (ae *activityExecutor) ExecuteWithActualArgs(ctx context.Context, args []any) (*commonpb.Payloads, error) {
+	dataConverter := callerFacingDataConverterFromActivityCtx(ctx)
 
 	envInterceptor := getActivityEnvironmentInterceptor(ctx)
 	envInterceptor.fn = ae.fn
@@ -1129,12 +1325,14 @@ func getDataConverterFromActivityCtx(ctx context.Context) converter.DataConverte
 	return WithContext(ctx, dataConverter)
 }
 
-func getNamespaceFromActivityCtx(ctx context.Context) string {
-	env := getActivityEnvironmentFromCtx(ctx)
-	if env == nil {
-		return ""
+// callerFacingDataConverterFromActivityCtx returns the data converter for payloads that may reach the Nexus
+// caller when the activity was started by a Nexus handler. This includes heartbeat details, since the server
+// includes the last ones in timeout failures. See serializationContextFor.
+func callerFacingDataConverterFromActivityCtx(ctx context.Context) converter.DataConverter {
+	if env := getActivityEnvironmentFromCtx(ctx); env != nil && env.callerFacingDataConverter != nil {
+		return WithContext(ctx, env.callerFacingDataConverter)
 	}
-	return env.namespace
+	return getDataConverterFromActivityCtx(ctx)
 }
 
 func getActivityEnvironmentFromCtx(ctx context.Context) *activityEnvironment {
@@ -1156,12 +1354,23 @@ type AggregatedWorker struct {
 	activityWorker *activityWorker
 	sessionWorker  *sessionWorker
 	nexusWorker    *nexusWorker
-	logger         log.Logger
-	registry       *registry
+	// The Nexus worker's slot supplier. Unlike the other workers, nexusWorker is created during
+	// start rather than at construction, so slotUsage reads this atomic instead of nexusWorker to
+	// avoid a data race when called concurrently with start.
+	nexusSlotSupplier atomic.Pointer[trackingSlotSupplier]
+	logger            log.Logger
+	registry          *registry
 	// Stores a boolean indicating whether the worker has already been started.
 	started      atomic.Bool
 	shuttingDown atomic.Bool
-	stopC        chan struct{}
+	// stopC is created in NewAggregatedWorker and closed when stopping begins,
+	// to notify Run() and prevent restart. Stop() joins the entire cleanup.
+	// Child worker stop channels are closed later by their own Stop methods.
+	stopC    chan struct{}
+	stopOnce sync.Once
+	// stopDone closes after the selected Stop caller finishes all worker cleanup.
+	// Other Stop callers wait here without holding the owner selection lock.
+	stopDone     chan struct{}
 	fatalErr     error
 	fatalErrLock sync.Mutex
 	capabilities *workflowservice.GetSystemInfoResponse_Capabilities
@@ -1170,12 +1379,18 @@ type AggregatedWorker struct {
 	plugins               []WorkerPlugin
 	pluginRegistryOptions *WorkerPluginConfigureWorkerRegistryOptions // Never nil
 
-	heartbeatMetrics  *heartbeatMetricsHandler
-	heartbeatCallback func() *workerpb.WorkerHeartbeat
+	heartbeatMetrics             *heartbeatMetricsHandler
+	heartbeatCallback            func() *workerpb.WorkerHeartbeat
+	workerPollCompleteOnShutdown *atomic.Bool
+	cacheLease                   *workerCacheLease
+
+	// pendingEnvironment is attached to every heartbeat (periodic and shutdown) until the server
+	// accepts one, at which point heartbeatSuccess clears it.
+	pendingEnvironment atomic.Pointer[workerpb.EnvironmentInfo]
 }
 
 // RegisterWorkflow registers workflow implementation with the AggregatedWorker
-func (aw *AggregatedWorker) RegisterWorkflow(w interface{}) {
+func (aw *AggregatedWorker) RegisterWorkflow(w any) {
 	if aw.workflowWorker == nil {
 		panic("workflow worker disabled, cannot register workflow")
 	}
@@ -1191,7 +1406,7 @@ func (aw *AggregatedWorker) RegisterWorkflow(w interface{}) {
 }
 
 // RegisterWorkflowWithOptions registers workflow implementation with the AggregatedWorker
-func (aw *AggregatedWorker) RegisterWorkflowWithOptions(w interface{}, options RegisterWorkflowOptions) {
+func (aw *AggregatedWorker) RegisterWorkflowWithOptions(w any, options RegisterWorkflowOptions) {
 	if aw.workflowWorker == nil {
 		panic("workflow worker disabled, cannot register workflow")
 	}
@@ -1208,7 +1423,7 @@ func (aw *AggregatedWorker) RegisterWorkflowWithOptions(w interface{}, options R
 }
 
 // RegisterDynamicWorkflow registers dynamic workflow implementation with the AggregatedWorker
-func (aw *AggregatedWorker) RegisterDynamicWorkflow(w interface{}, options DynamicRegisterWorkflowOptions) {
+func (aw *AggregatedWorker) RegisterDynamicWorkflow(w any, options DynamicRegisterWorkflowOptions) {
 	if aw.workflowWorker == nil {
 		panic("workflow worker disabled, cannot register workflow")
 	}
@@ -1218,13 +1433,13 @@ func (aw *AggregatedWorker) RegisterDynamicWorkflow(w interface{}, options Dynam
 		panic("dynamic workflow does not have a versioning behavior")
 	}
 	if aw.pluginRegistryOptions.OnRegisterDynamicWorkflow != nil {
-		aw.pluginRegistryOptions.OnRegisterDynamicWorkflow(w, DynamicRegisterWorkflowOptions{})
+		aw.pluginRegistryOptions.OnRegisterDynamicWorkflow(w, options)
 	}
 	aw.registry.RegisterDynamicWorkflow(w, options)
 }
 
 // RegisterActivity registers activity implementation with the AggregatedWorker
-func (aw *AggregatedWorker) RegisterActivity(a interface{}) {
+func (aw *AggregatedWorker) RegisterActivity(a any) {
 	if aw.pluginRegistryOptions.OnRegisterActivity != nil {
 		aw.pluginRegistryOptions.OnRegisterActivity(a, RegisterActivityOptions{})
 	}
@@ -1232,7 +1447,7 @@ func (aw *AggregatedWorker) RegisterActivity(a interface{}) {
 }
 
 // RegisterActivityWithOptions registers activity implementation with the AggregatedWorker
-func (aw *AggregatedWorker) RegisterActivityWithOptions(a interface{}, options RegisterActivityOptions) {
+func (aw *AggregatedWorker) RegisterActivityWithOptions(a any, options RegisterActivityOptions) {
 	if aw.pluginRegistryOptions.OnRegisterActivity != nil {
 		aw.pluginRegistryOptions.OnRegisterActivity(a, options)
 	}
@@ -1241,8 +1456,8 @@ func (aw *AggregatedWorker) RegisterActivityWithOptions(a interface{}, options R
 
 // RegisterDynamicActivity registers the dynamic activity function with options.
 // Registering activities via a structure is not supported for dynamic activities.
-func (aw *AggregatedWorker) RegisterDynamicActivity(a interface{}, options DynamicRegisterActivityOptions) {
-	if aw.pluginRegistryOptions.OnRegisterActivity != nil {
+func (aw *AggregatedWorker) RegisterDynamicActivity(a any, options DynamicRegisterActivityOptions) {
+	if aw.pluginRegistryOptions.OnRegisterDynamicActivity != nil {
 		aw.pluginRegistryOptions.OnRegisterDynamicActivity(a, options)
 	}
 	aw.registry.RegisterDynamicActivity(a, options)
@@ -1281,8 +1496,69 @@ func (aw *AggregatedWorker) start() error {
 	}
 	proto.Merge(aw.capabilities, capabilities)
 
-	if _, err := aw.client.loadNamespaceCapabilities(aw.executionParams.MetricsHandler); err != nil {
+	nsData, err := aw.client.loadNamespaceData(aw.executionParams.MetricsHandler)
+	if err != nil {
 		return err
+	}
+	// Seed poller groups before the first poll.
+	aw.executionParams.pollerGroupSnapshotStore.updateGroups(nsData.pollerGroupsInfo)
+	if aw.sessionWorker != nil {
+		aw.sessionWorker.activityWorker.executionParameters.pollerGroupSnapshotStore.updateGroups(nsData.pollerGroupsInfo)
+	}
+
+	if aw.executionParams.setErrorLimits != nil {
+		payloadSizeError := int64(0)
+		if nsData.limits.BlobSizeLimitError > 0 {
+			payloadSizeError = nsData.limits.BlobSizeLimitError
+		}
+		memoSizeError := int64(0)
+		if nsData.limits.MemoSizeLimitError > 0 {
+			memoSizeError = nsData.limits.MemoSizeLimitError
+		}
+		aw.executionParams.setErrorLimits(&payloadLimits{
+			payloadSize: payloadSizeError,
+			memoSize:    memoSizeError,
+		})
+	}
+
+	if nsData.capabilities.GetWorkerPollCompleteOnShutdown() {
+		aw.workerPollCompleteOnShutdown.Store(true)
+	}
+
+	if nsData.capabilities.GetWorkflowTaskCompletionPagination() {
+		aw.executionParams.workflowTaskCompletionPagination.enabled.Store(true)
+		aw.executionParams.workflowTaskCompletionPagination.sizeLimit.Store(nsData.limits.GetWorkflowTaskCompletionSizeLimitError())
+	}
+
+	if nsData.capabilities.GetPollerAutoscaling() {
+		aw.executionParams.serverSupportsAutoscaling.Store(true)
+	}
+
+	// If the namespace opts workers into poller autoscaling, auto-enroll any
+	// poller type that was left at its default (the user set neither a fixed
+	// poller count nor a poller behavior). Auto-enroll implies full autoscaling
+	// support, including scaling down, so it also enables serverSupportsAutoscaling.
+	if nsData.capabilities.GetPollerAutoscalingAutoEnroll() {
+		aw.executionParams.serverSupportsAutoscaling.Store(true)
+		autoscaling := NewPollerBehaviorAutoscaling(PollerBehaviorAutoscalingOptions{})
+		if aw.executionParams.pollerAutoEnrollEligibility.nexusTask {
+			aw.executionParams.NexusTaskPollerBehavior = autoscaling
+		}
+		if aw.executionParams.pollerAutoEnrollEligibility.workflowTask && !util.IsInterfaceNil(aw.workflowWorker) {
+			aw.executionParams.WorkflowTaskPollerBehavior = autoscaling
+		}
+		if aw.executionParams.pollerAutoEnrollEligibility.activityTask {
+			if !util.IsInterfaceNil(aw.activityWorker) {
+				aw.executionParams.ActivityTaskPollerBehavior = autoscaling
+			}
+		}
+	}
+
+	// Poller behavior can depend on namespace capabilities, so workflow and
+	// activity scalable task pollers are initialized only after those capabilities
+	// have been resolved.
+	if !util.IsInterfaceNil(aw.workflowWorker) {
+		aw.workflowWorker.initializeTaskPollers(aw.executionParams.WorkflowTaskPollerBehavior)
 	}
 
 	if !util.IsInterfaceNil(aw.workflowWorker) {
@@ -1294,6 +1570,7 @@ func (aw *AggregatedWorker) start() error {
 		}
 	}
 	if !util.IsInterfaceNil(aw.activityWorker) {
+		aw.activityWorker.initializeTaskPollers(aw.executionParams.ActivityTaskPollerBehavior)
 		if err := aw.activityWorker.Start(); err != nil {
 			// stop workflow worker.
 			if !util.IsInterfaceNil(aw.workflowWorker) {
@@ -1310,6 +1587,12 @@ func (aw *AggregatedWorker) start() error {
 
 	if !util.IsInterfaceNil(aw.sessionWorker) && len(aw.registry.getRegisteredActivities()) > 0 {
 		aw.logger.Info("Starting session worker")
+		// The session activity worker uses the effective activity poller behavior.
+		// The session creation worker retains its fixed single-poller behavior.
+		aw.sessionWorker.activityWorker.initializeTaskPollers(aw.executionParams.ActivityTaskPollerBehavior)
+		aw.sessionWorker.creationWorker.initializeTaskPollers(
+			aw.sessionWorker.creationWorker.executionParameters.ActivityTaskPollerBehavior,
+		)
 		if err := aw.sessionWorker.Start(); err != nil {
 			// stop workflow worker and activity worker.
 			if !util.IsInterfaceNil(aw.workflowWorker) {
@@ -1348,6 +1631,7 @@ func (aw *AggregatedWorker) start() error {
 		if err != nil {
 			return fmt.Errorf("failed to create a nexus worker: %w", err)
 		}
+		aw.nexusSlotSupplier.Store(aw.nexusWorker.worker.slotSupplier)
 		if err := aw.nexusWorker.Start(); err != nil {
 			return fmt.Errorf("failed to start a nexus worker: %w", err)
 		}
@@ -1417,36 +1701,51 @@ func getBinaryChecksum() string {
 // Pass worker.InterruptCh() to stop the worker with SIGINT or SIGTERM.
 // Pass nil to stop the worker with external Stop() call.
 // Pass any other `<-chan interface{}` and Run will wait for signal from that channel.
-// Returns error if the worker fails to start or there is a fatal error
-// during execution.
-func (aw *AggregatedWorker) Run(interruptCh <-chan interface{}) error {
+// Returns the startup error if Start fails. After a successful start, waits for
+// worker cleanup and returns the first fatal error, even if interruption races
+// with that error. Returns nil if no fatal error was recorded, even if cleanup
+// encounters errors.
+func (aw *AggregatedWorker) Run(interruptCh <-chan any) error {
 	if err := aw.Start(); err != nil {
 		return err
 	}
 	select {
 	case s := <-interruptCh:
 		aw.logger.Info("Worker has been stopped.", "Signal", s)
-		aw.Stop()
 	case <-aw.stopC:
-		aw.fatalErrLock.Lock()
-		defer aw.fatalErrLock.Unlock()
-		// This may be nil if this wasn't stopped due to fatal error
-		return aw.fatalErr
 	}
-	return nil
+	// Both stop requests join cleanup before reading the first fatal cause,
+	// so an interrupt cannot turn a recorded worker failure into success.
+	aw.Stop()
+	aw.fatalErrLock.Lock()
+	defer aw.fatalErrLock.Unlock()
+	return aw.fatalErr
 }
 
-// Stop the worker.
+// Stop prevents new polling and waits for worker cleanup to return.
+// Concurrent calls wait for the same cleanup operation.
 func (aw *AggregatedWorker) Stop() {
-	// Only attempt stop if we haven't attempted before
-	select {
-	case <-aw.stopC:
+	ownsStop := false
+	aw.stopOnce.Do(func() { ownsStop = true })
+	if ownsStop {
+		aw.stop()
+		close(aw.stopDone)
 		return
-	default:
-		close(aw.stopC)
 	}
+	<-aw.stopDone
+}
 
-	aw.shutdownWorker()
+func (aw *AggregatedWorker) stop() {
+	// Prevent pollers from re-polling before closing stopC. There is a race
+	// between stopC being closed and the ShutdownWorker RPC: a poll can
+	// complete naturally (e.g. long-poll timeout) right after stopC fires
+	// but before ShutdownWorker is sent, causing the poller to loop and
+	// re-poll.
+	aw.executionParams.noRepoll.Store(true)
+
+	close(aw.stopC)
+
+	aw.sendShutdownWorkerRPC()
 
 	// Issue stop through plugins
 	stop := func(context.Context, WorkerPluginStopWorkerOptions) {
@@ -1478,8 +1777,35 @@ func (aw *AggregatedWorker) Stop() {
 	})
 
 	aw.unregisterHeartbeatWorker()
+	if aw.cacheLease != nil {
+		aw.cacheLease.release()
+	}
 
 	aw.logger.Info("Stopped Worker")
+}
+
+// handleFatalError runs outside the polling goroutines that Stop waits for.
+// It delivers the recorded cause to the caller's hook, then joins cleanup.
+func (aw *AggregatedWorker) handleFatalError(err error, hook func(error)) {
+	if hook != nil {
+		hook(err)
+	}
+	aw.Stop()
+}
+
+// pollerTargets returns the target poller count per poller type across this worker's pollers.
+func (aw *AggregatedWorker) pollerTargets() map[string]int32 {
+	targets := make(map[string]int32, 4)
+	if aw.workflowWorker != nil {
+		aw.workflowWorker.worker.collectPollerTargets(targets)
+	}
+	if aw.activityWorker != nil {
+		aw.activityWorker.worker.collectPollerTargets(targets)
+	}
+	if aw.nexusWorker != nil {
+		aw.nexusWorker.worker.collectPollerTargets(targets)
+	}
+	return targets
 }
 
 func (aw *AggregatedWorker) registerHeartbeatWorker() error {
@@ -1496,16 +1822,22 @@ func (aw *AggregatedWorker) unregisterHeartbeatWorker() {
 	aw.client.heartbeatManager.unregisterWorker(aw)
 }
 
-// shutdownWorker sends a ShutdownWorker RPC to notify the server that this worker is shutting down.
+// heartbeatSuccess is invoked by the shared namespace heartbeat worker once the server has
+// accepted a heartbeat from this worker.
+func (aw *AggregatedWorker) heartbeatSuccess() {
+	aw.pendingEnvironment.Store(nil)
+}
+
+// sendShutdownWorkerRPC sends a ShutdownWorker RPC to notify the server that this worker is shutting down.
 // When StickyTaskQueue is non-empty, this is a best-effort attempt to indicate to Matching service
 // that this workflow task poller's sticky queue will no longer be polled.
 //
 // NOTE: errors are logged but don't fail the shutdown.
-func (aw *AggregatedWorker) shutdownWorker() {
+func (aw *AggregatedWorker) sendShutdownWorkerRPC() {
 	aw.shuttingDown.Store(true)
 
 	ctx := context.Background()
-	grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsHandler(aw.executionParams.MetricsHandler))
+	grpcCtx, cancel := newGRPCContext(ctx, aw.client.rpcTimeout, grpcMetricsHandler(aw.executionParams.MetricsHandler))
 	defer cancel()
 
 	var heartbeat *workerpb.WorkerHeartbeat
@@ -1518,6 +1850,35 @@ func (aw *AggregatedWorker) shutdownWorker() {
 		stickyTaskQueue = getWorkerTaskQueue(aw.workflowWorker.stickyUUID)
 	}
 
+	aw.sendShutdownWorkerRPCForTaskQueue(grpcCtx, aw.executionParams.TaskQueue, stickyTaskQueue, aw.activeTaskQueueTypes(), heartbeat)
+
+	if util.IsInterfaceNil(aw.sessionWorker) {
+		return
+	}
+
+	aw.sendShutdownWorkerRPCForTaskQueue(
+		grpcCtx,
+		aw.sessionWorker.getCreationWorkerTaskQueue(),
+		"",
+		[]enumspb.TaskQueueType{enumspb.TASK_QUEUE_TYPE_ACTIVITY},
+		nil,
+	)
+	aw.sendShutdownWorkerRPCForTaskQueue(
+		grpcCtx,
+		aw.sessionWorker.getActivityWorkerTaskQueue(),
+		"",
+		[]enumspb.TaskQueueType{enumspb.TASK_QUEUE_TYPE_ACTIVITY},
+		nil,
+	)
+}
+
+func (aw *AggregatedWorker) sendShutdownWorkerRPCForTaskQueue(
+	grpcCtx context.Context,
+	taskQueue string,
+	stickyTaskQueue string,
+	taskQueueTypes []enumspb.TaskQueueType,
+	heartbeat *workerpb.WorkerHeartbeat,
+) {
 	_, err := aw.client.workflowService.ShutdownWorker(grpcCtx, &workflowservice.ShutdownWorkerRequest{
 		Namespace:         aw.executionParams.Namespace,
 		StickyTaskQueue:   stickyTaskQueue,
@@ -1525,6 +1886,8 @@ func (aw *AggregatedWorker) shutdownWorker() {
 		Reason:            "graceful shutdown",
 		WorkerHeartbeat:   heartbeat,
 		WorkerInstanceKey: aw.workerInstanceKey,
+		TaskQueue:         taskQueue,
+		TaskQueueTypes:    taskQueueTypes,
 	})
 
 	// Ignore unimplemented (server doesn't support it)
@@ -1537,6 +1900,20 @@ func (aw *AggregatedWorker) shutdownWorker() {
 	}
 }
 
+func (aw *AggregatedWorker) activeTaskQueueTypes() []enumspb.TaskQueueType {
+	var types []enumspb.TaskQueueType
+	if !util.IsInterfaceNil(aw.workflowWorker) {
+		types = append(types, enumspb.TASK_QUEUE_TYPE_WORKFLOW)
+	}
+	if !util.IsInterfaceNil(aw.activityWorker) {
+		types = append(types, enumspb.TASK_QUEUE_TYPE_ACTIVITY)
+	}
+	if !util.IsInterfaceNil(aw.nexusWorker) {
+		types = append(types, enumspb.TASK_QUEUE_TYPE_NEXUS)
+	}
+	return types
+}
+
 // WorkflowReplayer is used to replay workflow code from an event history
 type WorkflowReplayer struct {
 	registry                    *registry
@@ -1545,6 +1922,8 @@ type WorkflowReplayer struct {
 	contextPropagators          []ContextPropagator
 	enableLoggingInReplay       bool
 	disableDeadlockDetection    bool
+	inboundPayloadVisitor       PayloadVisitor
+	storageParams               extstore.StorageParameters
 	mu                          sync.Mutex
 	workflowExecutionResults    map[string]*commonpb.Payloads
 	workflowReplayerInstanceKey string
@@ -1590,9 +1969,15 @@ type WorkflowReplayerOptions struct {
 	//
 	// Plugins themselves should never mutate this field, the behavior is
 	// undefined.
+	Plugins []WorkerPlugin
+
+	// ExternalStorage configures external payload storage for replay.
+	// Set this to the same ExternalStorage used by the original worker so that
+	// externally stored payloads in the history are resolved before being
+	// passed to the workflow code.
 	//
 	// NOTE: Experimental
-	Plugins []WorkerPlugin
+	ExternalStorage converter.ExternalStorage
 }
 
 // ReplayWorkflowHistoryOptions are options for replaying a workflow.
@@ -1617,15 +2002,22 @@ func NewWorkflowReplayer(options WorkflowReplayerOptions) (*WorkflowReplayer, er
 		}
 	}
 
+	storageParams, err := extstore.ExternalStorageToParams(options.ExternalStorage)
+	if err != nil {
+		return nil, fmt.Errorf("invalid ExternalStorage options: %w", err)
+	}
+
 	registry := newRegistryWithOptions(registryOptions{disableAliasing: options.DisableRegistrationAliasing})
 	registry.interceptors = options.Interceptors
 	return &WorkflowReplayer{
 		registry:                    registry,
-		dataConverter:               options.DataConverter,
+		dataConverter:               MakeTransferAware(options.DataConverter),
 		failureConverter:            options.FailureConverter,
 		contextPropagators:          options.ContextPropagators,
 		enableLoggingInReplay:       options.EnableLoggingInReplay,
 		disableDeadlockDetection:    options.DisableDeadlockDetection,
+		inboundPayloadVisitor:       extstore.NewExternalRetrievalVisitor(storageParams),
+		storageParams:               storageParams,
 		workflowExecutionResults:    make(map[string]*commonpb.Payloads),
 		workflowReplayerInstanceKey: workflowReplayerInstanceKey,
 		plugins:                     options.Plugins,
@@ -1634,7 +2026,7 @@ func NewWorkflowReplayer(options WorkflowReplayerOptions) (*WorkflowReplayer, er
 }
 
 // RegisterWorkflow registers workflow function to replay
-func (aw *WorkflowReplayer) RegisterWorkflow(w interface{}) {
+func (aw *WorkflowReplayer) RegisterWorkflow(w any) {
 	if aw.pluginRegistryOptions.OnRegisterWorkflow != nil {
 		aw.pluginRegistryOptions.OnRegisterWorkflow(w, RegisterWorkflowOptions{})
 	}
@@ -1642,7 +2034,7 @@ func (aw *WorkflowReplayer) RegisterWorkflow(w interface{}) {
 }
 
 // RegisterWorkflowWithOptions registers workflow function with custom workflow name to replay
-func (aw *WorkflowReplayer) RegisterWorkflowWithOptions(w interface{}, options RegisterWorkflowOptions) {
+func (aw *WorkflowReplayer) RegisterWorkflowWithOptions(w any, options RegisterWorkflowOptions) {
 	if aw.pluginRegistryOptions.OnRegisterWorkflow != nil {
 		aw.pluginRegistryOptions.OnRegisterWorkflow(w, options)
 	}
@@ -1650,7 +2042,7 @@ func (aw *WorkflowReplayer) RegisterWorkflowWithOptions(w interface{}, options R
 }
 
 // RegisterDynamicWorkflow registers a dynamic workflow function to replay
-func (aw *WorkflowReplayer) RegisterDynamicWorkflow(w interface{}, options DynamicRegisterWorkflowOptions) {
+func (aw *WorkflowReplayer) RegisterDynamicWorkflow(w any, options DynamicRegisterWorkflowOptions) {
 	if aw.pluginRegistryOptions.OnRegisterDynamicWorkflow != nil {
 		aw.pluginRegistryOptions.OnRegisterDynamicWorkflow(w, options)
 	}
@@ -1745,7 +2137,7 @@ func (aw *WorkflowReplayer) ReplayWorkflowExecution(ctx context.Context, service
 }
 
 // GetWorkflowResult get the result of a succesfully replayed workflow.
-func (aw *WorkflowReplayer) GetWorkflowResult(workflowID string, valuePtr interface{}) error {
+func (aw *WorkflowReplayer) GetWorkflowResult(workflowID string, valuePtr any) error {
 	aw.mu.Lock()
 	defer aw.mu.Unlock()
 	if workflowID == "" {
@@ -1848,14 +2240,19 @@ func (aw *WorkflowReplayer) replayWorkflowHistoryRoot(
 		PreviousStartedEventId: math.MaxInt64,
 	}
 
-	iterator := &historyIteratorImpl{
-		nextPageToken: task.NextPageToken,
-		execution:     task.WorkflowExecution,
-		namespace:     ReplayNamespace,
-		service:       service,
-		taskQueue:     taskQueue,
+	iterator := &retrievingHistoryIterator{
+		inner: &historyIteratorImpl{
+			nextPageToken: task.NextPageToken,
+			execution:     task.WorkflowExecution,
+			namespace:     ReplayNamespace,
+			service:       service,
+			taskQueue:     taskQueue,
+		},
+		inboundVisitor: aw.inboundPayloadVisitor,
+		storageParams:  aw.storageParams,
 	}
-	cache := NewWorkerCache()
+	cache, cacheLease := newWorkerCache(&sharedWorkerCache{}, &sync.Mutex{}, 0)
+	defer cacheLease.release()
 	params := workerExecutionParameters{
 		Namespace:             namespace,
 		TaskQueue:             taskQueue,
@@ -1883,6 +2280,12 @@ func (aw *WorkflowReplayer) replayWorkflowHistoryRoot(
 	if aw.disableDeadlockDetection {
 		params.DeadlockDetectionTimeout = math.MaxInt64
 	}
+	// Resolve externally stored payloads in the history before passing to the
+	// task handler. This mirrors what processWorkflowTask does for live workers.
+	if err := visitProtoPayloads(context.Background(), aw.inboundPayloadVisitor, task, 0); err != nil {
+		return err
+	}
+
 	taskHandler := newWorkflowTaskHandler(params, nil, aw.registry)
 	wfctx, err := taskHandler.GetOrCreateWorkflowContext(task, iterator)
 	defer wfctx.Unlock(err)
@@ -2025,7 +2428,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	}
 
 	setClientDefaults(client)
-	setWorkerOptionsDefaults(&options)
+	pollerEligibility := setWorkerOptionsDefaults(&options)
 	ctx := options.BackgroundActivityContext
 	if ctx == nil {
 		ctx = context.Background()
@@ -2061,34 +2464,37 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		panic("cannot set both DeploymentOptions.DefaultVersioningBehavior if DeploymentOptions.UseBuildIDForVersioning is false")
 	}
 
-	// Need reference to result for fatal error handler
+	// Pollers retain this callback, keeping the worker and cache lease live until they stop.
 	var aw *AggregatedWorker
+	noRepoll := &atomic.Bool{}
 	fatalErrorCallback := func(err error) {
 		// Set the fatal error if not already set
 		aw.fatalErrLock.Lock()
 		alreadySet := aw.fatalErr != nil
 		if !alreadySet {
 			aw.fatalErr = err
+			// A fatal error signals remote-task polling to stop before notification.
+			// Workers created later during startup share this same flag.
+			noRepoll.Store(true)
 		}
 		aw.fatalErrLock.Unlock()
 		// Only do the rest if not already set
 		if !alreadySet {
-			// Invoke the callback if present
-			if options.OnFatalError != nil {
-				options.OnFatalError(err)
-			}
-			// Stop the worker if not already stopped
-			select {
-			case <-aw.stopC:
-			default:
-				aw.Stop()
-			}
+			// The poller must return before Stop can join it. Record its cause
+			// above, then deliver the hook and stop on a separate goroutine.
+			go aw.handleFatalError(err, options.OnFatalError)
 		}
 	}
 	// Because of lazy clients we need to wait till the worker runs to fetch the capabilities.
 	// All worker systems that depend on the capabilities to process workflow/activity tasks
 	// should take a pointer to this struct and wait for it to be populated when the worker is run.
 	var capabilities workflowservice.GetSystemInfoResponse_Capabilities
+	var activityCancellationCallbacks *activityCancellationCallbacks
+	var namespaceWorker *sharedNamespaceWorker
+	if client.heartbeatManager != nil {
+		namespaceWorker = client.heartbeatManager.sharedNamespaceWorkerFor(client.namespace)
+		activityCancellationCallbacks = namespaceWorker.activityCancellationCallbacks
+	}
 
 	baseMetricsHandler := client.metricsHandler.WithTags(metrics.TaskQueueTags(taskQueue))
 	var metricsHandler metrics.Handler
@@ -2101,19 +2507,52 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		metricsHandler = baseMetricsHandler
 	}
 
-	cache := NewWorkerCache()
+	identity := client.identity
+	if options.Identity != "" {
+		identity = options.Identity
+	}
+
+	logger := client.logger
+	if logger == nil {
+		logger = ilog.NewDefaultLogger()
+	}
+	logger = log.With(logger,
+		tagNamespace, client.namespace,
+		tagTaskQueue, taskQueue,
+		tagWorkerID, identity,
+	)
+	if options.BuildID != "" {
+		// Add worker build ID to the logs if it's set by user
+		logger = log.With(logger,
+			tagBuildID, options.BuildID,
+		)
+	}
+
+	payloadLimitVisitor, setErrorLimits := newPayloadLimitsVisitor(client.payloadWarningLimits, logger)
+	workerStorageParams := client.storageParams.WithOwnDriverOperationLimit().WithLogger(logger).WithNamespace(client.namespace)
+
+	cache, cacheLease := NewWorkerCache()
+	constructionComplete := false
+	defer func() {
+		if !constructionComplete {
+			cacheLease.release()
+		}
+	}()
+	workerPollCompleteOnShutdown := &atomic.Bool{}
 	workerParams := workerExecutionParameters{
 		Namespace:                        client.namespace,
+		RPCTimeout:                       client.rpcTimeout,
 		TaskQueue:                        taskQueue,
 		Tuner:                            options.Tuner,
 		WorkerActivitiesPerSecond:        options.WorkerActivitiesPerSecond,
 		WorkerLocalActivitiesPerSecond:   options.WorkerLocalActivitiesPerSecond,
-		Identity:                         client.identity,
+		Identity:                         identity,
 		WorkerBuildID:                    options.BuildID,
 		UseBuildIDForVersioning:          options.UseBuildIDForVersioning || options.DeploymentOptions.UseVersioning,
 		DeploymentOptions:                options.DeploymentOptions,
+		PreferredVersionProvider:         options.PreferredVersionProvider,
 		MetricsHandler:                   metricsHandler,
-		Logger:                           client.logger,
+		Logger:                           logger,
 		EnableLoggingInReplay:            options.EnableLoggingInReplay,
 		BackgroundContext:                backgroundActivityContext,
 		BackgroundContextCancel:          backgroundActivityContextCancel,
@@ -2124,19 +2563,39 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		FailureConverter:                 client.failureConverter,
 		WorkerStopTimeout:                options.WorkerStopTimeout,
 		WorkerFatalErrorCallback:         fatalErrorCallback,
+		noRepoll:                         noRepoll,
 		ContextPropagators:               client.contextPropagators,
 		DeadlockDetectionTimeout:         options.DeadlockDetectionTimeout,
 		DefaultHeartbeatThrottleInterval: options.DefaultHeartbeatThrottleInterval,
 		MaxHeartbeatThrottleInterval:     options.MaxHeartbeatThrottleInterval,
 		cache:                            cache,
 		eagerActivityExecutor: newEagerActivityExecutor(eagerActivityExecutorOptions{
-			disabled:      options.DisableEagerActivities,
-			taskQueue:     taskQueue,
-			maxConcurrent: options.MaxConcurrentEagerActivityExecutionSize,
+			disabled:       options.DisableEagerActivities,
+			taskQueue:      taskQueue,
+			metricsHandler: metricsHandler,
+			maxConcurrent:  options.MaxConcurrentEagerActivityExecutionSize,
+			maxPerTask:     *options.MaxEagerActivityReservationsPerWorkflowTask,
 		}),
-		capabilities:      &capabilities,
-		pollTimeTracker:   &pollTimeTracker{},
-		workerInstanceKey: workerInstanceKey,
+		capabilities:                     &capabilities,
+		pollTimeTracker:                  &pollTimeTracker{},
+		workerInstanceKey:                workerInstanceKey,
+		namespaceWorker:                  namespaceWorker,
+		pollerGroupSnapshotStore:         newPollerGroupSnapshotStore(),
+		activityCancellationCallbacks:    activityCancellationCallbacks,
+		workerPollCompleteOnShutdown:     workerPollCompleteOnShutdown,
+		serverSupportsAutoscaling:        &atomic.Bool{},
+		workflowTaskCompletionPagination: &workflowTaskCompletionPaginationConfig{},
+		inboundPayloadVisitor:            extstore.NewExternalRetrievalVisitor(workerStorageParams),
+		outboundPayloadVisitor: newCompositePayloadVisitor(
+			extstore.NewExternalStorageVisitor(workerStorageParams),
+			payloadLimitVisitor,
+		),
+		storageParams: workerStorageParams,
+		setErrorLimits: func(limits *payloadLimits) {
+			if !options.DisablePayloadErrorLimit {
+				setErrorLimits(limits)
+			}
+		},
 	}
 
 	if options.MaxConcurrentWorkflowTaskPollers != 0 {
@@ -2169,22 +2628,12 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		panic("must set either MaxConcurrentNexusTaskPollers or NexusTaskPollerBehavior")
 	}
 
-	if options.Identity != "" {
-		workerParams.Identity = options.Identity
-	}
+	// Carry through which poller types are eligible for auto-enrollment so that
+	// start() can enroll them into autoscaling when the namespace advertises the
+	// PollerAutoscalingAutoEnroll capability.
+	workerParams.pollerAutoEnrollEligibility = pollerEligibility
 
 	ensureRequiredParams(&workerParams)
-	workerParams.Logger = log.With(workerParams.Logger,
-		tagNamespace, client.namespace,
-		tagTaskQueue, taskQueue,
-		tagWorkerID, workerParams.Identity,
-	)
-	if workerParams.WorkerBuildID != "" {
-		// Add worker build ID to the logs if it's set by user
-		workerParams.Logger = log.With(workerParams.Logger,
-			tagBuildID, workerParams.WorkerBuildID,
-		)
-	}
 
 	processTestTags(&options, &workerParams)
 
@@ -2224,11 +2673,23 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		})
 	}
 
-	// Get SysInfoProvider from tuner's slot supplier if it implements HasSysInfoProvider.
-	// If not available, heartbeats will report 0 for CPU/memory usage.
+	// Resolve the SysInfoProvider used for worker heartbeats. Prefer the explicit
+	// WorkerOptions.SysInfoProvider; otherwise fall back to the tuner's slot supplier if it
+	// implements HasSysInfoProvider. If both are set to different providers, that's a config
+	// error. If neither is set, heartbeats report 0 for CPU/memory usage.
 	var sysInfoProvider SysInfoProvider
+	var tunerSysInfoProvider SysInfoProvider
 	if sis, ok := options.Tuner.GetWorkflowTaskSlotSupplier().(HasSysInfoProvider); ok {
-		sysInfoProvider = sis.SysInfoProvider()
+		tunerSysInfoProvider = sis.SysInfoProvider()
+	}
+	switch {
+	case options.SysInfoProvider != nil && tunerSysInfoProvider != nil && options.SysInfoProvider != tunerSysInfoProvider:
+		panic("WorkerOptions.SysInfoProvider conflicts with the SysInfoProvider exposed by the Tuner; " +
+			"set only one, or set both to the same instance")
+	case options.SysInfoProvider != nil:
+		sysInfoProvider = options.SysInfoProvider
+	default:
+		sysInfoProvider = tunerSysInfoProvider
 	}
 
 	var heartbeatCallback func() *workerpb.WorkerHeartbeat
@@ -2236,8 +2697,9 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		startTime := timestamppb.New(time.Now())
 		hostname, _ := os.Hostname()
 		pid := strconv.Itoa(os.Getpid())
-		previousHeartbeatTime := time.Now()
-		pluginInfos := collectPluginInfos(client.clientPluginNames, plugins)
+		var previousHeartbeatTime time.Time
+		pluginInfos := collectPluginInfos(client.clientPlugins, plugins)
+		driverInfos := collectStorageDriverInfos(client.storageDriverTypes)
 
 		var prevWorkflowProcessed, prevWorkflowFailed int64
 		var prevActivityProcessed, prevActivityFailed int64
@@ -2275,6 +2737,11 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 
 			mu.Lock()
 			defer mu.Unlock()
+			// Read the poller behaviors live so heartbeats reflect any
+			// auto-enrollment into poller autoscaling done during start().
+			populateOpts.workflowPollerBehavior = aw.executionParams.WorkflowTaskPollerBehavior
+			populateOpts.activityPollerBehavior = aw.executionParams.ActivityTaskPollerBehavior
+			populateOpts.nexusPollerBehavior = aw.executionParams.NexusTaskPollerBehavior
 			if aw.workflowWorker != nil {
 				populateOpts.workflowSlotSupplierKind = aw.workflowWorker.worker.slotSupplier.GetSlotSupplierKind()
 				populateOpts.localActivitySlotSupplierKind = aw.workflowWorker.localActivityWorker.slotSupplier.GetSlotSupplierKind()
@@ -2285,9 +2752,8 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 			if aw.nexusWorker != nil {
 				populateOpts.nexusSlotSupplierKind = aw.nexusWorker.worker.slotSupplier.GetSlotSupplierKind()
 			}
+			populateOpts.pollerTargets = aw.pollerTargets()
 			heartbeatTime := time.Now()
-			elapsedSinceLastHeartbeat := heartbeatTime.Sub(previousHeartbeatTime)
-			previousHeartbeatTime = heartbeatTime
 
 			status := enumspb.WORKER_STATUS_RUNNING
 			if aw.shuttingDown.Load() {
@@ -2304,16 +2770,21 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 					CurrentHostCpuUsage: cpuUsage,
 					CurrentHostMemUsage: memUsage,
 				},
-				TaskQueue:                 aw.executionParams.TaskQueue,
-				DeploymentVersion:         deploymentVersion,
-				SdkName:                   SDKName,
-				SdkVersion:                SDKVersion,
-				Status:                    status,
-				StartTime:                 startTime,
-				HeartbeatTime:             timestamppb.New(heartbeatTime),
-				ElapsedSinceLastHeartbeat: durationpb.New(elapsedSinceLastHeartbeat),
-				Plugins:                   pluginInfos,
+				TaskQueue:         aw.executionParams.TaskQueue,
+				DeploymentVersion: deploymentVersion,
+				SdkName:           aw.client.sdkName,
+				SdkVersion:        aw.client.sdkVersion,
+				Status:            status,
+				StartTime:         startTime,
+				HeartbeatTime:     timestamppb.New(heartbeatTime),
+				Plugins:           pluginInfos,
+				Drivers:           driverInfos,
+				Environment:       aw.pendingEnvironment.Load(),
 			}
+			if !previousHeartbeatTime.IsZero() {
+				hb.ElapsedSinceLastHeartbeat = durationpb.New(heartbeatTime.Sub(previousHeartbeatTime))
+			}
+			previousHeartbeatTime = heartbeatTime
 			aw.heartbeatMetrics.PopulateHeartbeat(hb, populateOpts)
 
 			return hb
@@ -2321,20 +2792,26 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	}
 
 	aw = &AggregatedWorker{
-		client:                client,
-		workflowWorker:        workflowWorker,
-		activityWorker:        activityWorker,
-		sessionWorker:         sessionWorker,
-		logger:                workerParams.Logger,
-		registry:              registry,
-		stopC:                 make(chan struct{}),
-		capabilities:          &capabilities,
-		executionParams:       workerParams,
-		workerInstanceKey:     workerInstanceKey,
-		plugins:               plugins,
-		pluginRegistryOptions: &pluginRegistryOptions,
-		heartbeatMetrics:      heartbeatMetrics,
-		heartbeatCallback:     heartbeatCallback,
+		client:                       client,
+		workflowWorker:               workflowWorker,
+		activityWorker:               activityWorker,
+		sessionWorker:                sessionWorker,
+		logger:                       workerParams.Logger,
+		registry:                     registry,
+		stopC:                        make(chan struct{}),
+		stopDone:                     make(chan struct{}),
+		capabilities:                 &capabilities,
+		executionParams:              workerParams,
+		workerInstanceKey:            workerInstanceKey,
+		plugins:                      plugins,
+		pluginRegistryOptions:        &pluginRegistryOptions,
+		heartbeatMetrics:             heartbeatMetrics,
+		heartbeatCallback:            heartbeatCallback,
+		workerPollCompleteOnShutdown: workerPollCompleteOnShutdown,
+		cacheLease:                   cacheLease,
+	}
+	if client.heartbeatManager != nil {
+		aw.pendingEnvironment.Store(client.heartbeatManager.environmentInfo)
 	}
 
 	// Set memoized start as a once-value that invokes plugins first
@@ -2352,6 +2829,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 			WorkerRegistry:    aw,
 		})
 	})
+	constructionComplete = true
 	return aw
 }
 
@@ -2382,7 +2860,7 @@ func processTestTags(wOptions *WorkerOptions, ep *workerExecutionParameters) {
 
 func isWorkflowContext(inType reflect.Type) bool {
 	// NOTE: We don't expect any one to derive from workflow context.
-	return inType == reflect.TypeOf((*Context)(nil)).Elem()
+	return inType == reflect.TypeFor[Context]()
 }
 
 func isValidResultType(inType reflect.Type) bool {
@@ -2396,11 +2874,21 @@ func isValidResultType(inType reflect.Type) bool {
 }
 
 func isError(inType reflect.Type) bool {
-	errorElem := reflect.TypeOf((*error)(nil)).Elem()
+	errorElem := reflect.TypeFor[error]()
 	return inType != nil && inType.Implements(errorElem)
 }
 
-func getFunctionName(i interface{}) (name string, isMethod bool) {
+// mightBeFunctionLiteral returns true if the given function looks like a function literal.
+// BEWARE: False positives are possible! Normal function declarations might look like literals.
+// BEWARE: False negatives are possible! Future versions of Go may change the naming scheme.
+func mightBeFunctionLiteral(fn any) bool {
+	// Matches suffixes of the form funcN or funcN.M for some numbers N and M.
+	var functionLiteralNamePattern = regexp.MustCompile(`func\d+(?:\.\d+)?$`)
+	fullName := runtime.FuncForPC(reflect.ValueOf(fn).Pointer()).Name()
+	return functionLiteralNamePattern.MatchString(fullName)
+}
+
+func getFunctionName(i any) (name string, isMethod bool) {
 	if fullName, ok := i.(string); ok {
 		return fullName, false
 	}
@@ -2421,7 +2909,7 @@ func getFunctionName(i interface{}) (name string, isMethod bool) {
 	return strings.TrimSuffix(shortName, "-fm"), isMethod
 }
 
-func getActivityFunctionName(r *registry, i interface{}) string {
+func getActivityFunctionName(r *registry, i any) string {
 	result, _ := getFunctionName(i)
 	if alias, ok := r.getActivityAlias(result); ok {
 		result = alias
@@ -2429,7 +2917,7 @@ func getActivityFunctionName(r *registry, i interface{}) string {
 	return result
 }
 
-func getWorkflowFunctionName(r *registry, workflowFunc interface{}) (string, error) {
+func GetWorkflowFunctionName(r *registry, workflowFunc any) (string, error) {
 	fnName := ""
 	fType := reflect.TypeOf(workflowFunc)
 	switch getKind(fType) {
@@ -2451,7 +2939,22 @@ func getReadOnlyChannel(c chan struct{}) <-chan struct{} {
 	return c
 }
 
-func setWorkerOptionsDefaults(options *WorkerOptions) {
+// autoEnrollEligibility records, per poller type, whether the poller behavior
+// was left at its default (the user set neither a fixed poller count nor a
+// poller behavior) and is therefore eligible for poller-autoscaling
+// auto-enrollment when the namespace advertises the PollerAutoscalingAutoEnroll
+// capability.
+type autoEnrollEligibility struct {
+	workflowTask bool
+	activityTask bool
+	nexusTask    bool
+}
+
+// setWorkerOptionsDefaults populates unset worker options with their defaults
+// and reports which poller types are eligible for auto-enrollment (i.e. were
+// left at their default).
+func setWorkerOptionsDefaults(options *WorkerOptions) autoEnrollEligibility {
+	var eligibility autoEnrollEligibility
 	if options.Tuner != nil {
 		if options.MaxConcurrentWorkflowTaskExecutionSize != 0 ||
 			options.MaxConcurrentActivityExecutionSize != 0 ||
@@ -2474,6 +2977,7 @@ func setWorkerOptionsDefaults(options *WorkerOptions) {
 		panic("cannot set both MaxConcurrentActivityTaskPollers and ActivityTaskPollerBehavior")
 	} else if options.ActivityTaskPollerBehavior == nil && options.MaxConcurrentActivityTaskPollers <= 0 {
 		options.MaxConcurrentActivityTaskPollers = defaultConcurrentPollRoutineSize
+		eligibility.activityTask = true
 	}
 	if options.MaxConcurrentWorkflowTaskExecutionSize <= 0 {
 		maxConcurrentWFT = defaultMaxConcurrentTaskExecutionSize
@@ -2482,6 +2986,7 @@ func setWorkerOptionsDefaults(options *WorkerOptions) {
 		panic("cannot set both MaxConcurrentWorkflowTaskPollers and WorkflowTaskPollerBehavior")
 	} else if options.WorkflowTaskPollerBehavior == nil && options.MaxConcurrentWorkflowTaskPollers <= 0 {
 		options.MaxConcurrentWorkflowTaskPollers = defaultConcurrentPollRoutineSize
+		eligibility.workflowTask = true
 	}
 	if options.MaxConcurrentLocalActivityExecutionSize <= 0 {
 		maxConcurrentLA = defaultMaxConcurrentLocalActivityExecutionSize
@@ -2500,6 +3005,7 @@ func setWorkerOptionsDefaults(options *WorkerOptions) {
 		panic("cannot set both MaxConcurrentNexusTaskExecutionSize and NexusTaskPollerBehavior")
 	} else if options.NexusTaskPollerBehavior == nil && options.MaxConcurrentNexusTaskPollers <= 0 {
 		options.MaxConcurrentNexusTaskPollers = defaultConcurrentPollRoutineSize
+		eligibility.nexusTask = true
 	}
 	if options.MaxConcurrentNexusTaskExecutionSize <= 0 {
 		maxConcurrentNexus = defaultMaxConcurrentTaskExecutionSize
@@ -2509,6 +3015,12 @@ func setWorkerOptionsDefaults(options *WorkerOptions) {
 	}
 	if options.MaxConcurrentSessionExecutionSize == 0 {
 		options.MaxConcurrentSessionExecutionSize = defaultMaxConcurrentSessionExecutionSize
+	}
+	if options.MaxEagerActivityReservationsPerWorkflowTask == nil {
+		defaultValue := defaultMaxEagerActivityReservationsPerWorkflowTask
+		options.MaxEagerActivityReservationsPerWorkflowTask = &defaultValue
+	} else if *options.MaxEagerActivityReservationsPerWorkflowTask <= 0 {
+		panic("MaxEagerActivityReservationsPerWorkflowTask must be positive; set DisableEagerActivities to disable eager activity execution")
 	}
 	if options.DeadlockDetectionTimeout == 0 {
 		if debugMode {
@@ -2532,9 +3044,9 @@ func setWorkerOptionsDefaults(options *WorkerOptions) {
 			NumNexusSlots:         maxConcurrentNexus})
 
 	}
+	return eligibility
 }
 
-// setClientDefaults should be needed only in unit tests.
 func setClientDefaults(client *WorkflowClient) {
 	if client.dataConverter == nil {
 		client.dataConverter = converter.GetDefaultDataConverter()
@@ -2560,25 +3072,25 @@ func getTestTags(ctx context.Context) map[string]map[string]string {
 
 // Same as executeFunction but injects the workflow context as the first
 // parameter if the function takes it (regardless of existing parameters).
-func executeFunctionWithWorkflowContext(ctx Context, fn interface{}, args []interface{}) (interface{}, error) {
+func executeFunctionWithWorkflowContext(ctx Context, fn any, args []any) (any, error) {
 	if fnType := reflect.TypeOf(fn); fnType.NumIn() > 0 && isWorkflowContext(fnType.In(0)) {
-		args = append([]interface{}{ctx}, args...)
+		args = append([]any{ctx}, args...)
 	}
 	return executeFunction(fn, args)
 }
 
 // Same as executeFunction but injects the context as the first parameter if the
 // function takes it (regardless of existing parameters).
-func executeFunctionWithContext(ctx context.Context, fn interface{}, args []interface{}) (interface{}, error) {
+func executeFunctionWithContext(ctx context.Context, fn any, args []any) (any, error) {
 	if fnType := reflect.TypeOf(fn); fnType.NumIn() > 0 && isActivityContext(fnType.In(0)) {
-		args = append([]interface{}{ctx}, args...)
+		args = append([]any{ctx}, args...)
 	}
 	return executeFunction(fn, args)
 }
 
 // Executes function and ensures that there is always 1 or 2 results and second
 // result is error.
-func executeFunction(fn interface{}, args []interface{}) (interface{}, error) {
+func executeFunction(fn any, args []any) (any, error) {
 	fnValue := reflect.ValueOf(fn)
 	reflectArgs := make([]reflect.Value, len(args))
 	for i, arg := range args {
@@ -2609,8 +3121,8 @@ func executeFunction(fn interface{}, args []interface{}) (interface{}, error) {
 		}
 	}
 	// If there are two results, convert the first only if it's not a nil pointer
-	var res interface{}
-	if len(retValues) > 1 && (retValues[0].Kind() != reflect.Ptr || !retValues[0].IsNil()) {
+	var res any
+	if len(retValues) > 1 && (retValues[0].Kind() != reflect.Pointer || !retValues[0].IsNil()) {
 		res = retValues[0].Interface()
 	}
 	return res, err
@@ -2678,21 +3190,22 @@ func getMemUsage(supplier SysInfoProvider, logger log.Logger) float32 {
 	return float32(mem)
 }
 
-// collectPluginInfos collects plugin names from client and worker plugins,
-// deduplicates them, and returns a slice of PluginInfo for heartbeat reporting.
-func collectPluginInfos(clientPluginNames []string, workerPlugins []WorkerPlugin) []*workerpb.PluginInfo {
-	set := make(map[string]struct{}, len(clientPluginNames)+len(workerPlugins))
-	result := make([]*workerpb.PluginInfo, 0, len(clientPluginNames)+len(workerPlugins))
-	for _, name := range clientPluginNames {
-		if _, found := set[name]; !found {
-			set[name] = struct{}{}
-			result = append(result, &workerpb.PluginInfo{Name: name})
+// collectPluginInfos collects plugin names and versions from client and worker
+// plugins, deduplicates them by name, and returns a slice of PluginInfo for
+// heartbeat reporting.
+func collectPluginInfos(clientPlugins []ClientPlugin, workerPlugins []WorkerPlugin) []*workerpb.PluginInfo {
+	set := make(map[string]struct{}, len(clientPlugins)+len(workerPlugins))
+	result := make([]*workerpb.PluginInfo, 0, len(clientPlugins)+len(workerPlugins))
+	for _, plugin := range clientPlugins {
+		if _, found := set[plugin.Name()]; !found {
+			set[plugin.Name()] = struct{}{}
+			result = append(result, &workerpb.PluginInfo{Name: plugin.Name(), Version: pluginVersion(plugin)})
 		}
 	}
 	for _, plugin := range workerPlugins {
 		if _, found := set[plugin.Name()]; !found {
 			set[plugin.Name()] = struct{}{}
-			result = append(result, &workerpb.PluginInfo{Name: plugin.Name()})
+			result = append(result, &workerpb.PluginInfo{Name: plugin.Name(), Version: pluginVersion(plugin)})
 		}
 	}
 
@@ -2700,5 +3213,26 @@ func collectPluginInfos(clientPluginNames []string, workerPlugins []WorkerPlugin
 		return result[i].Name < result[j].Name
 	})
 
+	return result
+}
+
+// pluginVersion returns the result of the plugin's Version method, if it has
+// one. Version is not on the plugin interfaces because a default on both plugin
+// bases would be ambiguous for plugins that embed both.
+func pluginVersion(plugin any) string {
+	if p, ok := plugin.(interface{ Version() string }); ok {
+		return p.Version()
+	}
+	return ""
+}
+
+func collectStorageDriverInfos(driverTypes []string) []*workerpb.StorageDriverInfo {
+	if len(driverTypes) == 0 {
+		return nil
+	}
+	result := make([]*workerpb.StorageDriverInfo, len(driverTypes))
+	for i, t := range driverTypes {
+		result[i] = &workerpb.StorageDriverInfo{Type: t}
+	}
 	return result
 }

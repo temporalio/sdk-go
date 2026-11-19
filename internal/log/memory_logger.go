@@ -10,7 +10,7 @@ import (
 
 // MemoryLoggerWithoutWith is a Logger implementation that stores logs in memory (useful for testing). Use Lines() to get log lines.
 type MemoryLoggerWithoutWith struct {
-	lock          sync.RWMutex
+	lock          *sync.RWMutex
 	lines         *[]string
 	globalKeyvals string
 }
@@ -19,38 +19,39 @@ type MemoryLoggerWithoutWith struct {
 func NewMemoryLoggerWithoutWith() *MemoryLoggerWithoutWith {
 	var lines []string
 	return &MemoryLoggerWithoutWith{
+		lock:  &sync.RWMutex{},
 		lines: &lines,
 	}
 }
 
-func (l *MemoryLoggerWithoutWith) println(level, msg string, keyvals []interface{}) {
+func (l *MemoryLoggerWithoutWith) println(level, msg string, keyvals []any) {
 	l.lock.Lock()
 	defer l.lock.Unlock()
 	// To avoid extra space when globalKeyvals is not specified.
 	if l.globalKeyvals == "" {
-		*l.lines = append(*l.lines, fmt.Sprintln(append([]interface{}{level, msg}, keyvals...)...))
+		*l.lines = append(*l.lines, fmt.Sprintln(append([]any{level, msg}, keyvals...)...))
 	} else {
-		*l.lines = append(*l.lines, fmt.Sprintln(append([]interface{}{level, msg, l.globalKeyvals}, keyvals...)...))
+		*l.lines = append(*l.lines, fmt.Sprintln(append([]any{level, msg, l.globalKeyvals}, keyvals...)...))
 	}
 }
 
 // Debug appends message to the log.
-func (l *MemoryLoggerWithoutWith) Debug(msg string, keyvals ...interface{}) {
+func (l *MemoryLoggerWithoutWith) Debug(msg string, keyvals ...any) {
 	l.println("DEBUG", msg, keyvals)
 }
 
 // Info appends message to the log.
-func (l *MemoryLoggerWithoutWith) Info(msg string, keyvals ...interface{}) {
+func (l *MemoryLoggerWithoutWith) Info(msg string, keyvals ...any) {
 	l.println("INFO ", msg, keyvals)
 }
 
 // Warn appends message to the log.
-func (l *MemoryLoggerWithoutWith) Warn(msg string, keyvals ...interface{}) {
+func (l *MemoryLoggerWithoutWith) Warn(msg string, keyvals ...any) {
 	l.println("WARN ", msg, keyvals)
 }
 
 // Error appends message to the log.
-func (l *MemoryLoggerWithoutWith) Error(msg string, keyvals ...interface{}) {
+func (l *MemoryLoggerWithoutWith) Error(msg string, keyvals ...any) {
 	l.println("ERROR", msg, keyvals)
 }
 
@@ -75,11 +76,12 @@ func NewMemoryLogger() *MemoryLogger {
 }
 
 // With returns new logger that prepend every log entry with keyvals.
-func (l *MemoryLogger) With(keyvals ...interface{}) log.Logger {
+func (l *MemoryLogger) With(keyvals ...any) log.Logger {
 	l.lock.RLock()
 	defer l.lock.RUnlock()
 
 	logger := &MemoryLoggerWithoutWith{
+		lock:  l.lock,
 		lines: l.lines,
 	}
 

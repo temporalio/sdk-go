@@ -27,6 +27,10 @@ var DefaultTextMapPropagator = propagation.NewCompositeTextMapPropagator(
 
 // TracerOptions are options provided to NewTracingInterceptor or NewTracer.
 type TracerOptions struct {
+	// EncodeHeaders uses the configured client's payload codec for tracing
+	// headers. Defaults to false; other producers' headers are unchanged.
+	EncodeHeaders bool
+
 	// Tracer is the tracer to use. If not set, one is obtained from the global
 	// tracer provider using the name "temporal-sdk-go".
 	Tracer trace.Tracer
@@ -57,7 +61,7 @@ type TracerOptions struct {
 	// SpanContextKey is the context key used for internal span tracking (not to
 	// be confused with the context key OpenTelemetry uses internally). If not
 	// set, this defaults to an internal key (recommended).
-	SpanContextKey interface{}
+	SpanContextKey any
 
 	// HeaderKey is the Temporal header field key used to serialize spans. If
 	// empty, this defaults to the one used by all SDKs (recommended).
@@ -118,6 +122,7 @@ func NewTracingInterceptor(options TracerOptions) (interceptor.Interceptor, erro
 
 func (t *tracer) Options() interceptor.TracerOptions {
 	return interceptor.TracerOptions{
+		EncodeHeaders:           t.options.EncodeHeaders,
 		SpanContextKey:          t.options.SpanContextKey,
 		HeaderKey:               t.options.HeaderKey,
 		DisableSignalTracing:    t.options.DisableSignalTracing,
@@ -187,7 +192,7 @@ func SpanFromWorkflowContext(ctx workflow.Context) (trace.Span, bool) {
 	}
 
 	// Fallback to OpenTelemetry span extraction behavior
-	return trace.SpanFromContext(nil), false
+	return trace.SpanFromContext(context.Background()), false
 }
 
 func (t *tracer) StartSpan(opts *interceptor.TracerStartSpanOptions) (interceptor.TracerSpan, error) {

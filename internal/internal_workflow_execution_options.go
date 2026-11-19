@@ -79,6 +79,15 @@ type (
 	AutoUpgradeVersioningOverride struct {
 	}
 
+	// OneTimeVersioningOverride routes the workflow to a specific deployment version until one
+	// workflow task completes there. After that workflow task completes, the override is cleared and
+	// the workflow follows the versioning behavior reported by the worker.
+	//
+	// NOTE: Experimental
+	OneTimeVersioningOverride struct {
+		TargetVersion WorkerDeploymentVersion
+	}
+
 	// OnConflictOptions specifies the actions to be taken when using the workflow ID conflict policy
 	// USE_EXISTING.
 	//
@@ -96,6 +105,10 @@ func (*PinnedVersioningOverride) behavior() VersioningBehavior {
 
 func (*AutoUpgradeVersioningOverride) behavior() VersioningBehavior {
 	return VersioningBehaviorAutoUpgrade
+}
+
+func (*OneTimeVersioningOverride) behavior() VersioningBehavior {
+	return VersioningBehaviorPinned
 }
 
 // Mapping WorkflowExecutionOptions field names to proto ones.
@@ -125,16 +138,18 @@ func workflowExecutionOptionsMaskToProto(mask []string) *fieldmaskpb.FieldMask {
 	return protoMask
 }
 
-func versioningOverrideToProto(versioningOverride VersioningOverride) *workflowpb.VersioningOverride {
+func VersioningOverrideToProto(versioningOverride VersioningOverride) *workflowpb.VersioningOverride {
 	if versioningOverride == nil {
 		return nil
 	}
-	behavior := versioningOverride.behavior()
 	switch v := versioningOverride.(type) {
 	case *PinnedVersioningOverride:
 		return &workflowpb.VersioningOverride{
-			Behavior:      versioningBehaviorToProto(behavior),
+			//lint:ignore SA1019 populate legacy versioning fields for compatibility with servers that do not support the override oneof
+			Behavior: versioningBehaviorToProto(v.behavior()),
+			//lint:ignore SA1019 populate legacy versioning fields for compatibility with servers that do not support the override oneof
 			PinnedVersion: v.Version.toCanonicalString(),
+			//lint:ignore SA1019 populate legacy versioning fields for compatibility with servers that do not support the override oneof
 			Deployment: &deploymentpb.Deployment{
 				SeriesName: v.Version.DeploymentName,
 				BuildId:    v.Version.BuildID,
@@ -148,8 +163,17 @@ func versioningOverrideToProto(versioningOverride VersioningOverride) *workflowp
 		}
 	case *AutoUpgradeVersioningOverride:
 		return &workflowpb.VersioningOverride{
-			Behavior: versioningBehaviorToProto(behavior),
+			//lint:ignore SA1019 populate legacy versioning fields for compatibility with servers that do not support the override oneof
+			Behavior: versioningBehaviorToProto(v.behavior()),
 			Override: &workflowpb.VersioningOverride_AutoUpgrade{AutoUpgrade: true},
+		}
+	case *OneTimeVersioningOverride:
+		return &workflowpb.VersioningOverride{
+			Override: &workflowpb.VersioningOverride_OneTime{
+				OneTime: &workflowpb.VersioningOverride_OneTimeOverride{
+					TargetDeploymentVersion: v.TargetVersion.toProto(),
+				},
+			},
 		}
 	default:
 		return nil
@@ -168,6 +192,10 @@ func versioningOverrideFromProto(versioningOverride *workflowpb.VersioningOverri
 		case *workflowpb.VersioningOverride_Pinned:
 			return &PinnedVersioningOverride{
 				Version: workerDeploymentVersionFromProto(ot.Pinned.Version),
+			}
+		case *workflowpb.VersioningOverride_OneTime:
+			return &OneTimeVersioningOverride{
+				TargetVersion: workerDeploymentVersionFromProto(ot.OneTime.TargetDeploymentVersion),
 			}
 		}
 	}
@@ -200,7 +228,7 @@ func versioningOverrideFromProto(versioningOverride *workflowpb.VersioningOverri
 
 func workflowExecutionOptionsToProto(options WorkflowExecutionOptions) *workflowpb.WorkflowExecutionOptions {
 	return &workflowpb.WorkflowExecutionOptions{
-		VersioningOverride: versioningOverrideToProto(options.VersioningOverride),
+		VersioningOverride: VersioningOverrideToProto(options.VersioningOverride),
 	}
 }
 

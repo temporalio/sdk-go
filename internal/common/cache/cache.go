@@ -12,16 +12,20 @@ type Cache interface {
 
 	// Get retrieves an element based on a key, returning nil if the element
 	// does not exist
-	Get(key string) interface{}
+	Get(key string) any
 
 	// Put adds an element to the cache, returning the previous element
-	Put(key string, value interface{}) interface{}
+	Put(key string, value any) any
 
 	// PutIfNotExist puts a value associated with a given key if it does not exist
-	PutIfNotExist(key string, value interface{}) (interface{}, error)
+	PutIfNotExist(key string, value any) (any, error)
 
 	// Delete deletes an element in the cache
 	Delete(key string)
+
+	// DeleteIf deletes an element when the predicate accepts its current value.
+	// The predicate runs under the cache lock and must not call cache methods.
+	DeleteIf(key string, predicate func(any) bool) bool
 
 	// Release decrements the ref count of a pinned element. If the ref count
 	// drops to 0, the element can be evicted from the cache.
@@ -32,6 +36,9 @@ type Cache interface {
 
 	// Clear clears the cache.
 	Clear()
+
+	// ClearWithCallback clears the cache using the supplied removal callback.
+	ClearWithCallback(RemovedFunc)
 }
 
 // Options control the behavior of the cache
@@ -55,4 +62,4 @@ type Options struct {
 // scheduled for removal from the Cache. If f is a function with the
 // appropriate signature and i is the interface{} scheduled for
 // deletion, Cache calls go f(i)
-type RemovedFunc func(interface{})
+type RemovedFunc func(any)

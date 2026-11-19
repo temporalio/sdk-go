@@ -35,11 +35,11 @@ func newNoResponseActivityTaskHandler() *noResponseActivityTaskHandler {
 	return &noResponseActivityTaskHandler{isExecuteCalled: make(chan struct{})}
 }
 
-func (ath noResponseActivityTaskHandler) Execute(string, *workflowservice.PollActivityTaskQueueResponse) (interface{}, error) {
+func (ath noResponseActivityTaskHandler) Execute(string, *workflowservice.PollActivityTaskQueueResponse) (activityTaskResult, error) {
 	close(ath.isExecuteCalled)
 	c := make(chan struct{})
 	<-c
-	return nil, nil
+	return activityTaskResult{}, nil
 }
 
 func (ath noResponseActivityTaskHandler) BlockedOnExecuteCalled() error {
@@ -89,10 +89,12 @@ func (s *WorkersTestSuite) TestWorkflowWorker() {
 		BackgroundContext:       ctx,
 		BackgroundContextCancel: cancel,
 	}
-	overrides := &workerOverrides{workflowTaskHandler: newSampleWorkflowTaskHandler()}
+	overrides := &workerOverrides{workflowTaskHandler: newSampleWorkflowTaskHandler(s.T())}
 	client := &WorkflowClient{workflowService: s.service}
 	workflowWorker := newWorkflowWorkerInternal(client, executionParameters, nil, overrides, newRegistry())
+	s.Nil(workflowWorker.worker.options.taskPollers)
 	_ = workflowWorker.Start()
+	s.NotEmpty(workflowWorker.worker.options.taskPollers)
 	workflowWorker.Stop()
 
 	s.NoError(ctx.Err())
@@ -131,7 +133,7 @@ func (c *CountingSlotSupplier) MaxSlots() int {
 func (s *WorkersTestSuite) TestWorkflowWorkerSlotSupplier() {
 	// Run this a bunch of times since releases/reserves are sensitive to shutdown conditions
 	// and we want to make sure they always line up
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		s.SetupTest()
 		taskQueue := "testTaskQueue"
 		testEvents := []*historypb.HistoryEvent{
@@ -156,12 +158,12 @@ func (s *WorkersTestSuite) TestWorkflowWorkerSlotSupplier() {
 		unblockPollCh := make(chan struct{})
 		pollRespondedCh := make(chan struct{})
 		s.service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
-			Do(func(ctx, in interface{}, opts ...interface{}) {
+			Do(func(ctx, in any, opts ...any) {
 				<-unblockPollCh
 			}).
 			Return(task, nil).AnyTimes()
 		s.service.EXPECT().RespondWorkflowTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).
-			Do(func(ctx, in interface{}, opts ...interface{}) {
+			Do(func(ctx, in any, opts ...any) {
 				pollRespondedCh <- struct{}{}
 			}).
 			Return(nil, nil).AnyTimes()
@@ -188,7 +190,7 @@ func (s *WorkersTestSuite) TestWorkflowWorkerSlotSupplier() {
 			Tuner:                   tuner,
 			WorkerStopTimeout:       time.Second,
 		}
-		overrides := &workerOverrides{workflowTaskHandler: newSampleWorkflowTaskHandler()}
+		overrides := &workerOverrides{workflowTaskHandler: newSampleWorkflowTaskHandler(s.T())}
 		client := &WorkflowClient{workflowService: s.service}
 		workflowWorker := newWorkflowWorkerInternal(client, executionParameters, nil, overrides, newRegistry())
 		_ = workflowWorker.Start()
@@ -206,7 +208,7 @@ func (s *WorkersTestSuite) TestWorkflowWorkerSlotSupplier() {
 func (s *WorkersTestSuite) TestActivityWorkerSlotSupplier() {
 	// Run this a bunch of times since releases/reserves are sensitive to shutdown conditions
 	// and we want to make sure they always line up
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		s.SetupTest()
 
 		task := &workflowservice.PollActivityTaskQueueResponse{
@@ -220,12 +222,12 @@ func (s *WorkersTestSuite) TestActivityWorkerSlotSupplier() {
 		unblockPollCh := make(chan struct{})
 		pollRespondedCh := make(chan struct{})
 		s.service.EXPECT().PollActivityTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
-			Do(func(ctx, in interface{}, opts ...interface{}) {
+			Do(func(ctx, in any, opts ...any) {
 				<-unblockPollCh
 			}).
 			Return(task, nil).AnyTimes()
 		s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).
-			Do(func(ctx, in interface{}, opts ...interface{}) {
+			Do(func(ctx, in any, opts ...any) {
 				pollRespondedCh <- struct{}{}
 			}).
 			Return(nil, nil).AnyTimes()
@@ -299,12 +301,12 @@ func (s *WorkersTestSuite) TestErrorProneSlotSupplier() {
 	unblockPollCh := make(chan struct{})
 	pollRespondedCh := make(chan struct{})
 	s.service.EXPECT().PollActivityTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
-		Do(func(ctx, in interface{}, opts ...interface{}) {
+		Do(func(ctx, in any, opts ...any) {
 			<-unblockPollCh
 		}).
 		Return(task, nil).AnyTimes()
 	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).
-		Do(func(ctx, in interface{}, opts ...interface{}) {
+		Do(func(ctx, in any, opts ...any) {
 			pollRespondedCh <- struct{}{}
 		}).
 		Return(nil, nil).AnyTimes()
@@ -334,7 +336,7 @@ func (s *WorkersTestSuite) TestErrorProneSlotSupplier() {
 	client := WorkflowClient{workflowService: s.service}
 	activityWorker := newActivityWorker(&client, executionParameters, overrides, registry, nil)
 	_ = activityWorker.Start()
-	for i := 0; i < 25; i++ {
+	for range 25 {
 		unblockPollCh <- struct{}{}
 		<-pollRespondedCh
 	}
@@ -361,7 +363,9 @@ func (s *WorkersTestSuite) TestActivityWorker() {
 	registry.addActivityWithLock(a.ActivityType().Name, a)
 	client := WorkflowClient{workflowService: s.service}
 	activityWorker := newActivityWorker(&client, executionParameters, overrides, registry, nil)
+	s.Nil(activityWorker.worker.options.taskPollers)
 	_ = activityWorker.Start()
+	s.NotEmpty(activityWorker.worker.options.taskPollers)
 	activityWorker.Stop()
 }
 
@@ -446,7 +450,7 @@ func (s *WorkersTestSuite) TestPollWorkflowTaskQueue_InternalServiceError() {
 		),
 		Logger: ilog.NewNopLogger(),
 	}
-	overrides := &workerOverrides{workflowTaskHandler: newSampleWorkflowTaskHandler()}
+	overrides := &workerOverrides{workflowTaskHandler: newSampleWorkflowTaskHandler(s.T())}
 	client := &WorkflowClient{workflowService: s.service}
 	workflowWorker := newWorkflowWorkerInternal(client, executionParameters, nil, overrides, newRegistry())
 	_ = workflowWorker.Start()
@@ -744,11 +748,52 @@ func (s *WorkersTestSuite) TestWorkerMultipleStop() {
 	worker.Stop()
 }
 
+// workerPluginRegistryCallbacksForTest sets only some registry callbacks so the
+// worker's Register* methods must tolerate the unset ones.
+type workerPluginRegistryCallbacksForTest struct {
+	WorkerPluginBase
+	activities       int
+	dynamicWorkflows []DynamicRegisterWorkflowOptions
+}
+
+func (*workerPluginRegistryCallbacksForTest) Name() string { return "worker-plugin-registry-callbacks" }
+
+func (p *workerPluginRegistryCallbacksForTest) ConfigureWorker(_ context.Context, options WorkerPluginConfigureWorkerOptions) error {
+	options.WorkerRegistryOptions.OnRegisterActivity = func(any, RegisterActivityOptions) { p.activities++ }
+	options.WorkerRegistryOptions.OnRegisterDynamicWorkflow = func(_ any, o DynamicRegisterWorkflowOptions) {
+		p.dynamicWorkflows = append(p.dynamicWorkflows, o)
+	}
+	return nil
+}
+
+func (s *WorkersTestSuite) TestWorkerPluginRegistryCallbacks() {
+	plugin := &workerPluginRegistryCallbacksForTest{}
+	client := NewServiceClient(s.service, nil, ClientOptions{Identity: "plugin-registry-callbacks"})
+	worker := NewAggregatedWorker(client, "plugin-registry-callbacks-tq", WorkerOptions{
+		Plugins: []WorkerPlugin{plugin},
+	})
+	s.T().Cleanup(worker.cacheLease.release)
+
+	// Registering a dynamic activity must not require OnRegisterDynamicActivity
+	// just because OnRegisterActivity is set.
+	worker.RegisterDynamicActivity(envPluginDynamicActivity, DynamicRegisterActivityOptions{})
+	s.Equal(0, plugin.activities)
+
+	// The dynamic workflow callback receives the caller's options.
+	loadOptions := func(LoadDynamicRuntimeOptionsDetails) (DynamicRuntimeWorkflowOptions, error) {
+		return DynamicRuntimeWorkflowOptions{}, nil
+	}
+	worker.RegisterDynamicWorkflow(envPluginDynamicWorkflow, DynamicRegisterWorkflowOptions{LoadDynamicRuntimeOptions: loadOptions})
+	s.Len(plugin.dynamicWorkflows, 1)
+	s.NotNil(plugin.dynamicWorkflows[0].LoadDynamicRuntimeOptions)
+}
+
 func (s *WorkersTestSuite) TestWorkerTaskQueueLimitDisableEager() {
 	client := NewServiceClient(s.service, nil, ClientOptions{Identity: "task-queue-limit-disable-eager"})
 	worker := NewAggregatedWorker(client, "task-queue-limit-disable-eager", WorkerOptions{
 		TaskQueueActivitiesPerSecond: 1.0,
 	})
+	s.T().Cleanup(worker.cacheLease.release)
 	s.True(worker.activityWorker.executionParameters.eagerActivityExecutor.disabled)
 }
 

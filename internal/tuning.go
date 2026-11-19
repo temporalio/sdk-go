@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"sync"
 	"sync/atomic"
+	"time"
 
+	enumspb "go.temporal.io/api/enums/v1"
 	"golang.org/x/sync/semaphore"
 
 	"go.temporal.io/sdk/internal/common/metrics"
@@ -46,6 +48,10 @@ type SlotReservationInfo interface {
 	// TaskQueue returns the task queue for which a slot is being reserved. In the case of local
 	// activities, this is the same as the workflow's task queue.
 	TaskQueue() string
+	// TaskQueueKind returns the kind of task queue for which a slot is being reserved.
+	// Workflow task reservations return unspecified for SimpleMaximum pollers because
+	// they may choose between normal and sticky queues after slot reservation.
+	TaskQueueKind() enumspb.TaskQueueKind
 	// WorkerBuildId returns the build ID of the worker that is reserving the slot.
 	WorkerBuildId() string
 	// WorkerBuildId returns the build ID of the worker that is reserving the slot.
@@ -297,11 +303,13 @@ func (f *FixedSizeSlotSupplier) MaxSlots() int {
 }
 
 type slotReservationData struct {
-	taskQueue string
+	taskQueue     string
+	taskQueueKind enumspb.TaskQueueKind
 }
 
 type slotReserveInfoImpl struct {
 	taskQueue      string
+	taskQueueKind  enumspb.TaskQueueKind
 	workerBuildId  string
 	workerIdentity string
 	issuedSlots    *atomic.Int32
@@ -311,6 +319,10 @@ type slotReserveInfoImpl struct {
 
 func (s slotReserveInfoImpl) TaskQueue() string {
 	return s.taskQueue
+}
+
+func (s slotReserveInfoImpl) TaskQueueKind() enumspb.TaskQueueKind {
+	return s.taskQueueKind
 }
 
 func (s slotReserveInfoImpl) WorkerBuildId() string {
@@ -384,7 +396,10 @@ type trackingSlotSupplier struct {
 	issuedSlotsAtomic atomic.Int32
 	slotsMutex        sync.Mutex
 	// Values should eventually become slot info types
-	usedSlots               map[*SlotPermit]struct{}
+	usedSlots        map[*SlotPermit]struct{}
+	usedSlotsVersion uint64
+	// When a slot was last marked used or a used slot was released.
+	usedSlotsLastChanged    time.Time
 	taskSlotsAvailableGauge metrics.Gauge
 	taskSlotsUsedGauge      metrics.Gauge
 }
@@ -416,6 +431,7 @@ func (t *trackingSlotSupplier) ReserveSlot(
 ) (*SlotPermit, error) {
 	permit, err := t.inner.ReserveSlot(ctx, slotReserveInfoImpl{
 		taskQueue:      data.taskQueue,
+		taskQueueKind:  data.taskQueueKind,
 		workerBuildId:  t.workerBuildId,
 		workerIdentity: t.workerIdentity,
 		issuedSlots:    &t.issuedSlotsAtomic,
@@ -429,16 +445,14 @@ func (t *trackingSlotSupplier) ReserveSlot(
 		return nil, fmt.Errorf("slot supplier returned nil permit")
 	}
 	t.issuedSlotsAtomic.Add(1)
-	t.slotsMutex.Lock()
-	usedSlots := len(t.usedSlots)
-	t.slotsMutex.Unlock()
-	t.publishMetrics(usedSlots)
+	t.publishMetrics()
 	return permit, nil
 }
 
 func (t *trackingSlotSupplier) TryReserveSlot(data *slotReservationData) *SlotPermit {
 	permit := t.inner.TryReserveSlot(slotReserveInfoImpl{
 		taskQueue:      data.taskQueue,
+		taskQueueKind:  data.taskQueueKind,
 		workerBuildId:  t.workerBuildId,
 		workerIdentity: t.workerIdentity,
 		issuedSlots:    &t.issuedSlotsAtomic,
@@ -447,10 +461,7 @@ func (t *trackingSlotSupplier) TryReserveSlot(data *slotReservationData) *SlotPe
 	})
 	if permit != nil {
 		t.issuedSlotsAtomic.Add(1)
-		t.slotsMutex.Lock()
-		usedSlots := len(t.usedSlots)
-		t.slotsMutex.Unlock()
-		t.publishMetrics(usedSlots)
+		t.publishMetrics()
 	}
 	return permit
 }
@@ -461,14 +472,15 @@ func (t *trackingSlotSupplier) MarkSlotUsed(permit *SlotPermit) {
 	}
 	t.slotsMutex.Lock()
 	t.usedSlots[permit] = struct{}{}
-	usedSlots := len(t.usedSlots)
+	t.usedSlotsVersion++
+	t.usedSlotsLastChanged = time.Now()
 	t.slotsMutex.Unlock()
+	t.publishMetrics()
 	t.inner.MarkSlotUsed(&slotMarkUsedContextImpl{
 		permit:  permit,
 		logger:  t.logger,
 		metrics: t.metrics,
 	})
-	t.publishMetrics(usedSlots)
 }
 
 func (t *trackingSlotSupplier) ReleaseSlot(permit *SlotPermit, reason SlotReleaseReason) {
@@ -476,9 +488,14 @@ func (t *trackingSlotSupplier) ReleaseSlot(permit *SlotPermit, reason SlotReleas
 		panic("Cannot release with nil permit")
 	}
 	t.slotsMutex.Lock()
-	delete(t.usedSlots, permit)
-	usedSlots := len(t.usedSlots)
+	// Slots released without being used, such as after empty polls, don't change the usage.
+	if _, used := t.usedSlots[permit]; used {
+		delete(t.usedSlots, permit)
+		t.usedSlotsLastChanged = time.Now()
+	}
+	t.usedSlotsVersion++
 	t.slotsMutex.Unlock()
+	t.publishMetrics()
 	t.inner.ReleaseSlot(&slotReleaseContextImpl{
 		permit:  permit,
 		reason:  reason,
@@ -489,15 +506,36 @@ func (t *trackingSlotSupplier) ReleaseSlot(permit *SlotPermit, reason SlotReleas
 	if permit.extraReleaseCallback != nil {
 		permit.extraReleaseCallback()
 	}
-
-	t.publishMetrics(usedSlots)
 }
 
-func (t *trackingSlotSupplier) publishMetrics(usedSlots int) {
-	if t.inner.MaxSlots() != 0 {
-		t.taskSlotsAvailableGauge.Update(float64(t.inner.MaxSlots() - usedSlots))
+func (t *trackingSlotSupplier) publishMetrics() {
+	for {
+		t.slotsMutex.Lock()
+		usedSlots := len(t.usedSlots)
+		version := t.usedSlotsVersion
+		t.slotsMutex.Unlock()
+
+		if maxSlots := t.inner.MaxSlots(); maxSlots != 0 {
+			t.taskSlotsAvailableGauge.Update(float64(maxSlots - usedSlots))
+		}
+		t.taskSlotsUsedGauge.Update(float64(usedSlots))
+
+		t.slotsMutex.Lock()
+		upToDate := version == t.usedSlotsVersion
+		t.slotsMutex.Unlock()
+		if upToDate {
+			return
+		}
 	}
-	t.taskSlotsUsedGauge.Update(float64(usedSlots))
+}
+
+func (t *trackingSlotSupplier) usage() SlotKindUsage {
+	t.slotsMutex.Lock()
+	defer t.slotsMutex.Unlock()
+	return SlotKindUsage{
+		UsedSlots:            len(t.usedSlots),
+		UsedSlotsLastChanged: t.usedSlotsLastChanged,
+	}
 }
 
 func (t *trackingSlotSupplier) GetSlotSupplierKind() string {

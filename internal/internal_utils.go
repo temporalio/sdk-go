@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -26,12 +27,16 @@ const (
 	defaultRPCTimeout = 10 * time.Second
 	// minRPCTimeout is minimum gRPC call timeout allowed.
 	minRPCTimeout = 1 * time.Second
-	// maxRPCTimeout is maximum gRPC call timeout allowed (should not be less than defaultRPCTimeout).
-	maxRPCTimeout = 10 * time.Second
 
 	temporalPrefix      = "__temporal_"
 	temporalPrefixError = "__temporal_ is a reserved prefix"
+
+	systemNexusEndpoint = "__temporal_system"
 )
+
+func isWorkflowStreamReservedName(name string) bool {
+	return strings.HasPrefix(name, "__temporal_workflow_stream_")
+}
 
 // grpcContextBuilder stores all gRPC-specific parameters that will
 // be stored inside of a context.
@@ -92,7 +97,7 @@ func grpcLongPoll(isLongPoll bool) func(builder *grpcContextBuilder) {
 	}
 }
 
-func grpcContextValue(key interface{}, val interface{}) func(builder *grpcContextBuilder) {
+func grpcContextValue(key any, val any) func(builder *grpcContextBuilder) {
 	return func(b *grpcContextBuilder) {
 		b.ParentContext = context.WithValue(b.ParentContext, key, val)
 	}
@@ -103,19 +108,9 @@ func defaultGrpcRetryParameters(ctx context.Context) func(builder *grpcContextBu
 }
 
 // newGRPCContext - Get context for gRPC calls.
-func newGRPCContext(ctx context.Context, options ...func(builder *grpcContextBuilder)) (context.Context, context.CancelFunc) {
-	rpcTimeout := defaultRPCTimeout
-
-	// Set rpc timeout less than context timeout to allow for retries when call gets lost
-	now := time.Now()
-	if deadline, ok := ctx.Deadline(); ok && deadline.After(now) {
-		rpcTimeout = deadline.Sub(now) / 2
-		// Make sure to not set rpc timeout lower than minRPCTimeout
-		if rpcTimeout < minRPCTimeout {
-			rpcTimeout = minRPCTimeout
-		} else if rpcTimeout > maxRPCTimeout {
-			rpcTimeout = maxRPCTimeout
-		}
+func newGRPCContext(ctx context.Context, rpcTimeout time.Duration, options ...func(builder *grpcContextBuilder)) (context.Context, context.CancelFunc) {
+	if rpcTimeout == 0 {
+		rpcTimeout = defaultRPCTimeout
 	}
 
 	builder := &grpcContextBuilder{
@@ -176,11 +171,11 @@ func awaitWaitGroup(wg *sync.WaitGroup, timeout time.Duration) bool {
 }
 
 // InterruptCh returns channel which will get data when system receives interrupt signal. Pass it to worker.Run() func to stop worker with Ctrl+C.
-func InterruptCh() <-chan interface{} {
+func InterruptCh() <-chan any {
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 
-	ret := make(chan interface{}, 1)
+	ret := make(chan any, 1)
 	go func() {
 		s := <-c
 		ret <- s

@@ -15,6 +15,7 @@ import (
 
 	"go.temporal.io/sdk/converter"
 	iconverter "go.temporal.io/sdk/internal/converter"
+	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/internal/protocol"
 )
 
@@ -28,7 +29,7 @@ func (m *mockWorkflowDefinition) OnWorkflowTaskStarted(d time.Duration) {
 }
 
 func testDecodeValueHelper(t *testing.T, env *workflowEnvironmentImpl) {
-	equals := func(a, b interface{}) bool {
+	equals := func(a, b any) bool {
 		ao := a.(ActivityOptions)
 		bo := b.(ActivityOptions)
 		return ao.TaskQueue == bo.TaskQueue
@@ -51,6 +52,78 @@ func TestDecodedValue(t *testing.T) {
 	testDecodeValueHelper(t, env)
 }
 
+func Test_ExecuteChildWorkflowVersioningOverride(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name               string
+		versioningOverride VersioningOverride
+	}{
+		{name: "none"},
+		{
+			name: "pinned",
+			versioningOverride: &PinnedVersioningOverride{
+				Version: WorkerDeploymentVersion{
+					DeploymentName: "deployment",
+					BuildID:        "build",
+				},
+			},
+		},
+		{
+			name:               "auto upgrade",
+			versioningOverride: &AutoUpgradeVersioningOverride{},
+		},
+		{
+			name: "one time",
+			versioningOverride: &OneTimeVersioningOverride{
+				TargetVersion: WorkerDeploymentVersion{
+					DeploymentName: "deployment",
+					BuildID:        "build",
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			helper := newCommandsHelper()
+			_, ctx := createRootTestContext()
+			env := &workflowEnvironmentImpl{
+				commandsHelper: helper,
+				workflowInfo:   GetWorkflowInfo(ctx),
+				sdkFlags:       newSDKFlagSet(nil),
+				dataConverter:  converter.GetDefaultDataConverter(),
+				logger:         ilog.NewNopLogger(),
+			}
+
+			env.ExecuteChildWorkflow(
+				ExecuteWorkflowParams{
+					WorkflowOptions: WorkflowOptions{
+						Namespace:          "namespace",
+						WorkflowID:         "child-workflow-id",
+						TaskQueueName:      "task-queue",
+						VersioningOverride: tt.versioningOverride,
+					},
+					WorkflowType: &WorkflowType{Name: "child-workflow"},
+				},
+				func(*commonpb.Payloads, error) {},
+				func(WorkflowExecution, error) {},
+			)
+
+			commands := helper.getCommands(false)
+			require.Len(t, commands, 1)
+			attributes := commands[0].GetStartChildWorkflowExecutionCommandAttributes()
+			require.Equal(
+				t,
+				VersioningOverrideToProto(tt.versioningOverride),
+				attributes.GetVersioningOverride(),
+			)
+		})
+	}
+}
+
 func TestDecodedValueWithDataConverter(t *testing.T) {
 	t.Parallel()
 	env := &workflowEnvironmentImpl{
@@ -64,7 +137,7 @@ func Test_DecodedValuePtr(t *testing.T) {
 	env := &workflowEnvironmentImpl{
 		dataConverter: converter.GetDefaultDataConverter(),
 	}
-	equals := func(a, b interface{}) bool {
+	equals := func(a, b any) bool {
 		ao := a.(*ActivityOptions)
 		bo := b.(*ActivityOptions)
 		return ao.TaskQueue == bo.TaskQueue
@@ -84,11 +157,11 @@ func Test_DecodedValueNil(t *testing.T) {
 	env := &workflowEnvironmentImpl{
 		dataConverter: converter.GetDefaultDataConverter(),
 	}
-	equals := func(a, b interface{}) bool {
+	equals := func(a, b any) bool {
 		return a == nil && b == nil
 	}
 	// newValue is nil, old value is nil
-	var value interface{}
+	var value any
 	blob := env.encodeValue(value)
 	isEqual := env.isEqualValue(value, blob, equals)
 	require.True(t, isEqual)
@@ -109,13 +182,13 @@ func Test_ValidateAndSerializeSearchAttributes(t *testing.T) {
 	_, err := validateAndSerializeSearchAttributes(nil)
 	require.EqualError(t, err, "search attributes is empty")
 
-	attr := map[string]interface{}{
+	attr := map[string]any{
 		"JustKey": make(chan int),
 	}
 	_, err = validateAndSerializeSearchAttributes(attr)
 	require.EqualError(t, err, "encode search attribute [JustKey] error: unable to encode: json: unsupported type: chan int")
 
-	attr = map[string]interface{}{
+	attr = map[string]any{
 		"key": 1,
 	}
 	searchAttr, err := validateAndSerializeSearchAttributes(attr)
@@ -124,6 +197,37 @@ func Test_ValidateAndSerializeSearchAttributes(t *testing.T) {
 	var resp int
 	_ = converter.GetDefaultDataConverter().FromPayload(searchAttr.IndexedFields["key"], &resp)
 	require.Equal(t, 1, resp)
+}
+
+func TestPreferredVersionProviderOutOfRange(t *testing.T) {
+	input := PreferredVersionProviderInput{
+		WorkflowInfo: &WorkflowInfo{},
+		ChangeID:     "change-id",
+		MinSupported: DefaultVersion,
+		MaxSupported: 1,
+	}
+
+	t.Run("fails", func(t *testing.T) {
+		require.Panics(t, func() {
+			resolvePreferredVersion(
+				func(PreferredVersionProviderInput) *VersionPreference {
+					return &VersionPreference{Version: 2}
+				},
+				input,
+			)
+		})
+	})
+
+	t.Run("clamps", func(t *testing.T) {
+		provider := func(input PreferredVersionProviderInput) *VersionPreference {
+			return &VersionPreference{Version: 2, ClampToSupportedRange: true}
+		}
+		require.Equal(
+			t,
+			Version(1),
+			resolvePreferredVersion(provider, input),
+		)
+	})
 }
 
 func Test_UpsertSearchAttributes(t *testing.T) {
@@ -135,18 +239,17 @@ func Test_UpsertSearchAttributes(t *testing.T) {
 		workflowInfo:   GetWorkflowInfo(ctx),
 	}
 	helper.setCurrentWorkflowTaskStartedEventID(4)
-	err := env.UpsertSearchAttributes(nil)
+	err := env.UpsertSearchAttributes(nil, nil)
 	require.Error(t, err)
 
-	err = env.UpsertSearchAttributes(map[string]interface{}{
-		TemporalChangeVersion: []string{"change2-1", "change1-1"}},
-	)
+	err = env.UpsertSearchAttributes(map[string]any{
+		TemporalChangeVersion: []string{"change2-1", "change1-1"}}, nil)
 	require.NoError(t, err)
 	_, ok := env.commandsHelper.commands[makeCommandID(commandTypeUpsertSearchAttributes, "change2-1")]
 	require.True(t, ok)
 	require.Equal(t, int64(7), env.GenerateSequence())
 
-	err = env.UpsertSearchAttributes(map[string]interface{}{"key": 1})
+	err = env.UpsertSearchAttributes(map[string]any{"key": 1}, nil)
 	require.NoError(t, err)
 	require.Equal(t, int64(8), env.GenerateSequence())
 }
@@ -202,7 +305,6 @@ func Test_MergeSearchAttributes(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		test := test
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			result := mergeSearchAttributes(test.current, test.upsert)
@@ -216,7 +318,7 @@ func Test_ValidateAndSerializeMemo(t *testing.T) {
 	_, err := validateAndSerializeMemo(nil, nil, false)
 	require.EqualError(t, err, "memo is empty")
 
-	attr := map[string]interface{}{
+	attr := map[string]any{
 		"JustKey": make(chan int),
 	}
 	_, err = validateAndSerializeMemo(attr, nil, false)
@@ -226,7 +328,7 @@ func Test_ValidateAndSerializeMemo(t *testing.T) {
 		"encode workflow memo error: unable to encode: json: unsupported type: chan int",
 	)
 
-	attr = map[string]interface{}{
+	attr = map[string]any{
 		"key": 1,
 	}
 	memo, err := validateAndSerializeMemo(attr, nil, false)
@@ -248,10 +350,10 @@ func Test_UpsertMemo(t *testing.T) {
 		dataConverter:  converter.GetDefaultDataConverter(),
 	}
 	helper.setCurrentWorkflowTaskStartedEventID(4)
-	err := env.UpsertMemo(nil)
+	err := env.UpsertMemo(nil, nil)
 	require.Error(t, err)
 
-	err = env.UpsertMemo(map[string]interface{}{"key": 1})
+	err = env.UpsertMemo(map[string]any{"key": 1}, nil)
 	require.NoError(t, err)
 	_, ok := env.commandsHelper.commands[makeCommandID(commandTypeModifyProperties, "6")]
 	require.True(t, ok)
@@ -309,7 +411,6 @@ func Test_MergeMemo(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		test := test
 		t.Run(
 			test.name,
 			func(t *testing.T) {
@@ -343,7 +444,6 @@ func Test_GetChangeVersion(t *testing.T) {
 		},
 	}
 	for _, test := range tests {
-		test := test
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			result := getChangeVersion(test.changeID, test.version)
@@ -379,7 +479,6 @@ func Test_GetChangeVersions(t *testing.T) {
 		},
 	}
 	for _, test := range tests {
-		test := test
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			result := getChangeVersions(test.changeID, test.version, test.existingChangeVersions)
@@ -397,7 +496,7 @@ func Test_CreateSearchAttributesForChangeVersion(t *testing.T) {
 }
 
 func TestUpdateEvents(t *testing.T) {
-	mustPayload := func(i interface{}) *commonpb.Payload {
+	mustPayload := func(i any) *commonpb.Payload {
 		t.Helper()
 		p, err := converter.NewJSONPayloadConverter().ToPayload(i)
 		if err != nil {
@@ -462,7 +561,7 @@ func TestUpdateEvents(t *testing.T) {
 }
 
 func TestUpdateEventsPanic(t *testing.T) {
-	mustPayload := func(i interface{}) *commonpb.Payload {
+	mustPayload := func(i any) *commonpb.Payload {
 		t.Helper()
 		p, err := converter.NewJSONPayloadConverter().ToPayload(i)
 		if err != nil {

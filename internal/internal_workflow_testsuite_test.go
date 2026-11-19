@@ -323,12 +323,32 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowMixedClock() {
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_WorkflowActivityCancellation() {
+	stop := make(chan struct{})
+	defer close(stop)
+
+	slowStarted := make(chan struct{})
+	activityFn := func(ctx context.Context, msg string) (string, error) {
+		if msg == "slow" {
+			close(slowStarted)
+
+			select {
+			case <-ctx.Done():
+				return "", ctx.Err()
+			case <-stop:
+				return "", nil
+			}
+		}
+
+		<-slowStarted
+		return msg, nil
+	}
+
 	workflowFn := func(ctx Context) error {
 		ctx = WithActivityOptions(ctx, s.activityOptions)
 
 		ctx, cancelHandler := WithCancel(ctx)
-		f1 := ExecuteActivity(ctx, testActivityHeartbeat, "fast", time.Millisecond) // fast activity
-		f2 := ExecuteActivity(ctx, testActivityHeartbeat, "slow", time.Second*3)    // slow activity
+		f1 := ExecuteActivity(ctx, activityFn, "fast")
+		f2 := ExecuteActivity(ctx, activityFn, "slow")
 
 		NewSelector(ctx).AddFuture(f1, func(f Future) {
 			cancelHandler()
@@ -344,7 +364,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowActivityCancellation() {
 	}
 
 	env := s.NewTestWorkflowEnvironment()
-	env.RegisterActivity(testActivityHeartbeat)
+	env.RegisterActivity(activityFn)
 	activityMap := make(map[string]string) // msg -> activityID
 	var completedActivityID, canceledActivityID string
 	env.SetOnActivityStartedListener(func(activityInfo *ActivityInfo, ctx context.Context, args converter.EncodedValues) {
@@ -722,7 +742,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_SideEffect() {
 	value := 12345
 	workflowFn := func(ctx Context) error {
 		ctx = WithActivityOptions(ctx, s.activityOptions)
-		se := SideEffect(ctx, func(ctx Context) interface{} {
+		se := SideEffect(ctx, func(ctx Context) any {
 			return value
 		})
 		var v int
@@ -749,7 +769,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_SideEffect() {
 func (s *WorkflowTestSuiteUnitTest) Test_OnSideEffectAndActivityMock() {
 	workflowFn := func(ctx Context) (string, error) {
 		ctx = WithActivityOptions(ctx, s.activityOptions)
-		se := SideEffectWithOptions(ctx, SideEffectOptions{Summary: "side-effect"}, func(ctx Context) interface{} {
+		se := SideEffectWithOptions(ctx, SideEffectOptions{Summary: "side-effect"}, func(ctx Context) any {
 			return "real-side-effect"
 		})
 		var seVal string
@@ -779,8 +799,8 @@ func (s *WorkflowTestSuiteUnitTest) Test_OnSideEffectAndActivityMock() {
 
 func (s *WorkflowTestSuiteUnitTest) Test_OnMutableSideEffect() {
 	workflowFn := func(ctx Context) (string, error) {
-		equals := func(a, b interface{}) bool { return a == b }
-		me := MutableSideEffect(ctx, "config-id", func(ctx Context) interface{} {
+		equals := func(a, b any) bool { return a == b }
+		me := MutableSideEffect(ctx, "config-id", func(ctx Context) any {
 			return "real-config"
 		}, equals)
 		var val string
@@ -799,6 +819,51 @@ func (s *WorkflowTestSuiteUnitTest) Test_OnMutableSideEffect() {
 	s.NoError(env.GetWorkflowResult(&result))
 	s.Equal("mock-config", result)
 	env.AssertExpectations(s.T())
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_MutableSideEffect_HonorsEqualsFunc() {
+	// The test environment must honor the user-supplied equals function the same
+	// way the real worker does: a new value is only recorded when equals reports
+	// a change. See https://github.com/temporalio/sdk-go/issues/2109.
+	workflowFn := func(ctx Context) ([]int, error) {
+		var alwaysEqual = func(a, b any) bool { return true }
+		var neverEqual = func(a, b any) bool { return false }
+
+		get := func(v converter.EncodedValue) int {
+			var out int
+			s.NoError(v.Get(&out))
+			return out
+		}
+
+		// equals always true: value stays pinned to the first (1), not 2.
+		pinnedFirst := get(MutableSideEffect(ctx, "pinned",
+			func(ctx Context) any { return 1 }, alwaysEqual))
+		pinnedSecond := get(MutableSideEffect(ctx, "pinned",
+			func(ctx Context) any { return 2 }, alwaysEqual))
+
+		// equals always false: value updates on every call.
+		changedFirst := get(MutableSideEffect(ctx, "changed",
+			func(ctx Context) any { return 10 }, neverEqual))
+		changedSecond := get(MutableSideEffect(ctx, "changed",
+			func(ctx Context) any { return 20 }, neverEqual))
+		// The previous call must have stored 20 as the new baseline. With equals
+		// true, this returns that stored baseline (20), not the newly computed 30.
+		// An implementation that returns the changed value but forgets to store it
+		// would keep a stale baseline (10) and return 10 here.
+		changedThird := get(MutableSideEffect(ctx, "changed",
+			func(ctx Context) any { return 30 }, alwaysEqual))
+
+		return []int{pinnedFirst, pinnedSecond, changedFirst, changedSecond, changedThird}, nil
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.ExecuteWorkflow(workflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+	var result []int
+	s.NoError(env.GetWorkflowResult(&result))
+	s.Equal([]int{1, 1, 10, 20, 20}, result)
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_LongRunningSideEffect() {
@@ -830,7 +895,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_SideEffect_WithVersion() {
 
 		v := GetVersion(ctx, "UniqueID", DefaultVersion, 1)
 		if v == 1 {
-			encodedUID := SideEffect(ctx, func(ctx Context) interface{} {
+			encodedUID := SideEffect(ctx, func(ctx Context) any {
 				return "TEST-UNIQUE-ID"
 			})
 			err := encodedUID.Get(&uniqueID)
@@ -1781,6 +1846,34 @@ func (s *WorkflowTestSuiteUnitTest) Test_GetVersion() {
 	env.AssertExpectations(s.T())
 }
 
+func (s *WorkflowTestSuiteUnitTest) Test_PreferredVersionProvider() {
+	providerCalls := 0
+	var providerInput PreferredVersionProviderInput
+	env := s.NewTestWorkflowEnvironment()
+	env.SetWorkerOptions(WorkerOptions{
+		PreferredVersionProvider: func(input PreferredVersionProviderInput) *VersionPreference {
+			providerCalls++
+			providerInput = input
+			return &VersionPreference{Version: DefaultVersion}
+		},
+	})
+	env.ExecuteWorkflow(func(ctx Context) (Version, error) {
+		version := GetVersion(ctx, "preferred-version", DefaultVersion, 1)
+		s.Equal(version, GetVersion(ctx, "preferred-version", DefaultVersion, 1))
+		return version, nil
+	})
+
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+	var result Version
+	s.NoError(env.GetWorkflowResult(&result))
+	s.Equal(DefaultVersion, result)
+	s.Equal(1, providerCalls)
+	s.Equal("preferred-version", providerInput.ChangeID)
+	s.Equal(DefaultVersion, providerInput.MinSupported)
+	s.Equal(Version(1), providerInput.MaxSupported)
+}
+
 func (s *WorkflowTestSuiteUnitTest) Test_MockGetVersion() {
 	oldActivity := func(ctx context.Context, msg string) (string, error) {
 		return "hello" + "_" + msg, nil
@@ -1850,7 +1943,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_MockGetVersion() {
 
 func (s *WorkflowTestSuiteUnitTest) Test_UpsertSearchAttributes_ReservedKey() {
 	workflowFn := func(ctx Context) error {
-		attr := map[string]interface{}{
+		attr := map[string]any{
 			TemporalChangeVersion: "some change version",
 		}
 		err := UpsertSearchAttributes(ctx, attr)
@@ -1870,7 +1963,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_UpsertSearchAttributes_ReservedKey() {
 
 func (s *WorkflowTestSuiteUnitTest) Test_MockUpsertSearchAttributes() {
 	workflowFn := func(ctx Context) error {
-		attr := map[string]interface{}{}
+		attr := map[string]any{}
 		err := UpsertSearchAttributes(ctx, attr)
 		s.Error(err)
 
@@ -1906,8 +1999,8 @@ func (s *WorkflowTestSuiteUnitTest) Test_MockUpsertSearchAttributes() {
 
 	// has mock
 	env = s.NewTestWorkflowEnvironment()
-	env.OnUpsertSearchAttributes(map[string]interface{}{}).Return(errors.New("empty")).Once()
-	env.OnUpsertSearchAttributes(map[string]interface{}{"CustomIntField": 1}).Return(nil).Once()
+	env.OnUpsertSearchAttributes(map[string]any{}).Return(errors.New("empty")).Once()
+	env.OnUpsertSearchAttributes(map[string]any{"CustomIntField": 1}).Return(nil).Once()
 	env.OnUpsertSearchAttributes(mock.Anything).Return(nil).Once()
 
 	env.ExecuteWorkflow(workflowFn)
@@ -1971,7 +2064,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_MockUpsertTypedSearchAttributes() {
 
 func (s *WorkflowTestSuiteUnitTest) Test_MockUpsertMemo() {
 	workflowFn := func(ctx Context) error {
-		memo := map[string]interface{}{}
+		memo := map[string]any{}
 		err := UpsertMemo(ctx, memo)
 		s.Error(err)
 
@@ -2008,8 +2101,8 @@ func (s *WorkflowTestSuiteUnitTest) Test_MockUpsertMemo() {
 
 	// has mock
 	env = s.NewTestWorkflowEnvironment()
-	env.OnUpsertMemo(map[string]interface{}{}).Return(errors.New("empty")).Once()
-	env.OnUpsertMemo(map[string]interface{}{"CustomIntField": 1}).Return(nil).Once()
+	env.OnUpsertMemo(map[string]any{}).Return(errors.New("empty")).Once()
+	env.OnUpsertMemo(map[string]any{"CustomIntField": 1}).Return(nil).Once()
 	env.OnUpsertMemo(mock.Anything).Return(nil).Once()
 
 	env.ExecuteWorkflow(workflowFn)
@@ -2594,7 +2687,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListene
 	}
 
 	env.OnActivity(localActivityFn, mock.Anything, "local_activity").Return("hello mock", nil).Once()
-	env.SetOnLocalActivityStartedListener(func(activityInfo *ActivityInfo, ctx context.Context, args []interface{}) {
+	env.SetOnLocalActivityStartedListener(func(activityInfo *ActivityInfo, ctx context.Context, args []any) {
 		startedCount.Add(1)
 	})
 
@@ -2622,7 +2715,8 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListene
 	s.Equal(int32(1), completedCount.Load())
 	s.Equal(int32(1), canceledCount.Load())
 	s.Equal("hello mock", result)
-	s.True(localActivityFnCanceled.Load())
+	// The cancellation future can resolve before the activity goroutine observes ctx.Done.
+	s.Eventually(localActivityFnCanceled.Load, time.Second, time.Millisecond)
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_LocalActivityWithHeaderContext() {
@@ -2754,7 +2848,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_SignalExternalWorkflow() {
 
 	// signal2 should fail
 	env.OnSignalExternalWorkflow("test-namespace", "test-workflow-id2", "test-runid2", signalName, signalData).Return(
-		func(namespace, workflowID, runID, signalName string, arg interface{}) error {
+		func(namespace, workflowID, runID, signalName string, arg any) error {
 			return errors.New("unknown external workflow")
 		}).Once()
 
@@ -4754,10 +4848,6 @@ func (s *WorkflowTestSuiteUnitTest) Test_SameWorkflowAndActivityNames() {
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_SignalNotLost() {
-	orig := sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive]
-	sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive] = true
-	defer func() { sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive] = orig }()
-
 	workflowFn := func(ctx Context) error {
 		ch1 := GetSignalChannel(ctx, "test-signal")
 		ch2 := GetSignalChannel(ctx, "test-signal-2")
@@ -4830,10 +4920,6 @@ func (s *WorkflowTestSuiteUnitTest) Test_SignalLost() {
 }
 
 func (s *WorkflowTestSuiteUnitTest) TestChannelWorkerPattern() {
-	origBlockedSelectorSignalReceive := sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive]
-	sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive] = true
-	defer func() { sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive] = origBlockedSelectorSignalReceive }()
-
 	// Two workers listening on the same channel with multiple items sent quickly.
 	workflowFn := func(ctx Context) ([]int, error) {
 		ch := NewChannel(ctx)
@@ -4849,7 +4935,7 @@ func (s *WorkflowTestSuiteUnitTest) TestChannelWorkerPattern() {
 		// Two workers both selecting on the same channel
 		wg := NewWaitGroup(ctx)
 		wg.Add(2)
-		for i := 0; i < 2; i++ {
+		for range 2 {
 			Go(ctx, func(ctx Context) {
 				defer wg.Done()
 				for {
@@ -4877,10 +4963,15 @@ func (s *WorkflowTestSuiteUnitTest) TestChannelWorkerPattern() {
 		return received, nil
 	}
 
-	s.Run("BuggyBehavior", func() {
+	s.Run("OldBehaviorWithOnlyBlockedSelectorFlag", func() {
+		origBlockedSelectorSignalReceive := sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive]
 		origChannelLostMsg := sdkFlagsAllowed[SDKFlagWorkflowNewChannelLostMessages]
+		sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive] = true
 		sdkFlagsAllowed[SDKFlagWorkflowNewChannelLostMessages] = false
-		defer func() { sdkFlagsAllowed[SDKFlagWorkflowNewChannelLostMessages] = origChannelLostMsg }()
+		defer func() {
+			sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive] = origBlockedSelectorSignalReceive
+			sdkFlagsAllowed[SDKFlagWorkflowNewChannelLostMessages] = origChannelLostMsg
+		}()
 
 		env := s.NewTestWorkflowEnvironment()
 		env.ExecuteWorkflow(workflowFn)
@@ -4898,10 +4989,9 @@ func (s *WorkflowTestSuiteUnitTest) TestChannelWorkerPattern() {
 		s.ElementsMatch([]int{1, 3, 0}, received)
 	})
 
-	s.Run("FixedBehavior", func() {
-		origChannelLostMsg := sdkFlagsAllowed[SDKFlagWorkflowNewChannelLostMessages]
-		sdkFlagsAllowed[SDKFlagWorkflowNewChannelLostMessages] = true
-		defer func() { sdkFlagsAllowed[SDKFlagWorkflowNewChannelLostMessages] = origChannelLostMsg }()
+	s.Run("DefaultBehavior", func() {
+		s.Require().True(sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive])
+		s.Require().True(sdkFlagsAllowed[SDKFlagWorkflowNewChannelLostMessages])
 
 		env := s.NewTestWorkflowEnvironment()
 		env.ExecuteWorkflow(workflowFn)
@@ -4914,4 +5004,108 @@ func (s *WorkflowTestSuiteUnitTest) TestChannelWorkerPattern() {
 		s.Len(received, 3)
 		s.ElementsMatch([]int{1, 2, 3}, received)
 	})
+}
+func (s *WorkflowTestSuiteUnitTest) Test_OnWorkflowMockSeesHeaderContext() {
+	headerSeen := false
+
+	childWorkflowFn := func(ctx Context) error {
+		return nil
+	}
+
+	workflowFn := func(ctx Context) error {
+		cwo := ChildWorkflowOptions{WorkflowRunTimeout: time.Hour}
+		ctx = WithChildWorkflowOptions(ctx, cwo)
+		return ExecuteChildWorkflow(ctx, childWorkflowFn).Get(ctx, nil)
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.SetHeader(&commonpb.Header{
+		Fields: map[string]*commonpb.Payload{
+			testHeader: encodeString(s.T(), "test-data"),
+		},
+	})
+	env.SetContextPropagators([]ContextPropagator{NewKeysPropagator([]string{testHeader})})
+	env.RegisterWorkflow(childWorkflowFn)
+
+	env.OnWorkflow(childWorkflowFn, mock.MatchedBy(func(ctx Context) bool {
+		val := ctx.Value(contextKey(testHeader))
+		if v, ok := val.(string); ok && v == "test-data" {
+			headerSeen = true
+		}
+		return true
+	})).Return(nil)
+
+	env.ExecuteWorkflow(workflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+	s.True(headerSeen, "OnWorkflow mock should see propagated header in context")
+	env.AssertExpectations(s.T())
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_CodecWorkflowTaskFailureErrorPreservesChain() {
+	const failMatch = "codec-fail"
+	cause := errors.New("codec unavailable")
+	marker := converter.NewWorkflowTaskFailureError(cause)
+	activityFn := func(ctx context.Context, input string) (string, error) { return input, nil }
+	failingResultActivityFn := func(ctx context.Context) (string, error) { return failMatch, nil }
+	childFn := func(ctx Context, input string) (string, error) { return input, nil }
+	childActivityFn := func(ctx Context) error {
+		return ExecuteActivity(WithActivityOptions(ctx, s.activityOptions), "activity", failMatch).Get(ctx, nil)
+	}
+
+	tests := []struct {
+		name                  string
+		failDecode            bool
+		codecFailureConverter bool
+		workflow              any
+	}{
+		{name: "child workflow input encode", workflow: func(ctx Context) error {
+			return ExecuteChildWorkflow(ctx, "child", failMatch).Get(ctx, nil)
+		}},
+		{name: "activity input encode handled by workflow", workflow: func(ctx Context) error {
+			_ = ExecuteActivity(WithActivityOptions(ctx, s.activityOptions), "activity", failMatch).Get(ctx, nil)
+			return nil
+		}},
+		{name: "activity result decode", failDecode: true, workflow: func(ctx Context) error {
+			var result string
+			return ExecuteActivity(WithActivityOptions(ctx, s.activityOptions), "failingResultActivity").Get(ctx, &result)
+		}},
+		{name: "workflow result encode", workflow: func(ctx Context) (string, error) {
+			return failMatch, nil
+		}},
+		{name: "child workflow task failure", workflow: func(ctx Context) error {
+			return ExecuteChildWorkflow(ctx, "childActivity").Get(ctx, nil)
+		}},
+		{name: "failure details encode", codecFailureConverter: true, workflow: func(ctx Context) error {
+			return NewApplicationError("failed", "type", false, nil, failMatch)
+		}},
+	}
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			var codec converter.PayloadCodec = &matchEncodeFailCodec{match: failMatch, encodeErr: marker}
+			if tt.failDecode {
+				codec = &matchDecodeFailCodec{match: failMatch, decodeErr: marker}
+			}
+			dc := converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), codec)
+			env := s.NewTestWorkflowEnvironment()
+			env.SetDataConverter(dc)
+			if tt.codecFailureConverter {
+				env.SetFailureConverter(NewDefaultFailureConverter(DefaultFailureConverterOptions{DataConverter: dc}))
+			}
+			env.RegisterActivityWithOptions(activityFn, RegisterActivityOptions{Name: "activity"})
+			env.RegisterActivityWithOptions(failingResultActivityFn, RegisterActivityOptions{Name: "failingResultActivity"})
+			env.RegisterWorkflowWithOptions(childFn, RegisterWorkflowOptions{Name: "child"})
+			env.RegisterWorkflowWithOptions(childActivityFn, RegisterWorkflowOptions{Name: "childActivity"})
+			env.RegisterWorkflowWithOptions(tt.workflow, RegisterWorkflowOptions{Name: "workflow"})
+			env.ExecuteWorkflow("workflow")
+
+			err := env.GetWorkflowError()
+			var markerErr *converter.WorkflowTaskFailureError
+			s.ErrorAs(err, &markerErr)
+			s.ErrorIs(err, cause)
+			var panicErr *PanicError
+			s.False(errors.As(err, &panicErr), "codec marker must not be converted to PanicError: %v", err)
+		})
+	}
 }

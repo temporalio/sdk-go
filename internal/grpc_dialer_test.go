@@ -8,6 +8,7 @@ import (
 	"log"
 	"net"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -22,24 +23,28 @@ import (
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/common/retry"
+	grpcerrdetails "google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	grpcgzip "google.golang.org/grpc/encoding/gzip"
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/resolver"
 	"google.golang.org/grpc/resolver/manual"
+	"google.golang.org/grpc/stats"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/durationpb"
 )
 
 func TestErrorWrapper_SimpleError(t *testing.T) {
 	require := require.New(t)
 
-	svcerr := errorInterceptor(context.Background(), "method", "request", "reply", nil,
-		func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, opts ...grpc.CallOption) error {
+	svcerr := errorInterceptor(t.Context(), "method", "request", "reply", nil,
+		func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, opts ...grpc.CallOption) error {
 			return status.Error(codes.NotFound, "Something not found")
 		})
 
@@ -50,8 +55,8 @@ func TestErrorWrapper_SimpleError(t *testing.T) {
 func TestErrorWrapper_ErrorWithFailure(t *testing.T) {
 	require := require.New(t)
 
-	svcerr := errorInterceptor(context.Background(), "method", "request", "reply", nil,
-		func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, opts ...grpc.CallOption) error {
+	svcerr := errorInterceptor(t.Context(), "method", "request", "reply", nil,
+		func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, opts ...grpc.CallOption) error {
 			st, _ := status.New(codes.AlreadyExists, "Something started").WithDetails(&errordetails.WorkflowExecutionAlreadyStartedFailure{
 				StartRequestId: "srId",
 				RunId:          "rId",
@@ -82,8 +87,8 @@ func (a authHeadersProvider) GetHeaders(context.Context) (map[string]string, err
 }
 
 func TestHeadersProvider_PopulateAuthToken(t *testing.T) {
-	require.NoError(t, headersProviderInterceptor(authHeadersProvider{token: "test-auth-token"})(context.Background(), "method", "request", "reply", nil,
-		func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, opts ...grpc.CallOption) error {
+	require.NoError(t, headersProviderInterceptor(authHeadersProvider{token: "test-auth-token"})(t.Context(), "method", "request", "reply", nil,
+		func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, opts ...grpc.CallOption) error {
 			md, ok := metadata.FromOutgoingContext(ctx)
 			if !ok {
 				return errors.New("unable to get outgoing context metadata")
@@ -97,8 +102,8 @@ func TestHeadersProvider_PopulateAuthToken(t *testing.T) {
 }
 
 func TestHeadersProvider_Error(t *testing.T) {
-	require.Error(t, headersProviderInterceptor(authHeadersProvider{err: errors.New("failed to populate headers")})(context.Background(), "method", "request", "reply", nil,
-		func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, opts ...grpc.CallOption) error {
+	require.Error(t, headersProviderInterceptor(authHeadersProvider{err: errors.New("failed to populate headers")})(t.Context(), "method", "request", "reply", nil,
+		func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, opts ...grpc.CallOption) error {
 			return nil
 		}))
 }
@@ -115,26 +120,29 @@ func TestHeadersProvider_IncludedWithHeadersProvider(t *testing.T) {
 }
 
 func TestMissingGetServerInfo(t *testing.T) {
-	// Make a gRPC server that has everything unimplemented
+	// Make a gRPC server that responds like an older server missing GetSystemInfo.
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
-	srv := grpc.NewServer()
+	srv := grpc.NewServer(grpc.UnknownServiceHandler(func(_ any, _ grpc.ServerStream) error {
+		return status.Error(codes.Unimplemented, "unknown method GetSystemInfo")
+	}))
+	defer srv.Stop()
 	go func() {
-		if err := srv.Serve(l); err != nil {
+		if err := srv.Serve(l); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
 			log.Fatal(err)
 		}
 	}()
 
 	// Wait until it is responding with a 404
 	var lastErr error
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		lastErr = nil
 		conn, err := grpc.NewClient(l.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
 			lastErr = err
 		} else {
 			_, err := workflowservice.NewWorkflowServiceClient(conn).GetSystemInfo(
-				context.Background(),
+				t.Context(),
 				&workflowservice.GetSystemInfoRequest{},
 			)
 			_ = conn.Close()
@@ -147,7 +155,7 @@ func TestMissingGetServerInfo(t *testing.T) {
 	require.NoError(t, lastErr)
 
 	// Create a new client and confirm client has empty capabilities set
-	client, err := DialClient(context.Background(), ClientOptions{HostPort: l.Addr().String()})
+	client, err := DialClient(t.Context(), ClientOptions{HostPort: l.Addr().String()})
 	require.NoError(t, err)
 	workflowClient := client.(*WorkflowClient)
 	require.True(t, proto.Equal(&workflowservice.GetSystemInfoResponse_Capabilities{}, workflowClient.capabilities))
@@ -157,7 +165,7 @@ func TestInternalErrorRetry(t *testing.T) {
 	// Build a common retry policy that will retry 2 times (so 3 attempts total)
 	retryConfig := retry.NewGrpcRetryConfig(10 * time.Nanosecond)
 	retryConfig.SetMaximumAttempts(3)
-	ctx := context.WithValue(context.Background(), retry.ConfigKey, retryConfig)
+	ctx := context.WithValue(t.Context(), retry.ConfigKey, retryConfig)
 
 	// Start a server that wants you to retry internal errors (the default)
 	srv, err := startTestGRPCServer()
@@ -168,7 +176,7 @@ func TestInternalErrorRetry(t *testing.T) {
 	srv.signalWorkflowExecutionResponseError = status.Error(codes.Internal, "oh no, an internal error")
 
 	// Create client and make call
-	client, err := DialClient(context.Background(), ClientOptions{HostPort: srv.addr})
+	client, err := DialClient(t.Context(), ClientOptions{HostPort: srv.addr})
 	require.NoError(t, err)
 	defer client.Close()
 	_, err = client.WorkflowService().SignalWorkflowExecution(ctx, &workflowservice.SignalWorkflowExecutionRequest{})
@@ -189,7 +197,7 @@ func TestInternalErrorRetry(t *testing.T) {
 	srv.signalWorkflowExecutionResponseError = status.Error(codes.Internal, "oh no, an internal error")
 
 	// Create client and make call
-	client, err = DialClient(context.Background(), ClientOptions{HostPort: srv.addr})
+	client, err = DialClient(t.Context(), ClientOptions{HostPort: srv.addr})
 	require.NoError(t, err)
 	defer client.Close()
 	_, err = client.WorkflowService().SignalWorkflowExecution(ctx, &workflowservice.SignalWorkflowExecutionRequest{})
@@ -197,6 +205,72 @@ func TestInternalErrorRetry(t *testing.T) {
 	_, isInternalError = err.(*serviceerror.Internal)
 	require.True(t, isInternalError)
 	require.Equal(t, 1, srv.signalWorkflowInvokeCount())
+}
+
+func TestResourceExhaustedRetryInfoDelayFloor(t *testing.T) {
+	srv, err := startTestGRPCServer()
+	require.NoError(t, err)
+	defer srv.Stop()
+	srv.signalWorkflowExecutionInvocationTimes = make(chan time.Time, 2)
+
+	responseStatus, err := status.New(codes.ResourceExhausted, "namespace rate limited").WithDetails(
+		&errordetails.ResourceExhaustedFailure{
+			Cause: enums.RESOURCE_EXHAUSTED_CAUSE_RPS_LIMIT,
+			Scope: enums.RESOURCE_EXHAUSTED_SCOPE_NAMESPACE,
+		},
+		&grpcerrdetails.RetryInfo{RetryDelay: durationpb.New(100 * time.Millisecond)},
+	)
+	require.NoError(t, err)
+	srv.signalWorkflowExecutionResponseError = responseStatus.Err()
+
+	client, err := DialClient(t.Context(), ClientOptions{HostPort: srv.addr})
+	require.NoError(t, err)
+	defer client.Close()
+
+	retryConfig := retry.NewGrpcRetryConfig(time.Millisecond)
+	retryConfig.SetBackoffCoefficient(1)
+	retryConfig.SetMaximumInterval(time.Millisecond)
+	retryConfig.SetMaximumAttempts(2)
+	retryConfig.SetJitter(0)
+	ctx, cancel := context.WithTimeout(context.WithValue(t.Context(), retry.ConfigKey, retryConfig), 5*time.Second)
+	defer cancel()
+	_, err = client.WorkflowService().SignalWorkflowExecution(ctx, &workflowservice.SignalWorkflowExecutionRequest{})
+	require.Error(t, err)
+	require.Equal(t, 2, srv.signalWorkflowInvokeCount())
+
+	firstAttempt := <-srv.signalWorkflowExecutionInvocationTimes
+	secondAttempt := <-srv.signalWorkflowExecutionInvocationTimes
+	require.GreaterOrEqual(t, secondAttempt.Sub(firstAttempt), 100*time.Millisecond)
+	var resourceExhausted *serviceerror.ResourceExhausted
+	require.ErrorAs(t, err, &resourceExhausted)
+	require.Equal(t, enums.RESOURCE_EXHAUSTED_CAUSE_RPS_LIMIT, resourceExhausted.Cause)
+	require.Equal(t, enums.RESOURCE_EXHAUSTED_SCOPE_NAMESPACE, resourceExhausted.Scope)
+
+	gotDetails := serviceerror.ToStatus(err).Details()
+	require.Len(t, gotDetails, 2)
+	require.IsType(t, &errordetails.ResourceExhaustedFailure{}, gotDetails[0])
+	require.IsType(t, &grpcerrdetails.RetryInfo{}, gotDetails[1])
+}
+
+func TestInternalErrorRetryFromExistingClient(t *testing.T) {
+	srv, err := startTestGRPCServer()
+	require.NoError(t, err)
+	defer srv.Stop()
+	srv.getSystemInfoResponse.Capabilities = &workflowservice.GetSystemInfoResponse_Capabilities{
+		InternalErrorDifferentiation: true,
+	}
+
+	client, err := DialClient(t.Context(), ClientOptions{HostPort: srv.addr})
+	require.NoError(t, err)
+	defer client.Close()
+	require.True(t, client.(*WorkflowClient).excludeInternalFromRetry.Load())
+
+	// A client sharing the connection must share the capability-derived flag too,
+	// otherwise e.g. activity heartbeats on its workers treat Internal as retryable.
+	fromExisting, err := NewClientFromExisting(t.Context(), client, ClientOptions{Namespace: "other"})
+	require.NoError(t, err)
+	defer fromExisting.Close()
+	require.True(t, fromExisting.(*WorkflowClient).excludeInternalFromRetry.Load())
 }
 
 func TestEagerAndLazyClient(t *testing.T) {
@@ -207,19 +281,19 @@ func TestEagerAndLazyClient(t *testing.T) {
 	srv.getSystemInfoResponseError = fmt.Errorf("some server failure")
 
 	// Confirm eager dial fails
-	_, err = DialClient(context.Background(), ClientOptions{HostPort: srv.addr})
+	_, err = DialClient(t.Context(), ClientOptions{HostPort: srv.addr})
 	require.EqualError(t, err, "failed reaching server: some server failure")
 
 	// Confirm lazy dial succeeds but fails signal workflow
 	c, err := NewLazyClient(ClientOptions{HostPort: srv.addr})
 	require.NoError(t, err)
 	defer c.Close()
-	err = c.SignalWorkflow(context.Background(), "workflow1", "", "my-signal", nil)
+	err = c.SignalWorkflow(t.Context(), "workflow1", "", "my-signal", nil)
 	require.EqualError(t, err, "failed reaching server: some server failure")
 
 	// But if we call again without a sys info response error, it will succeed
 	srv.getSystemInfoResponseError = nil
-	err = c.SignalWorkflow(context.Background(), "workflow1", "", "my-signal", nil)
+	err = c.SignalWorkflow(t.Context(), "workflow1", "", "my-signal", nil)
 	require.NoError(t, err)
 	// Verify version headers are set
 	require.Equal(
@@ -234,7 +308,7 @@ func TestEagerAndLazyClient(t *testing.T) {
 	)
 
 	// Now that there's no sys info response error, eager should succeed
-	c, err = DialClient(context.Background(), ClientOptions{HostPort: srv.addr})
+	c, err = DialClient(t.Context(), ClientOptions{HostPort: srv.addr})
 	require.NoError(t, err)
 	defer c.Close()
 	// Verify version headers are set
@@ -251,7 +325,7 @@ func TestEagerAndLazyClient(t *testing.T) {
 
 	// And even if it starts erroring, the success was memoized so calls succeed
 	srv.getSystemInfoResponseError = fmt.Errorf("some server failure")
-	err = c.SignalWorkflow(context.Background(), "workflow1", "", "my-signal", nil)
+	err = c.SignalWorkflow(t.Context(), "workflow1", "", "my-signal", nil)
 	require.NoError(t, err)
 }
 
@@ -266,26 +340,26 @@ func TestCheckHealth(t *testing.T) {
 
 	// Confirm fail if can't init
 	srv.getSystemInfoResponseError = fmt.Errorf("some server failure")
-	_, err = c.CheckHealth(context.Background(), nil)
+	_, err = c.CheckHealth(t.Context(), nil)
 	require.EqualError(t, err, "failed reaching server: some server failure")
 
 	// Now if it can init, but health not registered
 	srv.getSystemInfoResponseError = nil
-	_, err = c.CheckHealth(context.Background(), nil)
+	_, err = c.CheckHealth(t.Context(), nil)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "health check error")
 
 	// Now register the service but set it as bad
 	srv.healthServer.SetServingStatus("temporal.api.workflowservice.v1.WorkflowService",
 		grpc_health_v1.HealthCheckResponse_NOT_SERVING)
-	_, err = c.CheckHealth(context.Background(), nil)
+	_, err = c.CheckHealth(t.Context(), nil)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "NOT_SERVING")
 
 	// Now set as serving and succeed
 	srv.healthServer.SetServingStatus("temporal.api.workflowservice.v1.WorkflowService",
 		grpc_health_v1.HealthCheckResponse_SERVING)
-	_, err = c.CheckHealth(context.Background(), nil)
+	_, err = c.CheckHealth(t.Context(), nil)
 	require.NoError(t, err)
 }
 
@@ -301,8 +375,8 @@ func TestDialOptions(t *testing.T) {
 		return func(
 			ctx context.Context,
 			method string,
-			req interface{},
-			reply interface{},
+			req any,
+			reply any,
 			cc *grpc.ClientConn,
 			invoker grpc.UnaryInvoker,
 			opts ...grpc.CallOption,
@@ -314,7 +388,7 @@ func TestDialOptions(t *testing.T) {
 			return invoker(ctx, method, req, reply, cc, opts...)
 		}
 	}
-	client, err := DialClient(context.Background(), ClientOptions{
+	client, err := DialClient(t.Context(), ClientOptions{
 		HostPort: srv.addr,
 		ConnectionOptions: ConnectionOptions{
 			DialOptions: []grpc.DialOption{
@@ -327,7 +401,7 @@ func TestDialOptions(t *testing.T) {
 	defer client.Close()
 
 	// Make call we know will error (ignore error)
-	_, _ = client.WorkflowService().SignalWorkflowExecution(context.TODO(),
+	_, _ = client.WorkflowService().SignalWorkflowExecution(t.Context(),
 		&workflowservice.SignalWorkflowExecutionRequest{})
 
 	// Confirm trace
@@ -335,8 +409,139 @@ func TestDialOptions(t *testing.T) {
 	require.Equal(t, expected, trace)
 }
 
+func TestGrpcCompression(t *testing.T) {
+	for _, tc := range []struct {
+		name              string
+		connectionOptions ConnectionOptions
+		wantCompression   string
+	}{
+		{
+			name:            "default",
+			wantCompression: "gzip",
+		},
+		{
+			name: "explicit gzip",
+			connectionOptions: ConnectionOptions{
+				GrpcCompression: &GrpcCompressionGzip{},
+			},
+			wantCompression: "gzip",
+		},
+		{
+			name: "none",
+			connectionOptions: ConnectionOptions{
+				GrpcCompression: &GrpcCompressionNone{},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv, err := startTestGRPCServer()
+			require.NoError(t, err)
+			defer srv.Stop()
+
+			client, err := DialClient(t.Context(), ClientOptions{
+				HostPort:          srv.addr,
+				ConnectionOptions: tc.connectionOptions,
+			})
+			require.NoError(t, err)
+			defer client.Close()
+
+			_, err = client.WorkflowService().SignalWorkflowExecution(t.Context(),
+				&workflowservice.SignalWorkflowExecutionRequest{
+					Namespace:  "test-namespace",
+					SignalName: strings.Repeat("test-signal", 100),
+				},
+			)
+			require.NoError(t, err)
+
+			require.Equal(t,
+				tc.wantCompression,
+				srv.statsHandler.compressionForMethod(
+					"/"+workflowservice.WorkflowService_ServiceDesc.ServiceName+"/SignalWorkflowExecution",
+				),
+			)
+		})
+	}
+}
+
+func TestGrpcCompressionDowngradesUnsupportedMethod(t *testing.T) {
+	srv, err := startTestGRPCServer()
+	require.NoError(t, err)
+	defer srv.Stop()
+	srv.rejectGzipGetSystemInfo = true
+	srv.statsHandler.reset()
+
+	client, err := DialClient(t.Context(), ClientOptions{HostPort: srv.addr})
+	require.NoError(t, err)
+	defer client.Close()
+
+	getSystemInfoMethod := workflowServiceMethod("GetSystemInfo")
+	getSystemInfoHistory := srv.statsHandler.compressionHistoryForMethod(getSystemInfoMethod)
+	require.Len(t, getSystemInfoHistory, 2)
+	require.Equal(t, grpcgzip.Name, getSystemInfoHistory[0])
+	require.NotEqual(t, grpcgzip.Name, getSystemInfoHistory[1])
+
+	_, err = client.WorkflowService().GetSystemInfo(t.Context(), &workflowservice.GetSystemInfoRequest{})
+	require.NoError(t, err)
+	getSystemInfoHistory = srv.statsHandler.compressionHistoryForMethod(getSystemInfoMethod)
+	require.Len(t, getSystemInfoHistory, 3)
+	require.Equal(t, 1, countCompression(getSystemInfoHistory, grpcgzip.Name))
+	require.NotEqual(t, grpcgzip.Name, getSystemInfoHistory[2])
+
+	_, err = client.WorkflowService().SignalWorkflowExecution(t.Context(),
+		&workflowservice.SignalWorkflowExecutionRequest{
+			Namespace:  "test-namespace",
+			SignalName: strings.Repeat("test-signal", 100),
+		},
+	)
+	require.NoError(t, err)
+	require.Equal(t,
+		grpcgzip.Name,
+		srv.statsHandler.compressionForMethod(workflowServiceMethod("SignalWorkflowExecution")),
+	)
+}
+
+func TestGrpcCompressionNoneDoesNotInstallDowngrade(t *testing.T) {
+	srv, err := startTestGRPCServer()
+	require.NoError(t, err)
+	defer srv.Stop()
+	srv.rejectGzipGetSystemInfo = true
+	srv.statsHandler.reset()
+
+	client, err := DialClient(t.Context(), ClientOptions{
+		HostPort: srv.addr,
+		ConnectionOptions: ConnectionOptions{
+			GrpcCompression: &GrpcCompressionNone{},
+		},
+	})
+	require.NoError(t, err)
+	defer client.Close()
+
+	getSystemInfoHistory := srv.statsHandler.compressionHistoryForMethod(workflowServiceMethod("GetSystemInfo"))
+	require.Len(t, getSystemInfoHistory, 1)
+	require.NotEqual(t, grpcgzip.Name, getSystemInfoHistory[0])
+}
+
+func TestGrpcCompressionDoesNotDowngradeGenericUnimplemented(t *testing.T) {
+	srv, err := startTestGRPCServer()
+	require.NoError(t, err)
+	defer srv.Stop()
+	srv.getSystemInfoResponseError = status.Error(codes.Unimplemented, "gzip feature is not implemented")
+	srv.statsHandler.reset()
+
+	client, err := NewLazyClient(ClientOptions{HostPort: srv.addr})
+	require.NoError(t, err)
+	defer client.Close()
+
+	_, err = client.WorkflowService().GetSystemInfo(t.Context(), &workflowservice.GetSystemInfoRequest{})
+	require.Error(t, err)
+
+	getSystemInfoHistory := srv.statsHandler.compressionHistoryForMethod(workflowServiceMethod("GetSystemInfo"))
+	require.Len(t, getSystemInfoHistory, 1)
+	require.Equal(t, grpcgzip.Name, getSystemInfoHistory[0])
+}
+
 func TestCustomResolver(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	// Create two gRPC servers
 	s1, err := startTestGRPCServer()
@@ -351,7 +556,7 @@ func TestCustomResolver(t *testing.T) {
 	builder := manual.NewBuilderWithScheme(scheme)
 	builder.InitialState(resolver.State{Addresses: []resolver.Address{{Addr: s1.addr}, {Addr: s2.addr}}})
 	resolver.Register(builder)
-	client, err := DialClient(context.Background(), ClientOptions{HostPort: scheme + ":///whatever"})
+	client, err := DialClient(t.Context(), ClientOptions{HostPort: scheme + ":///whatever"})
 	require.NoError(t, err)
 	defer client.Close()
 
@@ -373,7 +578,7 @@ func TestCustomResolver(t *testing.T) {
 	var peerOut peer.Peer
 	for len(connected) < 2 {
 		req.RequestId = uuid.NewString()
-		_, err := client.WorkflowService().SignalWorkflowExecution(context.Background(), &req, grpc.Peer(&peerOut))
+		_, err := client.WorkflowService().SignalWorkflowExecution(t.Context(), &req, grpc.Peer(&peerOut))
 		if err == nil {
 			connected[peerOut.Addr] = struct{}{}
 		}
@@ -415,12 +620,12 @@ func TestResourceExhaustedCause(t *testing.T) {
 		Cause: enums.RESOURCE_EXHAUSTED_CAUSE_CONCURRENT_LIMIT,
 	})
 	srv.getSystemInfoResponseError = s.Err()
-	_, err = DialClient(context.Background(), ClientOptions{HostPort: srv.addr, MetricsHandler: handler})
+	_, err = DialClient(t.Context(), ClientOptions{HostPort: srv.addr, MetricsHandler: handler})
 	require.Error(t, err)
 
 	// Attempt dial with a cause-less resource exhausted
 	srv.getSystemInfoResponseError = status.New(codes.ResourceExhausted, "some resource exhausted").Err()
-	_, err = DialClient(context.Background(), ClientOptions{HostPort: srv.addr, MetricsHandler: handler})
+	_, err = DialClient(t.Context(), ClientOptions{HostPort: srv.addr, MetricsHandler: handler})
 	require.Error(t, err)
 
 	// Make sure we have 1 metric with cause and 1 without
@@ -443,7 +648,7 @@ func TestCredentialsAPIKey(t *testing.T) {
 	defer srv.Stop()
 
 	// Fixed string
-	client, err := DialClient(context.Background(), ClientOptions{
+	client, err := DialClient(t.Context(), ClientOptions{
 		HostPort:    srv.addr,
 		Credentials: NewAPIKeyStaticCredentials("my-api-key"),
 		ConnectionOptions: ConnectionOptions{
@@ -471,7 +676,7 @@ func TestCredentialsAPIKey(t *testing.T) {
 
 	// Overwrite via context
 	_, err = client.WorkflowService().GetSystemInfo(
-		metadata.AppendToOutgoingContext(context.Background(), "authorization", "overridden value"),
+		metadata.AppendToOutgoingContext(t.Context(), "authorization", "overridden value"),
 		&workflowservice.GetSystemInfoRequest{},
 	)
 	require.NoError(t, err)
@@ -482,7 +687,7 @@ func TestCredentialsAPIKey(t *testing.T) {
 	)
 
 	// Callback
-	client, err = DialClient(context.Background(), ClientOptions{
+	client, err = DialClient(t.Context(), ClientOptions{
 		HostPort: srv.addr,
 		Credentials: NewAPIKeyDynamicCredentials(func(ctx context.Context) (string, error) {
 			return "my-callback-api-key", nil
@@ -517,13 +722,13 @@ func TestExistingContextMetadataJoinedWithSDKHeaders(t *testing.T) {
 	require.NoError(t, err)
 	defer srv.Stop()
 
-	client, err := DialClient(context.Background(), ClientOptions{HostPort: srv.addr})
+	client, err := DialClient(t.Context(), ClientOptions{HostPort: srv.addr})
 	require.NoError(t, err)
 	defer client.Close()
 
 	// Create a context with existing metadata
 	ctxWithMD := metadata.NewOutgoingContext(
-		context.Background(),
+		t.Context(),
 		metadata.New(map[string]string{"custom-header": "custom-value"}),
 	)
 
@@ -547,13 +752,13 @@ func TestExistingContextMetadataJoinedWithSDKHeaders(t *testing.T) {
 	)
 }
 
-func TestNamespaceInterceptor(t *testing.T) {
+func TestTemporalHeaderInterceptor(t *testing.T) {
 	srv, err := startTestGRPCServer()
 	require.NoError(t, err)
 	defer srv.Stop()
 
 	// Fixed string
-	client, err := DialClient(context.Background(), ClientOptions{
+	client, err := DialClient(t.Context(), ClientOptions{
 		Namespace: "test-namespace",
 		HostPort:  srv.addr,
 	})
@@ -566,11 +771,17 @@ func TestNamespaceInterceptor(t *testing.T) {
 		metadata.ValueFromIncomingContext(srv.getSystemInfoRequestContext, temporalNamespaceHeaderKey),
 	)
 	// Verify namespace header is set on a request that does have namespace on the request
-	require.NoError(t, client.SignalWorkflow(context.Background(), "workflowid", "runid", "signalname", nil))
+	require.NoError(t, client.SignalWorkflow(t.Context(), "test-workflow-id", "runid", "signalname", nil))
 	require.Equal(
 		t,
 		[]string{"test-namespace"},
 		metadata.ValueFromIncomingContext(srv.lastSignalWorkflowExecutionContext, temporalNamespaceHeaderKey),
+	)
+	// Verify resource-id header is also set
+	require.Equal(
+		t,
+		[]string{"workflow:test-workflow-id"},
+		metadata.ValueFromIncomingContext(srv.lastSignalWorkflowExecutionContext, "temporal-resource-id"),
 	)
 }
 
@@ -603,15 +814,18 @@ func TestCredentialsMTLS(t *testing.T) {
 type testGRPCServer struct {
 	workflowservice.UnimplementedWorkflowServiceServer
 	*grpc.Server
-	addr                                 string
-	healthServer                         *health.Server
-	sigWfCount                           int32
-	getSystemInfoRequestContext          context.Context
-	getSystemInfoResponse                workflowservice.GetSystemInfoResponse
-	getSystemInfoResponseError           error
-	lastSignalWorkflowExecutionContext   context.Context
-	signalWorkflowExecutionResponse      workflowservice.SignalWorkflowExecutionResponse
-	signalWorkflowExecutionResponseError error
+	addr                                   string
+	healthServer                           *health.Server
+	statsHandler                           *compressionStatsHandler
+	sigWfCount                             int32
+	rejectGzipGetSystemInfo                bool
+	getSystemInfoRequestContext            context.Context
+	getSystemInfoResponse                  workflowservice.GetSystemInfoResponse
+	getSystemInfoResponseError             error
+	lastSignalWorkflowExecutionContext     context.Context
+	signalWorkflowExecutionResponse        workflowservice.SignalWorkflowExecutionResponse
+	signalWorkflowExecutionResponseError   error
+	signalWorkflowExecutionInvocationTimes chan time.Time
 }
 
 func startTestGRPCServer() (*testGRPCServer, error) {
@@ -619,10 +833,12 @@ func startTestGRPCServer() (*testGRPCServer, error) {
 	if err != nil {
 		return nil, err
 	}
+	statsHandler := &compressionStatsHandler{}
 	t := &testGRPCServer{
-		Server:       grpc.NewServer(),
+		Server:       grpc.NewServer(grpc.StatsHandler(statsHandler)),
 		addr:         l.Addr().String(),
 		healthServer: health.NewServer(),
+		statsHandler: statsHandler,
 	}
 	workflowservice.RegisterWorkflowServiceServer(t.Server, t)
 	grpc_health_v1.RegisterHealthServer(t.Server, t.healthServer)
@@ -639,7 +855,7 @@ func startTestGRPCServer() (*testGRPCServer, error) {
 func (t *testGRPCServer) waitUntilServing() error {
 	// Try 20 times, waiting 100ms between
 	var lastErr error
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		conn, err := grpc.NewClient(t.addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
 			lastErr = err
@@ -665,6 +881,10 @@ func (t *testGRPCServer) GetSystemInfo(
 	req *workflowservice.GetSystemInfoRequest,
 ) (*workflowservice.GetSystemInfoResponse, error) {
 	t.getSystemInfoRequestContext = ctx
+	if t.rejectGzipGetSystemInfo &&
+		t.statsHandler.compressionForMethod(workflowServiceMethod("GetSystemInfo")) == grpcgzip.Name {
+		return nil, status.Error(codes.Unimplemented, `grpc: Decompressor is not installed for grpc-encoding "gzip"`)
+	}
 	return &t.getSystemInfoResponse, t.getSystemInfoResponseError
 }
 
@@ -673,6 +893,9 @@ func (t *testGRPCServer) SignalWorkflowExecution(
 	_ *workflowservice.SignalWorkflowExecutionRequest,
 ) (*workflowservice.SignalWorkflowExecutionResponse, error) {
 	atomic.AddInt32(&t.sigWfCount, 1)
+	if t.signalWorkflowExecutionInvocationTimes != nil {
+		t.signalWorkflowExecutionInvocationTimes <- time.Now()
+	}
 	t.lastSignalWorkflowExecutionContext = ctx
 	return &t.signalWorkflowExecutionResponse, t.signalWorkflowExecutionResponseError
 }
@@ -683,4 +906,73 @@ func (t *testGRPCServer) signalWorkflowInvokeCount() int {
 
 func (t *testGRPCServer) resetSignalWorkflowInvokeCount() {
 	atomic.StoreInt32(&t.sigWfCount, 0)
+}
+
+type compressionStatsHandler struct {
+	mu                         sync.Mutex
+	compressionByMethod        map[string]string
+	compressionHistoryByMethod map[string][]string
+}
+
+func (h *compressionStatsHandler) TagRPC(ctx context.Context, _ *stats.RPCTagInfo) context.Context {
+	return ctx
+}
+
+func (h *compressionStatsHandler) HandleRPC(_ context.Context, s stats.RPCStats) {
+	inHeader, ok := s.(*stats.InHeader)
+	if !ok {
+		return
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.compressionByMethod == nil {
+		h.compressionByMethod = make(map[string]string)
+	}
+	if h.compressionHistoryByMethod == nil {
+		h.compressionHistoryByMethod = make(map[string][]string)
+	}
+	h.compressionByMethod[inHeader.FullMethod] = inHeader.Compression
+	h.compressionHistoryByMethod[inHeader.FullMethod] = append(
+		h.compressionHistoryByMethod[inHeader.FullMethod],
+		inHeader.Compression,
+	)
+}
+
+func (h *compressionStatsHandler) TagConn(ctx context.Context, _ *stats.ConnTagInfo) context.Context {
+	return ctx
+}
+
+func (h *compressionStatsHandler) HandleConn(context.Context, stats.ConnStats) {}
+
+func (h *compressionStatsHandler) compressionForMethod(method string) string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.compressionByMethod[method]
+}
+
+func (h *compressionStatsHandler) compressionHistoryForMethod(method string) []string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return append([]string(nil), h.compressionHistoryByMethod[method]...)
+}
+
+func (h *compressionStatsHandler) reset() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.compressionByMethod = nil
+	h.compressionHistoryByMethod = nil
+}
+
+func workflowServiceMethod(method string) string {
+	return "/" + workflowservice.WorkflowService_ServiceDesc.ServiceName + "/" + method
+}
+
+func countCompression(history []string, compression string) int {
+	var count int
+	for _, c := range history {
+		if c == compression {
+			count++
+		}
+	}
+	return count
 }

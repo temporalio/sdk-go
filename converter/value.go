@@ -16,7 +16,7 @@ type (
 		// Note, values should not be reused for extraction here because merging on
 		// top of existing values may result in unexpected behavior similar to
 		// json.Unmarshal.
-		Get(valuePtr interface{}) error
+		Get(valuePtr any) error
 	}
 
 	// EncodedValues is used to encapsulate/extract encoded one or more values from workflow/activity.
@@ -28,7 +28,7 @@ type (
 		// Note, values should not be reused for extraction here because merging on
 		// top of existing values may result in unexpected behavior similar to
 		// json.Unmarshal.
-		Get(valuePtr ...interface{}) error
+		Get(valuePtr ...any) error
 	}
 
 	// RawValue is a representation of an unconverted, raw payload.
@@ -56,4 +56,23 @@ func (v RawValue) MarshalJSON() ([]byte, error) {
 
 func (v *RawValue) UnmarshalJSON(b []byte) error {
 	return fmt.Errorf("RawValue is not JSON serializable")
+}
+
+// ValuesPayloads is an optional interface that EncodedValue and EncodedValues may implement
+// to expose the underlying commonpb.Payloads without decoding.
+type ValuesPayloads interface {
+	// Payloads gets the underlying commonpb.Payloads without decoding
+	Payloads() *commonpb.Payloads
+}
+
+// GetPayloads acts as a helper to extract the raw *commonpb.Payloads from an EncodedValue
+// or EncodedValues, if the underlying implementation supports it via the ValuesPayloads interface.
+// If the underlying implementation does not support it, this returns nil.
+//
+// Exposed as: [go.temporal.io/sdk/converter.GetPayloads]
+func GetPayloads(encoded any) *commonpb.Payloads {
+	if vp, ok := encoded.(ValuesPayloads); ok {
+		return vp.Payloads()
+	}
+	return nil
 }

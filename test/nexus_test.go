@@ -27,6 +27,7 @@ import (
 	nexuspb "go.temporal.io/api/nexus/v1"
 	"go.temporal.io/api/operatorservice/v1"
 	"go.temporal.io/api/serviceerror"
+	sdkactivity "go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/contrib/opentelemetry"
 	"go.temporal.io/sdk/contrib/opentracing"
@@ -58,6 +59,7 @@ type testContext struct {
 
 type testContextOptions struct {
 	clientInterceptors []interceptor.ClientInterceptor
+	dataConverter      converter.DataConverter
 }
 
 type testContextOption func(opts *testContextOptions)
@@ -68,24 +70,30 @@ func withClientInterceptors(interceptors ...interceptor.ClientInterceptor) testC
 	}
 }
 
+func withDataConverter(dc converter.DataConverter) testContextOption {
+	return func(opts *testContextOptions) {
+		opts.dataConverter = dc
+	}
+}
+
 func newTestContext(t *testing.T, ctx context.Context, optionFuncs ...testContextOption) *testContext {
 	options := &testContextOptions{}
 	for _, opt := range optionFuncs {
 		opt(options)
 	}
 
-	config := NewConfig()
+	clientBase := ConfigAndClientSuiteBase{}
+	clientBase.initConfig()
+	config := clientBase.config
 	require.NoError(t, WaitForTCP(time.Minute, config.ServiceAddr))
 
 	metricsHandler := metrics.NewCapturingHandler()
 	logger := ilog.NewMemoryLogger()
-	c, err := client.DialContext(ctx, client.Options{
-		HostPort:          config.ServiceAddr,
-		Namespace:         config.Namespace,
-		Logger:            logger,
-		ConnectionOptions: client.ConnectionOptions{TLS: config.TLS},
-		MetricsHandler:    metricsHandler,
-		Interceptors:      options.clientInterceptors,
+	c, err := clientBase.newDefaultClientContext(ctx, func(clientOptions *client.Options) {
+		clientOptions.Logger = logger
+		clientOptions.MetricsHandler = metricsHandler
+		clientOptions.Interceptors = options.clientInterceptors
+		clientOptions.DataConverter = options.dataConverter
 	})
 	require.NoError(t, err)
 
@@ -247,6 +255,7 @@ var workflowOp = temporalnexus.NewWorkflowRunOperation(
 )
 
 func TestNexusSyncOperation(t *testing.T) {
+	skipOnCloud(t, cloudRequiresLocalServer, "creates Nexus endpoints through Operator Service and uses the local HTTP frontend")
 	ctx, cancel := context.WithTimeout(context.Background(), defaultNexusTestTimeout)
 	defer cancel()
 
@@ -395,7 +404,7 @@ func TestNexusSyncOperation(t *testing.T) {
 	t.Run("timeout", func(t *testing.T) {
 		_, err := nexusclient.ExecuteOperation(ctx, nc, syncOp, "timeout", nexus.StartOperationOptions{
 			// Force shorter timeout to speed up the test and get a response back.
-			Header: nexus.Header{nexus.HeaderRequestTimeout: "300ms"},
+			Header: nexus.Header{nexus.HeaderRequestTimeout: "5s"},
 		})
 		var handlerErr *nexus.HandlerError
 		require.ErrorAs(t, err, &handlerErr)
@@ -411,6 +420,7 @@ func TestNexusSyncOperation(t *testing.T) {
 }
 
 func TestNexusWorkflowRunOperation(t *testing.T) {
+	skipOnCloud(t, cloudRequiresLocalServer, "creates Nexus endpoints through Operator Service and uses the local HTTP frontend")
 	ctx, cancel := context.WithTimeout(context.Background(), defaultNexusTestTimeout)
 	defer cancel()
 	tc := newTestContext(t, ctx)
@@ -474,6 +484,7 @@ func TestNexusWorkflowRunOperation(t *testing.T) {
 }
 
 func TestOperationSummary(t *testing.T) {
+	skipOnCloud(t, cloudRequiresProvisioning, "creates a Nexus endpoint through Operator Service")
 	ctx, cancel := context.WithTimeout(context.Background(), defaultNexusTestTimeout)
 	defer cancel()
 	tc := newTestContext(t, ctx)
@@ -542,13 +553,14 @@ func TestOperationSummary(t *testing.T) {
 }
 
 func TestOperationInfo(t *testing.T) {
+	skipOnCloud(t, cloudRequiresProvisioning, "creates a Nexus endpoint through Operator Service")
 	ctx, cancel := context.WithTimeout(context.Background(), defaultNexusTestTimeout)
 	defer cancel()
 	tc := newTestContext(t, ctx)
 
 	op := nexus.NewSyncOperation("op", func(ctx context.Context, outcome string, o nexus.StartOperationOptions) (string, error) {
 		info := temporalnexus.GetOperationInfo(ctx)
-		return info.Namespace + ":" + info.TaskQueue, nil
+		return info.Endpoint + ":" + info.Namespace + ":" + info.TaskQueue, nil
 	})
 
 	wf := func(ctx workflow.Context, outcome string) (string, error) {
@@ -586,10 +598,11 @@ func TestOperationInfo(t *testing.T) {
 	require.NoError(t, err)
 	var result string
 	require.NoError(t, run.Get(ctx, &result))
-	require.Equal(t, tc.testConfig.Namespace+":"+tc.taskQueue, result)
+	require.Equal(t, tc.endpoint+":"+tc.testConfig.Namespace+":"+tc.taskQueue, result)
 }
 
 func TestSyncOperationFromWorkflow(t *testing.T) {
+	skipOnCloud(t, cloudRequiresProvisioning, "creates a Nexus endpoint through Operator Service")
 	testCases := []struct {
 		name                       string
 		disableTemporalFailureResp bool
@@ -616,6 +629,16 @@ func TestSyncOperationFromWorkflow(t *testing.T) {
 			runSyncOperationFromWorkflowTest(t, !tc.disableTemporalFailureResp)
 		})
 	}
+}
+
+// unwrapLegacyOperationError strips the OperationError wrapper that servers since temporalio/temporal#11852 add
+// around failures from handlers that don't send Temporal failures. Older servers pass the handler's failure through.
+func unwrapLegacyOperationError(err error) error {
+	var appErr *temporal.ApplicationError
+	if errors.As(err, &appErr) && appErr.Type() == "OperationError" {
+		return appErr.Unwrap()
+	}
+	return err
 }
 
 func runSyncOperationFromWorkflowTest(t *testing.T, temporalFailureResp bool) {
@@ -804,6 +827,8 @@ func runSyncOperationFromWorkflowTest(t *testing.T, temporalFailureResp bool) {
 			require.Equal(t, "failed with app error", appErr.Message())
 			require.Equal(t, "OperationError", appErr.Type())
 			err = appErr.Unwrap()
+		} else {
+			err = unwrapLegacyOperationError(err)
 		}
 		require.ErrorAs(t, err, &appErr)
 		require.Equal(t, "failed with app error", appErr.Message())
@@ -941,6 +966,8 @@ func runSyncOperationFromWorkflowTest(t *testing.T, temporalFailureResp bool) {
 			require.Equal(t, "operation failed with additional context", appErr.Message())
 			require.Equal(t, "OperationError", appErr.Type())
 			err = appErr.Unwrap()
+		} else {
+			err = unwrapLegacyOperationError(err)
 		}
 		// The cause should be the underlying ApplicationError
 		require.ErrorAs(t, err, &appErr)
@@ -1058,6 +1085,8 @@ func runSyncOperationFromWorkflowTest(t *testing.T, temporalFailureResp bool) {
 		if temporalFailureResp {
 			require.ErrorAs(t, err, &appErr)
 			err = appErr.Unwrap()
+		} else {
+			err = unwrapLegacyOperationError(err)
 		}
 		require.ErrorAs(t, err, &appErr)
 		// The outer error should be the cause directly or wrapped
@@ -1101,6 +1130,8 @@ func runSyncOperationFromWorkflowTest(t *testing.T, temporalFailureResp bool) {
 			require.Equal(t, "outer error", appErr.Message())
 			require.Equal(t, "OperationError", appErr.Type())
 			err = appErr.Unwrap()
+		} else {
+			err = unwrapLegacyOperationError(err)
 		}
 		// Unwrap to the middle error
 		require.ErrorAs(t, err, &appErr)
@@ -1147,6 +1178,7 @@ func runSyncOperationFromWorkflowTest(t *testing.T, temporalFailureResp bool) {
 }
 
 func TestInvalidOperationInput(t *testing.T) {
+	skipOnCloud(t, cloudRequiresProvisioning, "creates a Nexus endpoint through Operator Service")
 	ctx, cancel := context.WithTimeout(context.Background(), defaultNexusTestTimeout)
 	defer cancel()
 	tc := newTestContext(t, ctx)
@@ -1165,7 +1197,171 @@ func TestInvalidOperationInput(t *testing.T) {
 	require.ErrorContains(t, run.Get(ctx, nil), `cannot assign argument of type "int" to type "string" for operation "workflow-op"`)
 }
 
+// inputDeserializationErrorDataConverter fails FromPayload with an error selected by the operation input, to exercise
+// the handling of data converter errors when deserializing Nexus operation input. Any other input is converted
+// normally.
+type inputDeserializationErrorDataConverter struct {
+	converter.DataConverter
+}
+
+func (dc inputDeserializationErrorDataConverter) FromPayload(payload *common.Payload, valuePtr any) error {
+	var input string
+	if err := dc.DataConverter.FromPayload(payload, &input); err == nil {
+		switch input {
+		case "application-error":
+			return temporal.NewApplicationErrorWithOptions(
+				"deserialization application error",
+				"FakeDeserializationError",
+				temporal.ApplicationErrorOptions{NonRetryable: true},
+			)
+		case "payload-validation-error":
+			return temporal.NewPayloadValidationError([]map[string]string{
+				{"path": "operationInput", "reason": "must be valid"},
+			})
+		case "retryable-payload-validation-error":
+			return temporal.NewApplicationErrorWithOptions(
+				"deserialization retryable payload validation error",
+				"PayloadValidationError",
+				temporal.ApplicationErrorOptions{},
+			)
+		case "handler-error":
+			// Not using NOT_FOUND, it is retried while the endpoint propagates.
+			return &nexus.HandlerError{
+				Type:  nexus.HandlerErrorTypeNotImplemented,
+				Cause: errors.New("deserialization handler error"),
+			}
+		case "plain-error":
+			return errors.New("deserialization plain error")
+		}
+	}
+	return dc.DataConverter.FromPayload(payload, valuePtr)
+}
+
+// inputDeserializationCallerInput selects the operation input and how long the caller waits for the operation, so a
+// retryable failure can be observed as a timeout instead of hanging for the whole test.
+type inputDeserializationCallerInput struct {
+	Mode                   string
+	ScheduleToCloseTimeout time.Duration
+}
+
+func TestNexusOperationInputDeserializationError(t *testing.T) {
+	skipOnCloud(t, cloudRequiresProvisioning, "creates a Nexus endpoint through Operator Service")
+	ctx, cancel := context.WithTimeout(context.Background(), defaultNexusTestTimeout)
+	defer cancel()
+	tc := newTestContext(t, ctx, withDataConverter(inputDeserializationErrorDataConverter{
+		DataConverter: converter.GetDefaultDataConverter(),
+	}))
+
+	// The caller is a workflow rather than a Nexus client so that the handler error and its cause go through
+	// Temporal's failure conversion, which is what the caller of a Nexus operation actually observes.
+	callerWF := func(ctx workflow.Context, in inputDeserializationCallerInput) (string, error) {
+		c := workflow.NewNexusClient(tc.endpoint, "test")
+		fut := c.ExecuteOperation(ctx, syncOp, in.Mode, workflow.NexusOperationOptions{
+			ScheduleToCloseTimeout: in.ScheduleToCloseTimeout,
+		})
+		var res string
+		err := fut.Get(ctx, &res)
+		return res, err
+	}
+
+	w := worker.New(tc.client, tc.taskQueue, worker.Options{})
+	service := nexus.NewService("test")
+	require.NoError(t, service.Register(syncOp))
+	w.RegisterNexusService(service)
+	w.RegisterWorkflow(callerWF)
+	require.NoError(t, w.Start())
+	t.Cleanup(w.Stop)
+
+	execute := func(t *testing.T, mode string, scheduleToCloseTimeout time.Duration) (string, error) {
+		run, err := tc.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
+			TaskQueue: tc.taskQueue,
+			// The endpoint registry may take a bit to propagate to the history service, use a shorter workflow task
+			// timeout to speed up the attempts.
+			WorkflowTaskTimeout: time.Second,
+		}, callerWF, inputDeserializationCallerInput{
+			Mode:                   mode,
+			ScheduleToCloseTimeout: scheduleToCloseTimeout,
+		})
+		require.NoError(t, err)
+		var res string
+		return res, run.Get(ctx, &res)
+	}
+
+	// requireHandlerError unwraps the chain a Nexus operation caller sees down to the handler error.
+	requireHandlerError := func(t *testing.T, err error) *nexus.HandlerError {
+		var execErr *temporal.WorkflowExecutionError
+		require.ErrorAs(t, err, &execErr)
+		var opErr *temporal.NexusOperationError
+		require.ErrorAs(t, execErr.Unwrap(), &opErr)
+		var handlerErr *nexus.HandlerError
+		require.ErrorAs(t, opErr.Unwrap(), &handlerErr)
+		return handlerErr
+	}
+
+	t.Run("application-error", func(t *testing.T) {
+		_, err := execute(t, "application-error", 20*time.Second)
+		handlerErr := requireHandlerError(t, err)
+		// Application errors are passed through and get the same treatment as when returned from a handler.
+		require.Equal(t, nexus.HandlerErrorTypeInternal, handlerErr.Type)
+		var appErr *temporal.ApplicationError
+		require.ErrorAs(t, handlerErr.Cause, &appErr)
+		require.Equal(t, "FakeDeserializationError", appErr.Type())
+		require.ErrorContains(t, appErr, "deserialization application error")
+	})
+
+	t.Run("payload-validation-error", func(t *testing.T) {
+		_, err := execute(t, "payload-validation-error", 20*time.Second)
+		handlerErr := requireHandlerError(t, err)
+		// Non-retryable payload validation errors indicate invalid input.
+		require.Equal(t, nexus.HandlerErrorTypeBadRequest, handlerErr.Type)
+		require.Equal(t, "invalid operation input", handlerErr.Message)
+		var appErr *temporal.ApplicationError
+		require.ErrorAs(t, handlerErr.Cause, &appErr)
+		require.Equal(t, "PayloadValidationError", appErr.Type())
+		require.True(t, appErr.NonRetryable())
+		require.Equal(t, "Payload validation failed", appErr.Message())
+		var violations []map[string]string
+		require.NoError(t, appErr.Details(&violations))
+		require.Equal(t, []map[string]string{{"path": "operationInput", "reason": "must be valid"}}, violations)
+	})
+
+	t.Run("retryable-payload-validation-error", func(t *testing.T) {
+		// Only non-retryable payload validation errors are translated to bad requests, a retryable one keeps the
+		// retryable INTERNAL handling and is retried until the operation times out.
+		_, err := execute(t, "retryable-payload-validation-error", 3*time.Second)
+		var execErr *temporal.WorkflowExecutionError
+		require.ErrorAs(t, err, &execErr)
+		var opErr *temporal.NexusOperationError
+		require.ErrorAs(t, execErr.Unwrap(), &opErr)
+		var timeoutErr *temporal.TimeoutError
+		require.ErrorAs(t, opErr.Unwrap(), &timeoutErr)
+	})
+
+	t.Run("handler-error", func(t *testing.T) {
+		_, err := execute(t, "handler-error", 20*time.Second)
+		handlerErr := requireHandlerError(t, err)
+		// Handler errors are passed through with the type chosen by the data converter.
+		require.Equal(t, nexus.HandlerErrorTypeNotImplemented, handlerErr.Type)
+		require.ErrorContains(t, handlerErr.Cause, "deserialization handler error")
+	})
+
+	t.Run("plain-error", func(t *testing.T) {
+		_, err := execute(t, "plain-error", 20*time.Second)
+		handlerErr := requireHandlerError(t, err)
+		require.Equal(t, nexus.HandlerErrorTypeBadRequest, handlerErr.Type)
+		require.ErrorContains(t, handlerErr.Cause, "deserialization plain error")
+	})
+
+	t.Run("ok", func(t *testing.T) {
+		// Any input the converter does not reject deserializes normally and reaches the operation handler.
+		res, err := execute(t, "success", 20*time.Second)
+		require.NoError(t, err)
+		require.Equal(t, "", res)
+	})
+}
+
 func TestAsyncOperationFromWorkflow(t *testing.T) {
+	skipOnCloud(t, cloudRequiresProvisioning, "creates a Nexus endpoint through Operator Service")
 	ctx, cancel := context.WithTimeout(context.Background(), defaultNexusTestTimeout)
 	defer cancel()
 	tc := newTestContext(t, ctx)
@@ -1465,6 +1661,13 @@ func runCancellationTypeTest(ctx context.Context, tc *testContext, cancellationT
 
 	var unblockedTime time.Time
 	callerWf := func(ctx workflow.Context, cancellation workflow.NexusOperationCancellationType) error {
+		operationStarted := false
+		if err := workflow.SetQueryHandler(ctx, "operation-started", func() (bool, error) {
+			return operationStarted, nil
+		}); err != nil {
+			return err
+		}
+
 		c := workflow.NewNexusClient(tc.endpoint, "test")
 		fut := c.ExecuteOperation(ctx, op, "", workflow.NexusOperationOptions{
 			CancellationType: cancellation,
@@ -1473,6 +1676,7 @@ func runCancellationTypeTest(ctx context.Context, tc *testContext, cancellationT
 		if err := fut.GetNexusOperationExecution().Get(ctx, nil); err != nil {
 			return err
 		}
+		operationStarted = true
 
 		disconCtx, _ := workflow.NewDisconnectedContext(ctx) // Use disconnected ctx so it is not auto canceled.
 		if cancellation == workflow.NexusOperationCancellationTypeTryCancel || cancellation == workflow.NexusOperationCancellationTypeWaitRequested {
@@ -1508,6 +1712,14 @@ func runCancellationTypeTest(ctx context.Context, tc *testContext, cancellationT
 		_, descErr := tc.client.DescribeWorkflow(ctx, handlerID, "")
 		return descErr == nil
 	}, 2*time.Second, 20*time.Millisecond, "timed out waiting for handler wf to start")
+	require.Eventuallyf(t, func() bool {
+		value, queryErr := tc.client.QueryWorkflow(ctx, run.GetID(), run.GetRunID(), "operation-started")
+		if queryErr != nil {
+			return false
+		}
+		var operationStarted bool
+		return value.Get(&operationStarted) == nil && operationStarted
+	}, 5*time.Second, 100*time.Millisecond, "timed out waiting for caller to observe operation start")
 	require.NoError(t, tc.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID()))
 
 	err = run.Get(ctx, nil)
@@ -1529,12 +1741,13 @@ func runCancellationTypeTest(ctx context.Context, tc *testContext, cancellationT
 }
 
 func TestAsyncOperationFromWorkflow_CancellationTypes(t *testing.T) {
+	skipOnCloud(t, cloudRequiresProvisioning, "creates a Nexus endpoint through Operator Service")
 	if os.Getenv("DISABLE_SERVER_1_27_TESTS") == "1" {
 		t.Skip()
 	}
 
 	t.Run("Abandon", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(context.Background(), defaultNexusTestTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		tc := newTestContext(t, ctx)
 
@@ -1574,7 +1787,7 @@ func TestAsyncOperationFromWorkflow_CancellationTypes(t *testing.T) {
 			require.NoError(t, err)
 			if event.EventType == enumspb.EVENT_TYPE_NEXUS_OPERATION_CANCEL_REQUESTED {
 				foundRequestedEvent = true
-				require.Greater(t, unblockedTime, event.EventTime.AsTime().UTC())
+				require.GreaterOrEqual(t, unblockedTime, event.EventTime.AsTime().UTC())
 			}
 			require.NotEqual(t, enumspb.EVENT_TYPE_NEXUS_OPERATION_CANCEL_REQUEST_COMPLETED, event.EventType)
 			require.NotEqual(t, enumspb.EVENT_TYPE_NEXUS_OPERATION_CANCEL_REQUEST_FAILED, event.EventType)
@@ -1608,7 +1821,7 @@ func TestAsyncOperationFromWorkflow_CancellationTypes(t *testing.T) {
 			require.NoError(t, err)
 			if event.EventType == enumspb.EVENT_TYPE_NEXUS_OPERATION_CANCEL_REQUEST_COMPLETED {
 				foundRequestCompleted = true
-				require.Greater(t, unblockedTime, event.EventTime.AsTime().UTC())
+				require.GreaterOrEqual(t, unblockedTime, event.EventTime.AsTime().UTC())
 			}
 			callerCloseEvent = event
 		}
@@ -1659,6 +1872,7 @@ func TestAsyncOperationFromWorkflow_CancellationTypes(t *testing.T) {
 }
 
 func TestAsyncOperationFromWorkflow_MultipleCallers(t *testing.T) {
+	skipOnCloud(t, cloudRequiresProvisioning, "creates a Nexus endpoint through Operator Service")
 	if os.Getenv("DISABLE_SERVER_1_27_TESTS") == "1" {
 		t.Skip()
 	}
@@ -1843,6 +2057,9 @@ func TestAsyncOperationFromWorkflow_MultipleCallers(t *testing.T) {
 
 type manualAsyncOp struct {
 	nexus.UnimplementedOperation[nexus.NoValue, nexus.NoValue]
+	// HTTP callback URL used when the server hands out the internal temporal://system callback URL, which newer
+	// servers always do for worker endpoints and which can't be posted to over HTTP.
+	httpCallbackURL string
 }
 
 func (*manualAsyncOp) Name() string {
@@ -1872,7 +2089,11 @@ func (o *manualAsyncOp) Start(ctx context.Context, input nexus.NoValue, options 
 	if err != nil {
 		return nil, err
 	}
-	req, err := nexusclient.NewCompletionHTTPRequest(ctx, options.CallbackURL, completion)
+	callbackURL := options.CallbackURL
+	if callbackURL == "temporal://system" {
+		callbackURL = o.httpCallbackURL
+	}
+	req, err := nexusclient.NewCompletionHTTPRequest(ctx, callbackURL, completion)
 	if err != nil {
 		return nil, err
 	}
@@ -1893,11 +2114,14 @@ func (o *manualAsyncOp) Start(ctx context.Context, input nexus.NoValue, options 
 // TestAsyncOperationCompletionCustomFailureConverter tests the completion path when a failure is generated with a
 // custom failure converter.
 func TestAsyncOperationCompletionCustomFailureConverter(t *testing.T) {
+	skipOnCloud(t, cloudRequiresProvisioning, "creates a Nexus endpoint through Operator Service")
 	ctx, cancel := context.WithTimeout(context.Background(), defaultNexusTestTimeout)
 	defer cancel()
 	tc := newTestContext(t, ctx)
 
-	op := &manualAsyncOp{}
+	op := &manualAsyncOp{
+		httpCallbackURL: "http://" + tc.testConfig.ServiceHTTPAddr + "/namespaces/" + tc.testConfig.Namespace + "/nexus/callback",
+	}
 
 	callerWorkflow := func(ctx workflow.Context) error {
 		c := workflow.NewNexusClient(tc.endpoint, "test")
@@ -1937,11 +2161,7 @@ func TestAsyncOperationCompletionCustomFailureConverter(t *testing.T) {
 	var appErr *temporal.ApplicationError
 	require.ErrorAs(t, err, &appErr)
 	require.Equal(t, "async failure", appErr.Message())
-	if os.Getenv("DISABLE_NEW_NEXUS_ERROR_FORMAT_TESTS") != "" {
-		require.Equal(t, "NexusFailure", appErr.Type())
-	} else {
-		require.Equal(t, "", appErr.Type())
-	}
+	require.Equal(t, "NexusFailure", appErr.Type())
 	var details nexus.Failure
 	require.NoError(t, appErr.Details(&details))
 	require.Equal(t, "custom", details.Metadata["type"])
@@ -1951,6 +2171,7 @@ func TestAsyncOperationCompletionCustomFailureConverter(t *testing.T) {
 }
 
 func TestNewNexusClientValidation(t *testing.T) {
+	skipOnCloud(t, cloudNeedsAdaptation, "uses endpoint-creating test setup even though the endpoint is not used")
 	ctx, cancel := context.WithTimeout(context.Background(), defaultNexusTestTimeout)
 	defer cancel()
 	tc := newTestContext(t, ctx)
@@ -1983,6 +2204,7 @@ func TestNewNexusClientValidation(t *testing.T) {
 }
 
 func TestReplay(t *testing.T) {
+	skipOnCloud(t, cloudNeedsAdaptation, "uses a live endpoint to generate history instead of a captured fixture")
 	ctx, cancel := context.WithTimeout(context.Background(), defaultNexusTestTimeout)
 	defer cancel()
 	tc := newTestContext(t, ctx)
@@ -2332,6 +2554,171 @@ func TestWorkflowTestSuite_WorkflowRunOperation(t *testing.T) {
 		require.ErrorAs(t, err, &appErr)
 		require.Equal(t, "expected failure", appErr.Message())
 	})
+}
+
+func TestWorkflowTestSuite_ActivityBackedNexusOperation(t *testing.T) {
+	echoActivity := func(ctx context.Context, in string) (string, error) {
+		return "echo:" + in, nil
+	}
+
+	op := temporalnexus.MustNewTemporalOperation(temporalnexus.TemporalOperationOptions[string, string]{
+		Name: "act-op",
+		Start: func(ctx context.Context, nc temporalnexus.NexusClient, input string, _ temporalnexus.StartTemporalOperationOptions) (temporalnexus.TemporalOperationResult[string], error) {
+			return temporalnexus.StartActivity(ctx, nc, client.StartActivityOptions{
+				ID:                  "act-" + input,
+				StartToCloseTimeout: 10 * time.Second,
+			}, echoActivity, input)
+		},
+	})
+
+	callerWF := func(ctx workflow.Context, input string) (string, error) {
+		nc := workflow.NewNexusClient("endpoint", "test")
+		fut := nc.ExecuteOperation(ctx, op, input, workflow.NexusOperationOptions{})
+		var exec workflow.NexusOperationExecution
+		if err := fut.GetNexusOperationExecution().Get(ctx, &exec); err != nil {
+			return "", err
+		}
+		if exec.OperationToken == "" {
+			return "", errors.New("got empty operation token")
+		}
+		var result string
+		if err := fut.Get(ctx, &result); err != nil {
+			return "", err
+		}
+		return result, nil
+	}
+
+	service := nexus.NewService("test")
+	service.Register(op)
+
+	suite := testsuite.WorkflowTestSuite{}
+	env := suite.NewTestWorkflowEnvironment()
+	env.RegisterActivity(echoActivity)
+	env.RegisterNexusService(service)
+
+	env.ExecuteWorkflow(callerWF, "hello")
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	var got string
+	require.NoError(t, env.GetWorkflowResult(&got))
+	require.Equal(t, "echo:hello", got)
+}
+
+func TestWorkflowTestSuite_ActivityBackedNexusOperationValidation(t *testing.T) {
+	const taskQueue = "activity-validation-task-queue"
+
+	type validationInput struct {
+		Mode       string
+		ActivityID string
+	}
+	type validationResult struct {
+		ValidationError     string
+		HandlerErrorType    string
+		ValidActivityResult string
+	}
+
+	validationActivity := func(_ context.Context, result validationResult) (validationResult, error) {
+		result.ValidActivityResult = "completed"
+		return result, nil
+	}
+	op := temporalnexus.MustNewTemporalOperation(temporalnexus.TemporalOperationOptions[validationInput, validationResult]{
+		Name: "activity-validation-op",
+		Start: func(ctx context.Context, nc temporalnexus.NexusClient, input validationInput, _ temporalnexus.StartTemporalOperationOptions) (temporalnexus.TemporalOperationResult[validationResult], error) {
+			var validationErr error
+			switch input.Mode {
+			case "missing-id":
+				_, validationErr = temporalnexus.StartUntypedActivity[validationResult](ctx, nc, client.StartActivityOptions{
+					StartToCloseTimeout: time.Minute,
+				}, validationActivity, validationResult{})
+			case "missing-timeouts":
+				_, validationErr = temporalnexus.StartUntypedActivity[validationResult](ctx, nc, client.StartActivityOptions{
+					ID: input.ActivityID + "-invalid",
+				}, validationActivity, validationResult{})
+			case "invalid-args":
+				_, validationErr = temporalnexus.StartUntypedActivity[validationResult](ctx, nc, client.StartActivityOptions{
+					ID:                  input.ActivityID + "-invalid",
+					StartToCloseTimeout: time.Minute,
+				}, validationActivity)
+			default:
+				return temporalnexus.TemporalOperationResult[validationResult]{}, fmt.Errorf("unknown validation mode %q", input.Mode)
+			}
+			if validationErr == nil {
+				return temporalnexus.TemporalOperationResult[validationResult]{}, fmt.Errorf("expected %s validation to fail", input.Mode)
+			}
+
+			result := validationResult{ValidationError: validationErr.Error()}
+			var handlerErr *nexus.HandlerError
+			if errors.As(validationErr, &handlerErr) {
+				result.HandlerErrorType = string(handlerErr.Type)
+			}
+			return temporalnexus.StartActivity(ctx, nc, client.StartActivityOptions{
+				ID:                  input.ActivityID + "-valid",
+				StartToCloseTimeout: time.Minute,
+			}, validationActivity, result)
+		},
+	})
+	callerWorkflow := func(ctx workflow.Context, input validationInput) (validationResult, error) {
+		c := workflow.NewNexusClient("endpoint", "test")
+		var result validationResult
+		err := c.ExecuteOperation(ctx, op, input, workflow.NexusOperationOptions{}).Get(ctx, &result)
+		return result, err
+	}
+
+	service := nexus.NewService("test")
+	require.NoError(t, service.Register(op))
+
+	for _, tc := range []struct {
+		name                 string
+		mode                 string
+		expectedError        string
+		expectedHandlerError string
+	}{
+		{
+			name:          "missing activity ID",
+			mode:          "missing-id",
+			expectedError: "activity ID is required",
+		},
+		{
+			name:                 "missing close timeouts",
+			mode:                 "missing-timeouts",
+			expectedError:        "at least one of StartToCloseTimeout or ScheduleToCloseTimeout is required",
+			expectedHandlerError: string(nexus.HandlerErrorTypeBadRequest),
+		},
+		{
+			name:          "invalid untyped activity arguments",
+			mode:          "invalid-args",
+			expectedError: "expected 1 args for function",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			suite := testsuite.WorkflowTestSuite{}
+			env := suite.NewTestWorkflowEnvironment()
+			env.SetStartWorkflowOptions(client.StartWorkflowOptions{TaskQueue: taskQueue})
+			env.RegisterActivity(validationActivity)
+			env.RegisterNexusService(service)
+
+			startedActivities := 0
+			startedTaskQueue := ""
+			env.SetOnActivityStartedListener(func(info *sdkactivity.Info, _ context.Context, _ converter.EncodedValues) {
+				startedActivities++
+				startedTaskQueue = info.TaskQueue
+			})
+
+			env.ExecuteWorkflow(callerWorkflow, validationInput{
+				Mode:       tc.mode,
+				ActivityID: "validation-" + tc.mode,
+			})
+			require.True(t, env.IsWorkflowCompleted())
+			require.NoError(t, env.GetWorkflowError())
+			var result validationResult
+			require.NoError(t, env.GetWorkflowResult(&result))
+			require.Contains(t, result.ValidationError, tc.expectedError)
+			require.Equal(t, tc.expectedHandlerError, result.HandlerErrorType)
+			require.Equal(t, "completed", result.ValidActivityResult)
+			require.Equal(t, 1, startedActivities, "only the valid retry should start an activity")
+			require.Equal(t, taskQueue, startedTaskQueue, "empty activity task queue should default to the Nexus worker task queue")
+		})
+	}
 }
 
 func TestWorkflowTestSuite_WorkflowRunOperation_ScheduleToCloseTimeout(t *testing.T) {
@@ -3098,6 +3485,7 @@ func (i *nexusInterceptor) Info(msg string, keyvals ...any) {
 }
 
 func TestInterceptors(t *testing.T) {
+	skipOnCloud(t, cloudNeedsAdaptation, "combines a real-server endpoint test with an in-memory test environment")
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
 	defer cancel()
 	tc := newTestContext(t, ctx)
@@ -3178,14 +3566,61 @@ type opentracingTracer struct {
 	mock *mocktracer.MockTracer
 }
 
+const (
+	traceWorkflowIDTag = "temporalWorkflowID"
+	traceRunIDTag      = "temporalRunID"
+)
+
+type replaySpanKey struct {
+	name       string
+	workflowID string
+	runID      string
+}
+
 func (t *opentracingTracer) FinishedSpans() []*interceptortest.SpanInfo {
 	return t.spanChildren(t.mock.FinishedSpans(), 0)
 }
 
+func newReplaySpanKey(name, workflowID, runID string) *replaySpanKey {
+	if !strings.HasPrefix(name, "RunWorkflow:") || workflowID == "" || runID == "" {
+		return nil
+	}
+
+	return &replaySpanKey{name: name, workflowID: workflowID, runID: runID}
+}
+
+func appendReplaySpan(
+	spans []*interceptortest.SpanInfo,
+	span *interceptortest.SpanInfo,
+	key *replaySpanKey,
+	replays map[replaySpanKey]*interceptortest.SpanInfo,
+) []*interceptortest.SpanInfo {
+	if key == nil {
+		return append(spans, span)
+	}
+
+	// Replay emits another RunWorkflow span for the same execution.
+	if existing := replays[*key]; existing != nil {
+		existing.Children = append(existing.Children, span.Children...)
+		return spans
+	}
+
+	replays[*key] = span
+	return append(spans, span)
+}
+
 func (t *opentracingTracer) spanChildren(spans []*mocktracer.MockSpan, parentID int) (ret []*interceptortest.SpanInfo) {
+	replays := make(map[replaySpanKey]*interceptortest.SpanInfo)
 	for _, s := range spans {
 		if s.ParentID == parentID {
-			ret = append(ret, interceptortest.Span(s.OperationName, t.spanChildren(spans, s.SpanContext.SpanID)...))
+			workflowID, _ := s.Tag(traceWorkflowIDTag).(string)
+			runID, _ := s.Tag(traceRunIDTag).(string)
+			ret = appendReplaySpan(
+				ret,
+				interceptortest.Span(s.OperationName, t.spanChildren(spans, s.SpanContext.SpanID)...),
+				newReplaySpanKey(s.OperationName, workflowID, runID),
+				replays,
+			)
 		}
 	}
 	return
@@ -3201,16 +3636,31 @@ func (t *otelTracer) FinishedSpans() []*interceptortest.SpanInfo {
 }
 
 func (t *otelTracer) spanChildren(spans []sdktrace.ReadOnlySpan, parentID trace.SpanID) (ret []*interceptortest.SpanInfo) {
+	replays := make(map[replaySpanKey]*interceptortest.SpanInfo)
 	for _, s := range spans {
 		if s.Parent().SpanID() == parentID {
-			ret = append(ret, interceptortest.Span(s.Name(), t.spanChildren(spans, s.SpanContext().SpanID())...))
+			var workflowID, runID string
+			for _, attr := range s.Attributes() {
+				switch string(attr.Key) {
+				case traceWorkflowIDTag:
+					workflowID = attr.Value.AsString()
+				case traceRunIDTag:
+					runID = attr.Value.AsString()
+				}
+			}
+			ret = appendReplaySpan(
+				ret,
+				interceptortest.Span(s.Name(), t.spanChildren(spans, s.SpanContext().SpanID())...),
+				newReplaySpanKey(s.Name(), workflowID, runID),
+				replays,
+			)
 		}
 	}
 	return
 }
 
 func TestNexusTracingInterceptor(t *testing.T) {
-	t.Skip("this test is flaky in CI and needs to be restructured")
+	skipOnCloud(t, cloudRequiresProvisioning, "creates a Nexus endpoint through Operator Service")
 	cases := []struct {
 		name   string
 		tracer func(t *testing.T) interceptortest.TestTracer
@@ -3285,11 +3735,8 @@ func TestNexusTracingInterceptor(t *testing.T) {
 						interceptortest.Span("StartNexusOperation:test/workflow-op",
 							interceptortest.Span("RunStartNexusOperationHandler:test/workflow-op",
 								interceptortest.Span("StartWorkflow:waitForCancelWorkflow",
-									interceptortest.Span("RunWorkflow:waitForCancelWorkflow")))))),
-				// Note that the span is not attached since the server as of 1.27 does not propagate headers to the cancel
-				// request.  This assertion will have to change once the server fixes this behavior. It's left here as a
-				// reminder.
-				interceptortest.Span("RunCancelNexusOperationHandler:test/workflow-op"),
+									interceptortest.Span("RunWorkflow:waitForCancelWorkflow"))),
+							interceptortest.Span("RunCancelNexusOperationHandler:test/workflow-op")))),
 			}, tracer.FinishedSpans())
 		})
 	}
@@ -3405,6 +3852,7 @@ func TestWorkflowTestSuite_WorkflowRunOperation_StartToCloseTimeout(t *testing.T
 }
 
 func TestNexusTimeoutInteraction(t *testing.T) {
+	skipOnCloud(t, cloudRequiresProvisioning, "creates a Nexus endpoint through Operator Service")
 	if os.Getenv("DISABLE_NEXUS_CALLER_TIMEOUT_TESTS") == "1" {
 		t.Skip()
 	}
@@ -3514,4 +3962,304 @@ func TestNexusTimeoutInteraction(t *testing.T) {
 			require.Contains(t, timeoutErr.Message(), "operation timed out")
 		})
 	}
+}
+
+// callee is a workflow that completes once it receives a single signal. Used as the
+// callee of a signal issued by a Nexus operation handler.
+func callee(ctx workflow.Context) (string, error) {
+	var received string
+	workflow.GetSignalChannel(ctx, "test-signal").Receive(ctx, &received)
+	return received, nil
+}
+
+// TestNexusSignalOperationLinks verifies bidirectional link propagation when a Nexus operation
+// handler signals a workflow via signalWithStart: the inbound Nexus task links are forwarded onto
+// the SignalWithStartWorkflowExecution request (forward), and the server's response link lands on the
+// caller's NexusOperationCompleted history event (backward).
+//
+// Requires a real server with history.enableCHASMSignalBacklinks=true; the response link path is not
+// implemented by the in-memory test server. Gated behind ENABLE_SIGNAL_RESPONSE_LINK_TESTS so it is
+// skipped by default.
+func TestNexusSignalOperationLinks(t *testing.T) {
+	skipOnCloud(t, cloudRequiresProvisioning, "creates a Nexus endpoint through Operator Service")
+	if os.Getenv("ENABLE_SIGNAL_RESPONSE_LINK_TESTS") != "1" {
+		t.Skip("set ENABLE_SIGNAL_RESPONSE_LINK_TESTS=1 and run against a server with history.enableCHASMSignalBacklinks=true")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), defaultNexusTestTimeout)
+	defer cancel()
+	tc := newTestContext(t, ctx)
+
+	calleeID := "callee-" + uuid.NewString()
+
+	// Sync operation handler that signalWithStarts the callee workflow, then returns.
+	signalOp := nexus.NewSyncOperation("signal-op", func(ctx context.Context, _ nexus.NoValue, _ nexus.StartOperationOptions) (nexus.NoValue, error) {
+		_, err := temporalnexus.GetClient(ctx).SignalWithStartWorkflow(ctx, calleeID, "test-signal", "from-nexus",
+			client.StartWorkflowOptions{TaskQueue: tc.taskQueue}, callee)
+		return nil, err
+	})
+
+	caller := func(ctx workflow.Context) error {
+		c := workflow.NewNexusClient(tc.endpoint, "test")
+		fut := c.ExecuteOperation(ctx, signalOp, nil, workflow.NexusOperationOptions{})
+		return fut.Get(ctx, nil)
+	}
+
+	w := worker.New(tc.client, tc.taskQueue, worker.Options{})
+	service := nexus.NewService("test")
+	require.NoError(t, service.Register(signalOp))
+	w.RegisterNexusService(service)
+	w.RegisterWorkflow(caller)
+	w.RegisterWorkflow(callee)
+	require.NoError(t, w.Start())
+	t.Cleanup(w.Stop)
+
+	run, err := tc.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
+		ID:                  "caller-" + uuid.NewString(),
+		TaskQueue:           tc.taskQueue,
+		WorkflowTaskTimeout: time.Second,
+	}, caller)
+	require.NoError(t, err)
+	require.NoError(t, run.Get(ctx, nil))
+
+	// The callee should have completed with the forwarded signal value.
+	var calleeResult string
+	require.NoError(t, tc.client.GetWorkflow(ctx, calleeID, "").Get(ctx, &calleeResult))
+	require.Equal(t, "from-nexus", calleeResult)
+
+	// The response link should land on the caller's NexusOperationCompleted event, pointing at the
+	// callee's WorkflowExecutionSignaled event.
+	iter := tc.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+	var completedEvent *historypb.HistoryEvent
+	for iter.HasNext() {
+		event, err := iter.Next()
+		require.NoError(t, err)
+		if event.GetEventType() == enumspb.EVENT_TYPE_NEXUS_OPERATION_COMPLETED {
+			completedEvent = event
+			break
+		}
+	}
+	require.NotNil(t, completedEvent, "expected a NexusOperationCompleted event")
+	require.Len(t, completedEvent.GetLinks(), 1, "expected one response link on the completed event")
+	we := completedEvent.GetLinks()[0].GetWorkflowEvent()
+	require.Equal(t, calleeID, we.GetWorkflowId())
+	// Server PR temporalio/temporal#9897 keys these response links via RequestIdReference rather than
+	// EventReference, so accept either oneof variant (matches the Java SignalOperationLinkingTest).
+	var responseLinkEventType enumspb.EventType
+	if we.GetRequestIdRef() != nil {
+		responseLinkEventType = we.GetRequestIdRef().GetEventType()
+	} else {
+		responseLinkEventType = we.GetEventRef().GetEventType()
+	}
+	require.Equal(t, enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_SIGNALED, responseLinkEventType)
+}
+
+// TestNexusMultiSignalOperationLinks verifies that a single Nexus operation handler signalling
+// multiple workflows accumulates one response link per callee onto the caller's NexusOperationCompleted
+// history event. This is the integration-level counterpart to the unit tests
+// TestMultipleSignalsAccumulateAllResponseLinks and TestMixedSignalAndSignalWithStartAccumulateAllResponseLinks,
+// and mirrors the Java SignalOperationLinkingTest.testMultiSignalOperationLinks scenario.
+//
+// Requires a real server with history.enableCHASMSignalBacklinks=true; gated behind
+// ENABLE_SIGNAL_RESPONSE_LINK_TESTS so it is skipped by default.
+func TestNexusMultiSignalOperationLinks(t *testing.T) {
+	skipOnCloud(t, cloudRequiresProvisioning, "creates a Nexus endpoint through Operator Service")
+	if os.Getenv("ENABLE_SIGNAL_RESPONSE_LINK_TESTS") != "1" {
+		t.Skip("set ENABLE_SIGNAL_RESPONSE_LINK_TESTS=1 and run against a server with history.enableCHASMSignalBacklinks=true")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), defaultNexusTestTimeout)
+	defer cancel()
+	tc := newTestContext(t, ctx)
+
+	calleeIDs := []string{
+		"multicallee-a-" + uuid.NewString(),
+		"multicallee-b-" + uuid.NewString(),
+		"multicallee-c-" + uuid.NewString(),
+	}
+
+	// Sync operation handler that signalWithStarts every callee workflow, then returns.
+	signalOp := nexus.NewSyncOperation("signal-op", func(ctx context.Context, _ nexus.NoValue, _ nexus.StartOperationOptions) (nexus.NoValue, error) {
+		for _, calleeID := range calleeIDs {
+			_, err := temporalnexus.GetClient(ctx).SignalWithStartWorkflow(ctx, calleeID, "test-signal", "from-nexus",
+				client.StartWorkflowOptions{TaskQueue: tc.taskQueue}, callee)
+			if err != nil {
+				return nil, err
+			}
+		}
+		return nil, nil
+	})
+
+	caller := func(ctx workflow.Context) error {
+		c := workflow.NewNexusClient(tc.endpoint, "test")
+		fut := c.ExecuteOperation(ctx, signalOp, nil, workflow.NexusOperationOptions{})
+		return fut.Get(ctx, nil)
+	}
+
+	w := worker.New(tc.client, tc.taskQueue, worker.Options{})
+	service := nexus.NewService("test")
+	require.NoError(t, service.Register(signalOp))
+	w.RegisterNexusService(service)
+	w.RegisterWorkflow(caller)
+	w.RegisterWorkflow(callee)
+	require.NoError(t, w.Start())
+	t.Cleanup(w.Stop)
+
+	run, err := tc.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
+		ID:                  "multicaller-" + uuid.NewString(),
+		TaskQueue:           tc.taskQueue,
+		WorkflowTaskTimeout: time.Second,
+	}, caller)
+	require.NoError(t, err)
+	require.NoError(t, run.Get(ctx, nil))
+
+	// Every callee should have completed with the forwarded signal value.
+	for _, calleeID := range calleeIDs {
+		var calleeResult string
+		require.NoError(t, tc.client.GetWorkflow(ctx, calleeID, "").Get(ctx, &calleeResult))
+		require.Equal(t, "from-nexus", calleeResult)
+	}
+
+	// One response link per callee should land on the caller's NexusOperationCompleted event, each
+	// pointing at the corresponding callee's WorkflowExecutionSignaled event.
+	iter := tc.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+	var completedEvent *historypb.HistoryEvent
+	for iter.HasNext() {
+		event, err := iter.Next()
+		require.NoError(t, err)
+		if event.GetEventType() == enumspb.EVENT_TYPE_NEXUS_OPERATION_COMPLETED {
+			completedEvent = event
+			break
+		}
+	}
+	require.NotNil(t, completedEvent, "expected a NexusOperationCompleted event")
+	require.Len(t, completedEvent.GetLinks(), len(calleeIDs), "expected one response link per callee on the completed event")
+
+	linkedWorkflowIDs := make(map[string]struct{})
+	for _, link := range completedEvent.GetLinks() {
+		we := link.GetWorkflowEvent()
+		linkedWorkflowIDs[we.GetWorkflowId()] = struct{}{}
+		// Server PR temporalio/temporal#9897 keys these response links via RequestIdReference rather
+		// than EventReference, so accept either oneof variant (matches the Java
+		// SignalOperationLinkingTest).
+		var responseLinkEventType enumspb.EventType
+		if we.GetRequestIdRef() != nil {
+			responseLinkEventType = we.GetRequestIdRef().GetEventType()
+		} else {
+			responseLinkEventType = we.GetEventRef().GetEventType()
+		}
+		require.Equal(t, enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_SIGNALED, responseLinkEventType)
+	}
+	for _, calleeID := range calleeIDs {
+		require.Contains(t, linkedWorkflowIDs, calleeID, "expected a response link pointing at callee %s", calleeID)
+	}
+}
+
+// asyncHandler is the workflow backing the async Nexus operation in
+// TestNexusAsyncSignalOperationLinks. It exists only so the operation can return an async result;
+// the signal-to-callee (and thus the response link) happens in the operation's start handler, not here.
+func asyncHandler(ctx workflow.Context, _ nexus.NoValue) (string, error) {
+	return "async-done", nil
+}
+
+// TestNexusAsyncSignalOperationLinks verifies response link propagation for an async Nexus operation:
+// the handler signals a callee workflow while starting the operation, and the server's response link
+// lands on the caller's NexusOperationStarted history event (the async counterpart to the sync
+// NexusOperationCompleted path covered by TestNexusSignalOperationLinks). This mirrors the unit
+// test TestAsyncResponseIncludesSignalResponseLinks at the integration level.
+//
+// Requires a real server with history.enableCHASMSignalBacklinks=true; the response link path is not
+// implemented by the in-memory test server. Gated behind ENABLE_SIGNAL_RESPONSE_LINK_TESTS so it is
+// skipped by default.
+func TestNexusAsyncSignalOperationLinks(t *testing.T) {
+	skipOnCloud(t, cloudRequiresProvisioning, "creates a Nexus endpoint through Operator Service")
+	if os.Getenv("ENABLE_SIGNAL_RESPONSE_LINK_TESTS") != "1" {
+		t.Skip("set ENABLE_SIGNAL_RESPONSE_LINK_TESTS=1 and run against a server with history.enableCHASMSignalBacklinks=true")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), defaultNexusTestTimeout)
+	defer cancel()
+	tc := newTestContext(t, ctx)
+
+	calleeID := "async-callee-" + uuid.NewString()
+
+	// Async operation: the start handler signalWithStarts the callee (accumulating the response link),
+	// then starts the backing handler workflow, yielding an async result.
+	signalOp := temporalnexus.NewWorkflowRunOperation(
+		"async-signal-op",
+		asyncHandler,
+		func(ctx context.Context, _ nexus.NoValue, soo nexus.StartOperationOptions) (client.StartWorkflowOptions, error) {
+			_, err := temporalnexus.GetClient(ctx).SignalWithStartWorkflow(ctx, calleeID, "test-signal", "from-nexus",
+				client.StartWorkflowOptions{TaskQueue: tc.taskQueue}, callee)
+			if err != nil {
+				return client.StartWorkflowOptions{}, err
+			}
+			return client.StartWorkflowOptions{ID: soo.RequestID}, nil
+		},
+	)
+
+	caller := func(ctx workflow.Context) error {
+		c := workflow.NewNexusClient(tc.endpoint, "test")
+		fut := c.ExecuteOperation(ctx, signalOp, nil, workflow.NexusOperationOptions{})
+		// Wait for the operation to start (and thus the NexusOperationStarted event to be written),
+		// then for it to complete.
+		if err := fut.GetNexusOperationExecution().Get(ctx, nil); err != nil {
+			return err
+		}
+		return fut.Get(ctx, nil)
+	}
+
+	w := worker.New(tc.client, tc.taskQueue, worker.Options{})
+	service := nexus.NewService("test")
+	require.NoError(t, service.Register(signalOp))
+	w.RegisterNexusService(service)
+	w.RegisterWorkflow(caller)
+	w.RegisterWorkflow(callee)
+	w.RegisterWorkflow(asyncHandler)
+	require.NoError(t, w.Start())
+	t.Cleanup(w.Stop)
+
+	run, err := tc.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
+		ID:                  "async-caller-" + uuid.NewString(),
+		TaskQueue:           tc.taskQueue,
+		WorkflowTaskTimeout: time.Second,
+	}, caller)
+	require.NoError(t, err)
+	require.NoError(t, run.Get(ctx, nil))
+
+	// The callee should have completed with the forwarded signal value.
+	var calleeResult string
+	require.NoError(t, tc.client.GetWorkflow(ctx, calleeID, "").Get(ctx, &calleeResult))
+	require.Equal(t, "from-nexus", calleeResult)
+
+	// The response link should land on the caller's NexusOperationStarted event, pointing at the callee's
+	// WorkflowExecutionSignaled event.
+	iter := tc.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+	var startedEvent *historypb.HistoryEvent
+	for iter.HasNext() {
+		event, err := iter.Next()
+		require.NoError(t, err)
+		if event.GetEventType() == enumspb.EVENT_TYPE_NEXUS_OPERATION_STARTED {
+			startedEvent = event
+			break
+		}
+	}
+	require.NotNil(t, startedEvent, "expected a NexusOperationStarted event")
+
+	// Find the response link that points at the callee workflow (the started event may also carry an
+	// operation-start link to the handler workflow).
+	var calleeLink *common.Link_WorkflowEvent
+	for _, link := range startedEvent.GetLinks() {
+		if we := link.GetWorkflowEvent(); we.GetWorkflowId() == calleeID {
+			calleeLink = we
+			break
+		}
+	}
+	require.NotNil(t, calleeLink, "expected a response link pointing at callee %s on the started event", calleeID)
+	// Server PR temporalio/temporal#9897 keys these response links via RequestIdReference rather than
+	// EventReference, so accept either oneof variant (matches the Java SignalOperationLinkingTest).
+	var responseLinkEventType enumspb.EventType
+	if calleeLink.GetRequestIdRef() != nil {
+		responseLinkEventType = calleeLink.GetRequestIdRef().GetEventType()
+	} else {
+		responseLinkEventType = calleeLink.GetEventRef().GetEventType()
+	}
+	require.Equal(t, enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_SIGNALED, responseLinkEventType)
 }

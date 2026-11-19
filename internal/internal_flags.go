@@ -38,7 +38,10 @@ const (
 	// we will fallback onto the default data converter. If the default DC fails, the user DC error will be returned.
 	SDKFlagMemoUserDCEncode               = 7
 	SDKFlagWorkflowNewChannelLostMessages = 8
-	SDKFlagUnknown                        = math.MaxUint32
+	// SDKFlagOrderedChildCancel preserves child-context creation order when
+	// propagating cancellation.
+	SDKFlagOrderedChildCancel = 9
+	SDKFlagUnknown            = math.MaxUint32
 )
 
 // sdkFlagsAllowed holds the enabled state for each flag.
@@ -51,10 +54,11 @@ var sdkFlagsAllowed = map[sdkFlag]bool{
 	SDKFlagChildWorkflowErrorExecution:    true,
 	SDKFlagProtocolMessageCommand:         true,
 	SDKPriorityUpdateHandling:             true,
-	SDKFlagBlockedSelectorSignalReceive:   false,
+	SDKFlagBlockedSelectorSignalReceive:   true,
 	SDKFlagCancelAwaitTimerOnCondition:    false,
-	SDKFlagMemoUserDCEncode:               false,
-	SDKFlagWorkflowNewChannelLostMessages: false,
+	SDKFlagMemoUserDCEncode:               true,
+	SDKFlagWorkflowNewChannelLostMessages: true,
+	SDKFlagOrderedChildCancel:             true,
 }
 
 func init() {
@@ -113,15 +117,14 @@ func newSDKFlagSet(capabilities *workflowservice.GetSystemInfoResponse_Capabilit
 	}
 }
 
-// tryUse returns true if this flag may currently be used. If record is true, always returns
-// true and records the flag as being used.
+// tryUse returns true if this flag may currently be used.
 func (sf *sdkFlags) tryUse(flag sdkFlag, record bool) bool {
-	if !sf.capabilities.GetSdkMetadata() {
-		return false
-	}
-
 	if sf.currentFlags[flag] || sf.newFlags[flag] {
 		return true
+	}
+
+	if !sf.capabilities.GetSdkMetadata() {
+		return false
 	}
 
 	if !record {
@@ -138,9 +141,6 @@ func (sf *sdkFlags) tryUse(flag sdkFlag, record bool) bool {
 
 // set marks a flag as in current use regardless of replay status.
 func (sf *sdkFlags) set(flags ...sdkFlag) {
-	if !sf.capabilities.GetSdkMetadata() {
-		return
-	}
 	for _, flag := range flags {
 		sf.currentFlags[flag] = true
 	}

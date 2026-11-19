@@ -5,7 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"sync"
+	"sync/atomic"
 
+	"github.com/google/uuid"
 	"github.com/nexus-rpc/sdk-go/nexus"
 	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/api/enums/v1"
@@ -28,20 +31,164 @@ type NexusOperationInfo struct {
 	Namespace string
 	// The task queue of the worker handling this Nexus operation.
 	TaskQueue string
+	// The endpoint this request was addressed to before forwarding to the worker.
+	// Supported from server version 1.30.0.
+	Endpoint string
 }
 
 // NexusOperationContext is an internal only struct that holds fields used by the temporalnexus functions.
 type NexusOperationContext struct {
-	client         Client
-	Namespace      string
-	TaskQueue      string
-	metricsHandler metrics.Handler
-	log            log.Logger
-	registry       *registry
+	client                    Client
+	RequestID                 string
+	Namespace                 string
+	TaskQueue                 string
+	Endpoint                  string
+	nexusSerializationContext converter.NexusSerializationContext
+	metricsHandler            metrics.Handler
+	log                       log.Logger
+	registry                  *registry
+
+	// responseLinksMu guards responseLinks. A Nexus operation handler is invoked from a single
+	// goroutine, but handlers are free to issue RPCs from other goroutines they spawn, so the
+	// accumulator is synchronized.
+	responseLinksMu sync.Mutex
+	// responseLinks holds the response links returned by outbound RPCs the operation handler issues
+	// (such as SignalWorkflowExecutionResponse.link or
+	// SignalWithStartWorkflowExecutionResponse.signal_link). One entry per outbound RPC that
+	// returned a link. Drained by the task handler when building the StartOperationResponse so each
+	// RPC the handler issued gets a corresponding link on the caller workflow's history event.
+	responseLinks []*commonpb.Link
+}
+
+func nexusSerializationContextToProto(ctx converter.NexusSerializationContext) *nexuspb.PropagatedSerializationContext {
+	return &nexuspb.PropagatedSerializationContext{
+		Endpoint:  ctx.Endpoint,
+		Service:   ctx.Service,
+		Operation: ctx.Operation,
+	}
+}
+
+func nexusSerializationContextFromProto(ctx *nexuspb.PropagatedSerializationContext) converter.NexusSerializationContext {
+	return converter.NexusSerializationContext{
+		Endpoint:  ctx.GetEndpoint(),
+		Service:   ctx.GetService(),
+		Operation: ctx.GetOperation(),
+	}
+}
+
+// serializationContextFor returns propagated if set, otherwise defaultContext. Executions and updates
+// started by a Nexus handler carry the handler's context, and the results and failures they return to
+// the caller must use it on both encode and decode.
+func serializationContextFor(
+	defaultContext converter.SerializationContext,
+	propagated *nexuspb.PropagatedSerializationContext,
+) converter.SerializationContext {
+	if propagated == nil {
+		return defaultContext
+	}
+	return nexusSerializationContextFromProto(propagated)
+}
+
+func propagatedNexusSerializationContextFromGoContext(ctx context.Context) *nexuspb.PropagatedSerializationContext {
+	if nctx, ok := NexusOperationContextFromGoContext(ctx); ok {
+		return nexusSerializationContextToProto(nctx.nexusSerializationContext)
+	}
+	return nil
+}
+
+// AddResponseLink appends a response link returned by an outbound RPC the operation handler issued
+// (e.g. signal, signalWithStart). nil links are ignored. The task handler drains the accumulated
+// response links when building the operation's StartOperationResponse.
+func (nc *NexusOperationContext) AddResponseLink(link *commonpb.Link) {
+	if link == nil {
+		return
+	}
+	nc.responseLinksMu.Lock()
+	defer nc.responseLinksMu.Unlock()
+	nc.responseLinks = append(nc.responseLinks, link)
+}
+
+// ResponseLinks returns a copy of the response links accumulated from every outbound RPC the handler
+// issued, in call order.
+func (nc *NexusOperationContext) ResponseLinks() []*commonpb.Link {
+	nc.responseLinksMu.Lock()
+	defer nc.responseLinksMu.Unlock()
+	out := make([]*commonpb.Link, len(nc.responseLinks))
+	copy(out, nc.responseLinks)
+	return out
 }
 
 func (nc *NexusOperationContext) ResolveWorkflowName(wf any) (string, error) {
-	return getWorkflowFunctionName(nc.registry, wf)
+	return GetWorkflowFunctionName(nc.registry, wf)
+}
+
+// ResolveActivityName returns the registered name of the given activity function reference (or
+// string name) by consulting the worker's registry, so that activities registered under a custom
+// name via [RegisterActivityOptions.Name] are resolved to that name rather than the raw Go
+// function name.
+func (nc *NexusOperationContext) ResolveActivityName(activity any, args []any) (string, error) {
+	at, err := getValidatedActivityFunction(activity, args, nc.registry)
+	if err != nil {
+		return "", err
+	}
+	return at.Name, nil
+}
+
+// NewTemporalOperationClient is called by temporalnexus when it builds the NexusClient for a
+// Temporal operation handler. NexusClient.GetWorkflowClient is the only wrapped path;
+// temporalnexus.GetClient is unwrapped for every operation type.
+func NewTemporalOperationClient(c Client, requestID string) Client {
+	return &temporalOperationClient{Client: c, requestID: requestID}
+}
+
+// temporalOperationClient wraps the client for one Temporal operation invocation. Signals carry the
+// operation's request ID so a retried Nexus task doesn't deliver them twice; because they all share
+// that ID, a second signal to the same workflow would be silently dropped by the server, so any
+// second signal is rejected instead.
+type temporalOperationClient struct {
+	Client
+
+	requestID string
+	signaled  atomic.Bool
+}
+
+func (c *temporalOperationClient) claimSignal() error {
+	if !c.signaled.CompareAndSwap(false, true) {
+		return nexus.NewHandlerErrorf(nexus.HandlerErrorTypeBadRequest,
+			"only one signal can be sent per Nexus operation invocation")
+	}
+	return nil
+}
+
+func (c *temporalOperationClient) SignalWorkflow(ctx context.Context, workflowID string, runID string, signalName string, arg any) error {
+	if err := c.claimSignal(); err != nil {
+		return err
+	}
+	ctx = context.WithValue(ctx, NexusOperationRequestIDKey, c.requestID)
+	err := c.Client.SignalWorkflow(ctx, workflowID, runID, signalName, arg)
+	if err != nil {
+		c.signaled.Store(false)
+	}
+	return err
+}
+
+func (c *temporalOperationClient) SignalWithStartWorkflow(ctx context.Context, workflowID string, signalName string, signalArg any,
+	options StartWorkflowOptions, workflow any, workflowArgs ...any) (WorkflowRun, error) {
+	// An empty ID is defaulted to a fresh UUID per call, so the server has no record to dedupe
+	// against and every retried Nexus task starts another workflow.
+	if workflowID == "" {
+		return nil, nexus.NewHandlerErrorf(nexus.HandlerErrorTypeBadRequest,
+			"signalWithStart from a Nexus operation handler requires a workflow ID")
+	}
+	if err := c.claimSignal(); err != nil {
+		return nil, err
+	}
+	ctx = context.WithValue(ctx, NexusOperationRequestIDKey, c.requestID)
+	run, err := c.Client.SignalWithStartWorkflow(ctx, workflowID, signalName, signalArg, options, workflow, workflowArgs...)
+	if err != nil {
+		c.signaled.Store(false)
+	}
+	return run, err
 }
 
 type nexusOperationEnvironment struct {
@@ -54,6 +201,7 @@ func (nc *nexusOperationEnvironment) GetOperationInfo(ctx context.Context) Nexus
 		panic("temporalnexus GetInfo: Not a valid Nexus context")
 	}
 	return NexusOperationInfo{
+		Endpoint:  nctx.Endpoint,
 		Namespace: nctx.Namespace,
 		TaskQueue: nctx.TaskQueue,
 	}
@@ -166,14 +314,22 @@ type nexusOperationRequestIDKeyType struct{}
 
 var NexusOperationRequestIDKey = nexusOperationRequestIDKeyType{}
 
-type nexusOperationLinksKeyType struct{}
+type nexusOperationRequestLinksKeyType struct{}
 
-var NexusOperationLinksKey = nexusOperationLinksKeyType{}
+var NexusOperationRequestLinksKey = nexusOperationRequestLinksKeyType{}
 
 // NexusOperationContextFromGoContext gets the [NexusOperationContext] associated with the given [context.Context].
 func NexusOperationContextFromGoContext(ctx context.Context) (nctx *NexusOperationContext, ok bool) {
 	nctx, ok = ctx.Value(nexusOperationContextKey).(*NexusOperationContext)
 	return
+}
+
+// ContextWithNexusOperationContext adds the [NexusOperationContext] into the given [context.Context]
+func ContextWithNexusOperationContext(ctx context.Context, nctx *NexusOperationContext) context.Context {
+	if nctx == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, nexusOperationContextKey, nctx)
 }
 
 // nexusMiddleware constructs an adapter from Temporal WorkerInterceptors to a Nexus MiddlewareFunc.
@@ -258,7 +414,7 @@ func protoFailureToNexusFailure(failure *nexuspb.Failure) nexus.Failure {
 }
 
 // nexusOperationFailure is a utility in use by the test environment.
-func nexusOperationFailure(params executeNexusOperationParams, token string, cause *failurepb.Failure) *failurepb.Failure {
+func nexusOperationFailure(params ExecuteNexusOperationParams, token string, cause *failurepb.Failure) *failurepb.Failure {
 	return &failurepb.Failure{
 		Message: "nexus operation completed unsuccessfully",
 		FailureInfo: &failurepb.Failure_NexusOperationExecutionFailureInfo{
@@ -267,7 +423,8 @@ func nexusOperationFailure(params executeNexusOperationParams, token string, cau
 				Service:        params.client.Service(),
 				Operation:      params.operation,
 				OperationToken: token,
-				OperationId:    token, // Also populate ID for backwards compatibility.
+				//lint:ignore SA1019 preserve legacy operation ID behavior in the test environment
+				OperationId: token, // Also populate ID for backwards compatibility.
 			},
 		},
 		Cause: cause,
@@ -449,6 +606,11 @@ func (t *testSuiteClientForNexusOperations) CancelWorkflow(ctx context.Context, 
 	return <-doneCh
 }
 
+// CancelWorkflowWithOptions implements Client.
+func (t *testSuiteClientForNexusOperations) CancelWorkflowWithOptions(ctx context.Context, options CancelWorkflowOptions) error {
+	return t.CancelWorkflow(ctx, options.WorkflowID, options.RunID)
+}
+
 // CheckHealth implements Client.
 func (t *testSuiteClientForNexusOperations) CheckHealth(ctx context.Context, request *CheckHealthRequest) (*CheckHealthResponse, error) {
 	return &CheckHealthResponse{}, nil
@@ -460,17 +622,32 @@ func (t *testSuiteClientForNexusOperations) Close() {
 }
 
 // CompleteActivity implements Client.
-func (t *testSuiteClientForNexusOperations) CompleteActivity(ctx context.Context, taskToken []byte, result interface{}, err error) error {
+func (t *testSuiteClientForNexusOperations) CompleteActivity(ctx context.Context, taskToken []byte, result any, err error) error {
+	panic("not implemented in the test environment")
+}
+
+// CompleteActivityWithOptions implements Client.
+func (t *testSuiteClientForNexusOperations) CompleteActivityWithOptions(ctx context.Context, opts CompleteActivityOptions) error {
 	panic("not implemented in the test environment")
 }
 
 // CompleteActivityByID implements Client.
-func (t *testSuiteClientForNexusOperations) CompleteActivityByID(ctx context.Context, namespace string, workflowID string, runID string, activityID string, result interface{}, err error) error {
+func (t *testSuiteClientForNexusOperations) CompleteActivityByID(ctx context.Context, namespace string, workflowID string, runID string, activityID string, result any, err error) error {
 	panic("not implemented in the test environment")
 }
 
-// CompleteActivityByID implements Client.
-func (t *testSuiteClientForNexusOperations) CompleteActivityByActivityID(ctx context.Context, namespace string, activityID string, activityRunID string, result interface{}, err error) error {
+// CompleteActivityByIDWithOptions implements Client.
+func (t *testSuiteClientForNexusOperations) CompleteActivityByIDWithOptions(ctx context.Context, opts CompleteActivityByIDOptions) error {
+	panic("not implemented in the test environment")
+}
+
+// CompleteActivityByActivityID implements Client.
+func (t *testSuiteClientForNexusOperations) CompleteActivityByActivityID(ctx context.Context, namespace string, activityID string, activityRunID string, result any, err error) error {
+	panic("not implemented in the test environment")
+}
+
+// CompleteActivityByActivityIDWithOptions implements Client.
+func (t *testSuiteClientForNexusOperations) CompleteActivityByActivityIDWithOptions(ctx context.Context, opts CompleteActivityByActivityIDOptions) error {
 	panic("not implemented in the test environment")
 }
 
@@ -495,7 +672,7 @@ func (t *testSuiteClientForNexusOperations) DescribeWorkflowExecution(ctx contex
 }
 
 // ExecuteWorkflow implements Client.
-func (t *testSuiteClientForNexusOperations) ExecuteWorkflow(ctx context.Context, options StartWorkflowOptions, workflow interface{}, args ...interface{}) (WorkflowRun, error) {
+func (t *testSuiteClientForNexusOperations) ExecuteWorkflow(ctx context.Context, options StartWorkflowOptions, workflow any, args ...any) (WorkflowRun, error) {
 	if set, ok := ctx.Value(IsWorkflowRunOpContextKey).(bool); !ok || !set {
 		panic("not implemented in the test environment")
 	}
@@ -537,8 +714,8 @@ func (t *testSuiteClientForNexusOperations) ExecuteWorkflow(ctx context.Context,
 				ParentClosePolicy:        enums.PARENT_CLOSE_POLICY_ABANDON,
 				Memo:                     options.Memo,
 				CronSchedule:             options.CronSchedule,
-				RetryPolicy:              convertToPBRetryPolicy(options.RetryPolicy),
-				Priority:                 convertToPBPriority(options.Priority),
+				RetryPolicy:              ConvertToPBRetryPolicy(options.RetryPolicy),
+				Priority:                 ConvertToPBPriority(options.Priority),
 			},
 		}, func(result *commonpb.Payloads, wfErr error) {
 			// This callback handles async completion of Nexus operations. If there was an error when
@@ -595,7 +772,7 @@ func (t *testSuiteClientForNexusOperations) ExecuteWorkflow(ctx context.Context,
 	return run, nil
 }
 
-func (t *testSuiteClientForNexusOperations) NewWithStartWorkflowOperation(options StartWorkflowOptions, workflow interface{}, args ...interface{}) WithStartWorkflowOperation {
+func (t *testSuiteClientForNexusOperations) NewWithStartWorkflowOperation(options StartWorkflowOptions, workflow any, args ...any) WithStartWorkflowOperation {
 	panic("not implemented in the test environment")
 }
 
@@ -660,7 +837,7 @@ func (t *testSuiteClientForNexusOperations) OperatorService() operatorservice.Op
 }
 
 // QueryWorkflow implements Client.
-func (t *testSuiteClientForNexusOperations) QueryWorkflow(ctx context.Context, workflowID string, runID string, queryType string, args ...interface{}) (converter.EncodedValue, error) {
+func (t *testSuiteClientForNexusOperations) QueryWorkflow(ctx context.Context, workflowID string, runID string, queryType string, args ...any) (converter.EncodedValue, error) {
 	panic("not implemented in the test environment")
 }
 
@@ -670,12 +847,22 @@ func (t *testSuiteClientForNexusOperations) QueryWorkflowWithOptions(ctx context
 }
 
 // RecordActivityHeartbeat implements Client.
-func (t *testSuiteClientForNexusOperations) RecordActivityHeartbeat(ctx context.Context, taskToken []byte, details ...interface{}) error {
+func (t *testSuiteClientForNexusOperations) RecordActivityHeartbeat(ctx context.Context, taskToken []byte, details ...any) error {
+	panic("not implemented in the test environment")
+}
+
+// RecordActivityHeartbeatWithOptions implements Client.
+func (t *testSuiteClientForNexusOperations) RecordActivityHeartbeatWithOptions(ctx context.Context, opts RecordActivityHeartbeatOptions) error {
 	panic("not implemented in the test environment")
 }
 
 // RecordActivityHeartbeatByID implements Client.
-func (t *testSuiteClientForNexusOperations) RecordActivityHeartbeatByID(ctx context.Context, namespace string, workflowID string, runID string, activityID string, details ...interface{}) error {
+func (t *testSuiteClientForNexusOperations) RecordActivityHeartbeatByID(ctx context.Context, namespace string, workflowID string, runID string, activityID string, details ...any) error {
+	panic("not implemented in the test environment")
+}
+
+// RecordActivityHeartbeatByIDWithOptions implements Client.
+func (t *testSuiteClientForNexusOperations) RecordActivityHeartbeatByIDWithOptions(ctx context.Context, opts RecordActivityHeartbeatByIDOptions) error {
 	panic("not implemented in the test environment")
 }
 
@@ -697,17 +884,22 @@ func (t *testSuiteClientForNexusOperations) ScheduleClient() ScheduleClient {
 }
 
 // SignalWithStartWorkflow implements Client.
-func (t *testSuiteClientForNexusOperations) SignalWithStartWorkflow(ctx context.Context, workflowID string, signalName string, signalArg interface{}, options StartWorkflowOptions, workflow interface{}, workflowArgs ...interface{}) (WorkflowRun, error) {
+func (t *testSuiteClientForNexusOperations) SignalWithStartWorkflow(ctx context.Context, workflowID string, signalName string, signalArg any, options StartWorkflowOptions, workflow any, workflowArgs ...any) (WorkflowRun, error) {
 	panic("not implemented in the test environment")
 }
 
 // SignalWorkflow implements Client.
-func (t *testSuiteClientForNexusOperations) SignalWorkflow(ctx context.Context, workflowID string, runID string, signalName string, arg interface{}) error {
+func (t *testSuiteClientForNexusOperations) SignalWorkflow(ctx context.Context, workflowID string, runID string, signalName string, arg any) error {
 	panic("not implemented in the test environment")
 }
 
 // TerminateWorkflow implements Client.
-func (t *testSuiteClientForNexusOperations) TerminateWorkflow(ctx context.Context, workflowID string, runID string, reason string, details ...interface{}) error {
+func (t *testSuiteClientForNexusOperations) TerminateWorkflow(ctx context.Context, workflowID string, runID string, reason string, details ...any) error {
+	panic("not implemented in the test environment")
+}
+
+// TerminateWorkflowWithOptions implements Client.
+func (t *testSuiteClientForNexusOperations) TerminateWorkflowWithOptions(ctx context.Context, options TerminateWorkflowOptions) error {
 	panic("not implemented in the test environment")
 }
 
@@ -732,11 +924,130 @@ func (t *testSuiteClientForNexusOperations) UpdateWorkerVersioningRules(ctx cont
 }
 
 func (t *testSuiteClientForNexusOperations) ExecuteActivity(ctx context.Context, options ClientStartActivityOptions, activity any, args ...any) (ClientActivityHandle, error) {
-	panic("unimplemented in the test environment")
+	if set, ok := ctx.Value(IsWorkflowRunOpContextKey).(bool); !ok || !set {
+		panic("not implemented in the test environment")
+	}
+	if options.ID == "" {
+		return nil, fmt.Errorf("activity ID is required")
+	}
+	activityType, err := getValidatedActivityFunction(activity, args, t.env.GetRegistry())
+	if err != nil {
+		return nil, fmt.Errorf("cannot validate activity function: %w", err)
+	}
+	input, err := encodeArgs(t.env.dataConverter, args)
+	if err != nil {
+		return nil, fmt.Errorf("cannot encode activity args: %w", err)
+	}
+
+	var callback *commonpb.Callback
+	if len(options.callbacks) > 0 {
+		callback = options.callbacks[0]
+	}
+
+	taskQueue := options.TaskQueue
+	if taskQueue == "" {
+		taskQueue = t.env.workflowInfo.TaskQueueName
+	}
+
+	activityID := options.ID
+	runID := uuid.NewString()
+
+	params := ExecuteActivityParams{
+		ExecuteActivityOptions: ExecuteActivityOptions{
+			ActivityID:             activityID,
+			TaskQueueName:          taskQueue,
+			ScheduleToCloseTimeout: options.ScheduleToCloseTimeout,
+			ScheduleToStartTimeout: options.ScheduleToStartTimeout,
+			StartToCloseTimeout:    options.StartToCloseTimeout,
+			HeartbeatTimeout:       options.HeartbeatTimeout,
+			RetryPolicy:            ConvertToPBRetryPolicy(options.RetryPolicy),
+		},
+		ActivityType:  *activityType,
+		Input:         input,
+		DataConverter: t.env.dataConverter,
+	}
+
+	t.env.postCallback(func() {
+		t.env.ExecuteActivity(params, func(result *commonpb.Payloads, actErr error) {
+			if callback == nil {
+				return
+			}
+			ncb := callback.GetNexus()
+			if ncb == nil {
+				return
+			}
+			seqStr := ncb.GetHeader()["operation-sequence"]
+			if seqStr == "" {
+				return
+			}
+			seq, err := strconv.ParseInt(seqStr, 10, 64)
+			if err != nil {
+				panic(fmt.Errorf("unexpected operation sequence in callback header: %s: %w", seqStr, err))
+			}
+			operationToken := ncb.GetHeader()[nexus.HeaderOperationToken]
+			var payload *commonpb.Payload
+			if len(result.GetPayloads()) > 0 {
+				payload = result.Payloads[0]
+			}
+			t.env.resolveNexusOperation(seq, operationToken, payload, actErr)
+		})
+	}, false)
+
+	return &testEnvActivityHandleForNexusOperations{
+		env:   t.env,
+		id:    activityID,
+		runID: runID,
+	}, nil
 }
 
 func (t *testSuiteClientForNexusOperations) GetActivityHandle(options ClientGetActivityHandleOptions) ClientActivityHandle {
-	panic("unimplemented in the test environment")
+	return &testEnvActivityHandleForNexusOperations{
+		env:   t.env,
+		id:    options.ActivityID,
+		runID: options.RunID,
+	}
+}
+
+type testEnvActivityHandleForNexusOperations struct {
+	env   *testWorkflowEnvironmentImpl
+	id    string
+	runID string
+}
+
+func (h *testEnvActivityHandleForNexusOperations) GetID() string    { return h.id }
+func (h *testEnvActivityHandleForNexusOperations) GetRunID() string { return h.runID }
+
+func (h *testEnvActivityHandleForNexusOperations) Cancel(ctx context.Context, options ClientCancelActivityOptions) error {
+	h.env.RequestCancelActivity(ActivityID{id: h.id})
+	return nil
+}
+
+func (h *testEnvActivityHandleForNexusOperations) Get(ctx context.Context, valuePtr any) error {
+	panic("not implemented in the test environment")
+}
+
+func (h *testEnvActivityHandleForNexusOperations) Describe(ctx context.Context, options ClientDescribeActivityOptions) (*ClientActivityExecutionDescription, error) {
+	panic("not implemented in the test environment")
+}
+
+func (h *testEnvActivityHandleForNexusOperations) Terminate(ctx context.Context, options ClientTerminateActivityOptions) error {
+	panic("not implemented in the test environment")
+}
+
+func (h *testEnvActivityHandleForNexusOperations) Pause(ctx context.Context, options ClientPauseActivityOptions) error {
+	panic("not implemented in the test environment")
+}
+
+func (h *testEnvActivityHandleForNexusOperations) Unpause(ctx context.Context, options ClientUnpauseActivityOptions) error {
+	panic("not implemented in the test environment")
+}
+
+func (h *testEnvActivityHandleForNexusOperations) UpdateOptions(ctx context.Context, update ClientActivityOptionsUpdate) (*ClientActivityExecutionOptions, error) {
+	panic("not implemented in the test environment")
+}
+
+func (h *testEnvActivityHandleForNexusOperations) RestoreOriginalOptions(ctx context.Context) (*ClientActivityExecutionOptions, error) {
+	panic("not implemented in the test environment")
 }
 
 func (t *testSuiteClientForNexusOperations) ListActivities(ctx context.Context, options ClientListActivitiesOptions) (ClientListActivitiesResult, error) {
@@ -767,6 +1078,22 @@ func (t *testSuiteClientForNexusOperations) UpdateWorkflowExecutionOptions(ctx c
 	panic("not implemented in the test environment")
 }
 
+func (t *testSuiteClientForNexusOperations) NewNexusClient(options ClientNexusClientOptions) (ClientNexusClient, error) {
+	panic("not implemented in the test environment")
+}
+
+func (t *testSuiteClientForNexusOperations) GetNexusOperationHandle(options ClientGetNexusOperationHandleOptions) ClientNexusOperationHandle {
+	panic("not implemented in the test environment")
+}
+
+func (t *testSuiteClientForNexusOperations) ListNexusOperations(ctx context.Context, options ClientListNexusOperationsOptions) (ClientListNexusOperationsResult, error) {
+	panic("not implemented in the test environment")
+}
+
+func (t *testSuiteClientForNexusOperations) CountNexusOperations(ctx context.Context, options ClientCountNexusOperationsOptions) (*ClientCountNexusOperationsResult, error) {
+	panic("not implemented in the test environment")
+}
+
 var _ Client = &testSuiteClientForNexusOperations{}
 
 // testEnvWorkflowRunForNexusOperations is a partial [WorkflowRun] implementation for the test workflow environment used
@@ -776,7 +1103,7 @@ type testEnvWorkflowRunForNexusOperations struct {
 }
 
 // Get implements WorkflowRun.
-func (t *testEnvWorkflowRunForNexusOperations) Get(ctx context.Context, valuePtr interface{}) error {
+func (t *testEnvWorkflowRunForNexusOperations) Get(ctx context.Context, valuePtr any) error {
 	panic("not implemented in the test environment")
 }
 
@@ -790,8 +1117,13 @@ func (t *testEnvWorkflowRunForNexusOperations) GetRunID() string {
 	return t.RunID
 }
 
+// GetFirstExecutionRunID implements WorkflowRun.
+func (t *testEnvWorkflowRunForNexusOperations) GetFirstExecutionRunID() string {
+	return t.RunID
+}
+
 // GetWithOptions implements WorkflowRun.
-func (t *testEnvWorkflowRunForNexusOperations) GetWithOptions(ctx context.Context, valuePtr interface{}, options WorkflowRunGetOptions) error {
+func (t *testEnvWorkflowRunForNexusOperations) GetWithOptions(ctx context.Context, valuePtr any, options WorkflowRunGetOptions) error {
 	panic("not implemented in the test environment")
 }
 

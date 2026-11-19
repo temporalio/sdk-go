@@ -15,6 +15,7 @@ import (
 	"go.temporal.io/sdk/interceptor"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/log"
+	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
 )
 
@@ -102,7 +103,7 @@ type nextProxy struct {
 	invoker Invoker
 }
 
-func (n *nextProxy) proxyWithNext(ifacePtr interface{}, next interface{}) *nextProxy {
+func (n *nextProxy) proxyWithNext(ifacePtr any, next any) *nextProxy {
 	return &nextProxy{
 		iface:   reflect.TypeOf(ifacePtr).Elem(),
 		next:    reflect.ValueOf(next),
@@ -110,7 +111,7 @@ func (n *nextProxy) proxyWithNext(ifacePtr interface{}, next interface{}) *nextP
 	}
 }
 
-func (n *nextProxy) invoke(args ...interface{}) []reflect.Value {
+func (n *nextProxy) invoke(args ...any) []reflect.Value {
 	// Grab caller function name
 	pc, _, _, ok := runtime.Caller(1)
 	if !ok {
@@ -181,7 +182,7 @@ func (p *proxyActivityInbound) Init(outbound interceptor.ActivityOutboundInterce
 func (p *proxyActivityInbound) ExecuteActivity(
 	ctx context.Context,
 	in *interceptor.ExecuteActivityInput,
-) (ret interface{}, err error) {
+) (ret any, err error) {
 	vals := p.invoke(ctx, in)
 	ret = vals[0].Interface()
 	err, _ = vals[1].Interface().(error)
@@ -208,7 +209,7 @@ func (p *proxyActivityOutbound) GetMetricsHandler(ctx context.Context) (ret metr
 	return
 }
 
-func (p *proxyActivityOutbound) RecordHeartbeat(ctx context.Context, details ...interface{}) {
+func (p *proxyActivityOutbound) RecordHeartbeat(ctx context.Context, details ...any) {
 	p.invoke(ctx, details)
 }
 
@@ -217,7 +218,7 @@ func (p *proxyActivityOutbound) HasHeartbeatDetails(ctx context.Context) (ret bo
 	return
 }
 
-func (p *proxyActivityOutbound) GetHeartbeatDetails(ctx context.Context, d ...interface{}) (err error) {
+func (p *proxyActivityOutbound) GetHeartbeatDetails(ctx context.Context, d ...any) (err error) {
 	err, _ = p.invoke(ctx, d)[0].Interface().(error)
 	return
 }
@@ -243,7 +244,7 @@ func (p *proxyWorkflowInbound) Init(outbound interceptor.WorkflowOutboundInterce
 func (p *proxyWorkflowInbound) ExecuteWorkflow(
 	ctx workflow.Context,
 	in *interceptor.ExecuteWorkflowInput,
-) (ret interface{}, err error) {
+) (ret any, err error) {
 	vals := p.invoke(ctx, in)
 	ret = vals[0].Interface()
 	err, _ = vals[1].Interface().(error)
@@ -258,7 +259,7 @@ func (p *proxyWorkflowInbound) HandleSignal(ctx workflow.Context, in *intercepto
 func (p *proxyWorkflowInbound) HandleQuery(
 	ctx workflow.Context,
 	in *interceptor.HandleQueryInput,
-) (ret interface{}, err error) {
+) (ret any, err error) {
 	vals := p.invoke(ctx, in)
 	ret = vals[0].Interface()
 	err, _ = vals[1].Interface().(error)
@@ -294,7 +295,7 @@ func (p *proxyWorkflowOutbound) AwaitWithTimeout(ctx workflow.Context, timeout t
 func (p *proxyWorkflowOutbound) ExecuteActivity(
 	ctx workflow.Context,
 	activityType string,
-	args ...interface{},
+	args ...any,
 ) (ret workflow.Future) {
 	ret, _ = p.invoke(ctx, activityType, args)[0].Interface().(workflow.Future)
 	return
@@ -303,7 +304,7 @@ func (p *proxyWorkflowOutbound) ExecuteActivity(
 func (p *proxyWorkflowOutbound) ExecuteLocalActivity(
 	ctx workflow.Context,
 	activityType string,
-	args ...interface{},
+	args ...any,
 ) (ret workflow.Future) {
 	ret, _ = p.invoke(ctx, activityType, args)[0].Interface().(workflow.Future)
 	return
@@ -312,7 +313,7 @@ func (p *proxyWorkflowOutbound) ExecuteLocalActivity(
 func (p *proxyWorkflowOutbound) ExecuteChildWorkflow(
 	ctx workflow.Context,
 	childWorkflowType string,
-	args ...interface{},
+	args ...any,
 ) (ret workflow.ChildWorkflowFuture) {
 	ret, _ = p.invoke(ctx, childWorkflowType, args)[0].Interface().(workflow.ChildWorkflowFuture)
 	return
@@ -357,20 +358,53 @@ func (p *proxyWorkflowOutbound) RequestCancelExternalWorkflow(
 	return
 }
 
+func (p *proxyWorkflowOutbound) RequestCancelExternalWorkflowWithOptions(
+	ctx workflow.Context,
+	workflowID string,
+	runID string,
+	options workflow.CancelExternalWorkflowOptions,
+) (ret workflow.Future) {
+	ret, _ = p.invoke(ctx, workflowID, runID, options)[0].Interface().(workflow.Future)
+	return
+}
+
 func (p *proxyWorkflowOutbound) SignalExternalWorkflow(
 	ctx workflow.Context,
 	workflowID string,
 	runID string,
 	signalName string,
-	arg interface{},
+	arg any,
 ) (ret workflow.Future) {
 	ret, _ = p.invoke(ctx, workflowID, runID, signalName, arg)[0].Interface().(workflow.Future)
 	return
 }
 
+func (p *proxyWorkflowOutbound) SignalExternalWorkflowWithOptions(
+	ctx workflow.Context,
+	workflowID string,
+	runID string,
+	signalName string,
+	arg any,
+	options workflow.SignalExternalWorkflowOptions,
+) (ret workflow.Future) {
+	ret, _ = p.invoke(ctx, workflowID, runID, signalName, arg, options)[0].Interface().(workflow.Future)
+	return
+}
+
+func (p *proxyWorkflowOutbound) SignalChildWorkflowWithOptions(
+	ctx workflow.Context,
+	workflowID string,
+	signalName string,
+	arg any,
+	options workflow.SignalChildWorkflowOptions,
+) (ret workflow.Future) {
+	ret, _ = p.invoke(ctx, workflowID, signalName, arg, options)[0].Interface().(workflow.Future)
+	return
+}
+
 func (p *proxyWorkflowOutbound) UpsertSearchAttributes(
 	ctx workflow.Context,
-	attributes map[string]interface{},
+	attributes map[string]any,
 ) (err error) {
 	err, _ = p.invoke(ctx, attributes)[0].Interface().(error)
 	return
@@ -378,9 +412,27 @@ func (p *proxyWorkflowOutbound) UpsertSearchAttributes(
 
 func (p *proxyWorkflowOutbound) UpsertMemo(
 	ctx workflow.Context,
-	memo map[string]interface{},
+	memo map[string]any,
 ) (err error) {
 	err, _ = p.invoke(ctx, memo)[0].Interface().(error)
+	return
+}
+
+func (p *proxyWorkflowOutbound) UpsertTypedSearchAttributesWithOptions(
+	ctx workflow.Context,
+	attributes []temporal.SearchAttributeUpdate,
+	options workflow.UpsertSearchAttributesOptions,
+) (err error) {
+	err, _ = p.invoke(ctx, attributes, options)[0].Interface().(error)
+	return
+}
+
+func (p *proxyWorkflowOutbound) UpsertMemoWithOptions(
+	ctx workflow.Context,
+	memo map[string]any,
+	options workflow.UpsertMemoOptions,
+) (err error) {
+	err, _ = p.invoke(ctx, memo, options)[0].Interface().(error)
 	return
 }
 
@@ -394,7 +446,7 @@ func (p *proxyWorkflowOutbound) GetSignalChannel(
 
 func (p *proxyWorkflowOutbound) SideEffect(
 	ctx workflow.Context,
-	f func(ctx workflow.Context) interface{},
+	f func(ctx workflow.Context) any,
 ) (ret converter.EncodedValue) {
 	ret, _ = p.invoke(ctx, f)[0].Interface().(converter.EncodedValue)
 	return
@@ -403,7 +455,7 @@ func (p *proxyWorkflowOutbound) SideEffect(
 func (p *proxyWorkflowOutbound) SideEffectWithOptions(
 	ctx workflow.Context,
 	options workflow.SideEffectOptions,
-	f func(ctx workflow.Context) interface{},
+	f func(ctx workflow.Context) any,
 ) (ret converter.EncodedValue) {
 	ret, _ = p.invoke(ctx, options, f)[0].Interface().(converter.EncodedValue)
 	return
@@ -412,8 +464,8 @@ func (p *proxyWorkflowOutbound) SideEffectWithOptions(
 func (p *proxyWorkflowOutbound) MutableSideEffect(
 	ctx workflow.Context,
 	id string,
-	f func(ctx workflow.Context) interface{},
-	equals func(a, b interface{}) bool,
+	f func(ctx workflow.Context) any,
+	equals func(a, b any) bool,
 ) (ret converter.EncodedValue) {
 	ret, _ = p.invoke(ctx, id, f, equals)[0].Interface().(converter.EncodedValue)
 	return
@@ -423,8 +475,8 @@ func (p *proxyWorkflowOutbound) MutableSideEffectWithOptions(
 	ctx workflow.Context,
 	id string,
 	options workflow.MutableSideEffectOptions,
-	f func(ctx workflow.Context) interface{},
-	equals func(a, b interface{}) bool,
+	f func(ctx workflow.Context) any,
+	equals func(a, b any) bool,
 ) (ret converter.EncodedValue) {
 	ret, _ = p.invoke(ctx, id, options, f, equals)[0].Interface().(converter.EncodedValue)
 	return
@@ -440,10 +492,21 @@ func (p *proxyWorkflowOutbound) GetVersion(
 	return
 }
 
+func (p *proxyWorkflowOutbound) GetVersionWithOptions(
+	ctx workflow.Context,
+	changeID string,
+	minSupported workflow.Version,
+	maxSupported workflow.Version,
+	options workflow.GetVersionOptions,
+) (ret workflow.Version) {
+	ret, _ = p.invoke(ctx, changeID, minSupported, maxSupported, options)[0].Interface().(workflow.Version)
+	return
+}
+
 func (p *proxyWorkflowOutbound) SetQueryHandler(
 	ctx workflow.Context,
 	queryType string,
-	handler interface{},
+	handler any,
 ) (err error) {
 	err, _ = p.invoke(ctx, queryType, handler)[0].Interface().(error)
 	return
@@ -459,7 +522,7 @@ func (p *proxyWorkflowOutbound) HasLastCompletionResult(ctx workflow.Context) (r
 	return
 }
 
-func (p *proxyWorkflowOutbound) GetLastCompletionResult(ctx workflow.Context, d ...interface{}) (err error) {
+func (p *proxyWorkflowOutbound) GetLastCompletionResult(ctx workflow.Context, d ...any) (err error) {
 	err, _ = p.invoke(ctx, d)[0].Interface().(error)
 	return
 }
@@ -471,10 +534,20 @@ func (p *proxyWorkflowOutbound) GetLastError(ctx workflow.Context) (err error) {
 
 func (p *proxyWorkflowOutbound) NewContinueAsNewError(
 	ctx workflow.Context,
-	wfn interface{},
-	args ...interface{},
+	wfn any,
+	args ...any,
 ) (err error) {
 	err, _ = p.invoke(ctx, wfn, args)[0].Interface().(error)
+	return
+}
+
+func (p *proxyWorkflowOutbound) NewContinueAsNewErrorWithOptions(
+	ctx workflow.Context,
+	options workflow.ContinueAsNewErrorOptions,
+	wfn any,
+	args ...any,
+) (err error) {
+	err, _ = p.invoke(ctx, options, wfn, args)[0].Interface().(error)
 	return
 }
 
@@ -490,6 +563,32 @@ func (p *proxyClientOutbound) ExecuteWorkflow(
 	vals := p.invoke(ctx, in)
 	ret, _ = vals[0].Interface().(client.WorkflowRun)
 	err, _ = vals[1].Interface().(error)
+	return
+}
+
+func (p *proxyClientOutbound) GetWorkflowRun(
+	ctx context.Context,
+	in *interceptor.ClientGetWorkflowRunInput,
+) (ret client.WorkflowRun) {
+	ret, _ = p.invoke(ctx, in)[0].Interface().(client.WorkflowRun)
+	return
+}
+
+func (p *proxyClientOutbound) GetWorkflowResult(
+	ctx context.Context,
+	in *interceptor.ClientGetWorkflowResultInput,
+) (ret *interceptor.ClientGetWorkflowResultOutput, err error) {
+	vals := p.invoke(ctx, in)
+	ret, _ = vals[0].Interface().(*interceptor.ClientGetWorkflowResultOutput)
+	err, _ = vals[1].Interface().(error)
+	return
+}
+
+func (p *proxyClientOutbound) GetWorkflowHistory(
+	ctx context.Context,
+	in *interceptor.ClientGetWorkflowHistoryInput,
+) (ret *interceptor.ClientGetWorkflowHistoryOutput) {
+	ret, _ = p.invoke(ctx, in)[0].Interface().(*interceptor.ClientGetWorkflowHistoryOutput)
 	return
 }
 
@@ -567,6 +666,32 @@ func (p *proxyClientOutbound) TerminateActivity(
 	in *interceptor.ClientTerminateActivityInput,
 ) (err error) {
 	err, _ = p.invoke(ctx, in)[0].Interface().(error)
+	return
+}
+
+func (p *proxyClientOutbound) PauseActivity(
+	ctx context.Context,
+	in *interceptor.ClientPauseActivityInput,
+) (err error) {
+	err, _ = p.invoke(ctx, in)[0].Interface().(error)
+	return
+}
+
+func (p *proxyClientOutbound) UnpauseActivity(
+	ctx context.Context,
+	in *interceptor.ClientUnpauseActivityInput,
+) (err error) {
+	err, _ = p.invoke(ctx, in)[0].Interface().(error)
+	return
+}
+
+func (p *proxyClientOutbound) UpdateActivityOptions(
+	ctx context.Context,
+	in *interceptor.ClientUpdateActivityOptionsInput,
+) (ret *interceptor.ClientUpdateActivityOptionsOutput, err error) {
+	vals := p.invoke(ctx, in)
+	ret, _ = vals[0].Interface().(*interceptor.ClientUpdateActivityOptionsOutput)
+	err, _ = vals[1].Interface().(error)
 	return
 }
 

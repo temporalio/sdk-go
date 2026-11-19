@@ -38,7 +38,7 @@ func TestNumberOfAttempts(t *testing.T) {
 
 	r, _ := createRetrier(policy)
 	var next time.Duration
-	for i := 0; i < 6; i++ {
+	for range 6 {
 		next = r.NextBackOff()
 	}
 
@@ -72,7 +72,7 @@ func TestBackoffCoefficient(t *testing.T) {
 
 	r, _ := createRetrier(policy)
 	min, max := getNextBackoffRange(2 * time.Second)
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		next := r.NextBackOff()
 		assert.True(t, next >= min, "NextBackoff too low")
 		assert.True(t, next < max, "NextBackoff too high")
@@ -154,7 +154,7 @@ func TestNoMaxAttempts(t *testing.T) {
 	policy.SetMaximumInterval(10 * time.Second)
 
 	r, clock := createRetrier(policy)
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		next := r.NextBackOff()
 		assert.True(t, next > 0 || next == done, "Unexpected value for next retry duration: %v", next)
 		clock.moveClock(next)
@@ -166,7 +166,7 @@ func TestUnbounded(t *testing.T) {
 	policy := createPolicy(50 * time.Millisecond)
 
 	r, clock := createRetrier(policy)
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		next := r.NextBackOff()
 		assert.True(t, next > 0 || next == done, "Unexpected value for next retry duration: %v", next)
 		clock.moveClock(next)

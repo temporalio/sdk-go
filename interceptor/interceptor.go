@@ -168,6 +168,26 @@ type ClientOutboundInterceptorBase = internal.ClientOutboundInterceptorBase
 // ClientOutboundInterceptor.ExecuteWorkflow.
 type ClientExecuteWorkflowInput = internal.ClientExecuteWorkflowInput
 
+// ClientGetWorkflowRunInput is input for
+// ClientOutboundInterceptor.GetWorkflowRun.
+type ClientGetWorkflowRunInput = internal.ClientGetWorkflowRunInput
+
+// ClientGetWorkflowResultInput is input for
+// ClientOutboundInterceptor.GetWorkflowResult.
+type ClientGetWorkflowResultInput = internal.ClientGetWorkflowResultInput
+
+// ClientGetWorkflowResultOutput is output for
+// ClientOutboundInterceptor.GetWorkflowResult.
+type ClientGetWorkflowResultOutput = internal.ClientGetWorkflowResultOutput
+
+// ClientGetWorkflowHistoryInput is input for
+// ClientOutboundInterceptor.GetWorkflowHistory.
+type ClientGetWorkflowHistoryInput = internal.ClientGetWorkflowHistoryInput
+
+// ClientGetWorkflowHistoryOutput is output for
+// ClientOutboundInterceptor.GetWorkflowHistory.
+type ClientGetWorkflowHistoryOutput = internal.ClientGetWorkflowHistoryOutput
+
 // ClientSignalWorkflowInput is input for
 // ClientOutboundInterceptor.SignalWorkflow.
 type ClientSignalWorkflowInput = internal.ClientSignalWorkflowInput
@@ -198,51 +218,107 @@ type ClientDescribeWorkflowOutput = internal.ClientDescribeWorkflowOutput
 
 // ClientExecuteActivityInput is the input to
 // ClientOutboundInterceptor.ExecuteActivity.
-//
-// NOTE: Experimental
 type ClientExecuteActivityInput = internal.ClientExecuteActivityInput
 
 // ClientGetActivityHandleInput is the input to
 // ClientOutboundInterceptor.GetActivityHandle.
-//
-// NOTE: Experimental
 type ClientGetActivityHandleInput = internal.ClientGetActivityHandleInput
 
 // ClientCancelActivityInput is the input to
 // ClientOutboundInterceptor.CancelActivity.
-//
-// NOTE: Experimental
 type ClientCancelActivityInput = internal.ClientCancelActivityInput
 
 // ClientTerminateActivityInput is the input to
 // ClientOutboundInterceptor.TerminateActivity.
+type ClientTerminateActivityInput = internal.ClientTerminateActivityInput
+
+// ClientPauseActivityInput is the input to
+// ClientOutboundInterceptor.PauseActivity.
 //
 // NOTE: Experimental
-type ClientTerminateActivityInput = internal.ClientTerminateActivityInput
+type ClientPauseActivityInput = internal.ClientPauseActivityInput
+
+// ClientUnpauseActivityInput is the input to
+// ClientOutboundInterceptor.UnpauseActivity.
+//
+// NOTE: Experimental
+type ClientUnpauseActivityInput = internal.ClientUnpauseActivityInput
+
+// ClientUpdateActivityOptionsInput is the input to
+// ClientOutboundInterceptor.UpdateActivityOptions.
+//
+// NOTE: Experimental
+type ClientUpdateActivityOptionsInput = internal.ClientUpdateActivityOptionsInput
+
+// ClientUpdateActivityOptionsOutput is the output of
+// ClientOutboundInterceptor.UpdateActivityOptions.
+//
+// NOTE: Experimental
+type ClientUpdateActivityOptionsOutput = internal.ClientUpdateActivityOptionsOutput
 
 // ClientDescribeActivityInput is the input to
 // ClientOutboundInterceptor.DescribeActivity.
-//
-// NOTE: Experimental
 type ClientDescribeActivityInput = internal.ClientDescribeActivityInput
 
 // ClientDescribeActivityOutput is the output of
 // ClientOutboundInterceptor.DescribeActivity.
-//
-// NOTE: Experimental
 type ClientDescribeActivityOutput = internal.ClientDescribeActivityOutput
 
 // ClientPollActivityResultInput is the input to
 // ClientOutboundInterceptor.PollActivityResult.
-//
-// NOTE: Experimental
 type ClientPollActivityResultInput = internal.ClientPollActivityResultInput
 
 // ClientPollActivityResultOutput is the output of
 // ClientOutboundInterceptor.PollActivityResult.
+type ClientPollActivityResultOutput = internal.ClientPollActivityResultOutput
+
+// ClientExecuteNexusOperationInput is the input to
+// ClientOutboundInterceptor.ExecuteNexusOperation.
 //
 // NOTE: Experimental
-type ClientPollActivityResultOutput = internal.ClientPollActivityResultOutput
+type ClientExecuteNexusOperationInput = internal.ClientExecuteNexusOperationInput
+
+// ClientGetNexusOperationHandleInput is the input to
+// ClientOutboundInterceptor.GetNexusOperationHandle.
+//
+// NOTE: Experimental
+type ClientGetNexusOperationHandleInput = internal.ClientGetNexusOperationHandleInput
+
+// ClientCancelNexusOperationInput is the input to
+// ClientOutboundInterceptor.CancelNexusOperation.
+//
+// NOTE: Experimental
+type ClientCancelNexusOperationInput = internal.ClientCancelNexusOperationInput
+
+// ClientTerminateNexusOperationInput is the input to
+// ClientOutboundInterceptor.TerminateNexusOperation.
+//
+// NOTE: Experimental
+type ClientTerminateNexusOperationInput = internal.ClientTerminateNexusOperationInput
+
+// ClientDescribeNexusOperationInput is the input to
+// ClientOutboundInterceptor.DescribeNexusOperation.
+//
+// NOTE: Experimental
+type ClientDescribeNexusOperationInput = internal.ClientDescribeNexusOperationInput
+
+// ClientDescribeNexusOperationOutput is the output of
+// ClientOutboundInterceptor.DescribeNexusOperation.
+//
+// NOTE: Experimental
+type ClientDescribeNexusOperationOutput = internal.ClientDescribeNexusOperationOutput
+
+// ClientPollNexusOperationResultInput is the input to
+// ClientOutboundInterceptor.PollNexusOperationResult.
+//
+// NOTE: Experimental
+type ClientPollNexusOperationResultInput = internal.ClientPollNexusOperationResultInput
+
+// ClientPollNexusOperationResultOutput is the output of
+// ClientOutboundInterceptor.PollNexusOperationResult.
+//
+// NOTE: Experimental
+type ClientPollNexusOperationResultOutput = internal.ClientPollNexusOperationResultOutput
 
 // ScheduleClientCreateInput is input for
 // ScheduleClientInterceptor.CreateSchedule.
@@ -302,6 +378,7 @@ type NexusCancelOperationInput = internal.NexusCancelOperationInput
 //
 // This returns a non-nil map only for contexts inside
 // ActivityInboundInterceptor.ExecuteActivity,
+// ClientOutboundInterceptor.ExecuteActivity,
 // ClientOutboundInterceptor.ExecuteWorkflow, and
 // ClientOutboundInterceptor.SignalWithStartWorkflow.
 func Header(ctx context.Context) map[string]*commonpb.Payload {
@@ -315,8 +392,9 @@ func Header(ctx context.Context) map[string]*commonpb.Payload {
 // WorkflowInboundInterceptor.ExecuteWorkflow,
 // WorkflowOutboundInterceptor.ExecuteActivity,
 // WorkflowOutboundInterceptor.ExecuteLocalActivity,
-// WorkflowOutboundInterceptor.ExecuteChildWorkflow, and
-// WorkflowOutboundInterceptor.NewContinueAsNewError.
+// WorkflowOutboundInterceptor.ExecuteChildWorkflow,
+// WorkflowOutboundInterceptor.NewContinueAsNewError, and
+// WorkflowOutboundInterceptor.SignalWithStartWorkflow.
 func WorkflowHeader(ctx workflow.Context) map[string]*commonpb.Payload {
 	return internal.WorkflowHeader(ctx)
 }

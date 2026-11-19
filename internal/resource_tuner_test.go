@@ -30,7 +30,7 @@ func TestPidDecisions(t *testing.T) {
 	rcOpts.InfoSupplier = fakeSupplier
 	rc := NewResourceController(rcOpts)
 
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		decision, err := rc.pidDecision(logger, metricsHandler)
 		assert.NoError(t, err)
 		assert.True(t, decision)
@@ -41,7 +41,7 @@ func TestPidDecisions(t *testing.T) {
 
 	fakeSupplier.memUse = 0.8
 	fakeSupplier.cpuUse = 0.9
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		decision, err := rc.pidDecision(logger, metricsHandler)
 		assert.NoError(t, err)
 		assert.False(t, decision)
@@ -49,7 +49,7 @@ func TestPidDecisions(t *testing.T) {
 
 	fakeSupplier.memUse = 0.7
 	fakeSupplier.cpuUse = 0.9
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		decision, err := rc.pidDecision(logger, metricsHandler)
 		assert.NoError(t, err)
 		assert.False(t, decision)
@@ -57,7 +57,7 @@ func TestPidDecisions(t *testing.T) {
 
 	fakeSupplier.memUse = 0.7
 	fakeSupplier.cpuUse = 0.7
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		decision, err := rc.pidDecision(logger, metricsHandler)
 		assert.NoError(t, err)
 		assert.True(t, decision)

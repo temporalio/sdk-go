@@ -120,6 +120,11 @@ type (
 	// NamespaceNotFoundError is set as the cause when failure is due namespace not found.
 	NamespaceNotFoundError = internal.NamespaceNotFoundError
 
+	// InvalidVersioningOverrideError is set as the cause of
+	// ChildWorkflowExecutionError when the child could not start because its
+	// versioning override was invalid.
+	InvalidVersioningOverrideError = internal.InvalidVersioningOverrideError
+
 	// WorkflowExecutionError returned from workflow.
 	WorkflowExecutionError = internal.WorkflowExecutionError
 
@@ -166,7 +171,7 @@ func NewApplicationErrorWithOptions(msg, errType string, options ApplicationErro
 // Use ApplicationError for any use case specific errors that cross activity and child workflow boundaries.
 // errType can be used to control if error is retryable or not. Add the same type in to RetryPolicy.NonRetryableErrorTypes
 // to avoid retrying of particular error types.
-func NewApplicationError(message, errType string, details ...interface{}) error {
+func NewApplicationError(message, errType string, details ...any) error {
 	return internal.NewApplicationErrorWithOptions(message, errType, ApplicationErrorOptions{Details: details})
 }
 
@@ -174,7 +179,7 @@ func NewApplicationError(message, errType string, details ...interface{}) error 
 // Use ApplicationError for any use case specific errors that cross activity and child workflow boundaries.
 // errType can be used to control if error is retryable or not. Add the same type in to RetryPolicy.NonRetryableErrorTypes
 // to avoid retrying of particular error types.
-func NewApplicationErrorWithCause(message, errType string, cause error, details ...interface{}) error {
+func NewApplicationErrorWithCause(message, errType string, cause error, details ...any) error {
 	return internal.NewApplicationErrorWithOptions(
 		message, errType, ApplicationErrorOptions{NonRetryable: false, Cause: cause, Details: details},
 	)
@@ -182,10 +187,16 @@ func NewApplicationErrorWithCause(message, errType string, cause error, details 
 
 // NewNonRetryableApplicationError creates new instance of non-retryable *ApplicationError with message, type, and optional cause and details.
 // Use ApplicationError for any use case specific errors that cross activity and child workflow boundaries.
-func NewNonRetryableApplicationError(message, errType string, cause error, details ...interface{}) error {
+func NewNonRetryableApplicationError(message, errType string, cause error, details ...any) error {
 	return internal.NewApplicationErrorWithOptions(
 		message, errType, ApplicationErrorOptions{NonRetryable: true, Cause: cause, Details: details},
 	)
+}
+
+// NewPayloadValidationError creates a non-retryable ApplicationError for payloads that fail validation.
+// The error has type PayloadValidationError and, when details is non-nil, carries it as its single detail.
+func NewPayloadValidationError(details any) error {
+	return internal.NewPayloadValidationError(details)
 }
 
 // CanceledErrorOptions should be used to set all the desired attributes of a new CanceledError
@@ -194,7 +205,7 @@ type CanceledErrorOptions = internal.CanceledErrorOptions
 
 // NewCanceledError creates CanceledError instance.
 // Return this error from activity or child workflow to indicate that it was successfully canceled.
-func NewCanceledError(details ...interface{}) error {
+func NewCanceledError(details ...any) error {
 	return internal.NewCanceledError(details...)
 }
 
@@ -210,12 +221,12 @@ func IsApplicationError(err error) bool {
 	return errors.As(err, &applicationError)
 }
 
-// IsWorkflowExecutionAlreadyStartedError return if the err is a
-// WorkflowExecutionAlreadyStartedError or if an error in the chain is a
-// ChildWorkflowExecutionAlreadyStartedError.
+// IsWorkflowExecutionAlreadyStartedError returns true if an error in the chain
+// is a WorkflowExecutionAlreadyStartedError or ChildWorkflowExecutionAlreadyStartedError.
 func IsWorkflowExecutionAlreadyStartedError(err error) bool {
-	if _, ok := err.(*serviceerror.WorkflowExecutionAlreadyStarted); ok {
-		return ok
+	var alreadyStartedError *serviceerror.WorkflowExecutionAlreadyStarted
+	if errors.As(err, &alreadyStartedError) {
+		return true
 	}
 	var childError *ChildWorkflowExecutionAlreadyStartedError
 	return errors.As(err, &childError)
@@ -249,14 +260,14 @@ func IsPanicError(err error) bool {
 // Use NewHeartbeatTimeoutError to create heartbeat TimeoutError
 // WARNING: This function is public only to support unit testing of workflows.
 // It shouldn't be used by application level code.
-func NewTimeoutError(timeoutType enumspb.TimeoutType, lastErr error, details ...interface{}) error {
+func NewTimeoutError(timeoutType enumspb.TimeoutType, lastErr error, details ...any) error {
 	return internal.NewTimeoutError("Test timeout", timeoutType, lastErr, details...)
 }
 
 // NewHeartbeatTimeoutError creates TimeoutError instance
 // WARNING: This function is public only to support unit testing of workflows.
 // It shouldn't be used by application level code.
-func NewHeartbeatTimeoutError(details ...interface{}) error {
+func NewHeartbeatTimeoutError(details ...any) error {
 	return internal.NewHeartbeatTimeoutError(details...)
 }
 

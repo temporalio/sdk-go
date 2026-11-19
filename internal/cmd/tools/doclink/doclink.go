@@ -5,12 +5,16 @@ import (
 	"flag"
 	"fmt"
 	"go/ast"
+	"go/build"
+	"go/build/constraint"
 	"go/format"
 	"go/parser"
 	"go/token"
+	"go/version"
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"unicode"
 )
@@ -55,6 +59,14 @@ func run() error {
 			return nil
 		}
 		if strings.HasSuffix(path, ".go") && !strings.HasSuffix(path, "_test.go") {
+			supported, err := supportsGoSyntax(path, build.Default.ReleaseTags[len(build.Default.ReleaseTags)-1])
+			if err != nil {
+				return fmt.Errorf("failed to inspect build constraint in %s: %v", path, err)
+			}
+			if !supported {
+				return nil
+			}
+
 			file, err := os.Open(path)
 			if err != nil {
 				return fmt.Errorf("failed to read file %s: %v", path, err)
@@ -116,16 +128,22 @@ func run() error {
 			if err != nil {
 				return fmt.Errorf("failed to read file %s: %v", path, err)
 			}
-			defer func() {
-				err = file.Close()
-				if err != nil {
-					log.Fatalf("failed to close file %s: %v", path, err)
-				}
-			}()
 
 			err = processInternal(cfg, file, publicToInternal)
 			if err != nil {
 				return fmt.Errorf("error while parsing internal files: %v", err)
+			}
+
+			file, err = os.Open(path)
+			if err != nil {
+				return fmt.Errorf("failed to read file %s: %v", path, err)
+			}
+			err = checkInternalDocs(path, file, publicToInternal)
+			if closeErr := file.Close(); closeErr != nil {
+				return fmt.Errorf("failed to close file %s: %v", path, closeErr)
+			}
+			if err != nil {
+				return fmt.Errorf("error while checking internal docs: %v", err)
 			}
 		}
 		return nil
@@ -134,6 +152,35 @@ func run() error {
 		return fmt.Errorf("error walking the path %s: %v", cfg.rootDir, err)
 	}
 	return nil
+}
+
+// supportsGoSyntax skips files requiring syntax newer than this toolchain.
+func supportsGoSyntax(path, toolchain string) (supported bool, retErr error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return false, err
+	}
+	defer func() {
+		if err := file.Close(); retErr == nil {
+			retErr = err
+		}
+	}()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if !constraint.IsGoBuild(line) {
+			continue
+		}
+		expr, err := constraint.Parse(line)
+		if err != nil {
+			return false, err
+		}
+		minimum := constraint.GoVersion(expr)
+		return minimum == "" || version.Compare(toolchain, minimum) >= 0, nil
+	}
+
+	return true, scanner.Err()
 }
 
 // Traverse the AST of public packages to identify wrappers for internal objects
@@ -198,8 +245,8 @@ func extractTypeValue(expr ast.Expr) string {
 			}
 		}
 	case *ast.Ident:
-		if strings.HasPrefix(t.Name, "internal.") {
-			return strings.TrimPrefix(t.Name, "internal.")
+		if after, ok := strings.CutPrefix(t.Name, "internal."); ok {
+			return after
 		}
 	case *ast.FuncType:
 		for _, param := range t.Params.List {
@@ -220,6 +267,10 @@ func extractTypeValue(expr ast.Expr) string {
 		if ident, ok := t.X.(*ast.Ident); ok && ident.Name == "internal" {
 			return t.Sel.Name
 		}
+	case *ast.IndexExpr:
+		return extractTypeValue(t.X)
+	case *ast.IndexListExpr:
+		return extractTypeValue(t.X)
 	case *ast.BasicLit:
 	// Do nothing
 	default:
@@ -286,13 +337,7 @@ func checkFunction(funcDecl *ast.FuncDecl) string {
 
 // Check if a call expression is calling an internal function
 func isInternalFunctionCall(callExpr *ast.CallExpr) string {
-	// Check if the function being called is a SelectorExpr (e.g., "internal.SomeFunction")
-	if selExpr, ok := callExpr.Fun.(*ast.SelectorExpr); ok {
-		if pkgIdent, ok := selExpr.X.(*ast.Ident); ok && pkgIdent.Name == "internal" {
-			return selExpr.Sel.Name
-		}
-	}
-	return ""
+	return extractTypeValue(callExpr.Fun)
 }
 
 // Check for type assertions like `var _ = internal.SomeType(nil)`
@@ -382,15 +427,34 @@ func processInternal(cfg config, file *os.File, pairs map[string]map[string]stri
 					}
 				}
 			}
-			newTrimmedLine := exposedAs
+			var newTrimmedLine strings.Builder
+			newTrimmedLine.WriteString(exposedAs)
 			for i := range newLinks {
-				newTrimmedLine += newLinks[i] + ", "
+				newTrimmedLine.WriteString(newLinks[i] + ", ")
 			}
-			nextLine = strings.TrimSuffix(newTrimmedLine, ", ")
+			nextLine = strings.TrimSuffix(newTrimmedLine.String(), ", ")
 			trimmedNextLine = nextLine
 		}
 
-		// Check for new doc links to add
+		// Track whether nextLine is inside a function or interface block.
+		// We update this first so the first line inside a block is not treated
+		// as a top-level definition.
+		if strings.HasPrefix(trimmedLine, "func ") {
+			funcSpaces = indentSize
+			inFunc = true
+		} else if inFunc && trimmedLine == "}" && funcSpaces == indentSize {
+			funcSpaces = -1
+			inFunc = false
+		}
+		if strings.HasSuffix(trimmedLine, "interface {") {
+			interfaceSpaces = indentSize
+			inInterface = true
+		} else if inInterface && trimmedLine == "}" && interfaceSpaces == indentSize {
+			interfaceSpaces = -1
+			inInterface = false
+		}
+
+		// Check for new doc links to add on top-level definitions only.
 		if !inFunc && !inInterface && isValidDefinition(trimmedNextLine, &inGroup, &inStruct) {
 			// Find the "Exposed As" line in the doc comment
 			var existingDoclink string
@@ -451,27 +515,13 @@ func processInternal(cfg config, file *os.File, pairs map[string]map[string]stri
 			}
 		}
 
-		// update inFunc after we actually check for doclinks to allow us to check
-		// a function's definition, without checking anything inside the function
-		if strings.HasPrefix(trimmedLine, "func ") {
-			funcSpaces = indentSize
-			inFunc = true
-		} else if inFunc && trimmedLine == "}" && funcSpaces == indentSize {
-			funcSpaces = -1
-			inFunc = false
-		}
-		if strings.HasSuffix(trimmedLine, "interface {") {
-			interfaceSpaces = indentSize
-			inInterface = true
-		} else if inInterface && trimmedLine == "}" && interfaceSpaces == indentSize {
-			interfaceSpaces = -1
-			inInterface = false
-		}
-
 		newFile += line + "\n"
 	}
 
 	newFile += nextLine + "\n"
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("failed to close file %s: %v", file.Name(), err)
+	}
 
 	if changesMade {
 		absPath, err := filepath.Abs(file.Name())
@@ -551,18 +601,15 @@ func isValidDefinitionWithMatch(line, private string, inGroup string, insideStru
 		return false
 	}
 
+	line, _, _ = strings.Cut(line, "//")
+	line = strings.TrimSpace(line)
 	tokens := strings.Fields(line)
 	if strings.HasPrefix(line, "func "+private+"(") {
 		return true
 	}
 
 	if strings.HasSuffix(line, " struct {") {
-		for _, strToken := range tokens {
-			if strToken == private {
-				return true
-			}
-		}
-		return false
+		return slices.Contains(tokens, private)
 	}
 
 	if insideStruct {
@@ -572,18 +619,66 @@ func isValidDefinitionWithMatch(line, private string, inGroup string, insideStru
 	if inGroup == "const" || inGroup == "var" {
 		return tokens[0] == private
 	} else if inGroup == "type" {
-		return len(tokens) > 2 && tokens[2] == private
+		return len(tokens) > 1 && (tokens[0] == private || len(tokens) > 2 && tokens[2] == private)
 	}
 
 	// Handle single-line struct, variable, or function definitions
 	if strings.HasPrefix(line, "var ") ||
 		strings.HasPrefix(line, "const ") ||
 		strings.HasPrefix(line, "type ") {
-		for _, strToken := range tokens {
-			if strToken == private {
-				return true
-			}
+		if slices.Contains(tokens, private) {
+			return true
 		}
 	}
 	return false
+}
+
+func checkInternalDocs(path string, file *os.File, pairs map[string]map[string]string) error {
+	fs := token.NewFileSet()
+
+	// Reset file pointer to start
+	_, err := file.Seek(0, 0)
+	if err != nil {
+		return fmt.Errorf("failed to seek: %v", err)
+	}
+
+	node, err := parser.ParseFile(fs, path, file, parser.ParseComments)
+	if err != nil {
+		return fmt.Errorf("failed to parse file %s: %v", path, err)
+	}
+
+	exposedTypes := make(map[string]bool)
+	for _, pair := range pairs {
+		for _, private := range pair {
+			exposedTypes[private] = true
+		}
+	}
+
+	ast.Inspect(node, func(n ast.Node) bool {
+		if genDecl, ok := n.(*ast.GenDecl); ok && genDecl.Tok == token.TYPE {
+			for _, spec := range genDecl.Specs {
+				if typeSpec, ok := spec.(*ast.TypeSpec); ok {
+					if !exposedTypes[typeSpec.Name.Name] {
+						continue
+					}
+					if structType, ok := typeSpec.Type.(*ast.StructType); ok {
+						for _, field := range structType.Fields.List {
+							if len(field.Names) == 0 {
+								// Skip anonymous/embedded fields
+								continue
+							}
+							for _, name := range field.Names {
+								if ast.IsExported(name.Name) && field.Doc == nil {
+									changesNeeded = true
+									fmt.Printf("Missing doc for exposed struct %s field %s in %s\n", typeSpec.Name.Name, name.Name, path)
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+		return true
+	})
+	return nil
 }

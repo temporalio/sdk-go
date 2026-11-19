@@ -10,21 +10,29 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/nexus-rpc/sdk-go/nexus"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 
+	"go.temporal.io/sdk/activity"
+	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal"
 	"go.temporal.io/sdk/temporal"
+	"go.temporal.io/sdk/temporalnexus"
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
 )
 
 const (
-	consistentQuerySignalCh = "consistent-query-signal-chan"
+	consistentQuerySignalCh      = "consistent-query-signal-chan"
+	workflowLocalVarQueryName    = "workflow-local-var-query"
+	workflowLocalVarUpdateName   = "workflow-local-var-update"
+	workflowLocalVarFinishSignal = "workflow-local-var-finish"
 )
 
 type Workflows struct{}
@@ -231,7 +239,7 @@ func (w *Workflows) ActivityRetryOnTimeout(ctx workflow.Context, timeoutType enu
 
 func (w *Workflows) LongRunningActivityWithHB(ctx workflow.Context) ([]string, error) {
 	opts := w.defaultActivityOptionsWithRetry()
-	opts.HeartbeatTimeout = 2 * time.Second
+	opts.HeartbeatTimeout = 3 * time.Second
 	opts.ScheduleToCloseTimeout = time.Second * 12
 	opts.StartToCloseTimeout = time.Second * 12
 	opts.RetryPolicy = &internal.RetryPolicy{
@@ -515,6 +523,57 @@ func (w *Workflows) ContinueAsNew(ctx workflow.Context, count int, taskQueue str
 	return -1, workflow.NewContinueAsNewError(ctx, w.ContinueAsNew, count-1, taskQueue)
 }
 
+func (w *Workflows) WorkflowLocalVar(ctx workflow.Context, value string) (string, error) {
+	local := workflow.NewLocalVar[string](ctx)
+	if existing := local.Get(ctx); existing != "" {
+		return "", fmt.Errorf("workflow LocalVar was already set to %q at run start", existing)
+	}
+	local.Set(ctx, value)
+	if err := workflow.SetQueryHandler(ctx, workflowLocalVarQueryName, func() (string, error) {
+		return local.Get(ctx), nil
+	}); err != nil {
+		return "", err
+	}
+	if err := workflow.SetUpdateHandler(ctx, workflowLocalVarUpdateName, func(ctx workflow.Context, value string) (string, error) {
+		local.Set(ctx, value)
+		return local.Get(ctx), nil
+	}); err != nil {
+		return "", err
+	}
+	workflow.GetSignalChannel(ctx, workflowLocalVarFinishSignal).Receive(ctx, nil)
+	return local.Get(ctx), nil
+}
+
+func (w *Workflows) WorkflowLocalVarChild(ctx workflow.Context) (string, error) {
+	return workflow.NewLocalVar[string](ctx).Get(ctx), nil
+}
+
+func (w *Workflows) WorkflowLocalVarParent(ctx workflow.Context) (string, error) {
+	local := workflow.NewLocalVar[string](ctx)
+	local.Set(ctx, "parent")
+	var childValue string
+	if err := workflow.ExecuteChildWorkflow(ctx, w.WorkflowLocalVarChild).Get(ctx, &childValue); err != nil {
+		return "", err
+	}
+	if childValue != "" {
+		return "", fmt.Errorf("child workflow LocalVar = %q, want empty", childValue)
+	}
+	return local.Get(ctx), nil
+}
+
+func (w *Workflows) WorkflowLocalVarContinueAsNew(ctx workflow.Context, continued bool) (string, error) {
+	local := workflow.NewLocalVar[string](ctx)
+	value := local.Get(ctx)
+	if continued {
+		return value, nil
+	}
+	if value != "" {
+		return "", fmt.Errorf("initial workflow LocalVar = %q, want empty", value)
+	}
+	local.Set(ctx, "previous run")
+	return "", workflow.NewContinueAsNewError(ctx, w.WorkflowLocalVarContinueAsNew, true)
+}
+
 func (w *Workflows) ContinueAsNewWithOptions(ctx workflow.Context, count int, taskQueue string) (string, error) {
 	info := workflow.GetInfo(ctx)
 	tq := info.TaskQueueName
@@ -543,6 +602,59 @@ func (w *Workflows) ContinueAsNewWithOptions(ctx workflow.Context, count int, ta
 	ctx = workflow.WithTaskQueue(ctx, taskQueue)
 
 	return "", workflow.NewContinueAsNewError(ctx, w.ContinueAsNewWithOptions, count-1, taskQueue)
+}
+
+func (w *Workflows) ContinueAsNewAfterUnsetSearchAttribute(ctx workflow.Context, continued bool) (string, error) {
+	info := workflow.GetInfo(ctx)
+	if info.SearchAttributes == nil {
+		return "", errors.New("search attributes are not present")
+	}
+
+	fields := info.SearchAttributes.GetIndexedFields()
+	stringPayload, ok := fields["CustomStringField"]
+	if !ok {
+		return "", errors.New("search attribute CustomStringField not present")
+	}
+
+	var stringValue string
+	err := converter.GetDefaultDataConverter().FromPayload(stringPayload, &stringValue)
+	if err != nil {
+		return "", errors.New("error when get CustomStringField value")
+	}
+	if stringValue != "carry-over" {
+		return "", fmt.Errorf("unexpected CustomStringField value: %s", stringValue)
+	}
+
+	keywordKey := temporal.NewSearchAttributeKeyKeyword("CustomKeywordField")
+	if !continued {
+		keywordPayload, ok := fields["CustomKeywordField"]
+		if !ok {
+			return "", errors.New("search attribute CustomKeywordField not present before unset")
+		}
+
+		var keywordValue string
+		err = converter.GetDefaultDataConverter().FromPayload(keywordPayload, &keywordValue)
+		if err != nil {
+			return "", errors.New("error when get CustomKeywordField value")
+		}
+		if keywordValue != "drop-me" {
+			return "", fmt.Errorf("unexpected CustomKeywordField value: %s", keywordValue)
+		}
+
+		err = workflow.UpsertTypedSearchAttributes(ctx, keywordKey.ValueUnset())
+		if err != nil {
+			return "", err
+		}
+		return "", workflow.NewContinueAsNewError(ctx, w.ContinueAsNewAfterUnsetSearchAttribute, true)
+	}
+
+	if _, ok := fields["CustomKeywordField"]; ok {
+		return "", errors.New("unset search attribute carried over")
+	}
+	if keywordValue, ok := workflow.GetTypedSearchAttributes(ctx).GetKeyword(keywordKey); ok || keywordValue != "" {
+		return "", errors.New("unset search attribute unexpectedly present in typed search attributes")
+	}
+	return stringValue, nil
 }
 
 func (w *Workflows) ContinueAsNewWithRetryPolicy(
@@ -629,6 +741,33 @@ func (w *Workflows) ContinueAsNewWithVersionUpgradeV1(
 }
 
 func (w *Workflows) ContinueAsNewWithVersionUpgradeV2(
+	ctx workflow.Context,
+	attempt int,
+) (string, error) {
+	return "v2.0", nil
+}
+
+func (w *Workflows) ContinueAsNewWithRampingVersionV1(
+	ctx workflow.Context,
+	attempt int,
+) (string, error) {
+	if attempt > 0 {
+		return "v1.0", nil
+	}
+
+	workflow.GetSignalChannel(ctx, "continue-as-new").Receive(ctx, nil)
+
+	return "", workflow.NewContinueAsNewErrorWithOptions(
+		ctx,
+		workflow.ContinueAsNewErrorOptions{
+			InitialVersioningBehavior: workflow.ContinueAsNewVersioningBehaviorUseRampingVersion,
+		},
+		"ContinueAsNewWithRampingVersion",
+		attempt+1,
+	)
+}
+
+func (w *Workflows) ContinueAsNewWithRampingVersionV2(
 	ctx workflow.Context,
 	attempt int,
 ) (string, error) {
@@ -739,7 +878,7 @@ func (w *Workflows) ChildWorkflowWithCustomRetryPolicy(ctx workflow.Context, exp
 	return w.childWorkflowWithRetryPolicy(ctx, w.childWithCustomRetryPolicy, expectedMaximumAttempts, iterations)
 }
 
-func (w *Workflows) childWorkflowWithRetryPolicy(ctx workflow.Context, wfFunc interface{}, expectedMaximumAttempts int, iterations int) error {
+func (w *Workflows) childWorkflowWithRetryPolicy(ctx workflow.Context, wfFunc any, expectedMaximumAttempts int, iterations int) error {
 	const (
 		// Note that this value is different from the one specified by the parent workflow.
 		// See IntegrationTestSuite::testChildWFWithRetryPolicy.
@@ -807,8 +946,8 @@ func (w *Workflows) ChildWorkflowSuccess(ctx workflow.Context) (result string, e
 	opts := workflow.ChildWorkflowOptions{
 		WorkflowTaskTimeout:      5 * time.Second,
 		WorkflowExecutionTimeout: 10 * time.Second,
-		Memo:                     map[string]interface{}{"memoKey": "memoVal"},
-		SearchAttributes:         map[string]interface{}{"CustomKeywordField": "searchAttrVal"},
+		Memo:                     map[string]any{"memoKey": "memoVal"},
+		SearchAttributes:         map[string]any{"CustomKeywordField": "searchAttrVal"},
 	}
 	ctx = workflow.WithChildOptions(ctx, opts)
 	err = workflow.ExecuteChildWorkflow(ctx, w.childForMemoAndSearchAttr).Get(ctx, &result)
@@ -1247,7 +1386,7 @@ func (w *Workflows) RaceOnCacheEviction(ctx workflow.Context, testCase string) e
 		// Since the main workflow function returns before this timer finishes the code will never run past it
 		_ = workflow.Sleep(ctx, time.Hour)
 	}
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		workflow.Go(ctx, re)
 	}
 	// Returning will eventually cause all the other go routines to clean up and call goexit in parallel
@@ -1269,7 +1408,7 @@ func (w *Workflows) CancelMultipleCommandsOverMultipleTasks(ctx workflow.Context
 	// Start a timer that will be canceled when the workflow is
 	_ = workflow.NewTimer(ctx, time.Minute*10)
 	// Throw in a side effect for fun
-	_ = workflow.SideEffect(ctx, func(ctx workflow.Context) interface{} {
+	_ = workflow.SideEffect(ctx, func(ctx workflow.Context) any {
 		return "hi!"
 	})
 	// Include a timer we cancel across the wf task
@@ -1349,7 +1488,7 @@ func (w *Workflows) MutatingUpdateValidatorWorkflow(ctx workflow.Context) (strin
 }
 
 func (w *Workflows) MutatingSideEffectWorkflow(ctx workflow.Context) (string, error) {
-	encodedValue := workflow.SideEffect(ctx, func(ctx workflow.Context) interface{} {
+	encodedValue := workflow.SideEffect(ctx, func(ctx workflow.Context) any {
 		_ = workflow.Sleep(ctx, 45*time.Second)
 		return "fail"
 	})
@@ -1359,10 +1498,10 @@ func (w *Workflows) MutatingSideEffectWorkflow(ctx workflow.Context) (string, er
 }
 
 func (w *Workflows) MutatingMutableSideEffectWorkflow(ctx workflow.Context) (string, error) {
-	encodedValue := workflow.MutableSideEffect(ctx, "test-id", func(ctx workflow.Context) interface{} {
+	encodedValue := workflow.MutableSideEffect(ctx, "test-id", func(ctx workflow.Context) any {
 		_ = workflow.Sleep(ctx, 45*time.Second)
 		return "fail"
-	}, func(a, b interface{}) bool {
+	}, func(a, b any) bool {
 		return false
 	})
 	var sideEffectValue string
@@ -1394,6 +1533,35 @@ func (w *Workflows) ActivityTimeoutsWorkflow(ctx workflow.Context, activityOptio
 	activityCtx := workflow.WithActivityOptions(ctx, activityOptions)
 	return workflow.ExecuteActivity(activityCtx, "Sleep", time.Second).Get(ctx, nil)
 }
+
+func (w *Workflows) ShutdownDuringActiveTimerActivityWorkflow(ctx workflow.Context) error {
+	ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+		ScheduleToCloseTimeout: 10 * time.Second,
+		StartToCloseTimeout:    10 * time.Second,
+	})
+	for {
+		if err := workflow.Sleep(ctx, 10*time.Millisecond); err != nil {
+			return err
+		}
+		if err := workflow.ExecuteActivity(ctx, "EmptyActivity").Get(ctx, nil); err != nil {
+			return err
+		}
+	}
+}
+
+func (w *Workflows) StickyCacheSharedWorkerLifecycle(ctx workflow.Context) error {
+	count := 0
+	if err := workflow.SetQueryHandler(ctx, "sticky-cache-count", func() (int, error) { return count, nil }); err != nil {
+		return err
+	}
+	signals := workflow.GetSignalChannel(ctx, "sticky-cache-increment")
+	for {
+		var increment int
+		signals.Receive(ctx, &increment)
+		count += increment
+	}
+}
+
 func (w *Workflows) SignalWorkflow(ctx workflow.Context) (*commonpb.WorkflowType, error) {
 	s := workflow.NewSelector(ctx)
 
@@ -1605,7 +1773,7 @@ func (w *Workflows) WorkflowWithParallelLocalActivities(ctx workflow.Context) (s
 	var activities *Activities
 	var futures []workflow.Future
 
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		futures = append(futures, workflow.ExecuteLocalActivity(ctx, activities.Echo, 0, i))
 	}
 
@@ -1653,7 +1821,7 @@ func (w *Workflows) WorkflowWithParallelLongLocalActivityAndHeartbeat(ctx workfl
 	activities := Activities{}
 	var futures []workflow.Future
 
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		futures = append(futures, workflow.ExecuteLocalActivity(ctx, activities.Echo, 5, i))
 	}
 
@@ -1806,13 +1974,13 @@ func (w *Workflows) WorkflowWithLocalActivityRetriesAndPartialRetryPolicy(ctx wo
 func (w *Workflows) WorkflowWithParallelSideEffects(ctx workflow.Context) (string, error) {
 	var futures []workflow.Future
 
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		valueToSet := i
 		future, setter := workflow.NewFuture(ctx)
 		futures = append(futures, future)
 
 		workflow.Go(ctx, func(ctx workflow.Context) {
-			encodedValue := workflow.SideEffect(ctx, func(ctx workflow.Context) interface{} {
+			encodedValue := workflow.SideEffect(ctx, func(ctx workflow.Context) any {
 				return valueToSet
 			})
 			var sideEffectValue int
@@ -1838,7 +2006,7 @@ func (w *Workflows) WorkflowWithParallelSideEffects(ctx workflow.Context) (strin
 func (w *Workflows) WorkflowWithParallelMutableSideEffects(ctx workflow.Context) (string, error) {
 	var futures []workflow.Future
 
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		valueToSet := i
 		future, setter := workflow.NewFuture(ctx)
 		futures = append(futures, future)
@@ -1847,10 +2015,10 @@ func (w *Workflows) WorkflowWithParallelMutableSideEffects(ctx workflow.Context)
 			encodedValue := workflow.MutableSideEffect(
 				ctx,
 				strconv.Itoa(valueToSet),
-				func(ctx workflow.Context) interface{} {
+				func(ctx workflow.Context) any {
 					return valueToSet
 				},
-				func(a interface{}, b interface{}) bool {
+				func(a any, b any) bool {
 					return a == b
 				},
 			)
@@ -2218,7 +2386,7 @@ func (w *Workflows) CancelTimerConcurrentWithOtherCommandWorkflow(ctx workflow.C
 	return result, nil
 }
 
-func (w *Workflows) WaitSignalReturnParam(ctx workflow.Context, v interface{}) (interface{}, error) {
+func (w *Workflows) WaitSignalReturnParam(ctx workflow.Context, v any) (any, error) {
 	// Wait for signal before returning
 	s := workflow.NewSelector(ctx)
 	signalCh := workflow.GetSignalChannel(ctx, "done-signal")
@@ -2331,9 +2499,9 @@ func (w *Workflows) InterceptorCalls(ctx workflow.Context, someVal string) (stri
 	_ = workflow.SignalExternalWorkflow(ctx, "badid", "", "badsignal", nil).Get(ctx, nil)
 	_ = workflow.UpsertSearchAttributes(ctx, nil)
 	_ = workflow.UpsertMemo(ctx, nil)
-	workflow.SideEffect(ctx, func(workflow.Context) interface{} { return "sideeffect" })
+	workflow.SideEffect(ctx, func(workflow.Context) any { return "sideeffect" })
 	workflow.MutableSideEffect(ctx, "badid",
-		func(workflow.Context) interface{} { return "mutablesideeffect" }, reflect.DeepEqual)
+		func(workflow.Context) any { return "mutablesideeffect" }, reflect.DeepEqual)
 	workflow.GetVersion(ctx, "badchangeid", 2, 3)
 	workflow.IsReplaying(ctx)
 	workflow.HasLastCompletionResult(ctx)
@@ -2366,6 +2534,63 @@ func (w *Workflows) WaitSignalToStartVersionedTwo(ctx workflow.Context) (string,
 	var value string
 	workflow.GetSignalChannel(ctx, "start-signal").Receive(ctx, &value)
 	return value + "_v2", nil
+}
+
+type childWorkflowVersioningOverride int
+
+const (
+	childWorkflowVersioningOverridePinned childWorkflowVersioningOverride = iota
+	childWorkflowVersioningOverrideAutoUpgrade
+	childWorkflowVersioningOverrideOneTime
+)
+
+func (w *Workflows) ChildWorkflowWithVersioningOverride(
+	ctx workflow.Context,
+	targetVersion worker.WorkerDeploymentVersion,
+	overrideType childWorkflowVersioningOverride,
+) (string, error) {
+	var versioningOverride client.VersioningOverride
+	switch overrideType {
+	case childWorkflowVersioningOverridePinned:
+		versioningOverride = &client.PinnedVersioningOverride{
+			Version: targetVersion,
+		}
+	case childWorkflowVersioningOverrideAutoUpgrade:
+		versioningOverride = &client.AutoUpgradeVersioningOverride{}
+	case childWorkflowVersioningOverrideOneTime:
+		versioningOverride = &client.OneTimeVersioningOverride{
+			TargetVersion: targetVersion,
+		}
+	default:
+		return "", fmt.Errorf("unknown child workflow versioning override type: %d", overrideType)
+	}
+
+	childWorkflowID := workflow.GetInfo(ctx).WorkflowExecution.ID + "-child"
+	childCtx := workflow.WithChildOptions(ctx, workflow.ChildWorkflowOptions{
+		WorkflowID:         childWorkflowID,
+		VersioningOverride: versioningOverride,
+	})
+	child := workflow.ExecuteChildWorkflow(childCtx, "WaitSignalToStartVersioned")
+
+	var childExecution workflow.Execution
+	if err := child.GetChildWorkflowExecution().Get(ctx, &childExecution); err != nil {
+		return "", err
+	}
+
+	workflow.GetSignalChannel(ctx, "start-child").Receive(ctx, nil)
+	if err := workflow.SignalExternalWorkflow(
+		ctx,
+		childExecution.ID,
+		childExecution.RunID,
+		"start-signal",
+		"prefix",
+	).Get(ctx, nil); err != nil {
+		return "", err
+	}
+
+	var result string
+	err := child.Get(ctx, &result)
+	return result, err
 }
 
 func (w *Workflows) BuildIDWorkflow(ctx workflow.Context) error {
@@ -2794,9 +3019,9 @@ func (w *Workflows) WorkflowWithRejectableUpdate(ctx workflow.Context) error {
 func (w *Workflows) WorkflowWithUpdate(ctx workflow.Context) error {
 	workflow.SetUpdateHandlerWithOptions(ctx, "update",
 		func(ctx workflow.Context, count int) error {
-			for i := 0; i < count; i++ {
+			for range count {
 				var i int
-				err := workflow.SideEffect(ctx, func(ctx workflow.Context) interface{} {
+				err := workflow.SideEffect(ctx, func(ctx workflow.Context) any {
 					return mathrand.IntN(4)
 				}).Get(&i)
 				if err != nil {
@@ -3044,7 +3269,7 @@ func (w *Workflows) UpsertSearchAttributesConditional(ctx workflow.Context, maxT
 	if searchAttr == "set" {
 		err = workflow.Sleep(ctx, 100*time.Millisecond)
 	} else if searchAttr == "unset" {
-		err = workflow.UpsertSearchAttributes(ctx, map[string]interface{}{"CustomKeywordField": "set"})
+		err = workflow.UpsertSearchAttributes(ctx, map[string]any{"CustomKeywordField": "set"})
 	} else {
 		return errors.New("unkown search attribute value")
 	}
@@ -3088,7 +3313,7 @@ func (w *Workflows) UpsertMemoConditional(ctx workflow.Context, maxTicks int) er
 	if memoValue == "set" {
 		err = workflow.Sleep(ctx, 100*time.Millisecond)
 	} else if memoValue == "unset" {
-		err = workflow.UpsertMemo(ctx, map[string]interface{}{"TestMemo": "set"})
+		err = workflow.UpsertMemo(ctx, map[string]any{"TestMemo": "set"})
 	} else {
 		return errors.New("memo unknown value")
 	}
@@ -3149,8 +3374,8 @@ func (w *Workflows) MutableSideEffect(ctx workflow.Context, startVal int) (currV
 		err = workflow.MutableSideEffect(
 			ctx,
 			"side-effect-1",
-			func(ctx workflow.Context) interface{} { return retVal },
-			func(a, b interface{}) bool { return a.(int) == b.(int) },
+			func(ctx workflow.Context) any { return retVal },
+			func(a, b any) bool { return a.(int) == b.(int) },
 		).Get(&newVal)
 		if retVal != newVal {
 			log.Panicf("MutableSideEffect did not return expected value %d == %d", retVal, newVal)
@@ -3189,7 +3414,7 @@ func (w *Workflows) MutableSideEffect(ctx workflow.Context, startVal int) (currV
 
 func (w *Workflows) VersionLoopWorkflow(ctx workflow.Context, changeIDs []string, iterations int) error {
 	for _, changeID := range changeIDs {
-		for i := 0; i < iterations; i++ {
+		for i := range iterations {
 			workflow.GetVersion(ctx, fmt.Sprintf("%s:%d", changeID, i), workflow.DefaultVersion, 1)
 		}
 		err := workflow.Sleep(ctx, time.Second)
@@ -3241,7 +3466,7 @@ func (w *Workflows) HeartbeatSpecificCount(ctx workflow.Context, interval time.D
 	return workflow.ExecuteActivity(ctx, activities.HeartbeatSpecificCount, interval, count).Get(ctx, nil)
 }
 
-func (w *Workflows) UpsertMemo(ctx workflow.Context, memo map[string]interface{}) (*commonpb.Memo, error) {
+func (w *Workflows) UpsertMemo(ctx workflow.Context, memo map[string]any) (*commonpb.Memo, error) {
 	err := workflow.UpsertMemo(ctx, memo)
 	if err != nil {
 		return nil, err
@@ -3408,22 +3633,20 @@ func (w *Workflows) AwaitWithOptions(ctx workflow.Context) (bool, error) {
 func (w *Workflows) RunsLocalAndNonlocalActsWithRetries(ctx workflow.Context, numOfEachActKind int, actFailTimes int) error {
 	var activities *Activities
 	futures := make([]workflow.Future, 0)
-	for i := 0; i < numOfEachActKind; i++ {
-		ao := workflow.LocalActivityOptions{
-			StartToCloseTimeout: time.Minute,
-			RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 3, InitialInterval: time.Millisecond, BackoffCoefficient: 1},
-		}
-		ctx = workflow.WithLocalActivityOptions(ctx, ao)
-		a := workflow.ExecuteLocalActivity(ctx, activities.failNTimes, actFailTimes, i)
+	localActivityCtx := workflow.WithLocalActivityOptions(ctx, workflow.LocalActivityOptions{
+		StartToCloseTimeout: time.Minute,
+		RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 3, InitialInterval: time.Millisecond, BackoffCoefficient: 1},
+	})
+	for i := range numOfEachActKind {
+		a := workflow.ExecuteLocalActivity(localActivityCtx, activities.failNTimes, actFailTimes, i)
 		futures = append(futures, a)
 	}
-	for i := 0; i < numOfEachActKind; i++ {
-		ao := workflow.ActivityOptions{
-			StartToCloseTimeout: time.Minute,
-			RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 3, InitialInterval: time.Millisecond, BackoffCoefficient: 1},
-		}
-		ctx = workflow.WithActivityOptions(ctx, ao)
-		a := workflow.ExecuteActivity(ctx, activities.failNTimes, actFailTimes, i)
+	activityCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+		StartToCloseTimeout: time.Minute,
+		RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 3, InitialInterval: time.Millisecond, BackoffCoefficient: 1},
+	})
+	for i := range numOfEachActKind {
+		a := workflow.ExecuteActivity(activityCtx, activities.failNTimes, actFailTimes, i)
 		futures = append(futures, a)
 	}
 
@@ -3477,7 +3700,7 @@ func (w *Workflows) SelectorBlockSignal(ctx workflow.Context) (string, error) {
 
 func (w *Workflows) CommandsFuzz(ctx workflow.Context) error {
 	var seed uint64
-	if err := workflow.SideEffect(ctx, func(ctx workflow.Context) interface{} {
+	if err := workflow.SideEffect(ctx, func(ctx workflow.Context) any {
 		return time.Now().UnixNano()
 	}).Get(&seed); err != nil {
 		return err
@@ -3486,7 +3709,7 @@ func (w *Workflows) CommandsFuzz(ctx workflow.Context) error {
 
 	iterations := 10
 
-	for i := 0; i < iterations; i++ {
+	for i := range iterations {
 		cmd := rnd.IntN(7)
 
 		switch cmd {
@@ -3523,7 +3746,7 @@ func (w *Workflows) CommandsFuzz(ctx workflow.Context) error {
 			}
 		case 4:
 			// UpsertMemo
-			if err := workflow.UpsertMemo(ctx, map[string]interface{}{"TestMemo": "set"}); err != nil {
+			if err := workflow.UpsertMemo(ctx, map[string]any{"TestMemo": "set"}); err != nil {
 				return err
 			}
 		case 5:
@@ -3597,36 +3820,974 @@ func (w *Workflows) WorkflowRawValue(ctx workflow.Context, value converter.RawVa
 	return returnVal, err
 }
 
-func (w *Workflows) WorkflowReactToCancel(ctx workflow.Context, localActivity bool) error {
-	var activities *Activities
-	var err error
-	// Allow for 2 attempts so when a worker shuts down and a 2nd one is created,
-	// it can use the 2nd attempt to complete the activity.
-	retryPolicy := temporal.RetryPolicy{
-		MaximumAttempts: 2,
-	}
+func (w *Workflows) SessionCancelNDE(ctx workflow.Context) error {
+	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
 
-	if localActivity {
-		ctx = workflow.WithLocalActivityOptions(ctx, workflow.LocalActivityOptions{
-			ScheduleToCloseTimeout: 2 * time.Second,
-			RetryPolicy:            &retryPolicy,
-		})
-		err = workflow.ExecuteLocalActivity(ctx, activities.CancelActivity).Get(ctx, nil)
-	} else {
-		ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
-			ScheduleToCloseTimeout: 2 * time.Second,
-			RetryPolicy:            &retryPolicy,
-		})
-		err = workflow.ExecuteActivity(ctx, activities.CancelActivity).Get(ctx, nil)
-	}
-
+	sessionCtx, err := workflow.CreateSession(ctx, &workflow.SessionOptions{
+		CreationTimeout:  time.Minute,
+		ExecutionTimeout: time.Minute,
+	})
 	if err != nil {
 		return err
+	}
+	defer workflow.CompleteSession(sessionCtx)
+
+	// The DataConverter is configured to panic when encoding "FAIL_ENCODE_NOW"
+	var result string
+	err = workflow.ExecuteActivity(sessionCtx, "Prefix_ToUpper", "FAIL_ENCODE_NOW").Get(sessionCtx, &result)
+	return err
+}
+
+// temporalOpEndpoint is set by TestTemporalOperationSuite before executing
+// caller workflows. The package-level vars below close over it.
+var temporalOpEndpoint string
+
+const (
+	temporalOpServiceName                    = "temporal-op-test"
+	temporalOpCancelActivitySignal           = "cancel-activity-operation"
+	temporalOpCustomCancelActivityReason     = "terminated by custom Nexus cancellation"
+	temporalOpCancelActivityResultCanceled   = "canceled"
+	temporalOpCancelActivityResultTerminated = "terminated"
+)
+
+func (w *Workflows) TemporalOpEcho(_ workflow.Context, input string) (string, error) {
+	return input, nil
+}
+
+func (w *Workflows) TemporalOpUpdateTarget(ctx workflow.Context) error {
+	updated := false
+	if err := workflow.SetUpdateHandler(ctx, "echo", func(_ workflow.Context, input string) (string, error) {
+		updated = true
+		return input, nil
+	}); err != nil {
+		return err
+	}
+	return workflow.Await(ctx, func() bool { return updated && workflow.AllHandlersFinished(ctx) })
+}
+
+func (w *Workflows) TemporalOpContinueAsNewOnce(ctx workflow.Context, input string) (string, error) {
+	if workflow.GetInfo(ctx).ContinuedExecutionRunID == "" {
+		return "", workflow.NewContinueAsNewError(ctx, w.TemporalOpContinueAsNewOnce, input)
+	}
+	return input, nil
+}
+
+func (w *Workflows) TemporalOpWaitForCancel(ctx workflow.Context, _ string) (string, error) {
+	return "", workflow.Await(ctx, func() bool { return false })
+}
+
+func (w *Workflows) TemporalOpWaitForSignal(ctx workflow.Context, _ string) (string, error) {
+	var result string
+	workflow.GetSignalChannel(ctx, "my-signal").Receive(ctx, &result)
+	return result, nil
+}
+
+var temporalOpSyncOp = temporalnexus.MustNewTemporalOperation(temporalnexus.TemporalOperationOptions[string, string]{
+	Name: "sync-op",
+	Start: func(_ context.Context, _ temporalnexus.NexusClient, input string, _ temporalnexus.StartTemporalOperationOptions) (temporalnexus.TemporalOperationResult[string], error) {
+		return temporalnexus.NewSyncResult("sync-" + input), nil
+	},
+})
+
+var temporalOpAsyncTypedOp = temporalnexus.MustNewTemporalOperation(temporalnexus.TemporalOperationOptions[string, string]{
+	Name: "async-typed-op",
+	Start: func(ctx context.Context, nc temporalnexus.NexusClient, input string, _ temporalnexus.StartTemporalOperationOptions) (temporalnexus.TemporalOperationResult[string], error) {
+		return temporalnexus.StartWorkflow(ctx, nc, client.StartWorkflowOptions{ID: input}, (*Workflows)(nil).TemporalOpEcho, input)
+	},
+})
+
+var temporalOpAsyncUpdateOp = temporalnexus.MustNewTemporalOperation(temporalnexus.TemporalOperationOptions[string, string]{
+	Name: "async-update-op",
+	Start: func(ctx context.Context, nc temporalnexus.NexusClient, input string, _ temporalnexus.StartTemporalOperationOptions) (temporalnexus.TemporalOperationResult[string], error) {
+		return temporalnexus.StartUpdateWorkflow[string](ctx, nc, client.UpdateWorkflowOptions{
+			WorkflowID: input, UpdateID: input, UpdateName: "echo", Args: []any{input}, WaitForStage: client.WorkflowUpdateStageAccepted,
+		})
+	},
+})
+
+var temporalOpAsyncContinueAsNewOp = temporalnexus.MustNewTemporalOperation(temporalnexus.TemporalOperationOptions[string, string]{
+	Name: "async-continue-as-new-op",
+	Start: func(ctx context.Context, nc temporalnexus.NexusClient, input string, _ temporalnexus.StartTemporalOperationOptions) (temporalnexus.TemporalOperationResult[string], error) {
+		return temporalnexus.StartWorkflow(ctx, nc, client.StartWorkflowOptions{ID: input}, (*Workflows)(nil).TemporalOpContinueAsNewOnce, input)
+	},
+})
+
+var temporalOpAsyncUntypedOp = temporalnexus.MustNewTemporalOperation(temporalnexus.TemporalOperationOptions[string, string]{
+	Name: "async-untyped-op",
+	Start: func(ctx context.Context, nc temporalnexus.NexusClient, input string, _ temporalnexus.StartTemporalOperationOptions) (temporalnexus.TemporalOperationResult[string], error) {
+		return temporalnexus.StartUntypedWorkflow[string](ctx, nc, client.StartWorkflowOptions{ID: input}, (*Workflows)(nil).TemporalOpEcho, input)
+	},
+})
+
+var temporalOpCancelOp = temporalnexus.MustNewTemporalOperation(temporalnexus.TemporalOperationOptions[string, string]{
+	Name: "cancel-op",
+	Start: func(ctx context.Context, nc temporalnexus.NexusClient, input string, _ temporalnexus.StartTemporalOperationOptions) (temporalnexus.TemporalOperationResult[string], error) {
+		return temporalnexus.StartWorkflow(ctx, nc, client.StartWorkflowOptions{ID: input}, (*Workflows)(nil).TemporalOpWaitForCancel, input)
+	},
+})
+
+var temporalOpCustomCancelOp = temporalnexus.MustNewTemporalOperation(temporalnexus.TemporalOperationOptions[string, string]{
+	Name: "custom-cancel-op",
+	Start: func(ctx context.Context, nc temporalnexus.NexusClient, input string, _ temporalnexus.StartTemporalOperationOptions) (temporalnexus.TemporalOperationResult[string], error) {
+		return temporalnexus.StartWorkflow(ctx, nc, client.StartWorkflowOptions{ID: input}, (*Workflows)(nil).TemporalOpWaitForCancel, input)
+	},
+	CancelWorkflowRun: func(ctx context.Context, c client.Client, opts temporalnexus.CancelTemporalWorkflowRunOptions, _ nexus.CancelOperationOptions) error {
+		return c.TerminateWorkflow(ctx, opts.WorkflowID, "", "terminated via nexus cancel")
+	},
+})
+
+var temporalOpClientInStartOp = temporalnexus.MustNewTemporalOperation(temporalnexus.TemporalOperationOptions[string, string]{
+	Name: "client-in-start-op",
+	Start: func(ctx context.Context, nc temporalnexus.NexusClient, input string, _ temporalnexus.StartTemporalOperationOptions) (temporalnexus.TemporalOperationResult[string], error) {
+		result, err := temporalnexus.StartWorkflow(ctx, nc, client.StartWorkflowOptions{ID: input}, (*Workflows)(nil).TemporalOpWaitForSignal, input)
+		if err != nil {
+			return result, err
+		}
+		if err := nc.GetWorkflowClient().SignalWorkflow(ctx, input, "", "my-signal", "signaled-"+input); err != nil {
+			return result, err
+		}
+		return result, nil
+	},
+})
+
+var temporalOpAsyncActivityOp = temporalnexus.MustNewTemporalOperation(temporalnexus.TemporalOperationOptions[string, string]{
+	Name: "async-activity-op",
+	Start: func(ctx context.Context, nc temporalnexus.NexusClient, input string, _ temporalnexus.StartTemporalOperationOptions) (temporalnexus.TemporalOperationResult[string], error) {
+		return temporalnexus.StartActivity(ctx, nc, client.StartActivityOptions{
+			ID:                  "act-" + input,
+			StartToCloseTimeout: 30 * time.Second,
+		}, (*Activities)(nil).EchoString, input)
+	},
+})
+
+var temporalOpAsyncCompletionActivityOp = temporalnexus.MustNewTemporalOperation(temporalnexus.TemporalOperationOptions[string, string]{
+	Name: "async-completion-activity-op",
+	Start: func(ctx context.Context, nc temporalnexus.NexusClient, input string, _ temporalnexus.StartTemporalOperationOptions) (temporalnexus.TemporalOperationResult[string], error) {
+		return temporalnexus.StartActivity(ctx, nc, client.StartActivityOptions{
+			ID:                  "act-" + input,
+			StartToCloseTimeout: 30 * time.Second,
+		}, (*Activities)(nil).NexusAsyncComplete, input)
+	},
+})
+
+var temporalOpAsyncUntypedActivityOp = temporalnexus.MustNewTemporalOperation(temporalnexus.TemporalOperationOptions[string, string]{
+	Name: "async-untyped-activity-op",
+	Start: func(ctx context.Context, nc temporalnexus.NexusClient, input string, _ temporalnexus.StartTemporalOperationOptions) (temporalnexus.TemporalOperationResult[string], error) {
+		return temporalnexus.StartUntypedActivity[string](ctx, nc, client.StartActivityOptions{
+			ID:                  "act-untyped-" + input,
+			StartToCloseTimeout: 30 * time.Second,
+		}, (*Activities)(nil).EchoString, input)
+	},
+})
+
+var temporalOpDoubleStartActivityOp = temporalnexus.MustNewTemporalOperation(temporalnexus.TemporalOperationOptions[string, string]{
+	Name: "double-start-activity-op",
+	Start: func(ctx context.Context, nc temporalnexus.NexusClient, input string, _ temporalnexus.StartTemporalOperationOptions) (temporalnexus.TemporalOperationResult[string], error) {
+		first, err := temporalnexus.StartActivity(ctx, nc, client.StartActivityOptions{
+			ID:                  "double-start-first-" + input,
+			StartToCloseTimeout: 30 * time.Second,
+		}, (*Activities)(nil).EchoString, input)
+		if err != nil {
+			return first, err
+		}
+		_, secondErr := temporalnexus.StartActivity(ctx, nc, client.StartActivityOptions{
+			ID:                  "double-start-second-" + input,
+			StartToCloseTimeout: 30 * time.Second,
+		}, (*Activities)(nil).EchoString, input)
+		var handlerErr *nexus.HandlerError
+		if !errors.As(secondErr, &handlerErr) ||
+			handlerErr.Type != nexus.HandlerErrorTypeBadRequest ||
+			!strings.Contains(handlerErr.Message, "only one async operation can be started per operation invocation") {
+			return first, fmt.Errorf("expected second activity start to return the async-start BAD_REQUEST, got %v", secondErr)
+		}
+		return first, nil
+	},
+})
+
+type temporalOpAsyncHandlerRetryState struct {
+	sync.Mutex
+	requestIDs []string
+}
+
+var temporalOpDoubleSignalOp = temporalnexus.MustNewTemporalOperation(temporalnexus.TemporalOperationOptions[string, string]{
+	Name: "double-signal-op",
+	Start: func(ctx context.Context, nc temporalnexus.NexusClient, input string, _ temporalnexus.StartTemporalOperationOptions) (temporalnexus.TemporalOperationResult[string], error) {
+		result, err := temporalnexus.StartWorkflow(ctx, nc, client.StartWorkflowOptions{ID: input}, (*Workflows)(nil).TemporalOpWaitForSignal, input)
+		if err != nil {
+			return result, err
+		}
+		// The first signal uses up the invocation's only signal, so a second one is rejected even
+		// though it targets a different workflow.
+		if err := nc.GetWorkflowClient().SignalWorkflow(ctx, input, "", "my-signal", "signaled-"+input); err != nil {
+			return result, err
+		}
+		secondErr := nc.GetWorkflowClient().SignalWorkflow(ctx, input+"-other", "", "my-signal", "second-"+input)
+		var handlerErr *nexus.HandlerError
+		if !errors.As(secondErr, &handlerErr) ||
+			handlerErr.Type != nexus.HandlerErrorTypeBadRequest ||
+			!strings.Contains(handlerErr.Message, "only one signal can be sent per Nexus operation invocation") {
+			return result, fmt.Errorf("expected second signal to return the one-signal BAD_REQUEST, got %v", secondErr)
+		}
+		return result, nil
+	},
+})
+
+var temporalOpAsyncHandlerRetryStates sync.Map
+
+var temporalOpAsyncHandlerRetryActivityOp = temporalnexus.MustNewTemporalOperation(temporalnexus.TemporalOperationOptions[string, string]{
+	Name: "async-handler-retry-activity-op",
+	Start: func(ctx context.Context, nc temporalnexus.NexusClient, input string, opts temporalnexus.StartTemporalOperationOptions) (temporalnexus.TemporalOperationResult[string], error) {
+		handle, err := temporalnexus.StartActivity(ctx, nc, client.StartActivityOptions{
+			ID:                       "async-handler-retry-act-" + input,
+			StartToCloseTimeout:      30 * time.Second,
+			ActivityIDConflictPolicy: enumspb.ACTIVITY_ID_CONFLICT_POLICY_USE_EXISTING,
+			RetryPolicy:              &temporal.RetryPolicy{MaximumAttempts: 1},
+		}, delayedEchoNexusActivity, input)
+		if err != nil {
+			return handle, err
+		}
+
+		value, _ := temporalOpAsyncHandlerRetryStates.LoadOrStore(input, &temporalOpAsyncHandlerRetryState{})
+		state := value.(*temporalOpAsyncHandlerRetryState)
+		state.Lock()
+		state.requestIDs = append(state.requestIDs, opts.RequestID)
+		attempt := len(state.requestIDs)
+		state.Unlock()
+		if attempt == 1 {
+			return temporalnexus.TemporalOperationResult[string]{}, &nexus.HandlerError{
+				Type:          nexus.HandlerErrorTypeInternal,
+				Message:       "force async handler redelivery after starting activity",
+				RetryBehavior: nexus.HandlerErrorRetryBehaviorRetryable,
+			}
+		}
+		return handle, nil
+	},
+})
+
+// TemporalOpCountSignals returns how many "my-signal" deliveries reached the workflow before "done".
+func (w *Workflows) TemporalOpCountSignals(ctx workflow.Context, _ string) (int, error) {
+	workflow.GetSignalChannel(ctx, "done").Receive(ctx, nil)
+	count := 0
+	for workflow.GetSignalChannel(ctx, "my-signal").ReceiveAsync(nil) {
+		count++
+	}
+	return count, nil
+}
+
+var temporalOpSignalHandlerRetryStates sync.Map
+
+// temporalOpSignalHandlerRetryOp fails its first attempt after signaling, forcing the Nexus task to
+// be redelivered. Both attempts signal with the operation's request ID, so the server must dedupe
+// the second one and the target workflow must observe exactly one signal.
+var temporalOpSignalHandlerRetryOp = temporalnexus.MustNewTemporalOperation(temporalnexus.TemporalOperationOptions[string, string]{
+	Name: "signal-handler-retry-op",
+	Start: func(ctx context.Context, nc temporalnexus.NexusClient, input string, opts temporalnexus.StartTemporalOperationOptions) (temporalnexus.TemporalOperationResult[string], error) {
+		_, err := nc.GetWorkflowClient().SignalWithStartWorkflow(ctx, input, "my-signal", input,
+			client.StartWorkflowOptions{
+				ID:        input,
+				TaskQueue: temporalnexus.GetOperationInfo(ctx).TaskQueue,
+			},
+			(*Workflows)(nil).TemporalOpCountSignals, input)
+		if err != nil {
+			return temporalnexus.TemporalOperationResult[string]{}, err
+		}
+
+		value, _ := temporalOpSignalHandlerRetryStates.LoadOrStore(input, &temporalOpAsyncHandlerRetryState{})
+		state := value.(*temporalOpAsyncHandlerRetryState)
+		state.Lock()
+		state.requestIDs = append(state.requestIDs, opts.RequestID)
+		attempt := len(state.requestIDs)
+		state.Unlock()
+		if attempt == 1 {
+			return temporalnexus.TemporalOperationResult[string]{}, &nexus.HandlerError{
+				Type:          nexus.HandlerErrorTypeInternal,
+				Message:       "force handler redelivery after signalling",
+				RetryBehavior: nexus.HandlerErrorRetryBehaviorRetryable,
+			}
+		}
+		return temporalnexus.NewSyncResult("signaled-" + input), nil
+	},
+})
+
+var temporalOpCancelActivityOp = temporalnexus.MustNewTemporalOperation(temporalnexus.TemporalOperationOptions[string, string]{
+	Name: "cancel-activity-op",
+	Start: func(ctx context.Context, nc temporalnexus.NexusClient, input string, _ temporalnexus.StartTemporalOperationOptions) (temporalnexus.TemporalOperationResult[string], error) {
+		return temporalnexus.StartActivity(ctx, nc, client.StartActivityOptions{
+			ID:                  "cancel-act-" + input,
+			StartToCloseTimeout: 60 * time.Second,
+			HeartbeatTimeout:    5 * time.Second,
+		}, waitForCancelNexusActivity, time.Minute)
+	},
+})
+
+var temporalOpCustomCancelActivityCalls sync.Map
+var temporalOpCustomCancelActivityRunIDs sync.Map
+
+var temporalOpCustomCancelActivityOp = temporalnexus.MustNewTemporalOperation(temporalnexus.TemporalOperationOptions[string, string]{
+	Name: "custom-cancel-activity-op",
+	Start: func(ctx context.Context, nc temporalnexus.NexusClient, input string, _ temporalnexus.StartTemporalOperationOptions) (temporalnexus.TemporalOperationResult[string], error) {
+		return temporalnexus.StartActivity(ctx, nc, client.StartActivityOptions{
+			ID:                  "custom-cancel-act-" + input,
+			StartToCloseTimeout: 60 * time.Second,
+			HeartbeatTimeout:    5 * time.Second,
+		}, waitForCancelNexusActivity, time.Minute)
+	},
+	CancelActivityExecution: func(ctx context.Context, c client.Client, opts temporalnexus.CancelTemporalActivityExecutionOptions, _ nexus.CancelOperationOptions) error {
+		value, _ := temporalOpCustomCancelActivityCalls.LoadOrStore(opts.ActivityID, &atomic.Int32{})
+		value.(*atomic.Int32).Add(1)
+		temporalOpCustomCancelActivityRunIDs.Store(opts.ActivityID, opts.RunID)
+		handle := c.GetActivityHandle(client.GetActivityHandleOptions{
+			ActivityID: opts.ActivityID,
+			RunID:      opts.RunID,
+		})
+		return handle.Terminate(ctx, client.TerminateActivityOptions{Reason: temporalOpCustomCancelActivityReason})
+	},
+})
+
+// waitForCancelNexusActivity is a top-level activity (not a method) that heartbeats until
+// it sees a context cancellation, then returns the cancellation error. Used by the
+// cancel-activity-op integration test.
+func waitForCancelNexusActivity(ctx context.Context, delay time.Duration) (string, error) {
+	endTime := time.Now().Add(delay)
+	for time.Now().Before(endTime) {
+		activity.RecordHeartbeat(ctx)
+		if errors.Is(ctx.Err(), context.Canceled) {
+			return "", ctx.Err()
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return "timed out", nil
+}
+
+// failingNexusActivity always returns a non-retryable ApplicationError carrying the input as
+// part of its message. Used by the failing-activity-op integration test to assert that an
+// activity-backed Nexus operation's failure is delivered to the caller workflow with the
+// underlying ApplicationError preserved.
+func failingNexusActivity(_ context.Context, input string) (string, error) {
+	return "", temporal.NewNonRetryableApplicationError("activity failed: "+input, "NexusActivityTestFailureType", nil)
+}
+
+// sleepingNexusActivity sleeps for the given duration or until its context is canceled. Used
+// to force a StartToClose, Heartbeat, or ScheduleToClose timeout depending on the
+// timeouts configured on the activity options.
+func sleepingNexusActivity(ctx context.Context, dur time.Duration) (string, error) {
+	select {
+	case <-time.After(dur):
+		return "slept", nil
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
+}
+
+// heartbeatTimeoutTestDetails is recorded as the heartbeat payload by
+// heartbeatThenStallNexusActivity. The TemporalOpHeartbeatDetailsTimeoutCaller test asserts
+// this exact string can be recovered from the caller workflow's TimeoutError.LastHeartbeatDetails.
+const heartbeatTimeoutTestDetails = "intermediate-progress-50pct"
+
+// heartbeatThenStallNexusActivity records exactly one heartbeat with deterministic details,
+// then stalls without sending any more heartbeats. With HeartbeatTimeout set to ~1s on the
+// surrounding op, the server fires a HEARTBEAT timeout while the activity is still sleeping.
+// The caller workflow should observe a TimeoutError whose LastHeartbeatDetails decodes back
+// to heartbeatTimeoutTestDetails, mirroring workflow-backed activity heartbeat-timeout
+// semantics.
+func heartbeatThenStallNexusActivity(ctx context.Context, _ string) (string, error) {
+	activity.RecordHeartbeat(ctx, heartbeatTimeoutTestDetails)
+	// Give the SDK heartbeat flusher time to send before we stop heartbeating.
+	time.Sleep(300 * time.Millisecond)
+	select {
+	case <-time.After(10 * time.Second):
+		return "noop", nil
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
+}
+
+// terminateCallerNexusActivity uses activity.GetClient to terminate the workflow that
+// invoked the surrounding Nexus operation, then returns success. The point is to put the
+// caller into a terminal state BEFORE the activity-backed Nexus operation's completion
+// callback is delivered, so the server's completion-callback path is exercised against an
+// already-closed workflow.
+func terminateCallerNexusActivity(ctx context.Context, callerWorkflowID string) (string, error) {
+	c := activity.GetClient(ctx)
+	if err := c.TerminateWorkflow(ctx, callerWorkflowID, "", "terminated by activity to exercise orphaned-callback path"); err != nil {
+		return "", err
+	}
+	return "terminated-" + callerWorkflowID, nil
+}
+
+// failsNTimesInput is the input for failsNTimesNexusActivity. Encoded inline rather than as
+// raw strings so the activity can drive its decision off a typed input.
+type failsNTimesInput struct {
+	Input            string
+	SucceedOnAttempt int32
+}
+
+// failsNTimesNexusActivity returns a retryable ApplicationError until activity.GetInfo
+// reports that the current attempt is >= SucceedOnAttempt, at which point it returns Input.
+// Used to assert that the server's retry path is exercised end-to-end for activity-backed
+// Nexus operations (each retry is server-driven; the SDK only schedules the activity once).
+func failsNTimesNexusActivity(ctx context.Context, in failsNTimesInput) (string, error) {
+	info := activity.GetInfo(ctx)
+	if info.Attempt < in.SucceedOnAttempt {
+		return "", temporal.NewApplicationError(
+			fmt.Sprintf("attempt %d failed; will succeed on %d", info.Attempt, in.SucceedOnAttempt),
+			"NexusActivityRetryTestFailureType",
+		)
+	}
+	return in.Input, nil
+}
+
+var temporalOpFailingActivityOp = temporalnexus.MustNewTemporalOperation(temporalnexus.TemporalOperationOptions[string, string]{
+	Name: "failing-activity-op",
+	Start: func(ctx context.Context, nc temporalnexus.NexusClient, input string, _ temporalnexus.StartTemporalOperationOptions) (temporalnexus.TemporalOperationResult[string], error) {
+		return temporalnexus.StartActivity(ctx, nc, client.StartActivityOptions{
+			ID:                  "failing-act-" + input,
+			StartToCloseTimeout: 30 * time.Second,
+			RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 1},
+		}, failingNexusActivity, input)
+	},
+})
+
+var temporalOpTimeoutActivityOp = temporalnexus.MustNewTemporalOperation(temporalnexus.TemporalOperationOptions[string, string]{
+	Name: "timeout-activity-op",
+	Start: func(ctx context.Context, nc temporalnexus.NexusClient, input string, _ temporalnexus.StartTemporalOperationOptions) (temporalnexus.TemporalOperationResult[string], error) {
+		return temporalnexus.StartActivity(ctx, nc, client.StartActivityOptions{
+			ID:                     "timeout-act-" + input,
+			StartToCloseTimeout:    1 * time.Second,
+			ScheduleToCloseTimeout: 5 * time.Second,
+			RetryPolicy:            &temporal.RetryPolicy{MaximumAttempts: 1},
+		}, sleepingNexusActivity, 10*time.Second)
+	},
+})
+
+// temporalOpHeartbeatDetailsTimeoutOp pairs heartbeatThenStallNexusActivity with a 1s
+// HeartbeatTimeout so a HEARTBEAT-typed timeout failure is recorded by the server. The
+// caller workflow asserts that the resulting TimeoutError carries the LastHeartbeatDetails
+// recorded prior to the stall.
+var temporalOpHeartbeatDetailsTimeoutOp = temporalnexus.MustNewTemporalOperation(temporalnexus.TemporalOperationOptions[string, string]{
+	Name: "heartbeat-details-timeout-op",
+	Start: func(ctx context.Context, nc temporalnexus.NexusClient, input string, _ temporalnexus.StartTemporalOperationOptions) (temporalnexus.TemporalOperationResult[string], error) {
+		return temporalnexus.StartActivity(ctx, nc, client.StartActivityOptions{
+			ID:                  "heartbeat-details-act-" + input,
+			StartToCloseTimeout: 30 * time.Second,
+			HeartbeatTimeout:    1 * time.Second,
+			RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 1},
+		}, heartbeatThenStallNexusActivity, input)
+	},
+})
+
+// temporalOpScheduleToCloseTimeoutActivityOp forces a ScheduleToClose timeout: the activity
+// sleeps far longer than the total ScheduleToCloseTimeout, with retries disabled, so the
+// terminal failure is ScheduleToClose (recorded via recordScheduleToStartOrCloseTimeoutFailure
+// on the server).
+var temporalOpScheduleToCloseTimeoutActivityOp = temporalnexus.MustNewTemporalOperation(temporalnexus.TemporalOperationOptions[string, string]{
+	Name: "schedule-to-close-timeout-activity-op",
+	Start: func(ctx context.Context, nc temporalnexus.NexusClient, input string, _ temporalnexus.StartTemporalOperationOptions) (temporalnexus.TemporalOperationResult[string], error) {
+		return temporalnexus.StartActivity(ctx, nc, client.StartActivityOptions{
+			ID:                     "schedule-to-close-act-" + input,
+			StartToCloseTimeout:    30 * time.Second,
+			ScheduleToCloseTimeout: 2 * time.Second,
+			RetryPolicy:            &temporal.RetryPolicy{MaximumAttempts: 1},
+		}, sleepingNexusActivity, 10*time.Second)
+	},
+})
+
+// temporalOpHeartbeatTimeoutActivityOp forces a Heartbeat timeout: the activity sleeps
+// without calling RecordHeartbeat, so the server fires the heartbeat-timeout task and
+// (with MaximumAttempts=1) records a terminal Heartbeat-typed timeout failure.
+var temporalOpHeartbeatTimeoutActivityOp = temporalnexus.MustNewTemporalOperation(temporalnexus.TemporalOperationOptions[string, string]{
+	Name: "heartbeat-timeout-activity-op",
+	Start: func(ctx context.Context, nc temporalnexus.NexusClient, input string, _ temporalnexus.StartTemporalOperationOptions) (temporalnexus.TemporalOperationResult[string], error) {
+		return temporalnexus.StartActivity(ctx, nc, client.StartActivityOptions{
+			ID:                  "heartbeat-act-" + input,
+			StartToCloseTimeout: 30 * time.Second,
+			HeartbeatTimeout:    1 * time.Second,
+			RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 1},
+		}, sleepingNexusActivity, 5*time.Second)
+	},
+})
+
+// temporalOpRetryThenSucceedActivityOp exercises the server-driven retry loop for an
+// activity-backed Nexus operation: failsNTimesNexusActivity fails twice then succeeds on
+// attempt 3, RetryPolicy allows up to 5 attempts. Caller must observe success and the
+// activity must report Attempt >= 3 in its final state.
+var temporalOpRetryThenSucceedActivityOp = temporalnexus.MustNewTemporalOperation(temporalnexus.TemporalOperationOptions[string, string]{
+	Name: "retry-then-succeed-activity-op",
+	Start: func(ctx context.Context, nc temporalnexus.NexusClient, input string, _ temporalnexus.StartTemporalOperationOptions) (temporalnexus.TemporalOperationResult[string], error) {
+		return temporalnexus.StartActivity(ctx, nc, client.StartActivityOptions{
+			ID:                  "retry-succeed-act-" + input,
+			StartToCloseTimeout: 30 * time.Second,
+			RetryPolicy: &temporal.RetryPolicy{
+				InitialInterval:    100 * time.Millisecond,
+				BackoffCoefficient: 1.0,
+				MaximumInterval:    100 * time.Millisecond,
+				MaximumAttempts:    5,
+			},
+		}, failsNTimesNexusActivity, failsNTimesInput{Input: input, SucceedOnAttempt: 3})
+	},
+})
+
+// temporalOpSharedActivityOp uses a stable activity ID derived from the operation input so
+// that two Nexus operations invoked with the same input resolve to the SAME backing
+// activity via ACTIVITY_ID_CONFLICT_POLICY_USE_EXISTING. With the SDK's default
+// OnConflictOptions{AttachCompletionCallbacks: true}, both callers' completion callbacks
+// end up on the one activity and both should fire when the activity completes.
+//
+// The backing activity sleeps briefly so the second caller has time to register its
+// callback before the first attempt would otherwise complete.
+var temporalOpSharedActivityOp = temporalnexus.MustNewTemporalOperation(temporalnexus.TemporalOperationOptions[string, string]{
+	Name: "shared-activity-op",
+	Start: func(ctx context.Context, nc temporalnexus.NexusClient, input string, _ temporalnexus.StartTemporalOperationOptions) (temporalnexus.TemporalOperationResult[string], error) {
+		return temporalnexus.StartActivity(ctx, nc, client.StartActivityOptions{
+			ID:                       "shared-act-" + input,
+			StartToCloseTimeout:      30 * time.Second,
+			ActivityIDConflictPolicy: enumspb.ACTIVITY_ID_CONFLICT_POLICY_USE_EXISTING,
+			RetryPolicy:              &temporal.RetryPolicy{MaximumAttempts: 1},
+		}, delayedEchoNexusActivity, input)
+	},
+})
+
+// delayedEchoNexusActivity sleeps long enough for a second concurrent Nexus caller to attach
+// its callback to this activity before completion, then returns the input verbatim. Used
+// only by the shared-activity test.
+func delayedEchoNexusActivity(ctx context.Context, input string) (string, error) {
+	select {
+	case <-time.After(3 * time.Second):
+		return input, nil
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
+}
+
+// renamedNexusActivityCustomName is the custom name under which renamedNexusActivity is
+// registered on the worker via activity.RegisterOptions.Name. The point of the rename is to
+// verify that temporalnexus.StartActivity resolves the activity name through the worker's
+// registry rather than the raw Go function name, so an activity registered under a custom
+// name is dispatched correctly.
+const renamedNexusActivityCustomName = "renamed-nexus-activity-custom-name"
+
+// renamedNexusActivity is registered under a non-default name (see
+// renamedNexusActivityCustomName) and invoked from temporalOpRenamedActivityOp by function
+// reference. If the Nexus StartActivity path failed to consult the worker's registry, the
+// activity would be scheduled under its Go function name and the server would reject it as
+// not registered, failing the caller workflow.
+func renamedNexusActivity(_ context.Context, input string) (string, error) {
+	return "renamed:" + input, nil
+}
+
+var temporalOpRenamedActivityOp = temporalnexus.MustNewTemporalOperation(temporalnexus.TemporalOperationOptions[string, string]{
+	Name: "renamed-activity-op",
+	Start: func(ctx context.Context, nc temporalnexus.NexusClient, input string, _ temporalnexus.StartTemporalOperationOptions) (temporalnexus.TemporalOperationResult[string], error) {
+		return temporalnexus.StartActivity(ctx, nc, client.StartActivityOptions{
+			ID:                  "renamed-act-" + input,
+			StartToCloseTimeout: 30 * time.Second,
+			RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 1},
+		}, renamedNexusActivity, input)
+	},
+})
+
+// temporalOpTerminateCallerActivityOp schedules an activity that terminates the caller
+// workflow mid-operation. Used to assert that an activity completion delivered after the
+// caller workflow has reached a terminal state is handled gracefully by the server (no
+// panic, no infinite retries on the completion-callback dispatch path).
+var temporalOpTerminateCallerActivityOp = temporalnexus.MustNewTemporalOperation(temporalnexus.TemporalOperationOptions[string, string]{
+	Name: "terminate-caller-activity-op",
+	Start: func(ctx context.Context, nc temporalnexus.NexusClient, input string, _ temporalnexus.StartTemporalOperationOptions) (temporalnexus.TemporalOperationResult[string], error) {
+		return temporalnexus.StartActivity(ctx, nc, client.StartActivityOptions{
+			ID:                  "terminate-caller-act-" + input,
+			StartToCloseTimeout: 30 * time.Second,
+			RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 1},
+		}, terminateCallerNexusActivity, input)
+	},
+})
+
+// temporalOpRetryExhaustActivityOp exercises retry exhaustion: the activity never succeeds
+// (SucceedOnAttempt=999) and RetryPolicy caps attempts at 2. Caller observes the last
+// ApplicationError; the activity's final state must show Attempt == 2 and Status == FAILED.
+var temporalOpRetryExhaustActivityOp = temporalnexus.MustNewTemporalOperation(temporalnexus.TemporalOperationOptions[string, string]{
+	Name: "retry-exhaust-activity-op",
+	Start: func(ctx context.Context, nc temporalnexus.NexusClient, input string, _ temporalnexus.StartTemporalOperationOptions) (temporalnexus.TemporalOperationResult[string], error) {
+		return temporalnexus.StartActivity(ctx, nc, client.StartActivityOptions{
+			ID:                  "retry-exhaust-act-" + input,
+			StartToCloseTimeout: 30 * time.Second,
+			RetryPolicy: &temporal.RetryPolicy{
+				InitialInterval:    100 * time.Millisecond,
+				BackoffCoefficient: 1.0,
+				MaximumInterval:    100 * time.Millisecond,
+				MaximumAttempts:    2,
+			},
+		}, failsNTimesNexusActivity, failsNTimesInput{Input: input, SucceedOnAttempt: 999})
+	},
+})
+
+var temporalOpService = func() *nexus.Service {
+	s := nexus.NewService(temporalOpServiceName)
+	if err := s.Register(
+		temporalOpSyncOp,
+		temporalOpAsyncTypedOp,
+		temporalOpAsyncContinueAsNewOp,
+		temporalOpAsyncUpdateOp,
+		temporalOpAsyncUntypedOp,
+		temporalOpCancelOp,
+		temporalOpCustomCancelOp,
+		temporalOpClientInStartOp,
+		temporalOpAsyncActivityOp,
+		temporalOpAsyncCompletionActivityOp,
+		temporalOpAsyncUntypedActivityOp,
+		temporalOpDoubleStartActivityOp,
+		temporalOpDoubleSignalOp,
+		temporalOpSignalHandlerRetryOp,
+		temporalOpAsyncHandlerRetryActivityOp,
+		temporalOpCancelActivityOp,
+		temporalOpCustomCancelActivityOp,
+		temporalOpFailingActivityOp,
+		temporalOpTimeoutActivityOp,
+		temporalOpScheduleToCloseTimeoutActivityOp,
+		temporalOpHeartbeatTimeoutActivityOp,
+		temporalOpRetryThenSucceedActivityOp,
+		temporalOpRetryExhaustActivityOp,
+		temporalOpTerminateCallerActivityOp,
+		temporalOpSharedActivityOp,
+		temporalOpHeartbeatDetailsTimeoutOp,
+		temporalOpRenamedActivityOp,
+	); err != nil {
+		panic(err)
+	}
+	return s
+}()
+
+func (w *Workflows) TemporalOpSyncCaller(ctx workflow.Context, input string) (string, error) {
+	c := workflow.NewNexusClient(temporalOpEndpoint, temporalOpServiceName)
+	var result string
+	return result, c.ExecuteOperation(ctx, temporalOpSyncOp, input, workflow.NexusOperationOptions{}).Get(ctx, &result)
+}
+
+func (w *Workflows) TemporalOpAsyncTypedCaller(ctx workflow.Context, input string) (string, error) {
+	c := workflow.NewNexusClient(temporalOpEndpoint, temporalOpServiceName)
+	var result string
+	return result, c.ExecuteOperation(ctx, temporalOpAsyncTypedOp, input, workflow.NexusOperationOptions{}).Get(ctx, &result)
+}
+
+func (w *Workflows) TemporalOpAsyncUpdateCaller(ctx workflow.Context, input string) (string, error) {
+	c := workflow.NewNexusClient(temporalOpEndpoint, temporalOpServiceName)
+	var result string
+	return result, c.ExecuteOperation(ctx, temporalOpAsyncUpdateOp, input, workflow.NexusOperationOptions{}).Get(ctx, &result)
+}
+
+func (w *Workflows) TemporalOpAsyncContinueAsNewCaller(ctx workflow.Context, input string) (string, error) {
+	c := workflow.NewNexusClient(temporalOpEndpoint, temporalOpServiceName)
+	var result string
+	return result, c.ExecuteOperation(ctx, temporalOpAsyncContinueAsNewOp, input, workflow.NexusOperationOptions{}).Get(ctx, &result)
+}
+
+func (w *Workflows) TemporalOpAsyncUntypedCaller(ctx workflow.Context, input string) (string, error) {
+	c := workflow.NewNexusClient(temporalOpEndpoint, temporalOpServiceName)
+	var result string
+	return result, c.ExecuteOperation(ctx, temporalOpAsyncUntypedOp, input, workflow.NexusOperationOptions{}).Get(ctx, &result)
+}
+
+func (w *Workflows) TemporalOpCancelCaller(ctx workflow.Context, input string) (string, error) {
+	return w.runTemporalOpCancelCaller(ctx, temporalOpCancelOp, input)
+}
+
+func (w *Workflows) TemporalOpCustomCancelCaller(ctx workflow.Context, input string) (string, error) {
+	return w.runTemporalOpCancelCaller(ctx, temporalOpCustomCancelOp, input)
+}
+
+func (w *Workflows) runTemporalOpCancelCaller(ctx workflow.Context, op nexus.Operation[string, string], input string) (string, error) {
+	c := workflow.NewNexusClient(temporalOpEndpoint, temporalOpServiceName)
+	opCtx, opCancel := workflow.WithCancel(ctx)
+	fut := c.ExecuteOperation(opCtx, op, input, workflow.NexusOperationOptions{})
+	var exec workflow.NexusOperationExecution
+	if err := fut.GetNexusOperationExecution().Get(ctx, &exec); err != nil {
+		return "", fmt.Errorf("expected start to succeed: %w", err)
+	}
+	opCancel()
+	if err := fut.Get(ctx, nil); err == nil {
+		return "", fmt.Errorf("expected cancel error")
+	}
+	return "", nil
+}
+
+func (w *Workflows) TemporalOpClientInStartCaller(ctx workflow.Context, input string) (string, error) {
+	c := workflow.NewNexusClient(temporalOpEndpoint, temporalOpServiceName)
+	var result string
+	return result, c.ExecuteOperation(ctx, temporalOpClientInStartOp, input, workflow.NexusOperationOptions{}).Get(ctx, &result)
+}
+
+func (w *Workflows) TemporalOpAsyncActivityCaller(ctx workflow.Context, input string) (string, error) {
+	c := workflow.NewNexusClient(temporalOpEndpoint, temporalOpServiceName)
+	var result string
+	return result, c.ExecuteOperation(ctx, temporalOpAsyncActivityOp, input, workflow.NexusOperationOptions{}).Get(ctx, &result)
+}
+
+func (w *Workflows) TemporalOpAsyncCompletionActivityCaller(ctx workflow.Context, input string) (string, error) {
+	c := workflow.NewNexusClient(temporalOpEndpoint, temporalOpServiceName)
+	var result string
+	return result, c.ExecuteOperation(ctx, temporalOpAsyncCompletionActivityOp, input, workflow.NexusOperationOptions{}).Get(ctx, &result)
+}
+
+func (w *Workflows) TemporalOpAsyncUntypedActivityCaller(ctx workflow.Context, input string) (string, error) {
+	c := workflow.NewNexusClient(temporalOpEndpoint, temporalOpServiceName)
+	var result string
+	return result, c.ExecuteOperation(ctx, temporalOpAsyncUntypedActivityOp, input, workflow.NexusOperationOptions{}).Get(ctx, &result)
+}
+
+func (w *Workflows) TemporalOpDoubleStartActivityCaller(ctx workflow.Context, input string) (string, error) {
+	c := workflow.NewNexusClient(temporalOpEndpoint, temporalOpServiceName)
+	var result string
+	return result, c.ExecuteOperation(ctx, temporalOpDoubleStartActivityOp, input, workflow.NexusOperationOptions{}).Get(ctx, &result)
+}
+
+func (w *Workflows) TemporalOpDoubleSignalCaller(ctx workflow.Context, input string) (string, error) {
+	c := workflow.NewNexusClient(temporalOpEndpoint, temporalOpServiceName)
+	var result string
+	return result, c.ExecuteOperation(ctx, temporalOpDoubleSignalOp, input, workflow.NexusOperationOptions{}).Get(ctx, &result)
+}
+
+func (w *Workflows) TemporalOpSignalHandlerRetryCaller(ctx workflow.Context, input string) (string, error) {
+	c := workflow.NewNexusClient(temporalOpEndpoint, temporalOpServiceName)
+	var result string
+	return result, c.ExecuteOperation(ctx, temporalOpSignalHandlerRetryOp, input, workflow.NexusOperationOptions{}).Get(ctx, &result)
+}
+
+func (w *Workflows) TemporalOpAsyncHandlerRetryActivityCaller(ctx workflow.Context, input string) (string, error) {
+	c := workflow.NewNexusClient(temporalOpEndpoint, temporalOpServiceName)
+	var result string
+	return result, c.ExecuteOperation(ctx, temporalOpAsyncHandlerRetryActivityOp, input, workflow.NexusOperationOptions{}).Get(ctx, &result)
+}
+
+func (w *Workflows) TemporalOpCancelActivityCaller(ctx workflow.Context, input string) (string, error) {
+	return w.runTemporalOpCancelActivityCaller(ctx, temporalOpCancelActivityOp, input, temporalOpCancelActivityResultCanceled)
+}
+
+func (w *Workflows) TemporalOpCustomCancelActivityCaller(ctx workflow.Context, input string) (string, error) {
+	return w.runTemporalOpCancelActivityCaller(ctx, temporalOpCustomCancelActivityOp, input, temporalOpCancelActivityResultTerminated)
+}
+
+func (w *Workflows) runTemporalOpCancelActivityCaller(
+	ctx workflow.Context,
+	op nexus.Operation[string, string],
+	input string,
+	expectedResult string,
+) (string, error) {
+	c := workflow.NewNexusClient(temporalOpEndpoint, temporalOpServiceName)
+	opCtx, opCancel := workflow.WithCancel(ctx)
+	fut := c.ExecuteOperation(opCtx, op, input, workflow.NexusOperationOptions{})
+	var exec workflow.NexusOperationExecution
+	if err := fut.GetNexusOperationExecution().Get(ctx, &exec); err != nil {
+		return "", fmt.Errorf("expected start to succeed: %w", err)
+	}
+
+	workflow.GetSignalChannel(ctx, temporalOpCancelActivitySignal).Receive(ctx, nil)
+	opCancel()
+	err := fut.Get(ctx, nil)
+	if err == nil {
+		return "", fmt.Errorf("expected %s error", expectedResult)
+	}
+	var opErr *temporal.NexusOperationError
+	if !errors.As(err, &opErr) {
+		return "", fmt.Errorf("expected NexusOperationError, got %T: %w", err, err)
+	}
+	switch expectedResult {
+	case temporalOpCancelActivityResultCanceled:
+		var canceledErr *temporal.CanceledError
+		if !errors.As(opErr.Unwrap(), &canceledErr) {
+			return "", fmt.Errorf("expected CanceledError, got %T: %w", opErr.Unwrap(), opErr.Unwrap())
+		}
+	case temporalOpCancelActivityResultTerminated:
+		var terminatedErr *temporal.TerminatedError
+		if !errors.As(opErr.Unwrap(), &terminatedErr) {
+			return "", fmt.Errorf("expected TerminatedError, got %T: %w", opErr.Unwrap(), opErr.Unwrap())
+		}
+	default:
+		return "", fmt.Errorf("unexpected expected result %q", expectedResult)
+	}
+	return expectedResult, nil
+}
+
+// runTemporalOpFailingCaller invokes an activity-backed Nexus operation expected to fail
+// with an ApplicationError and returns a deterministic "application:<type>:<message>"
+// string so the integration test can assert that the failure was propagated through the
+// completion callback with its type and message intact.
+func (w *Workflows) runTemporalOpFailingCaller(ctx workflow.Context, op nexus.Operation[string, string], input string) (string, error) {
+	c := workflow.NewNexusClient(temporalOpEndpoint, temporalOpServiceName)
+	var result string
+	err := c.ExecuteOperation(ctx, op, input, workflow.NexusOperationOptions{}).Get(ctx, &result)
+	if err == nil {
+		return "", fmt.Errorf("expected operation to fail, got result %q", result)
+	}
+	var appErr *temporal.ApplicationError
+	if errors.As(err, &appErr) {
+		return "application:" + appErr.Type() + ":" + appErr.Message(), nil
+	}
+	return "other:" + err.Error(), nil
+}
+
+// runTemporalOpTimeoutCaller invokes an activity-backed Nexus operation expected to fail
+// with a TimeoutError and returns "timeout:<TimeoutType>" so the integration test can
+// distinguish StartToClose / ScheduleToClose / Heartbeat timeouts.
+func (w *Workflows) runTemporalOpTimeoutCaller(ctx workflow.Context, op nexus.Operation[string, string], input string) (string, error) {
+	c := workflow.NewNexusClient(temporalOpEndpoint, temporalOpServiceName)
+	var result string
+	err := c.ExecuteOperation(ctx, op, input, workflow.NexusOperationOptions{}).Get(ctx, &result)
+	if err == nil {
+		return "", fmt.Errorf("expected operation to time out, got result %q", result)
+	}
+	var timeoutErr *temporal.TimeoutError
+	if errors.As(err, &timeoutErr) {
+		return "timeout:" + timeoutErr.TimeoutType().String(), nil
+	}
+	return "other:" + err.Error(), nil
+}
+
+func (w *Workflows) TemporalOpFailingActivityCaller(ctx workflow.Context, input string) (string, error) {
+	return w.runTemporalOpFailingCaller(ctx, temporalOpFailingActivityOp, input)
+}
+
+func (w *Workflows) TemporalOpTimeoutActivityCaller(ctx workflow.Context, input string) (string, error) {
+	return w.runTemporalOpTimeoutCaller(ctx, temporalOpTimeoutActivityOp, input)
+}
+
+func (w *Workflows) TemporalOpScheduleToCloseTimeoutCaller(ctx workflow.Context, input string) (string, error) {
+	return w.runTemporalOpTimeoutCaller(ctx, temporalOpScheduleToCloseTimeoutActivityOp, input)
+}
+
+func (w *Workflows) TemporalOpHeartbeatTimeoutCaller(ctx workflow.Context, input string) (string, error) {
+	return w.runTemporalOpTimeoutCaller(ctx, temporalOpHeartbeatTimeoutActivityOp, input)
+}
+
+// TemporalOpRetryThenSucceedCaller exercises the success path through retries.
+func (w *Workflows) TemporalOpRetryThenSucceedCaller(ctx workflow.Context, input string) (string, error) {
+	c := workflow.NewNexusClient(temporalOpEndpoint, temporalOpServiceName)
+	var result string
+	return result, c.ExecuteOperation(ctx, temporalOpRetryThenSucceedActivityOp, input, workflow.NexusOperationOptions{}).Get(ctx, &result)
+}
+
+func (w *Workflows) TemporalOpRetryExhaustCaller(ctx workflow.Context, input string) (string, error) {
+	return w.runTemporalOpFailingCaller(ctx, temporalOpRetryExhaustActivityOp, input)
+}
+
+// TemporalOpTerminateCallerCaller invokes an activity-backed Nexus operation whose backing
+// activity terminates this very workflow before returning. The Get below will not produce a
+// normal result because the workflow is killed mid-call; the test asserts on the workflow's
+// terminal state and the backing activity's status, not on this function's return value.
+// TemporalOpHeartbeatDetailsTimeoutCaller invokes an activity-backed Nexus operation
+// whose backing activity heartbeats once with deterministic details and then stalls until
+// the HeartbeatTimeout fires. Returns a single string encoding the observed TimeoutType and
+// (when present) the decoded LastHeartbeatDetails, so the test can assert both at once.
+func (w *Workflows) TemporalOpHeartbeatDetailsTimeoutCaller(ctx workflow.Context, input string) (string, error) {
+	c := workflow.NewNexusClient(temporalOpEndpoint, temporalOpServiceName)
+	var result string
+	err := c.ExecuteOperation(ctx, temporalOpHeartbeatDetailsTimeoutOp, input, workflow.NexusOperationOptions{}).Get(ctx, &result)
+	if err == nil {
+		return "", fmt.Errorf("expected heartbeat timeout, got result %q", result)
+	}
+	var timeoutErr *temporal.TimeoutError
+	if !errors.As(err, &timeoutErr) {
+		return "other:" + err.Error(), nil
+	}
+	out := "timeout:" + timeoutErr.TimeoutType().String()
+	if timeoutErr.HasLastHeartbeatDetails() {
+		var details string
+		if dErr := timeoutErr.LastHeartbeatDetails(&details); dErr == nil {
+			return out + ":details=" + details, nil
+		}
+		return out + ":details=<decode-err>", nil
+	}
+	return out + ":details=<missing>", nil
+}
+
+// TemporalOpSharedActivityCaller exercises the multi-caller-callback-attach scenario: two
+// workflows running this method in parallel with the SAME input both resolve to a single
+// backing activity (USE_EXISTING) and each registers its own completion callback. When the
+// activity completes both callers must receive the result.
+func (w *Workflows) TemporalOpSharedActivityCaller(ctx workflow.Context, input string) (string, error) {
+	c := workflow.NewNexusClient(temporalOpEndpoint, temporalOpServiceName)
+	var result string
+	return result, c.ExecuteOperation(ctx, temporalOpSharedActivityOp, input, workflow.NexusOperationOptions{}).Get(ctx, &result)
+}
+
+// TemporalOpRenamedActivityCaller invokes the Nexus operation backed by an activity that
+// was registered under a custom name. Asserts that StartActivity resolves aliases via the
+// worker's registry.
+func (w *Workflows) TemporalOpRenamedActivityCaller(ctx workflow.Context, input string) (string, error) {
+	c := workflow.NewNexusClient(temporalOpEndpoint, temporalOpServiceName)
+	var result string
+	return result, c.ExecuteOperation(ctx, temporalOpRenamedActivityOp, input, workflow.NexusOperationOptions{}).Get(ctx, &result)
+}
+
+func (w *Workflows) TemporalOpTerminateCallerCaller(ctx workflow.Context, _ string) (string, error) {
+	c := workflow.NewNexusClient(temporalOpEndpoint, temporalOpServiceName)
+	callerID := workflow.GetInfo(ctx).WorkflowExecution.ID
+	var result string
+	err := c.ExecuteOperation(ctx, temporalOpTerminateCallerActivityOp, callerID, workflow.NexusOperationOptions{}).Get(ctx, &result)
+	return result, err
+}
+
+// WorkflowTaskCompletionPagination schedules many activities in a single workflow task so the
+// completion (~5 MiB across the commands) exceeds the gRPC request size limit and must be
+// paginated. Each input is well under the per-blob size limit, so it is the aggregate completion
+// size that drives pagination.
+func (w *Workflows) WorkflowTaskCompletionPagination(ctx workflow.Context) error {
+	ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+		StartToCloseTimeout: 30 * time.Second,
+	})
+	input := strings.Repeat("a", 400*1024)
+	var futures []workflow.Future
+	for i := 0; i < 13; i++ {
+		futures = append(futures, workflow.ExecuteActivity(ctx, "ConsumeString", input))
+	}
+	for _, future := range futures {
+		if err := future.Get(ctx, nil); err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
 func (w *Workflows) register(worker worker.Worker) {
+	worker.RegisterWorkflow(w.TemporalOpEcho)
+	worker.RegisterWorkflow(w.TemporalOpContinueAsNewOnce)
+	worker.RegisterWorkflow(w.TemporalOpUpdateTarget)
+	worker.RegisterWorkflow(w.TemporalOpWaitForCancel)
+	worker.RegisterWorkflow(w.TemporalOpWaitForSignal)
+	worker.RegisterWorkflow(w.TemporalOpSyncCaller)
+	worker.RegisterWorkflow(w.TemporalOpAsyncTypedCaller)
+	worker.RegisterWorkflow(w.TemporalOpAsyncContinueAsNewCaller)
+	worker.RegisterWorkflow(w.TemporalOpAsyncUpdateCaller)
+	worker.RegisterWorkflow(w.TemporalOpAsyncUntypedCaller)
+	worker.RegisterWorkflow(w.TemporalOpCancelCaller)
+	worker.RegisterWorkflow(w.TemporalOpCustomCancelCaller)
+	worker.RegisterWorkflow(w.TemporalOpClientInStartCaller)
+	worker.RegisterWorkflow(w.TemporalOpAsyncActivityCaller)
+	worker.RegisterWorkflow(w.TemporalOpAsyncCompletionActivityCaller)
+	worker.RegisterWorkflow(w.TemporalOpAsyncUntypedActivityCaller)
+	worker.RegisterWorkflow(w.TemporalOpDoubleStartActivityCaller)
+	worker.RegisterWorkflow(w.TemporalOpDoubleSignalCaller)
+	worker.RegisterWorkflow(w.TemporalOpSignalHandlerRetryCaller)
+	worker.RegisterWorkflow(w.TemporalOpCountSignals)
+	worker.RegisterWorkflow(w.TemporalOpAsyncHandlerRetryActivityCaller)
+	worker.RegisterWorkflow(w.TemporalOpCancelActivityCaller)
+	worker.RegisterWorkflow(w.TemporalOpCustomCancelActivityCaller)
+	worker.RegisterWorkflow(w.TemporalOpFailingActivityCaller)
+	worker.RegisterWorkflow(w.TemporalOpTimeoutActivityCaller)
+	worker.RegisterWorkflow(w.TemporalOpScheduleToCloseTimeoutCaller)
+	worker.RegisterWorkflow(w.TemporalOpHeartbeatTimeoutCaller)
+	worker.RegisterWorkflow(w.TemporalOpRetryThenSucceedCaller)
+	worker.RegisterWorkflow(w.TemporalOpRetryExhaustCaller)
+	worker.RegisterWorkflow(w.TemporalOpTerminateCallerCaller)
+	worker.RegisterWorkflow(w.TemporalOpSharedActivityCaller)
+	worker.RegisterWorkflow(w.TemporalOpHeartbeatDetailsTimeoutCaller)
+	worker.RegisterWorkflow(w.TemporalOpRenamedActivityCaller)
+	worker.RegisterActivity(waitForCancelNexusActivity)
+	worker.RegisterActivity(failingNexusActivity)
+	worker.RegisterActivity(sleepingNexusActivity)
+	worker.RegisterActivity(failsNTimesNexusActivity)
+	worker.RegisterActivity(terminateCallerNexusActivity)
+	worker.RegisterActivity(delayedEchoNexusActivity)
+	worker.RegisterActivity(heartbeatThenStallNexusActivity)
+	worker.RegisterActivityWithOptions(renamedNexusActivity, activity.RegisterOptions{Name: renamedNexusActivityCustomName})
 	worker.RegisterWorkflow(w.ActivityCancelRepro)
 	worker.RegisterWorkflow(w.ActivityCompletionUsingID)
 	worker.RegisterWorkflow(w.ActivityHeartbeatWithRetry)
@@ -3639,12 +4800,18 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ActivityRetryOptionsChange)
 	worker.RegisterWorkflow(w.ActivityWaitForWorkerStop)
 	worker.RegisterWorkflow(w.ActivityHeartbeatUntilSignal)
+	worker.RegisterWorkflow(w.ShutdownDuringActiveTimerActivityWorkflow)
+	worker.RegisterWorkflowWithOptions(
+		w.StickyCacheSharedWorkerLifecycle,
+		workflow.RegisterOptions{Name: "StickyCacheSharedWorkerLifecycle"},
+	)
 	worker.RegisterWorkflow(w.Basic)
 	worker.RegisterWorkflow(w.Deadlocked)
 	worker.RegisterWorkflow(w.DeadlockedWithLocalActivity)
 	worker.RegisterWorkflow(w.Panicked)
 	worker.RegisterWorkflow(w.PanickedActivity)
 	worker.RegisterWorkflow(w.BasicSession)
+	worker.RegisterWorkflow(w.SessionCancelNDE)
 	worker.RegisterWorkflow(w.AdvancedSession)
 	worker.RegisterWorkflow(w.CancelActivity)
 	worker.RegisterWorkflow(w.CancelActivityImmediately)
@@ -3676,8 +4843,13 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ConsistentQueryWorkflow)
 	worker.RegisterWorkflow(w.ContextPropagator)
 	worker.RegisterWorkflow(w.ContinueAsNew)
+	worker.RegisterWorkflow(w.WorkflowLocalVar)
+	worker.RegisterWorkflow(w.WorkflowLocalVarChild)
+	worker.RegisterWorkflow(w.WorkflowLocalVarParent)
+	worker.RegisterWorkflow(w.WorkflowLocalVarContinueAsNew)
 	worker.RegisterWorkflow(w.UpsertSearchAttributesConditional)
 	worker.RegisterWorkflow(w.UpsertMemoConditional)
+	worker.RegisterWorkflow(w.ContinueAsNewAfterUnsetSearchAttribute)
 	worker.RegisterWorkflow(w.ContinueAsNewWithOptions)
 	worker.RegisterWorkflow(w.ContinueAsNewWithRetryPolicy)
 	worker.RegisterWorkflow(w.ContinueAsNewWithChildWF)
@@ -3757,6 +4929,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.AwaitWithOptions)
 	worker.RegisterWorkflow(w.WorkflowWithRejectableUpdate)
 	worker.RegisterWorkflow(w.WorkflowWithUpdate)
+	worker.RegisterWorkflow(w.WorkflowTaskCompletionPagination)
 
 	worker.RegisterWorkflow(w.child)
 	worker.RegisterWorkflow(w.childWithRetryPolicy)
@@ -3777,7 +4950,6 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.WorkflowClientFromActivity)
 	worker.RegisterWorkflow(w.WorkflowTemporalPrefixSignal)
 	worker.RegisterWorkflow(w.WorkflowRawValue)
-	worker.RegisterWorkflow(w.WorkflowReactToCancel)
 }
 
 func (w *Workflows) defaultActivityOptions() workflow.ActivityOptions {

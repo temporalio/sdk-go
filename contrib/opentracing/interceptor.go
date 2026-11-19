@@ -13,6 +13,10 @@ import (
 
 // TracerOptions are options provided to NewInterceptor or NewTracer.
 type TracerOptions struct {
+	// EncodeHeaders uses the configured client's payload codec for tracing
+	// headers. Defaults to false; other producers' headers are unchanged.
+	EncodeHeaders bool
+
 	// Tracer is the tracer to use. If not set, the global one is used.
 	Tracer opentracing.Tracer
 
@@ -25,7 +29,7 @@ type TracerOptions struct {
 	// SpanContextKey is the context key used for internal span tracking (not to
 	// be confused with the context key OpenTracing uses internally). If not set,
 	// this defaults to an internal key (recommended).
-	SpanContextKey interface{}
+	SpanContextKey any
 
 	// HeaderKey is the Temporal header field key used to serialize spans. If
 	// empty, this defaults to the one used by all SDKs (recommended).
@@ -81,6 +85,7 @@ func NewInterceptor(options TracerOptions) (interceptor.Interceptor, error) {
 
 func (t *tracer) Options() interceptor.TracerOptions {
 	return interceptor.TracerOptions{
+		EncodeHeaders:        t.options.EncodeHeaders,
 		SpanContextKey:       t.options.SpanContextKey,
 		HeaderKey:            t.options.HeaderKey,
 		DisableSignalTracing: t.options.DisableSignalTracing,

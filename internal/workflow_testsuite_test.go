@@ -26,13 +26,13 @@ func TestSetMemoOnStart(t *testing.T) {
 	testSuite := &WorkflowTestSuite{}
 	env := testSuite.NewTestWorkflowEnvironment()
 
-	memo := map[string]interface{}{
+	memo := map[string]any{
 		"key": make(chan int),
 	}
 	err := env.SetMemoOnStart(memo)
 	require.Error(t, err)
 
-	memo = map[string]interface{}{
+	memo = map[string]any{
 		"memoKey": "memo",
 	}
 	require.Nil(t, env.impl.workflowInfo.Memo)
@@ -46,13 +46,13 @@ func TestSetSearchAttributesOnStart(t *testing.T) {
 	testSuite := &WorkflowTestSuite{}
 	env := testSuite.NewTestWorkflowEnvironment()
 
-	invalidSearchAttr := map[string]interface{}{
+	invalidSearchAttr := map[string]any{
 		"key": make(chan int),
 	}
 	err := env.SetSearchAttributesOnStart(invalidSearchAttr)
 	require.Error(t, err)
 
-	searchAttr := map[string]interface{}{
+	searchAttr := map[string]any{
 		"CustomIntField": 1,
 	}
 	err = env.SetSearchAttributesOnStart(searchAttr)
@@ -182,6 +182,38 @@ func TestLocalActivityExecutionByActivityNameAlias(t *testing.T) {
 	require.Equal(t, "Hello World!", result)
 }
 
+func TestLocalActivityMockByRegisteredName(t *testing.T) {
+	// Sometimes two functions have the same short name, but different registered names.
+	// E.g. registering closures in a loop, often those closures have the same short name.
+	// This test ensures that if you invoke a local activity by its registered name, you
+	// get the closure you registered along with it.
+	var testSuite WorkflowTestSuite
+	env := testSuite.NewTestWorkflowEnvironment()
+	env.RegisterActivityWithOptions(namedActivity, RegisterActivityOptions{Name: "ActivityA"})
+	env.RegisterActivityWithOptions(namedActivity, RegisterActivityOptions{Name: "ActivityB"})
+	env.OnActivity("ActivityA", mock.Anything, "input").Return("result A", nil).Once()
+	env.OnActivity("ActivityB", mock.Anything, "input").Return("result B", nil).Once()
+
+	env.ExecuteWorkflow(func(ctx Context) ([]string, error) {
+		ctx = WithLocalActivityOptions(ctx, LocalActivityOptions{StartToCloseTimeout: time.Minute})
+		var results []string
+		for _, name := range []string{"ActivityA", "ActivityB"} {
+			var result string
+			if err := ExecuteLocalActivity(ctx, name, "input").Get(ctx, &result); err != nil {
+				return nil, err
+			}
+			results = append(results, result)
+		}
+		return results, nil
+	})
+
+	require.NoError(t, env.GetWorkflowError())
+	var results []string
+	require.NoError(t, env.GetWorkflowResult(&results))
+	require.Equal(t, []string{"result A", "result B"}, results)
+	env.AssertExpectations(t)
+}
+
 func TestLocalActivityExecutionByActivityNameAliasMissingRegistration(t *testing.T) {
 	testSuite := &WorkflowTestSuite{}
 	env := testSuite.NewTestWorkflowEnvironment()
@@ -255,7 +287,7 @@ func TestWorkflowIDUpdateWorkflowByID(t *testing.T) {
 				require.Fail(t, "update should not be rejected")
 			},
 			OnAccept:   func() {},
-			OnComplete: func(interface{}, error) {},
+			OnComplete: func(any, error) {},
 		}, "input")
 		require.NoError(t, err)
 	}, time.Second)
@@ -293,7 +325,7 @@ func TestChildWorkflowUpdate(t *testing.T) {
 			OnReject: func(err error) {
 				require.Fail(t, "update failed", err)
 			},
-			OnComplete: func(result interface{}, err error) {
+			OnComplete: func(result any, err error) {
 				if err != nil {
 					require.Fail(t, "update failed", err)
 				}
@@ -310,7 +342,7 @@ func TestChildWorkflowUpdate(t *testing.T) {
 }
 
 func updateParentWf(ctx Context) error {
-	if err := SetUpdateHandler(ctx, "parent-handler", func(ctx Context, input interface{}) error {
+	if err := SetUpdateHandler(ctx, "parent-handler", func(ctx Context, input any) error {
 		return nil
 	}, UpdateHandlerOptions{}); err != nil {
 		return err
@@ -327,7 +359,7 @@ func updateParentWf(ctx Context) error {
 
 func updateChildWf(ctx Context) error {
 	var done bool
-	err := SetUpdateHandler(ctx, "child-handler", func(ctx Context, input interface{}) error {
+	err := SetUpdateHandler(ctx, "child-handler", func(ctx Context, input any) error {
 		done = true
 		return nil
 	}, UpdateHandlerOptions{})
@@ -387,7 +419,7 @@ func TestWorkflowUpdateOrderWithOneArg(t *testing.T) {
 				require.Fail(t, "update should not be rejected")
 			},
 			OnAccept:   func() {},
-			OnComplete: func(interface{}, error) {},
+			OnComplete: func(any, error) {},
 		}
 		err := env.UpdateWorkflowByID("my-workflow-id", "update", "by-id", uc, "args")
 		require.NoError(t, err)
@@ -438,7 +470,7 @@ func TestWorkflowUpdateOrderWithMultiArgs(t *testing.T) {
 				require.Fail(t, "update should not be rejected")
 			},
 			OnAccept:   func() {},
-			OnComplete: func(interface{}, error) {},
+			OnComplete: func(any, error) {},
 		}
 		err := env.UpdateWorkflowByID("my-workflow-id", "update", "by-id", uc, "args1", "args2")
 		require.NoError(t, err)
@@ -484,7 +516,7 @@ func TestWorkflowUpdateIdGeneration(t *testing.T) {
 				require.Fail(t, "update should not be rejected")
 			},
 			OnAccept:   func() {},
-			OnComplete: func(interface{}, error) {},
+			OnComplete: func(any, error) {},
 		})
 	}, 0)
 	env.RegisterDelayedCallback(func() {
@@ -494,7 +526,7 @@ func TestWorkflowUpdateIdGeneration(t *testing.T) {
 			OnAccept: func() {
 				require.Fail(t, "update should be rejected")
 			},
-			OnComplete: func(interface{}, error) {
+			OnComplete: func(any, error) {
 			},
 		})
 	}, time.Second)
@@ -549,7 +581,7 @@ func TestWorkflowNotRegisteredRejected(t *testing.T) {
 			OnAccept: func() {
 				require.Fail(t, "update should not be accepted")
 			},
-			OnComplete: func(interface{}, error) {},
+			OnComplete: func(any, error) {},
 		})
 	}, 0)
 
@@ -580,7 +612,7 @@ func TestWorkflowUpdateOrderAcceptReject(t *testing.T) {
 			OnAccept: func() {
 				require.Fail(t, "update should not be accepted")
 			},
-			OnComplete: func(interface{}, error) {},
+			OnComplete: func(any, error) {},
 		})
 	}, 0)
 
@@ -654,7 +686,7 @@ func duplicateIDDedup(t *testing.T, delay_second bool, with_sleep bool, addition
 				require.Fail(t, fmt.Sprintf("update should not be rejected, err: %v", err))
 			},
 			OnAccept: func() {},
-			OnComplete: func(result interface{}, err error) {
+			OnComplete: func(result any, err error) {
 				intResult, ok := result.(int)
 				if !ok {
 					require.Fail(t, fmt.Sprintf("result should be int: %v\nerr: %v", result, err))
@@ -665,14 +697,14 @@ func duplicateIDDedup(t *testing.T, delay_second bool, with_sleep bool, addition
 		}, 0)
 	}, 0)
 
-	for i := 0; i < additional; i++ {
+	for range additional {
 		env.RegisterDelayedCallback(func() {
 			env.UpdateWorkflow("update", "id", &TestUpdateCallback{
 				OnReject: func(err error) {
 					require.Fail(t, fmt.Sprintf("update should not be rejected, err: %v", err))
 				},
 				OnAccept: func() {},
-				OnComplete: func(result interface{}, err error) {
+				OnComplete: func(result any, err error) {
 					intResult, ok := result.(int)
 					if !ok {
 						require.Fail(t, fmt.Sprintf("result should be int: %v\nerr: %v", result, err))
@@ -715,7 +747,7 @@ func TestWorkflowUpdateMissingCallbackFields(t *testing.T) {
 		env.UpdateWorkflow("update", "id", &TestUpdateCallback{
 			// Purposely omit OnAccept to ensure Update doesn't panic
 			OnReject:   func(err error) {},
-			OnComplete: func(result interface{}, err error) {},
+			OnComplete: func(result any, err error) {},
 		}, 0)
 	}, 0)
 
@@ -776,7 +808,7 @@ func TestAllHandlersFinished(t *testing.T) {
 // parseLogs parses the logs from the buffer and returns the logs as a slice of maps
 func parseLogs(t *testing.T, buf *bytes.Buffer) []map[string]any {
 	var ms []map[string]any
-	for _, line := range bytes.Split(buf.Bytes(), []byte{'\n'}) {
+	for line := range bytes.SplitSeq(buf.Bytes(), []byte{'\n'}) {
 		if len(line) == 0 {
 			continue
 		}
@@ -875,10 +907,10 @@ func TestWorkflowAllHandlersFinished(t *testing.T) {
 		return result, nil
 	}
 	// parseWarnedUpdates parses the warned updates from the logs and returns them as a slice of maps
-	parseWarnedUpdates := func(updates interface{}) []map[string]interface{} {
-		var warnedUpdates []map[string]interface{}
-		for _, update := range updates.([]interface{}) {
-			warnedUpdates = append(warnedUpdates, update.(map[string]interface{}))
+	parseWarnedUpdates := func(updates any) []map[string]any {
+		var warnedUpdates []map[string]any
+		for _, update := range updates.([]any) {
+			warnedUpdates = append(warnedUpdates, update.(map[string]any))
 		}
 		return warnedUpdates
 
@@ -1232,6 +1264,24 @@ func TestDynamicWorkflows(t *testing.T) {
 	err := env.GetWorkflowResult(&result)
 	require.NoError(t, err)
 	require.Equal(t, "dynamic-activity - grape - cherry", result)
+}
+
+func TestActivityEnvironmentDynamicActivity(t *testing.T) {
+	testSuite := &WorkflowTestSuite{}
+	env := testSuite.NewTestActivityEnvironment()
+	env.RegisterDynamicActivity(func(ctx context.Context, args converter.EncodedValues) (string, error) {
+		var arg string
+		if err := args.Get(&arg); err != nil {
+			return "", err
+		}
+		return GetActivityInfo(ctx).ActivityType.Name + " - " + arg, nil
+	}, DynamicRegisterActivityOptions{})
+
+	val, err := env.ExecuteActivity("some-activity", "grape")
+	require.NoError(t, err)
+	var result string
+	require.NoError(t, val.Get(&result))
+	require.Equal(t, "some-activity - grape", result)
 }
 
 func SleepHour(ctx Context) error {

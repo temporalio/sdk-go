@@ -4,14 +4,17 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 	"time"
 
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	failurepb "go.temporal.io/api/failure/v1"
+	sdkpb "go.temporal.io/api/sdk/v1"
 
 	"go.temporal.io/sdk/converter"
+	"go.temporal.io/sdk/internal/codecerror"
 )
 
 /*
@@ -105,7 +108,7 @@ type (
 		// Cause is the original error that caused this error.
 		Cause error
 		// Details is a list of arbitrary values that can be used to provide additional context to the error.
-		Details []interface{}
+		Details []any
 		// NextRetryInterval is a request from server to override retry interval calculated by the
 		// server according to the RetryPolicy set by the Workflow.
 		// It is impossible to specify immediate retry as it is indistinguishable from the default value. As a
@@ -177,14 +180,14 @@ type (
 	// Exposed as: [go.temporal.io/sdk/temporal.PanicError]
 	PanicError struct {
 		temporalError
-		value      interface{}
+		value      any
 		stackTrace string
 	}
 
 	// workflowPanicError contains information about panicked workflow.
 	// Used to distinguish go panic in the workflow code from a PanicError returned from a workflow function.
 	workflowPanicError struct {
-		value      interface{}
+		value      any
 		stackTrace string
 	}
 
@@ -193,12 +196,20 @@ type (
 	// Exposed as: [go.temporal.io/sdk/workflow.ContinueAsNewError]
 	ContinueAsNewError struct {
 		// params *ExecuteWorkflowParams
-		WorkflowType        *WorkflowType
-		Input               *commonpb.Payloads
-		Header              *commonpb.Header
-		TaskQueueName       string
-		WorkflowRunTimeout  time.Duration
+		// WorkflowType is the type of the workflow.
+		WorkflowType *WorkflowType
+		// Input is the arguments for the continued workflow execution.
+		Input *commonpb.Payloads
+		// Header is the header of the workflow.
+		Header *commonpb.Header
+		// TaskQueueName is the task queue that the workflow is running on.
+		TaskQueueName string
+		// WorkflowRunTimeout is the timeout for a single run of the workflow execution.
+		WorkflowRunTimeout time.Duration
+		// WorkflowTaskTimeout is the maximum execution time of a single Workflow Task.
 		WorkflowTaskTimeout time.Duration
+		// BackoffStartInterval is the initial backoff before the continued workflow execution starts.
+		BackoffStartInterval time.Duration
 
 		// Deprecated: WorkflowExecutionTimeout is deprecated and is never set or
 		// used internally.
@@ -225,6 +236,8 @@ type (
 		//    we can't introduce an option, say WithWorkflowRetryPolicy, for backward compatibility.
 		//    See #676 or IntegrationTestSuite::TestContinueAsNewWithWithChildWF for more details.
 		RetryPolicy *RetryPolicy
+
+		eventGroupMarkers []*sdkpb.EventGroupMarker
 	}
 
 	// ContinueAsNewErrorOptions specifies optional attributes to be carried over to the next run.
@@ -235,13 +248,25 @@ type (
 		// If nil, the current workflow's retry policy will be used.
 		RetryPolicy *RetryPolicy
 
+		// BackoffStartInterval specifies the delay before the first workflow task
+		// of the next run is scheduled.
+		BackoffStartInterval time.Duration
+
 		// InitialVersioningBehavior specifies the versioning behavior that the first task of the new run should use.
 		// For example, choose to AutoUpgrade on continue-as-new instead of inheriting the pinned version of the previous run.
 		// NOTE: Upgrade-on-Continue-as-New is currently experimental.
 		InitialVersioningBehavior ContinueAsNewVersioningBehavior
+
+		// EventGroups are explicit Event Groups attached to the continue-as-new command.
+		// They are combined with any groups on the context.
+		//
+		// NOTE: Experimental (Event Groups)
+		EventGroups []EventGroup
 	}
 
 	// UnknownExternalWorkflowExecutionError can be returned when external workflow doesn't exist
+	//
+	// Exposed as: [go.temporal.io/sdk/temporal.UnknownExternalWorkflowExecutionError]
 	UnknownExternalWorkflowExecutionError struct{}
 
 	// ServerError can be returned from server.
@@ -310,10 +335,21 @@ type (
 	// ChildWorkflowExecutionAlreadyStartedError is set as the cause of
 	// ChildWorkflowExecutionError when failure is due the child workflow having
 	// already started.
+	//
+	// Exposed as: [go.temporal.io/sdk/temporal.ChildWorkflowExecutionAlreadyStartedError]
 	ChildWorkflowExecutionAlreadyStartedError struct{}
 
 	// NamespaceNotFoundError is set as the cause when failure is due namespace not found.
+	//
+	// Exposed as: [go.temporal.io/sdk/temporal.NamespaceNotFoundError]
 	NamespaceNotFoundError struct{}
+
+	// InvalidVersioningOverrideError is set as the cause of
+	// ChildWorkflowExecutionError when the child could not start because its
+	// versioning override was invalid.
+	//
+	// Exposed as: [go.temporal.io/sdk/temporal.InvalidVersioningOverrideError]
+	InvalidVersioningOverrideError struct{}
 
 	// WorkflowExecutionError is returned from workflow.
 	// Unwrap this error to get actual cause.
@@ -388,6 +424,8 @@ var (
 // Exposed as: [go.temporal.io/sdk/temporal.ApplicationErrorCategory]
 type ApplicationErrorCategory int
 
+const payloadValidationErrorType = "PayloadValidationError"
+
 const (
 	// ApplicationErrorCategoryUnspecified represents an error with an unspecified category.
 	//
@@ -400,12 +438,22 @@ const (
 )
 
 // NewApplicationError create new instance of *ApplicationError with message, type, and optional details.
-func NewApplicationError(msg string, errType string, nonRetryable bool, cause error, details ...interface{}) error {
+func NewApplicationError(msg string, errType string, nonRetryable bool, cause error, details ...any) error {
 	return NewApplicationErrorWithOptions(
 		msg,
 		errType,
 		ApplicationErrorOptions{NonRetryable: nonRetryable, Cause: cause, Details: details},
 	)
+}
+
+// NewPayloadValidationError creates an ApplicationError for payloads that fail validation.
+//
+// Exposed as: [go.temporal.io/sdk/temporal.NewPayloadValidationError]
+func NewPayloadValidationError(details any) error {
+	if details == nil {
+		return NewApplicationError("Payload validation failed", payloadValidationErrorType, true, nil)
+	}
+	return NewApplicationError("Payload validation failed", payloadValidationErrorType, true, nil, details)
 }
 
 // Exposed as: [go.temporal.io/sdk/temporal.NewApplicationError], [go.temporal.io/sdk/temporal.NewApplicationErrorWithOptions], [go.temporal.io/sdk/temporal.NewApplicationErrorWithCause], [go.temporal.io/sdk/temporal.NewNonRetryableApplicationError]
@@ -436,7 +484,7 @@ func NewApplicationErrorWithOptions(msg string, errType string, options Applicat
 // Use NewHeartbeatTimeoutError to create heartbeat TimeoutError.
 //
 // Exposed as: [go.temporal.io/sdk/temporal.NewTimeoutError]
-func NewTimeoutError(msg string, timeoutType enumspb.TimeoutType, cause error, lastHeartbeatDetails ...interface{}) error {
+func NewTimeoutError(msg string, timeoutType enumspb.TimeoutType, cause error, lastHeartbeatDetails ...any) error {
 	timeoutErr := &TimeoutError{
 		msg:         msg,
 		timeoutType: timeoutType,
@@ -456,14 +504,14 @@ func NewTimeoutError(msg string, timeoutType enumspb.TimeoutType, cause error, l
 // NewHeartbeatTimeoutError creates TimeoutError instance.
 //
 // Exposed as: [go.temporal.io/sdk/temporal.NewHeartbeatTimeoutError]
-func NewHeartbeatTimeoutError(details ...interface{}) error {
+func NewHeartbeatTimeoutError(details ...any) error {
 	return NewTimeoutError("heartbeat timeout", enumspb.TIMEOUT_TYPE_HEARTBEAT, nil, details...)
 }
 
 // NewCanceledError creates CanceledError instance.
 //
 // Exposed as: [go.temporal.io/sdk/temporal.NewCanceledError]
-func NewCanceledError(details ...interface{}) error {
+func NewCanceledError(details ...any) error {
 	return NewCanceledErrorWithOptions(CanceledErrorOptions{
 		Details: details,
 	})
@@ -566,6 +614,26 @@ func (e *temporalError) failure() *failurepb.Failure {
 	return e.originalFailure
 }
 
+// Failure returns the original proto Failure this error was created from, if one is available.
+//
+// This is intended for advanced callers that need structured failure data such as stack traces,
+// encoded details, or the full cause chain. Application code should generally
+// continue using errors.As with concrete SDK error types such as *ApplicationError.
+//
+// When working with an arbitrary error value, use errors.As with an interface:
+//
+//	type failureProvider interface {
+//		Failure() *failurepb.Failure
+//	}
+//
+//	var fp failureProvider
+//	if errors.As(err, &fp) {
+//		failure := fp.Failure()
+//	}
+func (e *temporalError) Failure() *failurepb.Failure {
+	return e.originalFailure
+}
+
 // IsCanceledError returns whether error in CanceledError.
 func IsCanceledError(err error) bool {
 	var canceledErr *CanceledError
@@ -586,7 +654,7 @@ func IsCanceledError(err error) bool {
 //	 args - arguments for the new workflow.
 //
 // Exposed as: [go.temporal.io/sdk/workflow.NewContinueAsNewError]
-func NewContinueAsNewError(ctx Context, wfn interface{}, args ...interface{}) error {
+func NewContinueAsNewError(ctx Context, wfn any, args ...any) error {
 	i := getWorkflowOutboundInterceptor(ctx)
 	// Put header on context before executing
 	ctx = workflowContextWithNewHeader(ctx)
@@ -596,42 +664,45 @@ func NewContinueAsNewError(ctx Context, wfn interface{}, args ...interface{}) er
 // NewContinueAsNewErrorWithOptions creates ContinueAsNewError instance with additional options.
 //
 // Exposed as: [go.temporal.io/sdk/workflow.NewContinueAsNewErrorWithOptions]
-func NewContinueAsNewErrorWithOptions(ctx Context, options ContinueAsNewErrorOptions, wfn interface{}, args ...interface{}) error {
-	err := NewContinueAsNewError(ctx, wfn, args...)
-
-	var continueAsNewErr *ContinueAsNewError
-	if errors.As(err, &continueAsNewErr) {
-		if options.RetryPolicy != nil {
-			continueAsNewErr.RetryPolicy = options.RetryPolicy
-		}
-		continueAsNewErr.InitialVersioningBehavior = options.InitialVersioningBehavior
-	}
-
-	return err
+func NewContinueAsNewErrorWithOptions(ctx Context, options ContinueAsNewErrorOptions, wfn any, args ...any) error {
+	i := getWorkflowOutboundInterceptor(ctx)
+	// Put header on context before executing
+	ctx = workflowContextWithNewHeader(ctx)
+	return i.NewContinueAsNewErrorWithOptions(ctx, options, wfn, args...)
 }
 
 func (wc *workflowEnvironmentInterceptor) NewContinueAsNewError(
 	ctx Context,
-	wfn interface{},
-	args ...interface{},
+	wfn any,
+	args ...any,
+) error {
+	return wc.NewContinueAsNewErrorWithOptions(ctx, ContinueAsNewErrorOptions{}, wfn, args...)
+}
+
+func (wc *workflowEnvironmentInterceptor) NewContinueAsNewErrorWithOptions(
+	ctx Context,
+	continueAsNewOptions ContinueAsNewErrorOptions,
+	wfn any,
+	args ...any,
 ) error {
 	// Validate type and its arguments.
 	options := getWorkflowEnvOptions(ctx)
 	if options == nil {
 		panic("context is missing required options for continue as new")
 	}
-	env := getWorkflowEnvironment(ctx)
-	workflowType, input, err := getValidatedWorkflowFunction(wfn, args, options.DataConverter, env.GetRegistry())
+	env := GetWorkflowEnvironment(ctx)
+	dc := GetDataConverterFromWorkflowContext(ctx)
+	workflowType, input, err := getValidatedWorkflowFunction(wfn, args, dc, env.GetRegistry())
 	if err != nil {
 		panic(err)
 	}
 
-	header, err := workflowHeaderPropagated(ctx, options.ContextPropagators)
+	header, err := workflowHeaderPropagated(ctx, options.ContextPropagators, nil)
 	if err != nil {
 		return err
 	}
 
-	return &ContinueAsNewError{
+	continueAsNewErr := &ContinueAsNewError{
 		WorkflowType:              workflowType,
 		Input:                     input,
 		Header:                    header,
@@ -639,10 +710,16 @@ func (wc *workflowEnvironmentInterceptor) NewContinueAsNewError(
 		WorkflowExecutionTimeout:  options.WorkflowExecutionTimeout,
 		WorkflowRunTimeout:        options.WorkflowRunTimeout,
 		WorkflowTaskTimeout:       options.WorkflowTaskTimeout,
+		BackoffStartInterval:      continueAsNewOptions.BackoffStartInterval,
 		VersioningIntent:          options.VersioningIntent,
 		RetryPolicy:               nil, // The retry policy can't be propagated like other options due to #676.
-		InitialVersioningBehavior: options.InitialVersioningBehavior,
+		InitialVersioningBehavior: continueAsNewOptions.InitialVersioningBehavior,
+		eventGroupMarkers:         eventGroupMarkersToProto(ctx, continueAsNewOptions.EventGroups),
 	}
+	if continueAsNewOptions.RetryPolicy != nil {
+		continueAsNewErr.RetryPolicy = continueAsNewOptions.RetryPolicy
+	}
+	return continueAsNewErr
 }
 
 // NewActivityNotRegisteredError creates a new ActivityNotRegisteredError.
@@ -685,7 +762,7 @@ func (e *ApplicationError) HasDetails() bool {
 }
 
 // Details extracts strong typed detail data of this custom error. If there is no details, it will return ErrNoData.
-func (e *ApplicationError) Details(d ...interface{}) error {
+func (e *ApplicationError) Details(d ...any) error {
 	if !e.HasDetails() {
 		return ErrNoData
 	}
@@ -743,7 +820,7 @@ func (e *TimeoutError) HasLastHeartbeatDetails() bool {
 }
 
 // LastHeartbeatDetails extracts strong typed detail data of this error. If there is no details, it will return ErrNoData.
-func (e *TimeoutError) LastHeartbeatDetails(d ...interface{}) error {
+func (e *TimeoutError) LastHeartbeatDetails(d ...any) error {
 	if !e.HasLastHeartbeatDetails() {
 		return ErrNoData
 	}
@@ -769,19 +846,56 @@ func (e *CanceledError) HasDetails() bool {
 }
 
 // Details extracts strong typed detail data of this error.
-func (e *CanceledError) Details(d ...interface{}) error {
+func (e *CanceledError) Details(d ...any) error {
 	if !e.HasDetails() {
 		return ErrNoData
 	}
 	return e.details.Get(d...)
 }
 
-func newPanicError(value interface{}, stackTrace string) error {
+func newPanicError(value any, stackTrace string) error {
 	return &PanicError{value: value, stackTrace: stackTrace}
 }
 
-func newWorkflowPanicError(value interface{}, stackTrace string) error {
+func newWorkflowPanicError(value any, stackTrace string) error {
 	return &workflowPanicError{value: value, stackTrace: stackTrace}
+}
+
+// codecWorkflowTaskFailureFrom returns the codec-tagged error in err, unwrapping a
+// workflowPanicError so it is not treated as a workflow panic.
+func codecWorkflowTaskFailureFrom(err error) (error, bool) {
+	if panicErr, ok := err.(*workflowPanicError); ok {
+		if inner, ok := panicErr.value.(error); ok && codecerror.Has(inner) {
+			return inner, true
+		}
+		return nil, false
+	}
+	if codecerror.Has(err) {
+		return err, true
+	}
+	return nil, false
+}
+
+// recoverCodecWorkflowTaskFailure, when deferred, turns a codec-tagged panic into
+// *err. Failure conversion panics on codec errors outside workflow coroutines.
+func recoverCodecWorkflowTaskFailure(err *error) {
+	if p := recover(); p != nil {
+		if panicErr, ok := p.(error); ok {
+			if codecErr, ok := codecWorkflowTaskFailureFrom(panicErr); ok {
+				*err = codecErr
+				return
+			}
+		}
+		panic(p)
+	}
+}
+
+// panicOnCodecWorkflowTaskFailure panics codec-tagged errors so workflow code
+// cannot suppress them.
+func panicOnCodecWorkflowTaskFailure(err error) {
+	if _, ok := codecWorkflowTaskFailureFrom(err); ok {
+		panic(err)
+	}
 }
 
 // Error from error interface
@@ -993,6 +1107,10 @@ func (*NamespaceNotFoundError) Error() string {
 	return "namespace not found"
 }
 
+func (*InvalidVersioningOverrideError) Error() string {
+	return "invalid versioning override"
+}
+
 // Error from error interface
 func (*ChildWorkflowExecutionAlreadyStartedError) Error() string {
 	return "child workflow execution already started"
@@ -1062,18 +1180,12 @@ func IsRetryable(err error, nonRetryableTypes []string) bool {
 		errType = getErrType(err)
 	}
 
-	for _, nonRetryableType := range nonRetryableTypes {
-		if nonRetryableType == errType {
-			return false
-		}
-	}
-
-	return true
+	return !slices.Contains(nonRetryableTypes, errType)
 }
 
 func getErrType(err error) string {
 	var t reflect.Type
-	for t = reflect.TypeOf(err); t.Kind() == reflect.Ptr; t = t.Elem() {
+	for t = reflect.TypeOf(err); t.Kind() == reflect.Pointer; t = t.Elem() {
 	}
 
 	if t.Name() == goErrType {

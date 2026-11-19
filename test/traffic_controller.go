@@ -29,7 +29,7 @@ func NewSimpleTrafficController() *SimpleTrafficController {
 	}
 }
 
-func (tc *SimpleTrafficController) CheckCallAllowed(_ context.Context, method string, _, _ interface{}) error {
+func (tc *SimpleTrafficController) CheckCallAllowed(_ context.Context, method string, _, _ any) error {
 	// Name of the API being called
 	operation := method[strings.LastIndex(method, "/")+1:]
 	tc.lock.Lock()

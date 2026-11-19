@@ -6,6 +6,7 @@ import (
 	"time"
 
 	enumspb "go.temporal.io/api/enums/v1"
+	"go.temporal.io/sdk/internal/common/workflowcontext"
 )
 
 // Context is a clone of context.Context with Done() returning Channel instead
@@ -16,98 +17,7 @@ import (
 // Context's methods may be called by multiple goroutines simultaneously.
 //
 // Exposed as: [go.temporal.io/sdk/workflow.Context]
-type Context interface {
-	// Deadline returns the time when work done on behalf of this context
-	// should be canceled.  Deadline returns ok==false when no deadline is
-	// set.  Successive calls to Deadline return the same results.
-	Deadline() (deadline time.Time, ok bool)
-
-	// Done returns a channel that's closed when work done on behalf of this
-	// context should be canceled.  Done may return nil if this context can
-	// never be canceled.  Successive calls to Done return the same value.
-	//
-	// WithCancel arranges for Done to be closed when cancel is called;
-	// WithDeadline arranges for Done to be closed when the deadline
-	// expires; WithTimeout arranges for Done to be closed when the timeout
-	// elapses.
-	//
-	// Done is provided for use in select statements:
-	//
-	//  // Stream generates values with DoSomething and sends them to out
-	//  // until DoSomething returns an error or ctx.Done is closed.
-	//  func Stream(ctx Context, out Channel) (err error) {
-	//	for {
-	//		v, err := DoSomething(ctx)
-	//		if err != nil {
-	//			return err
-	//		}
-	//		s := NewSelector(ctx)
-	//		s.AddReceive(ctx.Done(),  func(v interface{}) { err = ctx.Err() })
-	//		s.AddReceive(v, func(v interface{}, more bool) { out.Send(ctx, v) })
-	//		s.Select(ctx)
-	//		if err != nil {
-	//			return err
-	//		}
-	//	}
-	//  }
-	//
-	// See http://blog.golang.org/pipelines for more examples of how to use
-	// a Done channel for cancellation.
-	Done() Channel
-
-	// Err returns a non-nil error value after Done is closed.  Err returns
-	// Canceled if the context was canceled or DeadlineExceeded if the
-	// context's deadline passed.  No other values for Err are defined.
-	// After Done is closed, successive calls to Err return the same value.
-	Err() error
-
-	// Value returns the value associated with this context for key, or nil
-	// if no value is associated with key.  Successive calls to Value with
-	// the same key returns the same result.
-	//
-	// Use context values only for request-scoped data that transits
-	// processes and API boundaries, not for passing optional parameters to
-	// functions.
-	//
-	// A key identifies a specific value in a Context.  Functions that wish
-	// to store values in Context typically allocate a key in a global
-	// variable then use that key as the argument to context.WithValue and
-	// Context.Value.  A key can be any type that supports equality;
-	// packages should define keys as an unexported type to avoid
-	// collisions.
-	//
-	// Packages that define a Context key should provide type-safe accessors
-	// for the values stores using that key:
-	//
-	// 	// Package user defines a User type that's stored in Contexts.
-	// 	package user
-	//
-	// 	import "context"
-	//
-	// 	// User is the type of value stored in the Contexts.
-	// 	type User struct {...}
-	//
-	// 	// key is an unexported type for keys defined in this package.
-	// 	// This prevents collisions with keys defined in other packages.
-	// 	type key int
-	//
-	// 	// userKey is the key for user.User values in Contexts.  It is
-	// 	// unexported; clients use user.NewContext and user.FromContext
-	// 	// instead of using this key directly.
-	// 	var userKey key = 0
-	//
-	// 	// NewContext returns a new Context that carries value u.
-	// 	func NewContext(ctx context.Context, u *User) context.Context {
-	// 		return context.WithValue(ctx, userKey, u)
-	// 	}
-	//
-	// 	// FromContext returns the User value stored in ctx, if any.
-	// 	func FromContext(ctx context.Context) (*User, bool) {
-	// 		u, ok := ctx.Value(userKey).(*User)
-	// 		return u, ok
-	// 	}
-	Value(key interface{}) interface{}
-}
+type Context = workflowcontext.Context
 
 // An emptyCtx is never canceled, has no values, and has no deadline.  It is not
 // struct{}, since vars of this type must have distinct addresses.
@@ -125,7 +35,7 @@ func (*emptyCtx) Err() error {
 	return nil
 }
 
-func (*emptyCtx) Value(_ interface{}) interface{} {
+func (*emptyCtx) Value(_ any) any {
 	return nil
 }
 
@@ -218,10 +128,7 @@ func propagateCancel(parent Context, child canceler) {
 			child.cancel(false, parentErr)
 		} else {
 			p.childrenLock.Lock()
-			if p.children == nil {
-				p.children = make(map[canceler]bool)
-			}
-			p.children[child] = true
+			p.children.add(child)
 			p.childrenLock.Unlock()
 		}
 	} else {
@@ -252,9 +159,7 @@ func removeChild(parent Context, child canceler) {
 		return
 	}
 	p.childrenLock.Lock()
-	if p.children != nil {
-		delete(p.children, child)
-	}
+	p.children.remove(child)
 	p.childrenLock.Unlock()
 }
 
@@ -265,6 +170,60 @@ type canceler interface {
 	Done() Channel
 }
 
+// childNode preserves creation order while allowing the children map to find
+// and unlink a child in constant time.
+type childNode struct {
+	child canceler
+	prev  *childNode
+	next  *childNode
+}
+
+type childList struct {
+	nodes map[canceler]*childNode
+	first *childNode
+	last  *childNode
+}
+
+func (l *childList) add(child canceler) {
+	if l.nodes == nil {
+		l.nodes = make(map[canceler]*childNode)
+	}
+	if _, ok := l.nodes[child]; ok {
+		return
+	}
+
+	node := &childNode{child: child, prev: l.last}
+	if l.last == nil {
+		l.first = node
+	} else {
+		l.last.next = node
+	}
+	l.last = node
+	l.nodes[child] = node
+}
+
+func (l *childList) remove(child canceler) {
+	node, ok := l.nodes[child]
+	if !ok {
+		return
+	}
+
+	delete(l.nodes, child)
+	if node.prev == nil {
+		l.first = node.next
+	} else {
+		node.prev.next = node.next
+	}
+	if node.next == nil {
+		l.last = node.prev
+	} else {
+		node.next.prev = node.prev
+	}
+
+	node.prev = nil
+	node.next = nil
+}
+
 // A cancelCtx can be canceled.  When canceled, it also cancels any children
 // that implement canceler.
 type cancelCtx struct {
@@ -272,7 +231,10 @@ type cancelCtx struct {
 
 	done Channel // closed by the first cancel call.
 
-	children     map[canceler]bool // set to nil by the first cancel call
+	// children stores cancelable child contexts by identity and creation order.
+	// Legacy histories traverse the map; histories with [SDKFlagOrderedChildCancel]
+	// traverse the list.
+	children     childList
 	childrenLock sync.Mutex
 	err          error // set to non-nil by the first cancel call
 	errLock      sync.RWMutex
@@ -312,11 +274,17 @@ func (c *cancelCtx) cancel(removeFromParent bool, err error) {
 	c.done.Close()
 	c.childrenLock.Lock()
 	children := c.children
-	c.children = nil
+	c.children = childList{}
 	c.childrenLock.Unlock()
-	for child := range children {
-		// NOTE: acquiring the child's lock while holding parent's lock.
-		child.cancel(false, err)
+	// Avoid recording the SDK flag when cancellation order cannot affect behavior.
+	if len(children.nodes) > 1 && GetWorkflowEnvironment(c).TryUse(SDKFlagOrderedChildCancel) {
+		for node := children.first; node != nil; node = node.next {
+			node.child.cancel(false, err)
+		}
+	} else {
+		for child := range children.nodes {
+			child.cancel(false, err)
+		}
 	}
 
 	if removeFromParent {
@@ -331,7 +299,7 @@ func (c *cancelCtx) cancel(removeFromParent bool, err error) {
 // APIs, not for passing optional parameters to functions.
 //
 // Exposed as: [go.temporal.io/sdk/workflow.WithValue]
-func WithValue(parent Context, key interface{}, val interface{}) Context {
+func WithValue(parent Context, key any, val any) Context {
 	return &valueCtx{parent, key, val}
 }
 
@@ -339,14 +307,14 @@ func WithValue(parent Context, key interface{}, val interface{}) Context {
 // delegates all other calls to the embedded Context.
 type valueCtx struct {
 	Context
-	key, val interface{}
+	key, val any
 }
 
 func (c *valueCtx) String() string {
 	return fmt.Sprintf("%v.WithValue(%#v, %#v)", c.Context, c.key, c.val)
 }
 
-func (c *valueCtx) Value(key interface{}) interface{} {
+func (c *valueCtx) Value(key any) any {
 	if c.key == key {
 		return c.val
 	}

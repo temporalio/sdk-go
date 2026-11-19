@@ -3,11 +3,14 @@ package test_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
+	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/contrib/sysinfo"
 	"go.temporal.io/sdk/worker"
+	"go.temporal.io/sdk/workflow"
 )
 
 type WorkerTunerTestSuite struct {
@@ -36,6 +39,7 @@ func (ts *WorkerTunerTestSuite) TearDownSuite() {
 }
 
 func (ts *WorkerTunerTestSuite) SetupTest() {
+	ts.Assertions = require.New(ts.T())
 	ts.taskQueueName = taskQueuePrefix + "-" + ts.T().Name()
 }
 
@@ -48,7 +52,7 @@ func (ts *WorkerTunerTestSuite) TestFixedSizeWorkerTuner() {
 	})
 	ts.NoError(err)
 
-	ts.runTheWorkflow(worker.Options{Tuner: tuner}, ctx)
+	ts.runTheWorkflow(worker.Options{Tuner: tuner}, ctx, 0)
 }
 
 func (ts *WorkerTunerTestSuite) TestCompositeWorkerTuner() {
@@ -75,7 +79,7 @@ func (ts *WorkerTunerTestSuite) TestCompositeWorkerTuner() {
 		WorkflowSlotSupplier: wfSS, ActivitySlotSupplier: actSS, LocalActivitySlotSupplier: laCss})
 	ts.NoError(err)
 
-	ts.runTheWorkflow(worker.Options{Tuner: tuner}, ctx)
+	ts.runTheWorkflow(worker.Options{Tuner: tuner}, ctx, 0)
 }
 
 func (ts *WorkerTunerTestSuite) TestPollerBehaviorAutoscalingScaler() {
@@ -89,7 +93,7 @@ func (ts *WorkerTunerTestSuite) TestPollerBehaviorAutoscalingScaler() {
 		ActivityTaskPollerBehavior: worker.NewPollerBehaviorAutoscaling(
 			worker.PollerBehaviorAutoscalingOptions{},
 		),
-	}, ctx)
+	}, ctx, 0)
 }
 
 func (ts *WorkerTunerTestSuite) TestPollerBehaviorSimpleMaximumScaler() {
@@ -103,11 +107,11 @@ func (ts *WorkerTunerTestSuite) TestPollerBehaviorSimpleMaximumScaler() {
 		ActivityTaskPollerBehavior: worker.NewPollerBehaviorSimpleMaximum(
 			worker.PollerBehaviorSimpleMaximumOptions{},
 		),
-	}, ctx)
+	}, ctx, 0)
 }
 
 func (ts *WorkerTunerTestSuite) TestResourceBasedSmallSlots() {
-	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
 	wfSS, err := worker.NewFixedSizeSlotSupplier(10)
@@ -131,20 +135,85 @@ func (ts *WorkerTunerTestSuite) TestResourceBasedSmallSlots() {
 	ts.NoError(err)
 
 	// The bug this is verifying was triggered by a race, so run this a bunch to verify it's not hit
-	for i := 0; i < 10; i++ {
-		ts.runTheWorkflow(worker.Options{Tuner: tuner}, ctx)
+	for range 10 {
+		ts.runTheWorkflow(worker.Options{Tuner: tuner}, ctx, 2*time.Minute)
 	}
 }
 
-func (ts *WorkerTunerTestSuite) runTheWorkflow(workerOptions worker.Options, ctx context.Context) {
+func (ts *WorkerTunerTestSuite) TestGetInfo() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	myWorker := worker.New(ts.client, ts.taskQueueName, worker.Options{})
+	activityStarted := make(chan struct{})
+	releaseActivity := make(chan struct{})
+	myWorker.RegisterActivityWithOptions(func(ctx context.Context) error {
+		close(activityStarted)
+		select {
+		case <-releaseActivity:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}, activity.RegisterOptions{Name: "SlotUsageBlockingActivity"})
+	myWorker.RegisterWorkflowWithOptions(func(ctx workflow.Context) error {
+		ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{StartToCloseTimeout: time.Minute})
+		return workflow.ExecuteActivity(ctx, "SlotUsageBlockingActivity").Get(ctx, nil)
+	}, workflow.RegisterOptions{Name: "SlotUsageWorkflow"})
+
+	info, err := worker.GetInfo(myWorker)
+	ts.NoError(err)
+	ts.Equal(worker.Info{}, info)
+
+	ts.NoError(myWorker.Start())
+	defer myWorker.Stop()
+
+	startedAt := time.Now()
+	handle, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions(ts.T().Name()), "SlotUsageWorkflow")
+	ts.NoError(err)
+
+	select {
+	case <-activityStarted:
+	case <-ctx.Done():
+		ts.FailNow("activity did not start")
+	}
+	info, err = worker.GetInfo(myWorker)
+	ts.NoError(err)
+	usage := info.SlotUsage
+	ts.Equal(1, usage.Activity.UsedSlots)
+	ts.False(usage.Activity.UsedSlotsLastChanged.Before(startedAt))
+	ts.False(usage.Workflow.UsedSlotsLastChanged.Before(startedAt))
+
+	releasedAt := time.Now()
+	close(releaseActivity)
+	ts.NoError(handle.Get(ctx, nil))
+
+	// Slots are released asynchronously after task completions are sent to the server.
+	ts.Eventually(func() bool {
+		info, err := worker.GetInfo(myWorker)
+		usage := info.SlotUsage
+		return err == nil && usage.Workflow.UsedSlots == 0 && usage.Activity.UsedSlots == 0 &&
+			usage.LocalActivity.UsedSlots == 0 && usage.Nexus.UsedSlots == 0
+	}, 10*time.Second, 50*time.Millisecond)
+	info, err = worker.GetInfo(myWorker)
+	ts.NoError(err)
+	usage = info.SlotUsage
+	ts.False(usage.Activity.UsedSlotsLastChanged.Before(releasedAt))
+	ts.False(usage.Workflow.UsedSlotsLastChanged.Before(releasedAt))
+}
+
+func (ts *WorkerTunerTestSuite) runTheWorkflow(workerOptions worker.Options, ctx context.Context, wfTimeout time.Duration) {
 	myWorker := worker.New(ts.client, ts.taskQueueName, workerOptions)
 	ts.workflows.register(myWorker)
 	ts.activities.register(myWorker)
 	ts.NoError(myWorker.Start())
 	defer myWorker.Stop()
 
-	handle, err := ts.client.ExecuteWorkflow(ctx,
-		ts.startWorkflowOptions(ts.T().Name()),
+	opts := ts.startWorkflowOptions(ts.T().Name())
+	if wfTimeout > 0 {
+		opts.WorkflowExecutionTimeout = wfTimeout
+	}
+	handle, err := ts.client.ExecuteWorkflow(ctx, opts,
 		ts.workflows.RunsLocalAndNonlocalActsWithRetries, 5, 2)
 	ts.NoError(err)
 	ts.NoError(handle.Get(ctx, nil))

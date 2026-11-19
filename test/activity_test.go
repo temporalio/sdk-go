@@ -189,7 +189,7 @@ func (a *Activities) LongRunningHeartbeat(ctx context.Context, delay time.Durati
 }
 
 func (a *Activities) HeartbeatSpecificCount(ctx context.Context, interval time.Duration, count int) error {
-	for i := 0; i < count; i++ {
+	for range count {
 		time.Sleep(interval)
 		activity.RecordHeartbeat(ctx)
 	}
@@ -378,6 +378,14 @@ func (a *Activities) EchoString(ctx context.Context, message string) (string, er
 	return message, nil
 }
 
+// ConsumeString accepts a (possibly large) input but returns nothing, so callers can inflate the
+// size of a workflow task completion via activity inputs without also inflating history with echoed
+// results.
+func (a *Activities) ConsumeString(ctx context.Context, message string) error {
+	a.append("ConsumeString")
+	return nil
+}
+
 func (a *Activities) WaitForWorkerStop(ctx context.Context, timeout time.Duration) (string, error) {
 	stopCh := activity.GetWorkerStopChannel(ctx)
 	// Mark activity as invoked then wait for it to be stopped
@@ -466,6 +474,21 @@ func (a *Activities) AsyncComplete(ctx context.Context, input string) error {
 	return activity.ErrResultPending
 }
 
+// pendingNexusAsyncCompletions maps an activity ID to the channel that receives its activity.Info,
+// so a test can complete the activity from a client.
+var pendingNexusAsyncCompletions sync.Map
+
+func (a *Activities) NexusAsyncComplete(ctx context.Context, _ string) (string, error) {
+	a.append("nexusAsyncComplete")
+	info := activity.GetInfo(ctx)
+	ch, ok := pendingNexusAsyncCompletions.Load(info.ActivityID)
+	if !ok {
+		return "", fmt.Errorf("no pending async completion registered for activity %q", info.ActivityID)
+	}
+	ch.(chan activity.Info) <- info
+	return "", activity.ErrResultPending
+}
+
 func (a *Activities) PropagateActivity(ctx context.Context) ([]string, error) {
 	var result []string
 
@@ -502,9 +525,14 @@ func (a *Activities) InterceptorCalls(ctx context.Context, someVal string) (stri
 }
 
 func (a *Activities) ExternalSignalsAndQueries(ctx context.Context) error {
+	info := activity.GetInfo(ctx)
+
+	// SignalWithStart reuses a running workflow, so isolate concurrent activities.
+	workflowID := fmt.Sprintf("test-external-signals-and-queries-%s-%s", info.WorkflowExecution.RunID, info.ActivityID)
+
 	// Signal with start
-	workflowOpts := client.StartWorkflowOptions{TaskQueue: activity.GetInfo(ctx).TaskQueue}
-	run, err := a.client.SignalWithStartWorkflow(ctx, "test-external-signals-and-queries", "start-signal",
+	workflowOpts := client.StartWorkflowOptions{TaskQueue: info.TaskQueue}
+	run, err := a.client.SignalWithStartWorkflow(ctx, workflowID, "start-signal",
 		"signal-value", workflowOpts, new(Workflows).SignalsQueriesAndUpdate, false, false)
 	if err != nil {
 		return err
@@ -528,7 +556,6 @@ func (a *Activities) ExternalSignalsAndQueries(ctx context.Context) error {
 	}
 	return run.Get(ctx, nil)
 }
-
 func (a *Activities) CheckBaggage(ctx context.Context, key string) (string, error) {
 	return baggage.FromContext(ctx).Member(key).Value(), nil
 }
@@ -593,14 +620,4 @@ func (a *Activities) ClientFromActivity(ctx context.Context) error {
 func (a *Activities) RawValueActivity(ctx context.Context, value converter.RawValue) (converter.RawValue, error) {
 	activity.GetLogger(ctx).Info("RawValue value", value.Payload())
 	return value, nil
-}
-
-func (a *Activities) CancelActivity(ctx context.Context) error {
-	t := time.NewTicker(200 * time.Millisecond)
-	defer t.Stop()
-	select {
-	case <-ctx.Done():
-	case <-t.C:
-	}
-	return ctx.Err()
 }
