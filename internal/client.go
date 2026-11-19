@@ -1737,6 +1737,7 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 	if err != nil {
 		panic(fmt.Sprintf("invalid ExternalStorage options: %v", err))
 	}
+	storageParams = storageParams.WithNamespace(options.Namespace)
 
 	storageDriverTypes := collectStorageDriverTypes(options.ExternalStorage.Drivers)
 

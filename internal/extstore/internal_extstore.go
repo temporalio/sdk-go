@@ -34,7 +34,8 @@ type StorageParameters struct {
 	maxDriverOperations      int
 	driverOperationSemaphore *semaphore.Weighted
 
-	logger log.Logger
+	logger    log.Logger
+	namespace string
 }
 
 // WithOwnDriverOperationLimit returns a copy of p with its own MaxDriverOperations limit,
@@ -51,6 +52,13 @@ func (p StorageParameters) WithOwnDriverOperationLimit() StorageParameters {
 // WithLogger returns a copy of p that logs through logger.
 func (p StorageParameters) WithLogger(logger log.Logger) StorageParameters {
 	p.logger = logger
+	return p
+}
+
+// WithNamespace returns a copy of p that reports namespace to selectors and
+// drivers as the namespace performing the operation.
+func (p StorageParameters) WithNamespace(namespace string) StorageParameters {
+	p.namespace = namespace
 	return p
 }
 
@@ -462,7 +470,7 @@ func (v *externalStorageVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloads
 
 	result := make([]*commonpb.Payload, len(payloads))
 	target := StorageTargetFromContext(ctx.Context)
-	selectCtx := StorageDriverSelectContext{Context: ctx.Context, Target: target}
+	selectCtx := StorageDriverSelectContext{Context: ctx.Context, Target: target, Namespace: v.params.namespace}
 
 	for i, p := range payloads {
 		if proto.Size(p) < v.params.payloadSizeThreshold {
@@ -512,7 +520,7 @@ func (v *externalStorageVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloads
 		externalCount += len(batch.payloads)
 		limiter := newLimiter[*commonpb.Payload](messageSemaphore, v.params)
 		limiters[i] = limiter
-		storeDrCtx := StorageDriverStoreContext{Context: egCtx, Target: target, Limiter: limiter}
+		storeDrCtx := StorageDriverStoreContext{Context: egCtx, Target: target, Namespace: v.params.namespace, Limiter: limiter}
 		eg.Go(func() error {
 			claims, err := callDriverStore(batch.driver, storeDrCtx, batch.payloads)
 			if err != nil {

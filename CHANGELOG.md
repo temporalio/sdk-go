@@ -22,7 +22,19 @@ to docs, or any other relevant information.
 
 ### Added
 
+- **Experimental**: `converter.StorageDriverStoreContext` and
+  `converter.StorageDriverSelectContext` have a `Namespace` field holding the
+  namespace of the client or worker performing the operation, so drivers and
+  selectors can partition by namespace even when there is no `Target`.
+- Added experimental `worker.GetSlotUsage`, which returns a snapshot of a worker's task slot usage.
+- Added experimental `worker.GetInfo`, which returns a snapshot of a worker's state, currently its task
+  slot usage.
+
 ### Changed
+
+- `converter.NewZlibCodec` reuses zlib writers and readers across payloads instead of creating them
+  for every payload. A writer is about 1 MB of allocation, so encoding allocates far less, which
+  reduces garbage collection in workers that encode many payloads. The encoded output is unchanged.
 
 ### Deprecated
 
@@ -30,6 +42,8 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- Workers no longer advertise a worker control task queue unless worker heartbeats and commands
+  are supported and the shared namespace command poller is running.
 - Fixed a data race in `TestWorkflowEnvironment` when a workflow changes the data it passed to
   `SignalExternalWorkflow` before the `OnSignalExternalWorkflow` mock reads it. The mock now gets a
   copy decoded from the sent payload, as activity mocks do, so it matches on the decoded value: a
