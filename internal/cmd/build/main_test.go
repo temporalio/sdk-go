@@ -106,11 +106,8 @@ func TestUnselected(t *testing.T) { t.Fatal("-run was not forwarded") }
 			t.Fatal(err)
 		}
 	}
-	originalArgs := os.Args
-	os.Args = []string{"build", "integration-test", "-module", "contrib/example/test", "-dev-server", "-run", "^TestSelected$"}
-	t.Cleanup(func() { os.Args = originalArgs })
 	b := &builder{rootDir: rootDir}
-	if err := b.integrationTest(); err != nil {
+	if err := b.integrationTest([]string{"-module", "contrib/example/test", "-dev-server", "-run", "^TestSelected$"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	contents, err := os.ReadFile(filepath.Join(rootDir, defaultTestLogDir, "go-test.log"))
@@ -144,11 +141,9 @@ func TestUnselected(t *testing.T) { t.Fatal("-run was not forwarded") }
 			}
 		}
 	}
-	originalArgs := os.Args
-	os.Args = []string{"build", "integration-test", "-run", "^TestSelected$", "-coverage-file", "integration.out"}
-	t.Cleanup(func() { os.Args = originalArgs })
+	args := []string{"-run", "^TestSelected$", "-coverage-file", "integration.out"}
 	b := &builder{rootDir: rootDir}
-	if err := b.integrationTest(); err != nil {
+	if err := b.integrationTest(args, nil); err != nil {
 		t.Fatal(err)
 	}
 	contents, err := os.ReadFile(filepath.Join(rootDir, defaultTestLogDir, "go-test.log"))
@@ -172,7 +167,7 @@ func TestUnselected(t *testing.T) { t.Fatal("-run was not forwarded") }
 	if err := os.WriteFile(failingTest, []byte("package integration\nimport \"testing\"\nfunc TestSelected(t *testing.T) { t.Fatal(\"intentional module failure\") }\n"), 0666); err != nil {
 		t.Fatal(err)
 	}
-	if err := b.integrationTest(); err == nil || !strings.Contains(err.Error(), "contrib/alpha/test") {
+	if err := b.integrationTest(args, nil); err == nil || !strings.Contains(err.Error(), "contrib/alpha/test") {
 		t.Fatalf("expected a failure identifying the contrib module, got %v", err)
 	}
 	contents, err = os.ReadFile(filepath.Join(rootDir, defaultTestLogDir, "go-test.log"))

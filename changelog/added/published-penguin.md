@@ -1,1 +1,2 @@
 The repository build tool's `unit-test` and `integration-test` commands accept comma-separated module directories with `-module` and support `-release-modules <directories>` to ignore dependency replacements except for the listed local modules.
+`publisher stage` adds `release` and `Release: MODULE` labels to enable a dedicated CI job that tests released modules against published dependencies, keeping only the release batch local. The build tool's `test-release` command accepts PR labels and runs the selected modules' unit and integration tests.
