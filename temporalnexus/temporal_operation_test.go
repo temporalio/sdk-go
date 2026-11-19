@@ -8,6 +8,7 @@ import (
 
 	"github.com/nexus-rpc/sdk-go/nexus"
 	"github.com/stretchr/testify/require"
+	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/internal"
 	"go.temporal.io/sdk/workflow"
@@ -219,4 +220,96 @@ func TestStartUpdateWorkflowGuards(t *testing.T) {
 	var opError *nexus.HandlerError
 	require.ErrorAs(t, err, &opError)
 	require.Equal(t, opError.Cause.Error(), "nexus op workflow updates only support WorkflowUpdateStageAccepted for async updates")
+}
+
+func TestStartUpdateWithStartWorkflowGuards(t *testing.T) {
+	c, err := client.NewLazyClient(client.Options{})
+	require.NoError(t, err)
+	defer c.Close()
+	ctx := internal.ContextWithNexusOperationContext(t.Context(), &internal.NexusOperationContext{TaskQueue: "handler-tq"})
+	update := client.UpdateWorkflowOptions{WorkflowID: "wf", UpdateName: "upd", WaitForStage: client.WorkflowUpdateStageAccepted}
+	var handlerErr *nexus.HandlerError
+
+	// start operation not created by NewWithStartWorkflowOperation
+	_, err = StartUpdateWithStartWorkflow[string](ctx, NexusClient{asyncStarted: &atomic.Bool{}}, client.UpdateWithStartWorkflowOptions{
+		UpdateOptions: update,
+	})
+	require.ErrorAs(t, err, &handlerErr)
+	require.Equal(t, nexus.HandlerErrorTypeInternal, handlerErr.Type)
+	require.ErrorContains(t, err, "must be created by NewWithStartWorkflowOperation")
+
+	// invalid start operation surfaces its own error
+	_, err = StartUpdateWithStartWorkflow[string](ctx, NexusClient{asyncStarted: &atomic.Bool{}}, client.UpdateWithStartWorkflowOptions{
+		StartWorkflowOperation: c.NewWithStartWorkflowOperation(client.StartWorkflowOptions{ID: "wf", TaskQueue: "tq"}, "wf"),
+		UpdateOptions:          update,
+	})
+	require.ErrorAs(t, err, &handlerErr)
+	require.Equal(t, nexus.HandlerErrorTypeInternal, handlerErr.Type)
+	require.ErrorContains(t, err, "WorkflowIDConflictPolicy must be set")
+
+	// a generated start workflow ID differs on each retried Nexus task, so it is rejected
+	_, err = StartUpdateWithStartWorkflow[string](ctx, NexusClient{asyncStarted: &atomic.Bool{}}, client.UpdateWithStartWorkflowOptions{
+		StartWorkflowOperation: c.NewWithStartWorkflowOperation(client.StartWorkflowOptions{
+			WorkflowIDConflictPolicy: enumspb.WORKFLOW_ID_CONFLICT_POLICY_USE_EXISTING,
+		}, "wf"),
+		UpdateOptions: update,
+	})
+	require.ErrorAs(t, err, &handlerErr)
+	require.Equal(t, nexus.HandlerErrorTypeInternal, handlerErr.Type)
+	require.ErrorContains(t, err, "StartWorkflowOptions.ID must be set")
+
+	// matching workflow IDs pass validation, so the callback check fails
+	validStartOp := func() client.WithStartWorkflowOperation {
+		return c.NewWithStartWorkflowOperation(client.StartWorkflowOptions{
+			ID:                       "wf",
+			WorkflowIDConflictPolicy: enumspb.WORKFLOW_ID_CONFLICT_POLICY_USE_EXISTING,
+		}, "wf")
+	}
+	startOp := validStartOp()
+	_, err = StartUpdateWithStartWorkflow[string](ctx, NexusClient{asyncStarted: &atomic.Bool{}}, client.UpdateWithStartWorkflowOptions{
+		StartWorkflowOperation: startOp,
+		UpdateOptions:          update,
+	})
+	require.ErrorAs(t, err, &handlerErr)
+	require.Equal(t, nexus.HandlerErrorTypeBadRequest, handlerErr.Type)
+	require.ErrorContains(t, err, "callback URL required")
+	startOpts, err := internal.StartWorkflowOptionsFromWithStartOperation(startOp)
+	require.NoError(t, err)
+	require.Equal(t, "handler-tq", startOpts.TaskQueue)
+
+	// UpdateOptions.WorkflowID must target the start's workflow
+	otherWorkflowID := update
+	otherWorkflowID.WorkflowID = "other"
+	_, err = StartUpdateWithStartWorkflow[string](ctx, NexusClient{asyncStarted: &atomic.Bool{}}, client.UpdateWithStartWorkflowOptions{
+		StartWorkflowOperation: validStartOp(),
+		UpdateOptions:          otherWorkflowID,
+	})
+	require.ErrorAs(t, err, &handlerErr)
+	require.Equal(t, nexus.HandlerErrorTypeInternal, handlerErr.Type)
+	require.ErrorContains(t, err, `UpdateOptions.WorkflowID "other" must match StartWorkflowOptions.ID "wf"`)
+
+	// an empty UpdateOptions.WorkflowID defaults to the start's, so validation passes and the callback check fails
+	noWorkflowID := update
+	noWorkflowID.WorkflowID = ""
+	_, err = StartUpdateWithStartWorkflow[string](ctx, NexusClient{asyncStarted: &atomic.Bool{}}, client.UpdateWithStartWorkflowOptions{
+		StartWorkflowOperation: validStartOp(),
+		UpdateOptions:          noWorkflowID,
+	})
+	require.ErrorAs(t, err, &handlerErr)
+	require.Equal(t, nexus.HandlerErrorTypeBadRequest, handlerErr.Type)
+	require.ErrorContains(t, err, "callback URL required")
+
+	// only one async operation per invocation
+	started := &atomic.Bool{}
+	started.Store(true)
+	_, err = StartUpdateWithStartWorkflow[string](ctx, NexusClient{
+		asyncStarted:          started,
+		startOperationOptions: nexus.StartOperationOptions{CallbackURL: "temporal://dummy"},
+	}, client.UpdateWithStartWorkflowOptions{
+		StartWorkflowOperation: validStartOp(),
+		UpdateOptions:          update,
+	})
+	require.ErrorAs(t, err, &handlerErr)
+	require.Equal(t, nexus.HandlerErrorTypeBadRequest, handlerErr.Type)
+	require.ErrorContains(t, err, errMultipleAsyncOperationsMsg)
 }

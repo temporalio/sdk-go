@@ -29,6 +29,10 @@ to docs, or any other relevant information.
 - Added experimental `worker.GetSlotUsage`, which returns a snapshot of a worker's task slot usage.
 - Added experimental `worker.GetInfo`, which returns a snapshot of a worker's state, currently its task
   slot usage.
+- Added experimental `temporalnexus.StartUpdateWithStartWorkflow` (also a `NexusClient` method on Go 1.27+),
+  which backs a Nexus operation with update-with-start. It starts the workflow if needed and runs the
+  update, propagating the operation's callback, links, and request ID so the operation completes
+  asynchronously with the update result and retried Nexus tasks are deduplicated.
 
 ### Changed
 
