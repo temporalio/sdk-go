@@ -67,7 +67,7 @@ func (m *heartbeatManager) sharedNamespaceWorkerForLocked(namespace string) *sha
 		return hw
 	}
 	// If this is the first worker on the namespace, start a new shared namespace worker.
-	heartbeatCtx, heartbeatCancel := context.WithCancel(context.Background())
+	workerCtx, workerCtxCancel := context.WithCancel(context.Background())
 	controlTaskQueue := workerControlTaskQueue(namespace, m.client.workerGroupingKey)
 	metricsHandler := m.client.metricsHandler
 	if metricsHandler == nil {
@@ -77,8 +77,8 @@ func (m *heartbeatManager) sharedNamespaceWorkerForLocked(namespace string) *sha
 		client:                        m.client,
 		namespace:                     namespace,
 		interval:                      m.interval,
-		workerCtx:                     heartbeatCtx,
-		heartbeatCancel:               heartbeatCancel,
+		workerCtx:                     workerCtx,
+		workerCtxCancel:               workerCtxCancel,
 		callbacks:                     make(map[string]func() *workerpb.WorkerHeartbeat),
 		heartbeatSuccessCallbacks:     make(map[string]func()),
 		activityCancellationCallbacks: newActivityCancellationCallbacks(),
@@ -161,8 +161,9 @@ type sharedNamespaceWorker struct {
 	interval  time.Duration
 	logger    log.Logger
 
+	// Cancellation of workerCtx means stopC has closed or sendHeartbeats returned an error.
 	workerCtx       context.Context
-	heartbeatCancel context.CancelFunc
+	workerCtxCancel context.CancelFunc
 
 	// callbacksMutex should only be unlocked under
 	callbacksMutex sync.RWMutex
@@ -201,7 +202,7 @@ func (hw *sharedNamespaceWorker) run() {
 	defer close(hw.stoppedC)
 
 	if hw.workerCommandsSupported {
-		// Keep poll contexts separate so the server can finish in-flight polls after heartbeats stop.
+		// Use a separate poll context so the server can finish in-flight polls after heartbeats stop.
 		pollCtx, cancelPoll := context.WithCancel(context.WithoutCancel(hw.workerCtx))
 		workerCommandsDone := make(chan struct{})
 		go func() {
@@ -209,11 +210,11 @@ func (hw *sharedNamespaceWorker) run() {
 			hw.runWorkerCommands(pollCtx)
 		}()
 		defer func() {
-			hw.heartbeatCancel()
+			hw.workerCtxCancel()
 			if hw.workerPollCompleteOnShutdown {
 				select {
 				case <-hw.stopC:
-					hw.completeWorkerCommandPolls(workerCommandsDone)
+					hw.tryCompleteWorkerCommandPolls(workerCommandsDone)
 				default:
 				}
 			}
@@ -315,6 +316,7 @@ func (hw *sharedNamespaceWorker) runWorkerCommands(pollCtx context.Context) {
 		pollWG.Go(func() {
 			defer admission.release()
 
+			// Shutdown can start while we're waiting for a poll slot.
 			if hw.workerCtx.Err() != nil {
 				return
 			}
@@ -463,9 +465,10 @@ func (hw *sharedNamespaceWorker) handleWorkerCommandTask(task *workflowservice.P
 	return nil
 }
 
-func (hw *sharedNamespaceWorker) completeWorkerCommandPolls(done <-chan struct{}) {
+func (hw *sharedNamespaceWorker) tryCompleteWorkerCommandPolls(workerCommandsDone <-chan struct{}) {
+	// Skip the shutdown RPC if the command poller has already exited.
 	select {
-	case <-done:
+	case <-workerCommandsDone:
 		return
 	default:
 	}
@@ -487,7 +490,7 @@ func (hw *sharedNamespaceWorker) completeWorkerCommandPolls(done <-chan struct{}
 	}
 
 	select {
-	case <-done:
+	case <-workerCommandsDone:
 	case <-ctx.Done():
 		hw.logger.Warn("Timed out waiting for worker command polls to complete", "TaskQueue", hw.workerControlTaskQueue)
 	}
@@ -498,8 +501,8 @@ func (hw *sharedNamespaceWorker) stop() {
 		return
 	}
 	close(hw.stopC)
-	if hw.heartbeatCancel != nil {
-		hw.heartbeatCancel()
+	if hw.workerCtxCancel != nil {
+		hw.workerCtxCancel()
 	}
 
 	<-hw.stoppedC

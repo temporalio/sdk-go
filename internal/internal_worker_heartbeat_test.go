@@ -32,7 +32,7 @@ import (
 // sharedNamespaceWorker cancels an in-flight heartbeat RPC. Without the fix
 // (using context.Background() for the RPC), stop() would hang forever because
 // the blocked RPC prevents run() from seeing stopC. With the fix
-// (heartbeatCtx), stop() cancels the context first, unblocking the RPC.
+// (workerCtx), stop() cancels the context first, unblocking the RPC.
 func TestStopCancelsInFlightHeartbeatRPC(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
@@ -53,13 +53,13 @@ func TestStopCancelsInFlightHeartbeatRPC(t *testing.T) {
 
 		wfClient := NewServiceClient(mockService, nil, ClientOptions{})
 
-		heartbeatCtx, heartbeatCancel := context.WithCancel(t.Context())
+		workerCtx, workerCtxCancel := context.WithCancel(t.Context())
 		hw := &sharedNamespaceWorker{
 			client:          wfClient,
 			namespace:       "test-ns",
 			interval:        50 * time.Millisecond,
-			workerCtx:       heartbeatCtx,
-			heartbeatCancel: heartbeatCancel,
+			workerCtx:       workerCtx,
+			workerCtxCancel: workerCtxCancel,
 			callbacks: map[string]func() *workerpb.WorkerHeartbeat{
 				"worker1": func() *workerpb.WorkerHeartbeat { return &workerpb.WorkerHeartbeat{} },
 			},
@@ -75,7 +75,7 @@ func TestStopCancelsInFlightHeartbeatRPC(t *testing.T) {
 			t.Fatal("heartbeat RPC did not start")
 		}
 
-		// stop() should return because heartbeatCancel() unblocks the in-flight RPC.
+		// stop() should return because workerCtxCancel() unblocks the in-flight RPC.
 		hw.stop()
 	})
 }
@@ -312,7 +312,7 @@ func TestWorkerCommandFirstPollUsesDescribeNamespacePollerGroups(t *testing.T) {
 
 	client := NewServiceClient(mockService, nil, ClientOptions{Namespace: namespace})
 	hw := client.heartbeatManager.sharedNamespaceWorkerFor(namespace)
-	defer hw.heartbeatCancel()
+	defer hw.workerCtxCancel()
 	hw.started.Store(true)
 	worker := NewAggregatedWorker(client, "worker-queue", WorkerOptions{})
 	require.NoError(t, client.heartbeatManager.registerWorker(worker))
@@ -712,13 +712,13 @@ func TestWorkerCommandsDisabledDoesNotPoll(t *testing.T) {
 			Identity:  "worker-identity",
 		})
 
-		heartbeatCtx, heartbeatCancel := context.WithCancel(t.Context())
+		workerCtx, workerCtxCancel := context.WithCancel(t.Context())
 		hw := &sharedNamespaceWorker{
 			client:                  wfClient,
 			namespace:               "test-ns",
 			interval:                10 * time.Millisecond,
-			workerCtx:               heartbeatCtx,
-			heartbeatCancel:         heartbeatCancel,
+			workerCtx:               workerCtx,
+			workerCtxCancel:         workerCtxCancel,
 			callbacks:               map[string]func() *workerpb.WorkerHeartbeat{"worker1": func() *workerpb.WorkerHeartbeat { return &workerpb.WorkerHeartbeat{} }},
 			workerCommandsSupported: false,
 			workerControlTaskQueue:  "temporal-sys/worker-commands/test-ns/grouping-key",
