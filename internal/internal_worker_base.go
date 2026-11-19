@@ -134,6 +134,7 @@ type (
 			signalName string,
 			input *commonpb.Payloads,
 			arg any,
+			argConverter converter.DataConverter,
 			header *commonpb.Header,
 			childWorkflowOnly bool,
 			eventGroupMarkers []*sdk.EventGroupMarker,

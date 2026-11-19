@@ -437,6 +437,7 @@ func (wc *workflowEnvironmentImpl) SignalExternalWorkflow(
 	signalName string,
 	input *commonpb.Payloads,
 	_ /* THIS IS FOR TEST FRAMEWORK. DO NOT USE HERE. */ any,
+	_ /* THIS IS FOR TEST FRAMEWORK. DO NOT USE HERE. */ converter.DataConverter,
 	header *commonpb.Header,
 	childWorkflowOnly bool,
 	eventGroupMarkers []*sdk.EventGroupMarker,
