@@ -100,12 +100,25 @@ func (w *worktree) pushBranch() error {
 
 func (w *worktree) openDraftPR(modules []pure.VersionedModule) (string, error) {
 	title, body, _ := strings.Cut(pure.ReleaseCommitMessage(modules, w.eff.today()), "\n\n")
-	url, err := w.eff.runCommand(w.worktreeRoot, "gh", "pr", "create", "--draft",
+	args := []string{"pr", "create", "--draft",
 		"--base", "main",
 		"--head", w.branch,
 		"--label", "skip-changelog",
+		"--label", "release",
 		"--title", title,
-		"--body", body)
+		"--body", body}
+	if err := w.createLabel("release", "Run release CI"); err != nil {
+		return "", err
+	}
+	for _, module := range modules {
+		name := module.Module.Name()
+		label := "Release: " + name
+		if err := w.createLabel(label, "Run release CI for "+name); err != nil {
+			return "", err
+		}
+		args = append(args, "--label", label)
+	}
+	url, err := w.eff.runCommand(w.worktreeRoot, "gh", args...)
 	if err != nil {
 		return "", fmt.Errorf("create draft PR: %w", err)
 	}
@@ -143,4 +156,13 @@ func (w *worktree) createDraftRelease(module pure.VersionedModule, commit, relea
 
 func (w *worktree) cleanup() error {
 	return w.repo.removeWorktree(w.worktreeRoot)
+}
+
+func (w *worktree) createLabel(name, description string) error {
+	_, err := w.eff.runCommand(w.worktreeRoot, "gh", "label", "create", name,
+		"--color", "0e8a16", "--description", description, "--force")
+	if err != nil {
+		return fmt.Errorf("create label %q: %w", name, err)
+	}
+	return nil
 }

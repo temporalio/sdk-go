@@ -66,6 +66,7 @@ Commands:
   generate              Update or verify freshness of generated code
   unit-test             Run unit tests
   integration-test      Run integration tests
+  test-release          Run release tests selected by PR labels
   merge-coverage-files  Merge coverage profiles
 
 Run a command with "-h" or "-help" for usage. For example:
@@ -88,7 +89,7 @@ func newBuilder() *builder {
 
 func (b *builder) run() error {
 	if len(os.Args) < 2 {
-		return fmt.Errorf("missing command name: use 'check', 'generate', 'integration-test', 'unit-test', or 'merge-coverage-files'")
+		return fmt.Errorf("missing command name: use 'check', 'generate', 'integration-test', 'unit-test', 'test-release', or 'merge-coverage-files'")
 	}
 	switch os.Args[1] {
 	case "help", "-h", "-help", "--help":
@@ -99,13 +100,15 @@ func (b *builder) run() error {
 	case "generate":
 		return b.generate(os.Args[2:])
 	case "integration-test":
-		return b.integrationTest()
+		return b.integrationTest(os.Args[2:], nil)
 	case "merge-coverage-files":
 		return b.mergeCoverageFiles()
 	case "unit-test":
-		return b.unitTest()
+		return b.unitTest(os.Args[2:])
+	case "test-release":
+		return b.testRelease(os.Args[2:])
 	default:
-		return fmt.Errorf("unrecognized command %q: use 'check', 'generate', 'integration-test', 'unit-test', or 'merge-coverage-files'", os.Args[1])
+		return fmt.Errorf("unrecognized command %q: use 'check', 'generate', 'integration-test', 'unit-test', 'test-release', or 'merge-coverage-files'", os.Args[1])
 	}
 }
 
@@ -314,7 +317,7 @@ Examples:
 Options:
 `
 
-func (b *builder) integrationTest() error {
+func (b *builder) integrationTest(args []string, extraEnv []string) error {
 	// Supports some flags
 	flagSet := flag.NewFlagSet("integration-test", flag.ContinueOnError)
 	flagSet.Usage = func() {
@@ -333,7 +336,7 @@ func (b *builder) integrationTest() error {
 	coverageFileFlag := flagSet.String("coverage-file", "", "If set, enables coverage output to this filename")
 	testOutputFlags := addTestOutputFlags(flagSet)
 	timeoutFlag := flagSet.String("timeout", "15m", "Passed to go test as -timeout")
-	if err := flagSet.Parse(os.Args[2:]); err != nil {
+	if err := flagSet.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
 		}
@@ -555,6 +558,7 @@ func (b *builder) integrationTest() error {
 		// Run integration test
 		args := []string{"go", "test", "-json", "-count", "1", "-race", "-v", "-timeout", *timeoutFlag}
 		env := append(os.Environ(), "DISABLE_SERVER_1_25_TESTS=1")
+		env = append(env, extraEnv...)
 		if releaseModules != nil {
 			args = append(args, "-mod=readonly", "-modfile="+modFile)
 			env = append(env, "GOWORK=off")
@@ -643,7 +647,7 @@ Examples:
 Options:
 `
 
-func (b *builder) unitTest() error {
+func (b *builder) unitTest(args []string) error {
 	flagSet := flag.NewFlagSet("unit-test", flag.ContinueOnError)
 	flagSet.Usage = func() {
 		fmt.Fprint(flagSet.Output(), unitTestUsage)
@@ -655,7 +659,7 @@ func (b *builder) unitTest() error {
 	runFlag := flagSet.String("run", "", "Passed to go test as -run")
 	coverageFlag := flagSet.Bool("coverage", false, "If set, enables coverage output")
 	testOutputFlags := addTestOutputFlags(flagSet)
-	if err := flagSet.Parse(os.Args[2:]); err != nil {
+	if err := flagSet.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
 		}
@@ -1116,6 +1120,123 @@ func (b *builder) getInstalledTool(modPath string) (string, error) {
 }
 
 // -- RELEASE MODE HELPERS ---------------------------------------
+
+const testReleaseUsage = `Usage: go run . test-release -labels LABELS [options]
+
+Runs release unit tests and each selected module's own integration tests
+with and without the workflow cache.
+
+Examples:
+  go run . test-release -labels "Release: sdk"
+  go run . test-release -labels "Release: contrib/envconfig,Release: contrib/opentelemetry-v2"
+
+Options:
+`
+
+func (b *builder) testRelease(args []string) error {
+	flags := flag.NewFlagSet("test-release", flag.ContinueOnError)
+	labelsFlag := flags.String("labels", "", "Comma-separated PR labels, such as Release: sdk,Release: contrib/envconfig")
+	runFlag := flags.String("run", "", "Passed to unit-test and integration-test as -run")
+	testOutputFlags := addTestOutputFlags(flags)
+	flags.Usage = func() {
+		fmt.Fprint(flags.Output(), testReleaseUsage)
+		flags.PrintDefaults()
+	}
+	if err := flags.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
+		return err
+	}
+	if *labelsFlag == "" || flags.NArg() != 0 {
+		return fmt.Errorf("test-release requires -labels LABELS and no positional arguments")
+	}
+
+	// Parse labels in the GitHub PR to find our what modules we're releasing
+	moduleDirs, err := findModuleDirs(os.DirFS(b.rootDir))
+	if err != nil {
+		return fmt.Errorf("finding release test modules: %w", err)
+	}
+	var releaseModules []string
+	for _, label := range strings.Split(*labelsFlag, ",") {
+		label = strings.TrimSpace(label)
+		name, ok := strings.CutPrefix(label, "Release: ")
+		if !ok {
+			continue
+		}
+		moduleDir := name
+		if name == "sdk" {
+			moduleDir = "."
+		}
+		if (name != "sdk" && !strings.HasPrefix(name, "contrib/")) ||
+			!slices.Contains(moduleDirs, moduleDir) || isIntegrationTestModuleDir(moduleDir) {
+			return fmt.Errorf("unknown release module in label %q", label)
+		}
+		if !slices.Contains(releaseModules, moduleDir) {
+			releaseModules = append(releaseModules, moduleDir)
+		}
+	}
+	if len(releaseModules) == 0 {
+		return fmt.Errorf("no release modules selected: expected at least one %q label", "Release: MODULE")
+	}
+	slices.Sort(releaseModules)
+
+	// Run unit tests
+	releases := strings.Join(releaseModules, ",")
+	unitArgs := []string{
+		"-module", releases,
+		"-release-modules", releases,
+		"-log-dir", filepath.Join(testOutputFlags.logDir, "unit"),
+		"-console-output", testOutputFlags.consoleOutput,
+	}
+	if *runFlag != "" {
+		unitArgs = append(unitArgs, "-run", *runFlag)
+	}
+	if err := b.unitTest(unitArgs); err != nil {
+		return fmt.Errorf("release unit tests: %w", err)
+	}
+
+	// Run integration tests
+	var integrationModules []string
+	for _, moduleDir := range releaseModules {
+		testDir := path.Join(moduleDir, integrationTestModuleDir)
+		found := false
+		for _, candidate := range moduleDirs {
+			if candidate == testDir || strings.HasPrefix(candidate, testDir+"/") {
+				integrationModules = append(integrationModules, candidate)
+				found = true
+			}
+		}
+		if !found {
+			log.Printf("no integration tests found for %s", moduleDir)
+		}
+	}
+	if len(integrationModules) == 0 {
+		return nil
+	}
+	integrationArgs := []string{
+		"-dev-server",
+		"-module", strings.Join(integrationModules, ","),
+		"-release-modules", releases,
+		"-console-output", testOutputFlags.consoleOutput,
+	}
+	if *runFlag != "" {
+		integrationArgs = append(integrationArgs, "-run", *runFlag)
+	}
+	if err := b.integrationTest(
+		append(integrationArgs, "-log-dir", filepath.Join(testOutputFlags.logDir, "integration-cache")),
+		[]string{"WORKFLOW_CACHE_SIZE="},
+	); err != nil {
+		return fmt.Errorf("release integration tests with cache: %w", err)
+	}
+	if err := b.integrationTest(
+		append(integrationArgs, "-log-dir", filepath.Join(testOutputFlags.logDir, "integration-no-cache")),
+		[]string{"WORKFLOW_CACHE_SIZE=0"},
+	); err != nil {
+		return fmt.Errorf("release integration tests without cache: %w", err)
+	}
+	return nil
+}
 
 // prepareReleaseManifest parses the module's go.mod and go.sum files
 // and writes replacement files release.mod, release.sum to tempDir.

@@ -205,6 +205,44 @@ jobs:
         env:
           ARTIFACT_URL: ${{ steps.upload-test-logs.outputs.artifact-url }}
 
+  release-test:
+    if: github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'release')
+    runs-on: ubuntu-latest
+    env:
+      TEST_LOG_ARTIFACT_NAME: release-test
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+          cache-dependency-path: '**/go.sum'
+
+      - name: Release tests
+        run: go run . test-release -labels "$RELEASE_LABELS" -log-dir .build/test-logs/release
+        working-directory: ./internal/cmd/build
+        env:
+          RELEASE_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+
+      - name: Upload full test logs
+        id: upload-test-logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-test
+          path: .build/test-logs
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Link full test logs
+        if: failure() && steps.upload-test-logs.outputs.artifact-url != ''
+        shell: bash
+        run: echo "### [Download full test logs]($ARTIFACT_URL)" >> "$GITHUB_STEP_SUMMARY"
+        env:
+          ARTIFACT_URL: ${{ steps.upload-test-logs.outputs.artifact-url }}
+
   docker-compose-test:
     runs-on: ubuntu-latest
     permissions:
@@ -376,6 +414,7 @@ jobs:
     # treats a skipped required check as passing.
     if: ${{ always() && github.event_name == 'pull_request' }}
     needs:
+      - release-test
       - check
       - unit-test
       - integ-test
