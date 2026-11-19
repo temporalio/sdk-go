@@ -316,7 +316,7 @@ func (hw *sharedNamespaceWorker) runWorkerCommands(pollCtx context.Context) {
 		pollWG.Go(func() {
 			defer admission.release()
 
-			// Shutdown can start while we're waiting for a poll slot.
+			// Recheck for shutdown after waiting for a poll slot.
 			if hw.workerCtx.Err() != nil {
 				return
 			}
