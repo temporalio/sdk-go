@@ -64,6 +64,10 @@ const (
 	NexusTaskExecutionFailedCounter = TemporalMetricsPrefix + "nexus_task_execution_failed"
 	NexusTaskExecutionLatency       = TemporalMetricsPrefix + "nexus_task_execution_latency"
 	NexusTaskEndToEndLatency        = TemporalMetricsPrefix + "nexus_task_endtoend_latency"
+
+	PayloadCacheLookupHit      = TemporalMetricsPrefix + "payload_cache_lookup_hit"
+	PayloadCacheLookupHitBytes = TemporalMetricsPrefix + "payload_cache_lookup_hit_bytes"
+	PayloadCacheRejection      = TemporalMetricsPrefix + "payload_cache_rejection"
 )
 
 // Metric tag keys
@@ -81,6 +85,7 @@ const (
 	OperationTagName        = "operation"
 	CauseTagName            = "cause"
 	RequestFailureCode      = "status_code"
+	ReasonTagName           = "reason"
 )
 
 // Metric tag values
@@ -101,4 +106,10 @@ const (
 	FailureReasonPayloadsTooLarge    = "PayloadsTooLarge"
 	FailureReasonGrpcMessageTooLarge = "GrpcMessageTooLarge"
 	FailureReasonRequestTooLarge     = "RequestTooLarge"
+)
+
+// Values for the ReasonTagName tag on PayloadCacheRejection. These must remain consistent across SDKs.
+const (
+	PayloadCacheRejectionReasonDeclined = "declined"
+	PayloadCacheRejectionReasonError    = "error"
 )

@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"sync/atomic"
 	"time"
 
 	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/api/proxy"
 	sdkpb "go.temporal.io/api/sdk/v1"
+	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/log"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
@@ -36,6 +38,9 @@ type StorageParameters struct {
 
 	logger    log.Logger
 	namespace string
+
+	// payloadCache is nil when payload caching is off.
+	payloadCache PayloadCache
 }
 
 // WithOwnDriverOperationLimit returns a copy of p with its own MaxDriverOperations limit,
@@ -59,6 +64,21 @@ func (p StorageParameters) WithLogger(logger log.Logger) StorageParameters {
 // drivers as the namespace performing the operation.
 func (p StorageParameters) WithNamespace(namespace string) StorageParameters {
 	p.namespace = namespace
+	return p
+}
+
+// WithPayloadCache returns a copy of p that uses cache, or no cache when cache is nil.
+func (p StorageParameters) WithPayloadCache(cache PayloadCache) StorageParameters {
+	p.payloadCache = cache
+	return p
+}
+
+// WithPayloadCacheMetrics returns a copy of p whose payload cache reports metrics
+// to handler. It returns p unchanged when payload caching is off.
+func (p StorageParameters) WithPayloadCacheMetrics(handler metrics.Handler) StorageParameters {
+	if p.payloadCache != nil {
+		p.payloadCache = withPayloadCacheMetrics(p.payloadCache, handler)
+	}
 	return p
 }
 
@@ -343,14 +363,15 @@ func (v *externalRetrievalVisitor) WithMessageLimit(ctx context.Context) context
 func (v *externalRetrievalVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
 	startTime := time.Now()
 
-	// Identify which payloads are storage references and group them by driver.
-	type driverBatch struct {
-		driver  StorageDriver
-		indices []int
-		claims  []StorageDriverClaim
+	// Identify which payloads are storage references.
+	type retrieveItem struct {
+		index      int
+		driverName string
+		driver     StorageDriver
+		claim      StorageDriverClaim
+		cacheKey   string
 	}
-	var driverOrder []string
-	driverBatches := map[string]*driverBatch{}
+	var items []retrieveItem
 
 	result := make([]*commonpb.Payload, len(payloads))
 
@@ -376,14 +397,56 @@ func (v *externalRetrievalVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloa
 			return nil, fmt.Errorf("no storage driver registered with name %q", ref.DriverName)
 		}
 
-		batch, exists := driverBatches[ref.DriverName]
-		if !exists {
-			batch = &driverBatch{driver: driver}
-			driverBatches[ref.DriverName] = batch
-			driverOrder = append(driverOrder, ref.DriverName)
+		item := retrieveItem{
+			index:      i,
+			driverName: ref.DriverName,
+			driver:     driver,
+			claim:      StorageDriverClaim{ClaimData: ref.ClaimData},
 		}
-		batch.indices = append(batch.indices, i)
-		batch.claims = append(batch.claims, StorageDriverClaim{ClaimData: ref.ClaimData})
+		if v.params.payloadCache != nil {
+			item.cacheKey = claimCacheKey(ref.DriverName, ref.ClaimData)
+		}
+		items = append(items, item)
+	}
+
+	// Look up every reference in the payload cache at once.
+	cached := make([]*commonpb.Payload, len(items))
+	if v.params.payloadCache != nil {
+		var wg sync.WaitGroup
+		for j, item := range items {
+			wg.Go(func() {
+				if payload, found := v.params.cacheGet(ctx.Context, item.cacheKey); found {
+					cached[j] = payload
+				}
+			})
+		}
+		wg.Wait()
+	}
+
+	// Group the cache misses by driver.
+	type driverBatch struct {
+		driver    StorageDriver
+		indices   []int
+		claims    []StorageDriverClaim
+		cacheKeys []string
+	}
+	var driverOrder []string
+	driverBatches := map[string]*driverBatch{}
+
+	for j, item := range items {
+		if cached[j] != nil {
+			result[item.index] = cached[j]
+			continue
+		}
+		batch, exists := driverBatches[item.driverName]
+		if !exists {
+			batch = &driverBatch{driver: item.driver}
+			driverBatches[item.driverName] = batch
+			driverOrder = append(driverOrder, item.driverName)
+		}
+		batch.indices = append(batch.indices, item.index)
+		batch.claims = append(batch.claims, item.claim)
+		batch.cacheKeys = append(batch.cacheKeys, item.cacheKey)
 	}
 
 	// Fan out to each driver concurrently. The errgroup context is used as the
@@ -416,6 +479,7 @@ func (v *externalRetrievalVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloa
 			for j, p := range retrieved {
 				batchSize += int64(len(p.GetData()))
 				result[batch.indices[j]] = p
+				v.params.cacheSet(ctx.Context, batch.cacheKeys[j], p)
 			}
 			sizes[i] = batchSize
 			return nil
@@ -543,6 +607,9 @@ func (v *externalStorageVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloads
 					return err
 				}
 				result[batch.indices[j]] = refPayload
+				if v.params.payloadCache != nil {
+					v.params.cacheSet(ctx.Context, claimCacheKey(name, claim.ClaimData), batch.payloads[j])
+				}
 			}
 			sizes[i] = batchSize
 			return nil
