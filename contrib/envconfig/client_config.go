@@ -40,6 +40,11 @@ type ClientConfigProfile struct {
 	// Authority specifies the value to be used as the :authority pseudo-header and virtual host name.
 	// See [client.ConnectionOptions.Authority] for more.
 	Authority string
+	// Raw extension config, keyed by extension name. Loaded from TOML tables at profile.<profile>.ext.<name>, which are
+	// not interpreted or validated by this package (even in strict mode). Each [ClientConfigExtension] decodes its own
+	// entry. This data may be shared between copies of the profile, so it should be treated as read-only after initial
+	// load.
+	Ext map[string]map[string]any
 }
 
 // ClientConfigTLS is TLS configuration for a client.

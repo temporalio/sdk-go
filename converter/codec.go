@@ -7,9 +7,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
+	"sync"
 
 	commonpb "go.temporal.io/api/common/v1"
+	commonconverter "go.temporal.io/sdk/internal/common/converter"
+	"go.temporal.io/sdk/internal/common/workflowcontext"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
@@ -31,18 +35,7 @@ import (
 // Codec implementations should handle transient failures locally when
 // possible. Panicking outside Workflow Task processing does not request a
 // Workflow Task retry.
-type PayloadCodec interface {
-	// Encode optionally encodes the given payloads which are guaranteed to never
-	// be nil. The parameters must not be mutated.
-	Encode([]*commonpb.Payload) ([]*commonpb.Payload, error)
-
-	// Decode optionally decodes the given payloads which are guaranteed to never
-	// be nil. The parameters must not be mutated.
-	//
-	// For compatibility reasons, implementers should take care not to decode
-	// payloads that were not previously encoded.
-	Decode([]*commonpb.Payload) ([]*commonpb.Payload, error)
-}
+type PayloadCodec = commonconverter.PayloadCodec
 
 // ZlibCodecOptions are options for NewZlibCodec. All fields are optional.
 type ZlibCodecOptions struct {
@@ -53,6 +46,19 @@ type ZlibCodecOptions struct {
 }
 
 type zlibCodec struct{ options ZlibCodecOptions }
+
+// A zlib writer has an internal state, about 1 MB, when it is created, so writers are
+// reused across payloads. Reset returns a writer to its initial state.
+var zlibWriters = sync.Pool{New: func() any { return zlib.NewWriter(nil) }}
+
+// Readers are reused too.
+var zlibReaders sync.Pool
+
+// zlibReader is what zlib.NewReader returns: it is documented to implement zlib.Resetter as well.
+type zlibReader interface {
+	io.ReadCloser
+	zlib.Resetter
+}
 
 // NewZlibCodec creates a PayloadCodec for use in NewCodecDataConverter
 // to support zlib payload compression.
@@ -70,19 +76,25 @@ func (z *zlibCodec) Encode(payloads []*commonpb.Payload) ([]*commonpb.Payload, e
 			return payloads, err
 		}
 		var buf bytes.Buffer
-		w := zlib.NewWriter(&buf)
+		w := zlibWriters.Get().(*zlib.Writer)
+		w.Reset(&buf)
 		_, err = w.Write(b)
 		if closeErr := w.Close(); closeErr != nil && err == nil {
 			err = closeErr
 		}
+		compressed := buf.Bytes()
+		// The pooled writer still points at buf.
+		// Drop buf's reference to the output so that it does not stay there when returned to the pool.
+		buf = bytes.Buffer{}
+		zlibWriters.Put(w)
 		if err != nil {
 			return payloads, err
 		}
 		// Only set if smaller than original amount or has option to always encode
-		if buf.Len() < len(b) || z.options.AlwaysEncode {
+		if len(compressed) < len(b) || z.options.AlwaysEncode {
 			result[i] = &commonpb.Payload{
 				Metadata: map[string][]byte{MetadataEncoding: []byte("binary/zlib")},
-				Data:     buf.Bytes(),
+				Data:     compressed,
 			}
 		} else {
 			result[i] = p
@@ -99,7 +111,17 @@ func (*zlibCodec) Decode(payloads []*commonpb.Payload) ([]*commonpb.Payload, err
 			result[i] = p
 			continue
 		}
-		r, err := zlib.NewReader(bytes.NewReader(p.Data))
+		src := bytes.NewReader(p.Data)
+		r, reused := zlibReaders.Get().(zlibReader)
+		var err error
+		if reused {
+			err = r.Reset(src, nil)
+		} else {
+			var zr io.ReadCloser
+			if zr, err = zlib.NewReader(src); err == nil {
+				r = zr.(zlibReader)
+			}
+		}
 		if err != nil {
 			return payloads, err
 		}
@@ -108,6 +130,9 @@ func (*zlibCodec) Decode(payloads []*commonpb.Payload) ([]*commonpb.Payload, err
 		if closeErr := r.Close(); closeErr != nil && err == nil {
 			err = closeErr
 		}
+		// Clear src so that the last buffer is not stored in the pool.
+		src.Reset(nil)
+		zlibReaders.Put(r)
 		if err != nil {
 			return payloads, err
 		}
@@ -160,11 +185,88 @@ func NewCodecDataConverter(parent DataConverter, codecs ...PayloadCodec) DataCon
 }
 
 func (e *CodecDataConverter) encode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
-	return encodePayloads(payloads, e.codecs)
+	encoded, err := encodePayloads(payloads, e.codecs)
+	return encoded, tagCodecRequestedTaskFailure(err)
 }
 
 func (e *CodecDataConverter) decode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
-	return decodePayloads(payloads, e.codecs)
+	decoded, err := decodePayloads(payloads, e.codecs)
+	return decoded, tagCodecRequestedTaskFailure(err)
+}
+
+// PayloadCodecProvider is an optional capability for DataConverters that expose
+// their codec-only stage. Wrappers must forward it explicitly; value conversion
+// is never used to discover codecs. Codec returns nil when no codecs are configured.
+type PayloadCodecProvider = commonconverter.PayloadCodecProvider
+
+// Codec returns the codec-only stages, including those exposed by a parent
+// PayloadCodecProvider, without invoking value conversion or converter context
+// callbacks. It returns nil if no stages are configured.
+func (e *CodecDataConverter) Codec() PayloadCodec {
+	var codecs payloadCodecChain
+	for {
+		codecs = append(codecs, e.codecs...)
+		if parent, ok := e.parent.(*CodecDataConverter); ok {
+			e = parent
+			continue
+		}
+		if parent, ok := e.parent.(PayloadCodecProvider); ok {
+			codec := parent.Codec()
+			if codec != nil {
+				codecs = append(codecs, codec)
+			}
+		}
+		break
+	}
+	if len(codecs) == 0 {
+		return nil
+	}
+	return codecs
+}
+
+type payloadCodecChain []PayloadCodec
+
+func (c payloadCodecChain) validate() error {
+	for i, codec := range c {
+		if codec == nil {
+			return fmt.Errorf("payload codec stage %d is nil after context binding", i)
+		}
+	}
+	return nil
+}
+
+func (c payloadCodecChain) Encode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	if err := c.validate(); err != nil {
+		return nil, err
+	}
+	return encodePayloads(payloads, c)
+}
+
+func (c payloadCodecChain) Decode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	if err := c.validate(); err != nil {
+		return nil, err
+	}
+	return decodePayloads(payloads, c)
+}
+
+func (c payloadCodecChain) WithSerializationContext(ctx SerializationContext) PayloadCodec {
+	codecs := slices.Clone(c)
+	for i, codec := range c {
+		if contextual, ok := codec.(PayloadCodecWithSerializationContext); ok {
+			codecs[i] = contextual.WithSerializationContext(ctx)
+		}
+	}
+	return codecs
+}
+
+func (c payloadCodecChain) WithWorkflowContext(ctx workflowcontext.Context) PayloadCodec {
+	codecs := slices.Clone(c)
+	for i, codec := range c {
+		if contextual, ok := codec.(commonconverter.WorkflowContextAwarePayloadCodec); ok {
+			codecs[i] = contextual.WithWorkflowContext(ctx)
+		}
+	}
+	return codecs
 }
 
 // ToPayload implements DataConverter.ToPayload performing encoding on the
@@ -448,6 +550,10 @@ func NewRemoteDataConverter(parent DataConverter, options RemoteDataConverterOpt
 	options.Endpoint = strings.TrimSuffix(options.Endpoint, "/")
 	payloadCodec := NewRemotePayloadCodec(RemotePayloadCodecOptions(options))
 	return &remoteDataConverter{parent, payloadCodec}
+}
+
+func (rdc *remoteDataConverter) Codec() PayloadCodec {
+	return (&CodecDataConverter{rdc.parent, []PayloadCodec{rdc.payloadCodec}}).Codec()
 }
 
 // ToPayload implements DataConverter.ToPayload performing remote encoding on the

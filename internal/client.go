@@ -436,9 +436,12 @@ type (
 		//  - serviceerror.Internal
 		//  - serviceerror.Unavailable
 		//  - serviceerror.NotFound
+		//
+		// Deprecated: Use DescribeWorkflow and its response's RawResponse field instead.
 		DescribeWorkflowExecution(ctx context.Context, workflowID, runID string) (*workflowservice.DescribeWorkflowExecutionResponse, error)
 
 		// DescribeWorkflow returns information about the specified workflow execution.
+		// The response's RawResponse field contains the full server response.
 		// The errors it can return:
 		//  - serviceerror.InvalidArgument
 		//  - serviceerror.Internal
@@ -776,6 +779,15 @@ type (
 		// TaskQueue is the optional Task Queue to include in the Activity
 		// serialization context when encoding Result or Err.
 		TaskQueue string
+
+		// NexusSerializationContext is the Nexus serialization context to encode Result and Err with,
+		// in place of the Activity serialization context. When completing a standalone Activity started by a
+		// Nexus operation handler, set it to the value of activity.GetInfo(ctx).NexusSerializationContext
+		// captured in the Activity, because the Nexus caller decodes the result with that context.
+		// Leave nil otherwise.
+		//
+		// NOTE: Experimental
+		NexusSerializationContext *converter.NexusSerializationContext
 	}
 
 	// CompleteActivityByActivityIDOptions provides options for CompleteActivityByActivityIDWithOptions.
@@ -828,6 +840,15 @@ type (
 		// TaskQueue is the optional Task Queue to include in the Activity
 		// serialization context when encoding Result or Err.
 		TaskQueue string
+
+		// NexusSerializationContext is the Nexus serialization context to encode Result and Err with,
+		// in place of the Activity serialization context. When completing a standalone Activity started by a
+		// Nexus operation handler, set it to the value of activity.GetInfo(ctx).NexusSerializationContext
+		// captured in the Activity, because the Nexus caller decodes the result with that context.
+		// Leave nil otherwise.
+		//
+		// NOTE: Experimental
+		NexusSerializationContext *converter.NexusSerializationContext
 	}
 
 	// RecordActivityHeartbeatOptions provides options for RecordActivityHeartbeatWithOptions.
@@ -872,6 +893,15 @@ type (
 		// TaskQueue is the optional Task Queue to include in the Activity
 		// serialization context when encoding Details.
 		TaskQueue string
+
+		// NexusSerializationContext is the Nexus serialization context to encode Details with, in
+		// place of the Activity serialization context. When heartbeating a standalone Activity started
+		// by a Nexus operation handler, set it to the value of activity.GetInfo(ctx).NexusSerializationContext
+		// captured in the Activity, because the worker and the Nexus caller decode the details with that
+		// context. Leave nil otherwise.
+		//
+		// NOTE: Experimental
+		NexusSerializationContext *converter.NexusSerializationContext
 	}
 
 	// ClientOptions are optional parameters for Client creation.
@@ -941,6 +971,17 @@ type (
 		//
 		// default: no extra options
 		ConnectionOptions ConnectionOptions
+
+		// RPCTimeout limits the duration of an SDK RPC, including retries. A shorter
+		// deadline on the call's context takes precedence. This can be raised to
+		// allow RPCs to take longer than the default 10 seconds.
+		//
+		// Calls with dedicated timeouts, such as long polls and GetSystemInfo, are
+		// not affected. This does not apply to direct calls on WorkflowService or
+		// OperatorService.
+		//
+		// Zero uses the default of 10 seconds. Negative values are not allowed.
+		RPCTimeout time.Duration
 
 		// Optional: HeadersProvider will be invoked on every outgoing gRPC request and gives user ability to
 		// set custom request headers. This can be used to set auth headers for example.
@@ -1542,6 +1583,10 @@ func newClient(ctx context.Context, options ClientOptions, existing Client) (Cli
 		return nil, fmt.Errorf("cannot set both TLS and TLSDisabled in ConnectionOptions")
 	}
 
+	if options.RPCTimeout < 0 {
+		return nil, fmt.Errorf("RPCTimeout must not be negative: %v", options.RPCTimeout)
+	}
+
 	if options.Credentials != nil {
 		if err := options.Credentials.applyToOptions(&options.ConnectionOptions); err != nil {
 			return nil, err
@@ -1588,6 +1633,7 @@ func newClientPluginRoot(ctx context.Context, options ClientPluginNewClientOptio
 		}
 	} else if existing, _ = options.FromExisting.(*WorkflowClient); existing != nil {
 		connection = existing.conn
+		options.ClientOptions.ConnectionOptions.excludeInternalFromRetry = existing.excludeInternalFromRetry
 	} else if options.FromExisting != nil {
 		return nil, fmt.Errorf("existing client must have been created directly from a client package call")
 	}
@@ -1628,6 +1674,7 @@ func newDialParameters(options *ClientOptions, excludeInternalFromRetry *atomic.
 
 // NewServiceClient creates workflow client from workflowservice.WorkflowServiceClient. Must be used internally in unit tests only.
 func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClient, conn *grpc.ClientConn, options ClientOptions) *WorkflowClient {
+	headerCodec := headerCodecFromDataConverter(options.DataConverter)
 	// Namespace can be empty in unit tests.
 	if options.Namespace == "" {
 		options.Namespace = DefaultNamespace
@@ -1660,9 +1707,9 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 
 	// Collect set of applicable worker plugins and interceptors
 	var workerPlugins []WorkerPlugin
-	var clientPluginNames []string
+	var clientPlugins []ClientPlugin
 	for _, plugin := range options.Plugins {
-		clientPluginNames = append(clientPluginNames, plugin.Name())
+		clientPlugins = append(clientPlugins, plugin)
 		if workerPlugin, _ := plugin.(WorkerPlugin); workerPlugin != nil {
 			workerPlugins = append(workerPlugins, workerPlugin)
 		}
@@ -1690,6 +1737,7 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 	if err != nil {
 		panic(fmt.Sprintf("invalid ExternalStorage options: %v", err))
 	}
+	storageParams = storageParams.WithNamespace(options.Namespace)
 
 	storageDriverTypes := collectStorageDriverTypes(options.ExternalStorage.Drivers)
 
@@ -1717,16 +1765,18 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 		logger:                   options.Logger,
 		identity:                 options.Identity,
 		dataConverter:            options.DataConverter,
+		headerCodec:              headerCodec,
 		failureConverter:         options.FailureConverter,
 		contextPropagators:       options.ContextPropagators,
 		workerPlugins:            workerPlugins,
 		workerInterceptors:       workerInterceptors,
-		clientPluginNames:        clientPluginNames,
+		clientPlugins:            clientPlugins,
 		excludeInternalFromRetry: options.ConnectionOptions.excludeInternalFromRetry,
 		eagerDispatcher: &eagerWorkflowDispatcher{
 			workersByTaskQueue: make(map[string]map[eagerWorker]struct{}),
 		},
 		getSystemInfoTimeout:    options.ConnectionOptions.GetSystemInfoTimeout,
+		rpcTimeout:              options.RPCTimeout,
 		workerHeartbeatInterval: heartbeatInterval,
 		workerGroupingKey:       uuid.NewString(),
 		sdkName:                 sdkName,
@@ -1782,6 +1832,10 @@ func (op *withStartWorkflowOperationImpl) set(workflowRun WorkflowRun, err error
 //
 // Exposed as: [go.temporal.io/sdk/client.NewNamespaceClient]
 func NewNamespaceClient(options ClientOptions) (NamespaceClient, error) {
+	if options.RPCTimeout < 0 {
+		return nil, fmt.Errorf("RPCTimeout must not be negative: %v", options.RPCTimeout)
+	}
+
 	// Initialize root tags
 	if options.MetricsHandler == nil {
 		options.MetricsHandler = metrics.NopHandler
@@ -1811,12 +1865,13 @@ func newNamespaceServiceClient(workflowServiceClient workflowservice.WorkflowSer
 		metricsHandler:   options.MetricsHandler,
 		logger:           options.Logger,
 		identity:         options.Identity,
+		rpcTimeout:       options.RPCTimeout,
 	}
 }
 
 // NewValue creates a new converter.EncodedValue which can be used to decode binary data returned by Temporal.  For example:
-// User had Activity.RecordHeartbeat(ctx, "my-heartbeat") and then got response from calling Client.DescribeWorkflowExecution.
-// The response contains binary field PendingActivityInfo.HeartbeatDetails,
+// User had Activity.RecordHeartbeat(ctx, "my-heartbeat") and then got a response from calling Client.DescribeWorkflow.
+// The response's RawResponse contains the binary field PendingActivityInfo.HeartbeatDetails,
 // which can be decoded by using:
 //
 //	var result string // This need to be same type as the one passed to RecordHeartbeat
@@ -1828,8 +1883,8 @@ func NewValue(data *commonpb.Payloads) converter.EncodedValue {
 }
 
 // NewValues creates a new converter.EncodedValues which can be used to decode binary data returned by Temporal. For example:
-// User had Activity.RecordHeartbeat(ctx, "my-heartbeat", 123) and then got response from calling Client.DescribeWorkflowExecution.
-// The response contains binary field PendingActivityInfo.HeartbeatDetails,
+// User had Activity.RecordHeartbeat(ctx, "my-heartbeat", 123) and then got a response from calling Client.DescribeWorkflow.
+// The response's RawResponse contains the binary field PendingActivityInfo.HeartbeatDetails,
 // which can be decoded by using:
 //
 //	var result1 string

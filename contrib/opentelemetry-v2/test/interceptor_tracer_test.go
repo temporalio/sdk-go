@@ -1,4 +1,4 @@
-package opentelemetry
+package opentelemetry_test
 
 import (
 	"context"
@@ -16,6 +16,7 @@ import (
 	"go.temporal.io/api/operatorservice/v1"
 
 	"go.temporal.io/sdk/client"
+	temporalotel "go.temporal.io/sdk/contrib/opentelemetry-v2"
 	"go.temporal.io/sdk/interceptor/tracing"
 	temporalnexus "go.temporal.io/sdk/temporalnexus"
 	"go.temporal.io/sdk/testsuite"
@@ -60,10 +61,10 @@ func TestIntegrationTestSuite(t *testing.T) {
 	suite.Run(t, new(integrationTestSuite))
 }
 
-func (s *integrationTestSuite) runScenario(pluginOpts PluginOptions) []sdktrace.ReadOnlySpan {
+func (s *integrationTestSuite) runScenario(pluginOpts temporalotel.PluginOptions) []sdktrace.ReadOnlySpan {
 	recorder := s.newSpanRecorder()
 
-	plugin, err := NewPlugin(pluginOpts)
+	plugin, err := temporalotel.NewPlugin(pluginOpts)
 	s.Require().NoError(err)
 
 	c := s.newDevServerClient(client.Options{
@@ -404,7 +405,7 @@ var noTemporalSpansTree = []string{
 
 func (s *integrationTestSuite) TestComprehensive() {
 	s.Run("with-temporal-spans", func() {
-		spans := s.runScenario(PluginOptions{TracerOptions: tracing.TracerOptions{AddTemporalSpans: true}})
+		spans := s.runScenario(temporalotel.PluginOptions{TracerOptions: tracing.TracerOptions{AddTemporalSpans: true}})
 		s.Require().Equal(fullTree, s.formatSpanTree(spans))
 		s.requireUniqueSpanIDs(spans)
 		s.requireUpdateIDs(spans)
@@ -413,7 +414,7 @@ func (s *integrationTestSuite) TestComprehensive() {
 	})
 
 	s.Run("no-temporal-spans", func() {
-		spans := s.runScenario(PluginOptions{})
+		spans := s.runScenario(temporalotel.PluginOptions{})
 		s.Require().Equal(noTemporalSpansTree, s.formatSpanTree(spans))
 		s.requireUniqueSpanIDs(spans)
 	})

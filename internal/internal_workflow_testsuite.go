@@ -27,6 +27,7 @@ import (
 	enumspb "go.temporal.io/api/enums/v1"
 	failurepb "go.temporal.io/api/failure/v1"
 	nexuspb "go.temporal.io/api/nexus/v1"
+	sdk "go.temporal.io/api/sdk/v1"
 	"go.temporal.io/api/serviceerror"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
@@ -841,7 +842,9 @@ func (env *testWorkflowEnvironmentImpl) getWorkflowDefinition(wt WorkflowType) (
 	}
 	var dynamic bool
 	if d, ok := wf.(string); ok && d == "dynamic" {
+		env.registry.Lock()
 		wf = env.registry.dynamicWorkflow
+		env.registry.Unlock()
 		dynamic = true
 	}
 	// A dynamic workflow may itself be a WorkflowDefinitionFactory (e.g. the
@@ -1290,6 +1293,11 @@ func (env *testWorkflowEnvironmentImpl) RequestCancelTimer(timerID TimerID) {
 	}, true)
 }
 
+func (env *testWorkflowEnvironmentImpl) roundTripFailure(err error) (converted error) {
+	defer recoverCodecWorkflowTaskFailure(&converted)
+	return env.failureConverter.FailureToError(env.failureConverter.ErrorToFailure(err))
+}
+
 func (env *testWorkflowEnvironmentImpl) Complete(result *commonpb.Payloads, err error) {
 	if env.isWorkflowCompleted {
 		env.logger.Debug("Workflow already completed.")
@@ -1307,13 +1315,14 @@ func (env *testWorkflowEnvironmentImpl) Complete(result *commonpb.Payloads, err 
 		var workflowPanicErr *workflowPanicError
 		var workflowExecutionAlreadyStartedErr *serviceerror.WorkflowExecutionAlreadyStarted
 		var childWorkflowExecutionAlreadyStartedErr *ChildWorkflowExecutionAlreadyStartedError
-		if errors.As(err, &canceledErr) || errors.As(err, &continueAsNewErr) || errors.As(err, &timeoutErr) || errors.As(err, &workflowExecutionAlreadyStartedErr) || errors.As(err, &childWorkflowExecutionAlreadyStartedErr) {
+		if codecErr, ok := codecWorkflowTaskFailureFrom(err); ok {
+			env.testError = codecErr
+		} else if errors.As(err, &canceledErr) || errors.As(err, &continueAsNewErr) || errors.As(err, &timeoutErr) || errors.As(err, &workflowExecutionAlreadyStartedErr) || errors.As(err, &childWorkflowExecutionAlreadyStartedErr) {
 			env.testError = err
 		} else if errors.As(err, &workflowPanicErr) {
 			env.testError = newPanicError(workflowPanicErr.value, workflowPanicErr.stackTrace)
 		} else {
-			failure := env.failureConverter.ErrorToFailure(err)
-			env.testError = env.failureConverter.FailureToError(failure)
+			env.testError = env.roundTripFailure(err)
 		}
 
 		if !env.isChildWorkflow() {
@@ -2679,6 +2688,7 @@ func (env *testWorkflowEnvironmentImpl) newTimer(
 func (env *testWorkflowEnvironmentImpl) NewTimer(
 	d time.Duration,
 	options TimerOptions,
+	_ []*sdk.EventGroupMarker,
 	callback ResultHandler,
 ) *TimerID {
 	return env.newTimer(d, options, callback, true)
@@ -2774,7 +2784,7 @@ func (env *testWorkflowEnvironmentImpl) RequestCancelChildWorkflow(_, workflowID
 	}
 }
 
-func (env *testWorkflowEnvironmentImpl) RequestCancelExternalWorkflow(namespace, workflowID, runID string, callback ResultHandler) {
+func (env *testWorkflowEnvironmentImpl) RequestCancelExternalWorkflow(namespace, workflowID, runID string, _ []*sdk.EventGroupMarker, callback ResultHandler) {
 	if env.workflowInfo.WorkflowExecution.ID == workflowID {
 		cancelFunc := func() {
 			env.workflowCancelHandler()
@@ -2847,6 +2857,7 @@ func (env *testWorkflowEnvironmentImpl) SignalExternalWorkflow(
 	arg any,
 	header *commonpb.Header,
 	childWorkflowOnly bool,
+	_ []*sdk.EventGroupMarker,
 	callback ResultHandler,
 ) {
 	// check if target workflow is a known workflow
@@ -2977,6 +2988,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteNexusOperation(
 		env.NewTimer(
 			params.options.ScheduleToCloseTimeout,
 			TimerOptions{},
+			nil,
 			func(result *commonpb.Payloads, err error) {
 				timeoutErr := failureConverter.FailureToError(nexusOperationFailure(
 					params,
@@ -3007,6 +3019,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteNexusOperation(
 		env.NewTimer(
 			params.options.ScheduleToStartTimeout,
 			TimerOptions{},
+			nil,
 			func(result *commonpb.Payloads, err error) {
 				env.postCallback(func() {
 					// Only timeout if operation hasn't started yet
@@ -3317,7 +3330,7 @@ func (env *testWorkflowEnvironmentImpl) makeUniqueNexusOperationToken(
 	return fmt.Sprintf("%s_%s_%s", service, operation, token)
 }
 
-func (env *testWorkflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads, error), callback ResultHandler, _ string) {
+func (env *testWorkflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads, error), callback ResultHandler, _ string, _ []*sdk.EventGroupMarker) {
 	mockMethod := mockMethodForSideEffect
 	if _, ok := env.expectedWorkflowMockCalls[mockMethod]; !ok {
 		callback(f())
@@ -3348,16 +3361,16 @@ func (env *testWorkflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads,
 	callback(encoded, nil)
 }
 
-func (env *testWorkflowEnvironmentImpl) GetVersion(changeID string, minSupported, maxSupported Version) (retVersion Version) {
+func (env *testWorkflowEnvironmentImpl) GetVersion(changeID string, minSupported, maxSupported Version, _ []*sdk.EventGroupMarker) (retVersion Version) {
 	if mockVersion, ok := env.getMockedVersion(changeID, changeID, minSupported, maxSupported); ok {
 		// GetVersion for changeID is mocked
-		_ = env.UpsertSearchAttributes(createSearchAttributesForChangeVersion(changeID, mockVersion, env.changeVersions))
+		_ = env.UpsertSearchAttributes(createSearchAttributesForChangeVersion(changeID, mockVersion, env.changeVersions), nil)
 		env.changeVersions[changeID] = mockVersion
 		return mockVersion
 	}
 	if mockVersion, ok := env.getMockedVersion(mock.Anything, changeID, minSupported, maxSupported); ok {
 		// GetVersion is mocked with any changeID.
-		_ = env.UpsertSearchAttributes(createSearchAttributesForChangeVersion(changeID, mockVersion, env.changeVersions))
+		_ = env.UpsertSearchAttributes(createSearchAttributesForChangeVersion(changeID, mockVersion, env.changeVersions), nil)
 		env.changeVersions[changeID] = mockVersion
 		return mockVersion
 	}
@@ -3376,7 +3389,7 @@ func (env *testWorkflowEnvironmentImpl) GetVersion(changeID string, minSupported
 			MaxSupported: maxSupported,
 		},
 	)
-	_ = env.UpsertSearchAttributes(createSearchAttributesForChangeVersion(changeID, version, env.changeVersions))
+	_ = env.UpsertSearchAttributes(createSearchAttributesForChangeVersion(changeID, version, env.changeVersions), nil)
 	env.changeVersions[changeID] = version
 	return version
 }
@@ -3420,7 +3433,7 @@ func getMockMethodForGetVersion(changeID string) string {
 	return fmt.Sprintf("%v_%v", mockMethodForGetVersion, changeID)
 }
 
-func (env *testWorkflowEnvironmentImpl) UpsertSearchAttributes(attributes map[string]any) error {
+func (env *testWorkflowEnvironmentImpl) UpsertSearchAttributes(attributes map[string]any, _ []*sdk.EventGroupMarker) error {
 	attr, err := validateAndSerializeSearchAttributes(attributes)
 
 	env.workflowInfo.SearchAttributes = mergeSearchAttributes(env.workflowInfo.SearchAttributes, attr)
@@ -3450,7 +3463,7 @@ func validateAndSerializeTypedSearchAttributes(searchAttributes map[SearchAttrib
 	return rawSearchAttributes, nil
 }
 
-func (env *testWorkflowEnvironmentImpl) UpsertTypedSearchAttributes(attributes SearchAttributes) error {
+func (env *testWorkflowEnvironmentImpl) UpsertTypedSearchAttributes(attributes SearchAttributes, _ []*sdk.EventGroupMarker) error {
 	// Don't immediately return the error from validateAndSerializeTypedSearchAttributes, as we may need to call the mock
 	rawSearchAttributes, err := validateAndSerializeTypedSearchAttributes(attributes.untypedValue)
 
@@ -3468,7 +3481,7 @@ func (env *testWorkflowEnvironmentImpl) UpsertTypedSearchAttributes(attributes S
 	return err
 }
 
-func (env *testWorkflowEnvironmentImpl) UpsertMemo(memoMap map[string]any) error {
+func (env *testWorkflowEnvironmentImpl) UpsertMemo(memoMap map[string]any, _ []*sdk.EventGroupMarker) error {
 	memo, err := validateAndSerializeMemo(memoMap, env.dataConverter, env.TryUse(SDKFlagMemoUserDCEncode))
 
 	env.workflowInfo.Memo = mergeMemo(env.workflowInfo.Memo, memo)
@@ -3485,7 +3498,7 @@ func (env *testWorkflowEnvironmentImpl) UpsertMemo(memoMap map[string]any) error
 	return err
 }
 
-func (env *testWorkflowEnvironmentImpl) MutableSideEffect(id string, f func() any, equals func(a, b any) bool, _ string) converter.EncodedValue {
+func (env *testWorkflowEnvironmentImpl) MutableSideEffect(id string, f func() any, equals func(a, b any) bool, _ string, _ []*sdk.EventGroupMarker) converter.EncodedValue {
 	mockMethod := mockMethodForMutableSideEffect
 	if _, ok := env.expectedWorkflowMockCalls[mockMethod]; !ok {
 		// Mirror the real worker's semantics: only record a new value when the
@@ -3575,6 +3588,7 @@ func (env *testWorkflowEnvironmentImpl) cancelWorkflowByID(workflowID string, ru
 			env.workflowInfo.Namespace,
 			workflowID,
 			runID,
+			nil,
 			callback,
 		)
 	}, true)
@@ -3961,6 +3975,7 @@ func (h *testNexusOperationHandle) startedCallback(token string, e error) {
 		h.env.NewTimer(
 			h.params.options.StartToCloseTimeout,
 			TimerOptions{},
+			nil,
 			func(result *commonpb.Payloads, err error) {
 				h.env.postCallback(func() {
 					// Only timeout if operation hasn't completed yet

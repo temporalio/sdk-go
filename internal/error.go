@@ -11,8 +11,10 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	failurepb "go.temporal.io/api/failure/v1"
+	sdkpb "go.temporal.io/api/sdk/v1"
 
 	"go.temporal.io/sdk/converter"
+	"go.temporal.io/sdk/internal/codecerror"
 )
 
 /*
@@ -234,6 +236,8 @@ type (
 		//    we can't introduce an option, say WithWorkflowRetryPolicy, for backward compatibility.
 		//    See #676 or IntegrationTestSuite::TestContinueAsNewWithWithChildWF for more details.
 		RetryPolicy *RetryPolicy
+
+		eventGroupMarkers []*sdkpb.EventGroupMarker
 	}
 
 	// ContinueAsNewErrorOptions specifies optional attributes to be carried over to the next run.
@@ -252,6 +256,12 @@ type (
 		// For example, choose to AutoUpgrade on continue-as-new instead of inheriting the pinned version of the previous run.
 		// NOTE: Upgrade-on-Continue-as-New is currently experimental.
 		InitialVersioningBehavior ContinueAsNewVersioningBehavior
+
+		// EventGroups are explicit Event Groups attached to the continue-as-new command.
+		// They are combined with any groups on the context.
+		//
+		// NOTE: Experimental (Event Groups)
+		EventGroups []EventGroup
 	}
 
 	// UnknownExternalWorkflowExecutionError can be returned when external workflow doesn't exist
@@ -655,22 +665,23 @@ func NewContinueAsNewError(ctx Context, wfn any, args ...any) error {
 //
 // Exposed as: [go.temporal.io/sdk/workflow.NewContinueAsNewErrorWithOptions]
 func NewContinueAsNewErrorWithOptions(ctx Context, options ContinueAsNewErrorOptions, wfn any, args ...any) error {
-	err := NewContinueAsNewError(ctx, wfn, args...)
-
-	var continueAsNewErr *ContinueAsNewError
-	if errors.As(err, &continueAsNewErr) {
-		if options.RetryPolicy != nil {
-			continueAsNewErr.RetryPolicy = options.RetryPolicy
-		}
-		continueAsNewErr.BackoffStartInterval = options.BackoffStartInterval
-		continueAsNewErr.InitialVersioningBehavior = options.InitialVersioningBehavior
-	}
-
-	return err
+	i := getWorkflowOutboundInterceptor(ctx)
+	// Put header on context before executing
+	ctx = workflowContextWithNewHeader(ctx)
+	return i.NewContinueAsNewErrorWithOptions(ctx, options, wfn, args...)
 }
 
 func (wc *workflowEnvironmentInterceptor) NewContinueAsNewError(
 	ctx Context,
+	wfn any,
+	args ...any,
+) error {
+	return wc.NewContinueAsNewErrorWithOptions(ctx, ContinueAsNewErrorOptions{}, wfn, args...)
+}
+
+func (wc *workflowEnvironmentInterceptor) NewContinueAsNewErrorWithOptions(
+	ctx Context,
+	continueAsNewOptions ContinueAsNewErrorOptions,
 	wfn any,
 	args ...any,
 ) error {
@@ -686,12 +697,12 @@ func (wc *workflowEnvironmentInterceptor) NewContinueAsNewError(
 		panic(err)
 	}
 
-	header, err := workflowHeaderPropagated(ctx, options.ContextPropagators)
+	header, err := workflowHeaderPropagated(ctx, options.ContextPropagators, nil)
 	if err != nil {
 		return err
 	}
 
-	return &ContinueAsNewError{
+	continueAsNewErr := &ContinueAsNewError{
 		WorkflowType:              workflowType,
 		Input:                     input,
 		Header:                    header,
@@ -699,10 +710,16 @@ func (wc *workflowEnvironmentInterceptor) NewContinueAsNewError(
 		WorkflowExecutionTimeout:  options.WorkflowExecutionTimeout,
 		WorkflowRunTimeout:        options.WorkflowRunTimeout,
 		WorkflowTaskTimeout:       options.WorkflowTaskTimeout,
+		BackoffStartInterval:      continueAsNewOptions.BackoffStartInterval,
 		VersioningIntent:          options.VersioningIntent,
 		RetryPolicy:               nil, // The retry policy can't be propagated like other options due to #676.
-		InitialVersioningBehavior: options.InitialVersioningBehavior,
+		InitialVersioningBehavior: continueAsNewOptions.InitialVersioningBehavior,
+		eventGroupMarkers:         eventGroupMarkersToProto(ctx, continueAsNewOptions.EventGroups),
 	}
+	if continueAsNewOptions.RetryPolicy != nil {
+		continueAsNewErr.RetryPolicy = continueAsNewOptions.RetryPolicy
+	}
+	return continueAsNewErr
 }
 
 // NewActivityNotRegisteredError creates a new ActivityNotRegisteredError.
@@ -842,6 +859,43 @@ func newPanicError(value any, stackTrace string) error {
 
 func newWorkflowPanicError(value any, stackTrace string) error {
 	return &workflowPanicError{value: value, stackTrace: stackTrace}
+}
+
+// codecWorkflowTaskFailureFrom returns the codec-tagged error in err, unwrapping a
+// workflowPanicError so it is not treated as a workflow panic.
+func codecWorkflowTaskFailureFrom(err error) (error, bool) {
+	if panicErr, ok := err.(*workflowPanicError); ok {
+		if inner, ok := panicErr.value.(error); ok && codecerror.Has(inner) {
+			return inner, true
+		}
+		return nil, false
+	}
+	if codecerror.Has(err) {
+		return err, true
+	}
+	return nil, false
+}
+
+// recoverCodecWorkflowTaskFailure, when deferred, turns a codec-tagged panic into
+// *err. Failure conversion panics on codec errors outside workflow coroutines.
+func recoverCodecWorkflowTaskFailure(err *error) {
+	if p := recover(); p != nil {
+		if panicErr, ok := p.(error); ok {
+			if codecErr, ok := codecWorkflowTaskFailureFrom(panicErr); ok {
+				*err = codecErr
+				return
+			}
+		}
+		panic(p)
+	}
+}
+
+// panicOnCodecWorkflowTaskFailure panics codec-tagged errors so workflow code
+// cannot suppress them.
+func panicOnCodecWorkflowTaskFailure(err error) {
+	if _, ok := codecWorkflowTaskFailureFrom(err); ok {
+		panic(err)
+	}
 }
 
 // Error from error interface

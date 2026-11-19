@@ -80,6 +80,67 @@ func TestStopCancelsInFlightHeartbeatRPC(t *testing.T) {
 	})
 }
 
+func TestWorkerControlTaskQueueLifecycle(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name              string
+		heartbeats        bool
+		commands          bool
+		heartbeatRejected bool
+	}{
+		{name: "unsupported"},
+		{name: "commands without heartbeats", commands: true},
+		{name: "heartbeats only", heartbeats: true},
+		{name: "heartbeats and commands", heartbeats: true, commands: true},
+		{name: "heartbeat rejected", heartbeats: true, commands: true, heartbeatRejected: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				ctrl := gomock.NewController(t)
+				service := workflowservicemock.NewMockWorkflowServiceClient(ctrl)
+				service.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any(), gomock.Any()).
+					Return(&workflowservice.DescribeNamespaceResponse{
+						NamespaceInfo: &namespacepb.NamespaceInfo{Capabilities: &namespacepb.NamespaceInfo_Capabilities{
+							WorkerHeartbeats: tc.heartbeats,
+							WorkerCommands:   tc.commands,
+						}},
+					}, nil)
+				if tc.heartbeats {
+					service.EXPECT().GetSystemInfo(gomock.Any(), gomock.Any(), gomock.Any()).
+						Return(&workflowservice.GetSystemInfoResponse{}, nil).AnyTimes()
+					var heartbeatErr error
+					if tc.heartbeatRejected {
+						heartbeatErr = status.Error(codes.Unimplemented, "worker heartbeats not supported")
+					}
+					service.EXPECT().RecordWorkerHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).
+						Return(&workflowservice.RecordWorkerHeartbeatResponse{}, heartbeatErr).AnyTimes()
+				}
+				if tc.heartbeats && tc.commands {
+					service.EXPECT().PollNexusTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
+						DoAndReturn(func(ctx context.Context, _ *workflowservice.PollNexusTaskQueueRequest, _ ...grpc.CallOption) (*workflowservice.PollNexusTaskQueueResponse, error) {
+							<-ctx.Done()
+							return nil, ctx.Err()
+						}).AnyTimes()
+				}
+
+				client := NewServiceClient(service, nil, ClientOptions{Namespace: "test-ns"})
+				worker := NewAggregatedWorker(client, "worker-queue", WorkerOptions{})
+				hw := worker.executionParams.namespaceWorker
+				require.Empty(t, hw.controlTaskQueue())
+				require.NoError(t, client.heartbeatManager.registerWorker(worker))
+				synctest.Wait()
+				if tc.heartbeats && tc.commands && !tc.heartbeatRejected {
+					require.Equal(t, workerControlTaskQueue("test-ns", client.workerGroupingKey), hw.controlTaskQueue())
+				} else {
+					require.Empty(t, hw.controlTaskQueue())
+				}
+				client.heartbeatManager.unregisterWorker(worker)
+				require.Empty(t, hw.controlTaskQueue())
+			})
+		})
+	}
+}
+
 func TestWorkerCommandPollUsesWorkerCommandsQueue(t *testing.T) {
 	t.Parallel()
 

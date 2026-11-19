@@ -63,6 +63,28 @@ Set the public fields on `Options` (e.g. `ClientOptions`, `WorkerOptions`) in
 the configure callback to override any defaults programmatically. User overrides
 are applied last, so they always win.
 
+### Credentials from AWS Secrets Manager
+
+To keep credentials out of env vars and the Lambda package, store them in AWS
+Secrets Manager and configure only the secret IDs (names or ARNs). The
+[`secretsmanager`](../secretsmanager/README.md) envconfig extension is always
+enabled, so no code changes are needed:
+
+| Env var | TOML (under `profile.<profile>.ext.aws_secrets_manager`) |
+|---|---|
+| `TEMPORAL_EXT_AWS_SECRETS_MANAGER_API_KEY_ID` | `api_key_id` |
+| `TEMPORAL_EXT_AWS_SECRETS_MANAGER_TLS_CLIENT_CERT_ID` | `tls.client_cert_id` |
+| `TEMPORAL_EXT_AWS_SECRETS_MANAGER_TLS_CLIENT_KEY_ID` | `tls.client_key_id` |
+| `TEMPORAL_EXT_AWS_SECRETS_MANAGER_TLS_SERVER_CA_CERT_ID` | `tls.server_ca_cert_id` |
+
+Secrets are fetched through the
+[AWS Parameters and Secrets Lambda Extension](https://docs.aws.amazon.com/secretsmanager/latest/userguide/retrieving-secrets_lambda.html)
+if the function has it, and otherwise directly with the AWS SDK. Either way they
+are cached across warm invocations. The Lambda execution role needs
+`secretsmanager:GetSecretValue` on the configured secrets. See the
+[`secretsmanager` README](../secretsmanager/README.md) for the full set of
+options, validation rules, caching behavior, and observability metrics.
+
 ## Lambda-tuned worker defaults
 
 The package applies conservative concurrency limits suited to Lambda's resource constraints, see the

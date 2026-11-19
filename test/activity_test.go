@@ -474,6 +474,21 @@ func (a *Activities) AsyncComplete(ctx context.Context, input string) error {
 	return activity.ErrResultPending
 }
 
+// pendingNexusAsyncCompletions maps an activity ID to the channel that receives its activity.Info,
+// so a test can complete the activity from a client.
+var pendingNexusAsyncCompletions sync.Map
+
+func (a *Activities) NexusAsyncComplete(ctx context.Context, _ string) (string, error) {
+	a.append("nexusAsyncComplete")
+	info := activity.GetInfo(ctx)
+	ch, ok := pendingNexusAsyncCompletions.Load(info.ActivityID)
+	if !ok {
+		return "", fmt.Errorf("no pending async completion registered for activity %q", info.ActivityID)
+	}
+	ch.(chan activity.Info) <- info
+	return "", activity.ErrResultPending
+}
+
 func (a *Activities) PropagateActivity(ctx context.Context) ([]string, error) {
 	var result []string
 

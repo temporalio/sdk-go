@@ -239,18 +239,17 @@ func Test_UpsertSearchAttributes(t *testing.T) {
 		workflowInfo:   GetWorkflowInfo(ctx),
 	}
 	helper.setCurrentWorkflowTaskStartedEventID(4)
-	err := env.UpsertSearchAttributes(nil)
+	err := env.UpsertSearchAttributes(nil, nil)
 	require.Error(t, err)
 
 	err = env.UpsertSearchAttributes(map[string]any{
-		TemporalChangeVersion: []string{"change2-1", "change1-1"}},
-	)
+		TemporalChangeVersion: []string{"change2-1", "change1-1"}}, nil)
 	require.NoError(t, err)
 	_, ok := env.commandsHelper.commands[makeCommandID(commandTypeUpsertSearchAttributes, "change2-1")]
 	require.True(t, ok)
 	require.Equal(t, int64(7), env.GenerateSequence())
 
-	err = env.UpsertSearchAttributes(map[string]any{"key": 1})
+	err = env.UpsertSearchAttributes(map[string]any{"key": 1}, nil)
 	require.NoError(t, err)
 	require.Equal(t, int64(8), env.GenerateSequence())
 }
@@ -351,10 +350,10 @@ func Test_UpsertMemo(t *testing.T) {
 		dataConverter:  converter.GetDefaultDataConverter(),
 	}
 	helper.setCurrentWorkflowTaskStartedEventID(4)
-	err := env.UpsertMemo(nil)
+	err := env.UpsertMemo(nil, nil)
 	require.Error(t, err)
 
-	err = env.UpsertMemo(map[string]any{"key": 1})
+	err = env.UpsertMemo(map[string]any{"key": 1}, nil)
 	require.NoError(t, err)
 	_, ok := env.commandsHelper.commands[makeCommandID(commandTypeModifyProperties, "6")]
 	require.True(t, ok)

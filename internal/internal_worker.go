@@ -139,6 +139,8 @@ type (
 		// Namespace name.
 		Namespace string
 
+		RPCTimeout time.Duration
+
 		// Task queue name to poll.
 		TaskQueue string
 
@@ -250,7 +252,7 @@ type (
 
 		workerInstanceKey string
 
-		workerControlTaskQueue   string
+		namespaceWorker          *sharedNamespaceWorker
 		pollerGroupSnapshotStore *pollerGroupSnapshotStore
 
 		activityCancellationCallbacks *activityCancellationCallbacks
@@ -374,6 +376,7 @@ func newWorkflowTaskWorkerInternal(
 	var service workflowservice.WorkflowServiceClient
 	if client != nil {
 		service = client.workflowService
+		params.RPCTimeout = client.rpcTimeout
 	}
 	// Generate stickyUUID here so it can be stored in workflowWorker for ShutdownWorker call
 	stickyUUID := uuid.NewString()
@@ -543,16 +546,20 @@ func buildWorkflowScalableTaskPollers(
 
 		return []scalableTaskPoller{normalScalablePoller, stickyScalablePoller}
 	default: // *pollerBehaviorSimpleMaximum
-		return []scalableTaskPoller{
-			newScalableTaskPoller(
-				taskProcessor.createPoller(Mixed, nil),
-				params.Logger,
-				behavior,
-				metrics.PollerTypeWorkflowTask,
-				params.serverSupportsAutoscaling,
-				nil,
-			),
+		mixedScalablePoller := newScalableTaskPoller(
+			taskProcessor.createPoller(Mixed, nil),
+			params.Logger,
+			behavior,
+			metrics.PollerTypeWorkflowTask,
+			params.serverSupportsAutoscaling,
+			nil,
+		)
+		if taskProcessor.stickyCacheSize > 0 {
+			// One pool polls both queues, so the heartbeat's sticky slot reports the same
+			// target. Leaving it unset would pair a real current_pollers with a zero target.
+			mixedScalablePoller.alsoTargetsPollerType = metrics.PollerTypeWorkflowStickyTask
 		}
+		return []scalableTaskPoller{mixedScalablePoller}
 	}
 }
 
@@ -651,6 +658,7 @@ func newActivityWorker(
 	var service workflowservice.WorkflowServiceClient
 	if client != nil {
 		service = client.workflowService
+		params.RPCTimeout = client.rpcTimeout
 	}
 	workerStopChannel := make(chan struct{}, 1)
 	params.WorkerStopChannel = getReadOnlyChannel(workerStopChannel)
@@ -1078,7 +1086,9 @@ func (r *registry) getWorkflowDefinition(wt WorkflowType) (WorkflowDefinition, e
 	}
 	var dynamic bool
 	if d, ok := wf.(string); ok && d == "dynamic" {
+		r.Lock()
 		wf = r.dynamicWorkflow
+		r.Unlock()
 		dynamic = true
 	}
 	// A dynamic workflow may itself be a WorkflowDefinitionFactory (e.g. the
@@ -1235,7 +1245,7 @@ func (we *workflowExecutor) Execute(ctx Context, input *commonpb.Payloads) (*com
 	result, err := envInterceptor.inboundInterceptor.ExecuteWorkflow(ctx, &ExecuteWorkflowInput{Args: args})
 	var serializedResult *commonpb.Payloads
 	if err == nil && result != nil {
-		serializedResult, err = encodeArg(dataConverter, result)
+		serializedResult, err = encodeArg(resultDataConverter(ctx), result)
 	}
 	return serializedResult, err
 }
@@ -1278,7 +1288,7 @@ func (ae *activityExecutor) Execute(ctx context.Context, input *commonpb.Payload
 }
 
 func (ae *activityExecutor) ExecuteWithActualArgs(ctx context.Context, args []any) (*commonpb.Payloads, error) {
-	dataConverter := getDataConverterFromActivityCtx(ctx)
+	dataConverter := callerFacingDataConverterFromActivityCtx(ctx)
 
 	envInterceptor := getActivityEnvironmentInterceptor(ctx)
 	envInterceptor.fn = ae.fn
@@ -1315,6 +1325,16 @@ func getDataConverterFromActivityCtx(ctx context.Context) converter.DataConverte
 	return WithContext(ctx, dataConverter)
 }
 
+// callerFacingDataConverterFromActivityCtx returns the data converter for payloads that may reach the Nexus
+// caller when the activity was started by a Nexus handler. This includes heartbeat details, since the server
+// includes the last ones in timeout failures. See serializationContextFor.
+func callerFacingDataConverterFromActivityCtx(ctx context.Context) converter.DataConverter {
+	if env := getActivityEnvironmentFromCtx(ctx); env != nil && env.callerFacingDataConverter != nil {
+		return WithContext(ctx, env.callerFacingDataConverter)
+	}
+	return getDataConverterFromActivityCtx(ctx)
+}
+
 func getActivityEnvironmentFromCtx(ctx context.Context) *activityEnvironment {
 	if ctx == nil || ctx.Value(activityEnvContextKey) == nil {
 		return nil
@@ -1334,8 +1354,12 @@ type AggregatedWorker struct {
 	activityWorker *activityWorker
 	sessionWorker  *sessionWorker
 	nexusWorker    *nexusWorker
-	logger         log.Logger
-	registry       *registry
+	// The Nexus worker's slot supplier. Unlike the other workers, nexusWorker is created during
+	// start rather than at construction, so slotUsage reads this atomic instead of nexusWorker to
+	// avoid a data race when called concurrently with start.
+	nexusSlotSupplier atomic.Pointer[trackingSlotSupplier]
+	logger            log.Logger
+	registry          *registry
 	// Stores a boolean indicating whether the worker has already been started.
 	started      atomic.Bool
 	shuttingDown atomic.Bool
@@ -1607,6 +1631,7 @@ func (aw *AggregatedWorker) start() error {
 		if err != nil {
 			return fmt.Errorf("failed to create a nexus worker: %w", err)
 		}
+		aw.nexusSlotSupplier.Store(aw.nexusWorker.worker.slotSupplier)
 		if err := aw.nexusWorker.Start(); err != nil {
 			return fmt.Errorf("failed to start a nexus worker: %w", err)
 		}
@@ -1768,6 +1793,21 @@ func (aw *AggregatedWorker) handleFatalError(err error, hook func(error)) {
 	aw.Stop()
 }
 
+// pollerTargets returns the target poller count per poller type across this worker's pollers.
+func (aw *AggregatedWorker) pollerTargets() map[string]int32 {
+	targets := make(map[string]int32, 4)
+	if aw.workflowWorker != nil {
+		aw.workflowWorker.worker.collectPollerTargets(targets)
+	}
+	if aw.activityWorker != nil {
+		aw.activityWorker.worker.collectPollerTargets(targets)
+	}
+	if aw.nexusWorker != nil {
+		aw.nexusWorker.worker.collectPollerTargets(targets)
+	}
+	return targets
+}
+
 func (aw *AggregatedWorker) registerHeartbeatWorker() error {
 	if aw.client.heartbeatManager == nil {
 		return nil
@@ -1797,7 +1837,7 @@ func (aw *AggregatedWorker) sendShutdownWorkerRPC() {
 	aw.shuttingDown.Store(true)
 
 	ctx := context.Background()
-	grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsHandler(aw.executionParams.MetricsHandler))
+	grpcCtx, cancel := newGRPCContext(ctx, aw.client.rpcTimeout, grpcMetricsHandler(aw.executionParams.MetricsHandler))
 	defer cancel()
 
 	var heartbeat *workerpb.WorkerHeartbeat
@@ -2450,10 +2490,10 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	// should take a pointer to this struct and wait for it to be populated when the worker is run.
 	var capabilities workflowservice.GetSystemInfoResponse_Capabilities
 	var activityCancellationCallbacks *activityCancellationCallbacks
+	var namespaceWorker *sharedNamespaceWorker
 	if client.heartbeatManager != nil {
-		activityCancellationCallbacks = client.heartbeatManager.
-			sharedNamespaceWorkerFor(client.namespace).
-			activityCancellationCallbacks
+		namespaceWorker = client.heartbeatManager.sharedNamespaceWorkerFor(client.namespace)
+		activityCancellationCallbacks = namespaceWorker.activityCancellationCallbacks
 	}
 
 	baseMetricsHandler := client.metricsHandler.WithTags(metrics.TaskQueueTags(taskQueue))
@@ -2489,7 +2529,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	}
 
 	payloadLimitVisitor, setErrorLimits := newPayloadLimitsVisitor(client.payloadWarningLimits, logger)
-	workerStorageParams := client.storageParams.WithOwnDriverOperationLimit().WithLogger(logger)
+	workerStorageParams := client.storageParams.WithOwnDriverOperationLimit().WithLogger(logger).WithNamespace(client.namespace)
 
 	cache, cacheLease := NewWorkerCache()
 	constructionComplete := false
@@ -2501,6 +2541,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	workerPollCompleteOnShutdown := &atomic.Bool{}
 	workerParams := workerExecutionParameters{
 		Namespace:                        client.namespace,
+		RPCTimeout:                       client.rpcTimeout,
 		TaskQueue:                        taskQueue,
 		Tuner:                            options.Tuner,
 		WorkerActivitiesPerSecond:        options.WorkerActivitiesPerSecond,
@@ -2529,15 +2570,16 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		MaxHeartbeatThrottleInterval:     options.MaxHeartbeatThrottleInterval,
 		cache:                            cache,
 		eagerActivityExecutor: newEagerActivityExecutor(eagerActivityExecutorOptions{
-			disabled:      options.DisableEagerActivities,
-			taskQueue:     taskQueue,
-			maxConcurrent: options.MaxConcurrentEagerActivityExecutionSize,
-			maxPerTask:    *options.MaxEagerActivityReservationsPerWorkflowTask,
+			disabled:       options.DisableEagerActivities,
+			taskQueue:      taskQueue,
+			metricsHandler: metricsHandler,
+			maxConcurrent:  options.MaxConcurrentEagerActivityExecutionSize,
+			maxPerTask:     *options.MaxEagerActivityReservationsPerWorkflowTask,
 		}),
 		capabilities:                     &capabilities,
 		pollTimeTracker:                  &pollTimeTracker{},
 		workerInstanceKey:                workerInstanceKey,
-		workerControlTaskQueue:           workerControlTaskQueue(client.namespace, client.workerGroupingKey),
+		namespaceWorker:                  namespaceWorker,
 		pollerGroupSnapshotStore:         newPollerGroupSnapshotStore(),
 		activityCancellationCallbacks:    activityCancellationCallbacks,
 		workerPollCompleteOnShutdown:     workerPollCompleteOnShutdown,
@@ -2656,7 +2698,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		hostname, _ := os.Hostname()
 		pid := strconv.Itoa(os.Getpid())
 		var previousHeartbeatTime time.Time
-		pluginInfos := collectPluginInfos(client.clientPluginNames, plugins)
+		pluginInfos := collectPluginInfos(client.clientPlugins, plugins)
 		driverInfos := collectStorageDriverInfos(client.storageDriverTypes)
 
 		var prevWorkflowProcessed, prevWorkflowFailed int64
@@ -2710,6 +2752,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 			if aw.nexusWorker != nil {
 				populateOpts.nexusSlotSupplierKind = aw.nexusWorker.worker.slotSupplier.GetSlotSupplierKind()
 			}
+			populateOpts.pollerTargets = aw.pollerTargets()
 			heartbeatTime := time.Now()
 
 			status := enumspb.WORKER_STATUS_RUNNING
@@ -3147,21 +3190,22 @@ func getMemUsage(supplier SysInfoProvider, logger log.Logger) float32 {
 	return float32(mem)
 }
 
-// collectPluginInfos collects plugin names from client and worker plugins,
-// deduplicates them, and returns a slice of PluginInfo for heartbeat reporting.
-func collectPluginInfos(clientPluginNames []string, workerPlugins []WorkerPlugin) []*workerpb.PluginInfo {
-	set := make(map[string]struct{}, len(clientPluginNames)+len(workerPlugins))
-	result := make([]*workerpb.PluginInfo, 0, len(clientPluginNames)+len(workerPlugins))
-	for _, name := range clientPluginNames {
-		if _, found := set[name]; !found {
-			set[name] = struct{}{}
-			result = append(result, &workerpb.PluginInfo{Name: name})
+// collectPluginInfos collects plugin names and versions from client and worker
+// plugins, deduplicates them by name, and returns a slice of PluginInfo for
+// heartbeat reporting.
+func collectPluginInfos(clientPlugins []ClientPlugin, workerPlugins []WorkerPlugin) []*workerpb.PluginInfo {
+	set := make(map[string]struct{}, len(clientPlugins)+len(workerPlugins))
+	result := make([]*workerpb.PluginInfo, 0, len(clientPlugins)+len(workerPlugins))
+	for _, plugin := range clientPlugins {
+		if _, found := set[plugin.Name()]; !found {
+			set[plugin.Name()] = struct{}{}
+			result = append(result, &workerpb.PluginInfo{Name: plugin.Name(), Version: pluginVersion(plugin)})
 		}
 	}
 	for _, plugin := range workerPlugins {
 		if _, found := set[plugin.Name()]; !found {
 			set[plugin.Name()] = struct{}{}
-			result = append(result, &workerpb.PluginInfo{Name: plugin.Name()})
+			result = append(result, &workerpb.PluginInfo{Name: plugin.Name(), Version: pluginVersion(plugin)})
 		}
 	}
 
@@ -3170,6 +3214,16 @@ func collectPluginInfos(clientPluginNames []string, workerPlugins []WorkerPlugin
 	})
 
 	return result
+}
+
+// pluginVersion returns the result of the plugin's Version method, if it has
+// one. Version is not on the plugin interfaces because a default on both plugin
+// bases would be ambiguous for plugins that embed both.
+func pluginVersion(plugin any) string {
+	if p, ok := plugin.(interface{ Version() string }); ok {
+		return p.Version()
+	}
+	return ""
 }
 
 func collectStorageDriverInfos(driverTypes []string) []*workerpb.StorageDriverInfo {

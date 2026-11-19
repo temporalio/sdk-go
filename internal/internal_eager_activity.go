@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"go.temporal.io/api/workflowservice/v1"
+	"go.temporal.io/sdk/internal/common/metrics"
 )
 
 // eagerActivityExecutor is a worker-scoped executor for eager activities that
@@ -18,8 +19,9 @@ type eagerActivityExecutor struct {
 }
 
 type eagerActivityExecutorOptions struct {
-	disabled  bool
-	taskQueue string
+	disabled       bool
+	taskQueue      string
+	metricsHandler metrics.Handler
 	// If 0, there is no maximum
 	maxConcurrent int
 	maxPerTask    int
@@ -31,6 +33,9 @@ type eagerActivityExecutorOptions struct {
 func newEagerActivityExecutor(options eagerActivityExecutorOptions) *eagerActivityExecutor {
 	if options.maxPerTask <= 0 {
 		panic("maxPerTask must be positive")
+	}
+	if options.metricsHandler == nil {
+		options.metricsHandler = metrics.NopHandler
 	}
 	return &eagerActivityExecutor{eagerActivityExecutorOptions: options}
 }
@@ -119,6 +124,12 @@ func (e *eagerActivityExecutor) handleResponse(
 
 	// Start each activity asynchronously
 	for i, activity := range resp.GetActivityTasks() {
+		// Match polling: record receipt even if shutdown prevents execution.
+		metricsHandler := e.metricsHandler.WithTags(metrics.ActivityTags(
+			activity.WorkflowType.GetName(), activity.ActivityType.GetName(), e.taskQueue))
+		scheduleToStartLatency := activity.GetStartedTime().AsTime().Sub(activity.GetCurrentAttemptScheduledTime().AsTime())
+		metricsHandler.Timer(metrics.ActivityScheduleToStartLatency).Record(scheduleToStartLatency)
+
 		// Asynchronously execute
 		e.activityWorker.pushEagerTask(
 			eagerTask{

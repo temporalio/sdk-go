@@ -83,3 +83,23 @@ start times accurate across retries and replays.
 
 Matches v1. Set `PluginOptions.MetricsHandlerOptions` to have the plugin install
 a metrics handler.
+
+## Tests
+
+Unit tests live in this module. Server-backed integration tests live in the
+separate `test/` module and start their own Temporal dev servers. Run them through
+the repository build tool:
+
+```sh
+cd internal/cmd/build
+go run . unit-test
+go run . integration-test -dev-server
+```
+
+The unit-test command excludes integration test modules. The integration-test
+command runs all integration test modules by default. Use `-module` to run only
+this module:
+
+```sh
+go run . integration-test -module contrib/opentelemetry-v2/test
+```

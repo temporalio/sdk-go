@@ -572,6 +572,7 @@ func Test_SignalExternalWorkflowExecutionFailedError(t *testing.T) {
 	di := h.newSignalExternalWorkflowStateMachine(
 		&commandpb.SignalExternalWorkflowExecutionCommandAttributes{},
 		signalID,
+		nil,
 	)
 	di.state = commandStateInitiated
 	di.setData(&scheduledSignal{

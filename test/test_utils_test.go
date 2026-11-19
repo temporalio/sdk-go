@@ -343,6 +343,11 @@ func (s *keysPropagator) ExtractToWorkflow(ctx workflow.Context, reader workflow
 
 func (ts *ConfigAndClientSuiteBase) InitConfigAndNamespace() error {
 	ts.initConfig()
+	return ts.InitNamespace()
+}
+
+// InitNamespace prepares the configured namespace, reusing ts.client if it is already initialized.
+func (ts *ConfigAndClientSuiteBase) InitNamespace() error {
 	var err error
 	err = WaitForTCP(time.Minute, ts.config.ServiceAddr)
 	if err != nil {
@@ -492,28 +497,35 @@ func (ts *ConfigAndClientSuiteBase) ensureSearchAttributes() error {
 	return nil
 }
 
-// executeWorkflow executes a given workflow and waits for the result
+// executeWorkflow executes a given workflow and waits for the result.
 func (ts *ConfigAndClientSuiteBase) executeWorkflow(
 	wfID string, wfFunc any, retValPtr any, args ...any) error {
-	return ts.executeWorkflowWithOption(ts.startWorkflowOptions(wfID), wfFunc, retValPtr, args...)
+	return ts.executeWorkflowWithOptions(executeWorkflowOptions{
+		ID:       wfID,
+		Workflow: wfFunc,
+		Result:   retValPtr,
+		Args:     args,
+	})
 }
 
-func (ts *ConfigAndClientSuiteBase) executeWorkflowWithOption(
-	options client.StartWorkflowOptions, wfFunc any, retValPtr any, args ...any) error {
-	return ts.executeWorkflowWithContextAndOption(context.Background(), options, wfFunc, retValPtr, args...)
+type executeWorkflowOptions struct {
+	ID       string
+	Workflow any
+	Result   any
+	Args     []any
 }
 
-func (ts *ConfigAndClientSuiteBase) executeWorkflowWithContextAndOption(
-	ctx context.Context, options client.StartWorkflowOptions, wfFunc any, retValPtr any, args ...any) error {
-	ctx, cancel := context.WithTimeout(ctx, ctxTimeout)
+func (ts *ConfigAndClientSuiteBase) executeWorkflowWithOptions(options executeWorkflowOptions) error {
+	startOptions := ts.startWorkflowOptions(options.ID)
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
-	run, err := ts.client.ExecuteWorkflow(ctx, options, wfFunc, args...)
+	run, err := ts.client.ExecuteWorkflow(ctx, startOptions, options.Workflow, options.Args...)
 	if err != nil {
 		return err
 	}
-	err = run.Get(ctx, retValPtr)
+	err = run.Get(ctx, options.Result)
 	if ts.config.Debug {
-		iter := ts.client.GetWorkflowHistory(ctx, options.ID, run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+		iter := ts.client.GetWorkflowHistory(ctx, startOptions.ID, run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
 		for iter.HasNext() {
 			event, err1 := iter.Next()
 			if err1 != nil {

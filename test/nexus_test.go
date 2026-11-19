@@ -631,6 +631,16 @@ func TestSyncOperationFromWorkflow(t *testing.T) {
 	}
 }
 
+// unwrapLegacyOperationError strips the OperationError wrapper that servers since temporalio/temporal#11852 add
+// around failures from handlers that don't send Temporal failures. Older servers pass the handler's failure through.
+func unwrapLegacyOperationError(err error) error {
+	var appErr *temporal.ApplicationError
+	if errors.As(err, &appErr) && appErr.Type() == "OperationError" {
+		return appErr.Unwrap()
+	}
+	return err
+}
+
 func runSyncOperationFromWorkflowTest(t *testing.T, temporalFailureResp bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultNexusTestTimeout)
 	defer cancel()
@@ -817,6 +827,8 @@ func runSyncOperationFromWorkflowTest(t *testing.T, temporalFailureResp bool) {
 			require.Equal(t, "failed with app error", appErr.Message())
 			require.Equal(t, "OperationError", appErr.Type())
 			err = appErr.Unwrap()
+		} else {
+			err = unwrapLegacyOperationError(err)
 		}
 		require.ErrorAs(t, err, &appErr)
 		require.Equal(t, "failed with app error", appErr.Message())
@@ -954,6 +966,8 @@ func runSyncOperationFromWorkflowTest(t *testing.T, temporalFailureResp bool) {
 			require.Equal(t, "operation failed with additional context", appErr.Message())
 			require.Equal(t, "OperationError", appErr.Type())
 			err = appErr.Unwrap()
+		} else {
+			err = unwrapLegacyOperationError(err)
 		}
 		// The cause should be the underlying ApplicationError
 		require.ErrorAs(t, err, &appErr)
@@ -1071,6 +1085,8 @@ func runSyncOperationFromWorkflowTest(t *testing.T, temporalFailureResp bool) {
 		if temporalFailureResp {
 			require.ErrorAs(t, err, &appErr)
 			err = appErr.Unwrap()
+		} else {
+			err = unwrapLegacyOperationError(err)
 		}
 		require.ErrorAs(t, err, &appErr)
 		// The outer error should be the cause directly or wrapped
@@ -1114,6 +1130,8 @@ func runSyncOperationFromWorkflowTest(t *testing.T, temporalFailureResp bool) {
 			require.Equal(t, "outer error", appErr.Message())
 			require.Equal(t, "OperationError", appErr.Type())
 			err = appErr.Unwrap()
+		} else {
+			err = unwrapLegacyOperationError(err)
 		}
 		// Unwrap to the middle error
 		require.ErrorAs(t, err, &appErr)
@@ -2039,6 +2057,9 @@ func TestAsyncOperationFromWorkflow_MultipleCallers(t *testing.T) {
 
 type manualAsyncOp struct {
 	nexus.UnimplementedOperation[nexus.NoValue, nexus.NoValue]
+	// HTTP callback URL used when the server hands out the internal temporal://system callback URL, which newer
+	// servers always do for worker endpoints and which can't be posted to over HTTP.
+	httpCallbackURL string
 }
 
 func (*manualAsyncOp) Name() string {
@@ -2068,7 +2089,11 @@ func (o *manualAsyncOp) Start(ctx context.Context, input nexus.NoValue, options 
 	if err != nil {
 		return nil, err
 	}
-	req, err := nexusclient.NewCompletionHTTPRequest(ctx, options.CallbackURL, completion)
+	callbackURL := options.CallbackURL
+	if callbackURL == "temporal://system" {
+		callbackURL = o.httpCallbackURL
+	}
+	req, err := nexusclient.NewCompletionHTTPRequest(ctx, callbackURL, completion)
 	if err != nil {
 		return nil, err
 	}
@@ -2094,7 +2119,9 @@ func TestAsyncOperationCompletionCustomFailureConverter(t *testing.T) {
 	defer cancel()
 	tc := newTestContext(t, ctx)
 
-	op := &manualAsyncOp{}
+	op := &manualAsyncOp{
+		httpCallbackURL: "http://" + tc.testConfig.ServiceHTTPAddr + "/namespaces/" + tc.testConfig.Namespace + "/nexus/callback",
+	}
 
 	callerWorkflow := func(ctx workflow.Context) error {
 		c := workflow.NewNexusClient(tc.endpoint, "test")

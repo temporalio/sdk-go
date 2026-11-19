@@ -44,6 +44,18 @@ type (
 		ExtractToWorkflow(Context, HeaderReader) (Context, error)
 	}
 
+	// CodecContextPropagator optionally applies the configured client's payload
+	// codec to this propagator's headers. EncodeHeaders defaults to false when
+	// this interface is not implemented. When true, Inject methods must return
+	// serialized but not codec-encoded payloads. Extract methods receive a
+	// privately decoded view; headers supplied by other producers are unchanged.
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.CodecContextPropagator]
+	CodecContextPropagator interface {
+		ContextPropagator
+		EncodeHeaders() bool
+	}
+
 	// ContextAware is an optional interface that can be implemented alongside
 	// DataConverter. This interface allows Temporal to pass Workflow/Activity
 	// contexts to the DataConverter so that it may tailor its behavior.
@@ -86,7 +98,9 @@ func NewHeaderReader(header *commonpb.Header) HeaderReader {
 }
 
 type headerWriter struct {
-	header *commonpb.Header
+	header      *commonpb.Header
+	codecValues map[string]*commonpb.Payload
+	encode      bool
 }
 
 func (hw *headerWriter) Set(key string, value *commonpb.Payload) {
@@ -94,6 +108,12 @@ func (hw *headerWriter) Set(key string, value *commonpb.Payload) {
 		return
 	}
 	hw.header.Fields[key] = value
+	if hw.codecValues != nil {
+		delete(hw.codecValues, key)
+		if hw.encode {
+			hw.codecValues[key] = value
+		}
+	}
 }
 
 // NewHeaderWriter returns a header writer interface

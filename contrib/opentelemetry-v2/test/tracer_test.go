@@ -1,4 +1,4 @@
-package opentelemetry
+package opentelemetry_test
 
 import (
 	"context"
@@ -14,6 +14,7 @@ import (
 	"go.temporal.io/api/workflowservice/v1"
 
 	"go.temporal.io/sdk/client"
+	temporalotel "go.temporal.io/sdk/contrib/opentelemetry-v2"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/testsuite"
 	"go.temporal.io/sdk/worker"
@@ -34,7 +35,7 @@ func TestTracerIntegrationTestSuite(t *testing.T) {
 func (s *tracerIntegrationTestSuite) SetupSuite() {
 	s.otelTestSuite.SetupSuite()
 	s.recorder = s.newSpanRecorder()
-	plugin, err := NewPlugin(PluginOptions{})
+	plugin, err := temporalotel.NewPlugin(temporalotel.PluginOptions{})
 	s.Require().NoError(err)
 	s.client = s.newDevServerClient(
 		client.Options{Plugins: []client.Plugin{plugin}},

@@ -58,7 +58,7 @@ func (d *SingleActivityWorkflowDefinition) Execute(env bindings.WorkflowEnvironm
 		return converter.GetDefaultDataConverter().FromPayloads(input, &signalInput)
 	})
 	d.callbacks = append(d.callbacks, func() {
-		env.NewTimer(time.Second, workflow.TimerOptions{}, d.addCallback(func(result *commonpb.Payloads, err error) {
+		env.NewTimer(time.Second, workflow.TimerOptions{}, nil, d.addCallback(func(result *commonpb.Payloads, err error) {
 			input, _ := converter.GetDefaultDataConverter().ToPayloads("World")
 			scheduleID1 := env.GenerateSequence()
 			parameters1 := bindings.ExecuteActivityParams{

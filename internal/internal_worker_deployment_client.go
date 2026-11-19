@@ -178,7 +178,7 @@ func (h *workerDeploymentHandleImpl) Describe(ctx context.Context, options Worke
 		Namespace:      h.workflowClient.namespace,
 		DeploymentName: h.Name,
 	}
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, h.workflowClient.rpcTimeout, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 
 	resp, err := h.workflowClient.workflowService.DescribeWorkerDeployment(grpcCtx, request)
@@ -216,7 +216,7 @@ func (h *workerDeploymentHandleImpl) SetCurrentVersion(ctx context.Context, opti
 		IgnoreMissingTaskQueues: options.IgnoreMissingTaskQueues,
 		AllowNoPollers:          options.AllowNoPollers,
 	}
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, h.workflowClient.rpcTimeout, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 
 	resp, err := h.workflowClient.workflowService.SetWorkerDeploymentCurrentVersion(grpcCtx, request)
@@ -257,7 +257,7 @@ func (h *workerDeploymentHandleImpl) SetRampingVersion(ctx context.Context, opti
 		IgnoreMissingTaskQueues: options.IgnoreMissingTaskQueues,
 		AllowNoPollers:          options.AllowNoPollers,
 	}
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, h.workflowClient.rpcTimeout, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 
 	resp, err := h.workflowClient.workflowService.SetWorkerDeploymentRampingVersion(grpcCtx, request)
@@ -303,7 +303,7 @@ func (h *workerDeploymentHandleImpl) SetManagerIdentity(ctx context.Context, opt
 	} else {
 		request.NewManagerIdentity = &workflowservice.SetWorkerDeploymentManagerRequest_ManagerIdentity{ManagerIdentity: options.ManagerIdentity}
 	}
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, h.workflowClient.rpcTimeout, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 
 	resp, err := h.workflowClient.workflowService.SetWorkerDeploymentManager(grpcCtx, request)
@@ -385,7 +385,7 @@ func (h *workerDeploymentHandleImpl) DescribeVersion(ctx context.Context, option
 			DeploymentName: h.Name,
 		},
 	}
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, h.workflowClient.rpcTimeout, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 
 	resp, err := h.workflowClient.workflowService.DescribeWorkerDeploymentVersion(grpcCtx, request)
@@ -425,7 +425,7 @@ func (h *workerDeploymentHandleImpl) DeleteVersion(ctx context.Context, options 
 		SkipDrainage: options.SkipDrainage,
 		Identity:     identity,
 	}
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, h.workflowClient.rpcTimeout, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 
 	_, err := h.workflowClient.workflowService.DeleteWorkerDeploymentVersion(grpcCtx, request)
@@ -477,7 +477,7 @@ func (h *workerDeploymentHandleImpl) UpdateVersionMetadata(ctx context.Context, 
 		UpsertEntries:     workerDeploymentUpsertEntriesMetadataToProto(h.workflowClient.dataConverter, options.MetadataUpdate),
 		RemoveEntries:     options.MetadataUpdate.RemoveEntries,
 	}
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, h.workflowClient.rpcTimeout, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 
 	resp, err := h.workflowClient.workflowService.UpdateWorkerDeploymentVersionMetadata(grpcCtx, request)
@@ -498,7 +498,7 @@ func (wdc *workerDeploymentClient) List(ctx context.Context, options WorkerDeplo
 		if wdc.workflowClient.namespace == "" {
 			return nil, errors.New("missing namespace argument")
 		}
-		grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+		grpcCtx, cancel := newGRPCContext(ctx, wdc.workflowClient.rpcTimeout, defaultGrpcRetryParameters(ctx))
 		defer cancel()
 		request := &workflowservice.ListWorkerDeploymentsRequest{
 			Namespace:     wdc.workflowClient.namespace,
@@ -535,7 +535,7 @@ func (wdc *workerDeploymentClient) Delete(ctx context.Context, options WorkerDep
 		DeploymentName: options.Name,
 		Identity:       identity,
 	}
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, wdc.workflowClient.rpcTimeout, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 
 	_, err := wdc.workflowClient.workflowService.DeleteWorkerDeployment(grpcCtx, request)

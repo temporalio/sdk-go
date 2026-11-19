@@ -68,13 +68,15 @@ func TestFindModuleDirs(t *testing.T) {
 
 func TestFindUnitModuleDirs(t *testing.T) {
 	moduleDirs, err := findUnitModuleDirs(fstest.MapFS{
-		"go.mod":                    {},
-		"contrib/example/go.mod":    {},
-		"internal/cmd/build/go.mod": {},
-		"test/go.mod":               {},
-		"test/nested/go.mod":        {},
-		"testdata/fixture/go.mod":   {},
-		"vendor/dependency/go.mod":  {},
+		"go.mod":                             {},
+		"contrib/example/go.mod":             {},
+		"contrib/example/test/go.mod":        {},
+		"contrib/example/test/nested/go.mod": {},
+		"internal/cmd/build/go.mod":          {},
+		"test/go.mod":                        {},
+		"test/nested/go.mod":                 {},
+		"testdata/fixture/go.mod":            {},
+		"vendor/dependency/go.mod":           {},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -82,6 +84,105 @@ func TestFindUnitModuleDirs(t *testing.T) {
 	want := []string{".", "contrib/example", "internal/cmd/build"}
 	if !slices.Equal(want, moduleDirs) {
 		t.Fatalf("expected unit module directories %v, got %v", want, moduleDirs)
+	}
+}
+
+func TestIntegrationTestContribModule(t *testing.T) {
+	rootDir := t.TempDir()
+	moduleDir := filepath.Join(rootDir, "contrib", "example", "test")
+	if err := os.MkdirAll(moduleDir, 0777); err != nil {
+		t.Fatal(err)
+	}
+	files := map[string]string{
+		"go.mod": "module example.com/contrib/test\n\ngo 1.26.0\n",
+		"integration_test.go": `package integration
+import "testing"
+func TestSelected(t *testing.T) { t.Log("contrib integration executed") }
+func TestUnselected(t *testing.T) { t.Fatal("-run was not forwarded") }
+`,
+	}
+	for name, contents := range files {
+		if err := os.WriteFile(filepath.Join(moduleDir, name), []byte(contents), 0666); err != nil {
+			t.Fatal(err)
+		}
+	}
+	originalArgs := os.Args
+	os.Args = []string{"build", "integration-test", "-module", "contrib/example/test", "-dev-server", "-run", "^TestSelected$"}
+	t.Cleanup(func() { os.Args = originalArgs })
+	b := &builder{rootDir: rootDir}
+	if err := b.integrationTest(); err != nil {
+		t.Fatal(err)
+	}
+	contents, err := os.ReadFile(filepath.Join(rootDir, defaultTestLogDir, "go-test.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(contents), "contrib integration executed") {
+		t.Fatalf("contrib module was not executed: %s", contents)
+	}
+}
+
+func TestIntegrationTestDefaultsToAllModules(t *testing.T) {
+	rootDir := t.TempDir()
+	t.Setenv("GITHUB_STEP_SUMMARY", filepath.Join(rootDir, "summary.md"))
+	for _, moduleDir := range []string{"test", "contrib/alpha/test", "contrib/bravo/test"} {
+		dir := filepath.Join(rootDir, filepath.FromSlash(moduleDir))
+		if err := os.MkdirAll(dir, 0777); err != nil {
+			t.Fatal(err)
+		}
+		files := map[string]string{
+			"go.mod": "module example.com/" + moduleDir + "\n\ngo 1.26.0\n",
+			"integration_test.go": fmt.Sprintf(`package integration
+import "testing"
+func TestSelected(t *testing.T) { t.Log(%q) }
+func TestUnselected(t *testing.T) { t.Fatal("-run was not forwarded") }
+`, moduleDir+" executed"),
+		}
+		for name, contents := range files {
+			if err := os.WriteFile(filepath.Join(dir, name), []byte(contents), 0666); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	originalArgs := os.Args
+	os.Args = []string{"build", "integration-test", "-run", "^TestSelected$", "-coverage-file", "integration.out"}
+	t.Cleanup(func() { os.Args = originalArgs })
+	b := &builder{rootDir: rootDir}
+	if err := b.integrationTest(); err != nil {
+		t.Fatal(err)
+	}
+	contents, err := os.ReadFile(filepath.Join(rootDir, defaultTestLogDir, "go-test.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, moduleDir := range []string{"test", "contrib/alpha/test", "contrib/bravo/test"} {
+		if !strings.Contains(string(contents), moduleDir+" executed") {
+			t.Errorf("integration module %q was not executed: %s", moduleDir, contents)
+		}
+	}
+	profiles, err := filepath.Glob(filepath.Join(rootDir, coverageDir, "*.out"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(profiles) != 3 {
+		t.Fatalf("expected coverage for all three modules, got %v", profiles)
+	}
+
+	failingTest := filepath.Join(rootDir, "contrib", "alpha", "test", "integration_test.go")
+	if err := os.WriteFile(failingTest, []byte("package integration\nimport \"testing\"\nfunc TestSelected(t *testing.T) { t.Fatal(\"intentional module failure\") }\n"), 0666); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.integrationTest(); err == nil || !strings.Contains(err.Error(), "contrib/alpha/test") {
+		t.Fatalf("expected a failure identifying the contrib module, got %v", err)
+	}
+	contents, err = os.ReadFile(filepath.Join(rootDir, defaultTestLogDir, "go-test.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, moduleDir := range []string{"test", "contrib/bravo/test"} {
+		if !strings.Contains(string(contents), moduleDir+" executed") {
+			t.Errorf("module %q was skipped after another module failed", moduleDir)
+		}
 	}
 }
 

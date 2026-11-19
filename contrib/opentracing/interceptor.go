@@ -13,6 +13,10 @@ import (
 
 // TracerOptions are options provided to NewInterceptor or NewTracer.
 type TracerOptions struct {
+	// EncodeHeaders uses the configured client's payload codec for tracing
+	// headers. Defaults to false; other producers' headers are unchanged.
+	EncodeHeaders bool
+
 	// Tracer is the tracer to use. If not set, the global one is used.
 	Tracer opentracing.Tracer
 
@@ -81,6 +85,7 @@ func NewInterceptor(options TracerOptions) (interceptor.Interceptor, error) {
 
 func (t *tracer) Options() interceptor.TracerOptions {
 	return interceptor.TracerOptions{
+		EncodeHeaders:        t.options.EncodeHeaders,
 		SpanContextKey:       t.options.SpanContextKey,
 		HeaderKey:            t.options.HeaderKey,
 		DisableSignalTracing: t.options.DisableSignalTracing,

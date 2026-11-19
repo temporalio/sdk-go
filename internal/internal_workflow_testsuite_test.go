@@ -5042,3 +5042,70 @@ func (s *WorkflowTestSuiteUnitTest) Test_OnWorkflowMockSeesHeaderContext() {
 	s.True(headerSeen, "OnWorkflow mock should see propagated header in context")
 	env.AssertExpectations(s.T())
 }
+
+func (s *WorkflowTestSuiteUnitTest) Test_CodecWorkflowTaskFailureErrorPreservesChain() {
+	const failMatch = "codec-fail"
+	cause := errors.New("codec unavailable")
+	marker := converter.NewWorkflowTaskFailureError(cause)
+	activityFn := func(ctx context.Context, input string) (string, error) { return input, nil }
+	failingResultActivityFn := func(ctx context.Context) (string, error) { return failMatch, nil }
+	childFn := func(ctx Context, input string) (string, error) { return input, nil }
+	childActivityFn := func(ctx Context) error {
+		return ExecuteActivity(WithActivityOptions(ctx, s.activityOptions), "activity", failMatch).Get(ctx, nil)
+	}
+
+	tests := []struct {
+		name                  string
+		failDecode            bool
+		codecFailureConverter bool
+		workflow              any
+	}{
+		{name: "child workflow input encode", workflow: func(ctx Context) error {
+			return ExecuteChildWorkflow(ctx, "child", failMatch).Get(ctx, nil)
+		}},
+		{name: "activity input encode handled by workflow", workflow: func(ctx Context) error {
+			_ = ExecuteActivity(WithActivityOptions(ctx, s.activityOptions), "activity", failMatch).Get(ctx, nil)
+			return nil
+		}},
+		{name: "activity result decode", failDecode: true, workflow: func(ctx Context) error {
+			var result string
+			return ExecuteActivity(WithActivityOptions(ctx, s.activityOptions), "failingResultActivity").Get(ctx, &result)
+		}},
+		{name: "workflow result encode", workflow: func(ctx Context) (string, error) {
+			return failMatch, nil
+		}},
+		{name: "child workflow task failure", workflow: func(ctx Context) error {
+			return ExecuteChildWorkflow(ctx, "childActivity").Get(ctx, nil)
+		}},
+		{name: "failure details encode", codecFailureConverter: true, workflow: func(ctx Context) error {
+			return NewApplicationError("failed", "type", false, nil, failMatch)
+		}},
+	}
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			var codec converter.PayloadCodec = &matchEncodeFailCodec{match: failMatch, encodeErr: marker}
+			if tt.failDecode {
+				codec = &matchDecodeFailCodec{match: failMatch, decodeErr: marker}
+			}
+			dc := converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), codec)
+			env := s.NewTestWorkflowEnvironment()
+			env.SetDataConverter(dc)
+			if tt.codecFailureConverter {
+				env.SetFailureConverter(NewDefaultFailureConverter(DefaultFailureConverterOptions{DataConverter: dc}))
+			}
+			env.RegisterActivityWithOptions(activityFn, RegisterActivityOptions{Name: "activity"})
+			env.RegisterActivityWithOptions(failingResultActivityFn, RegisterActivityOptions{Name: "failingResultActivity"})
+			env.RegisterWorkflowWithOptions(childFn, RegisterWorkflowOptions{Name: "child"})
+			env.RegisterWorkflowWithOptions(childActivityFn, RegisterWorkflowOptions{Name: "childActivity"})
+			env.RegisterWorkflowWithOptions(tt.workflow, RegisterWorkflowOptions{Name: "workflow"})
+			env.ExecuteWorkflow("workflow")
+
+			err := env.GetWorkflowError()
+			var markerErr *converter.WorkflowTaskFailureError
+			s.ErrorAs(err, &markerErr)
+			s.ErrorIs(err, cause)
+			var panicErr *PanicError
+			s.False(errors.As(err, &panicErr), "codec marker must not be converted to PanicError: %v", err)
+		})
+	}
+}
