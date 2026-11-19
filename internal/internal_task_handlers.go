@@ -2602,11 +2602,15 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 		}
 		// Use backgroundContext as base so a cancelled activity context (e.g. pause/reset)
 		// does not prevent the outbound storage visitor from making HTTP calls.
+		// Its values are kept but its cancellation is not: it is cancelled on worker
+		// shutdown, which would otherwise replace the activity's result with a
+		// context-canceled failure. The response is still reported afterwards with
+		// context.Background(), so processing it must outlive shutdown too.
 		outboundBase := ath.backgroundContext
 		if outboundBase == nil {
 			outboundBase = context.Background()
 		}
-		outboundCtx := extstore.WithStorageTarget(outboundBase, storageTarget)
+		outboundCtx := extstore.WithStorageTarget(context.WithoutCancel(outboundBase), storageTarget)
 		if err := visitProtoPayloads(outboundCtx, ath.outboundPayloadVisitor, msg, ath.storageParams.MaxOperationsPerMessage()); err != nil {
 			return activityTaskResult{
 				response:   ath.visitorErrorToActivityFailure("Activity task postprocess error: ", t, err),
