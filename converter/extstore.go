@@ -89,3 +89,32 @@ type StorageDriverSelector = extstore.StorageDriverSelector
 //
 // NOTE: Experimental
 type ExternalStorage = extstore.ExternalStorage
+
+// PayloadCache stores payloads under opaque string keys. The SDK uses it to
+// avoid downloading the same externally stored payload more than once.
+//
+// Implementations must be safe for concurrent use. They should not panic. The
+// SDK treats a failed Get as a miss and ignores a failed Set.
+//
+// NOTE: Experimental
+type PayloadCache = extstore.PayloadCache
+
+// InMemoryPayloadCacheOptions are limits for [NewInMemoryPayloadCache].
+//
+// NOTE: Experimental
+type InMemoryPayloadCacheOptions = extstore.InMemoryPayloadCacheOptions
+
+// InMemoryPayloadCache is a [PayloadCache] that keeps payloads in process
+// memory and evicts the least recently used payload first. It is safe for
+// concurrent use.
+//
+// NOTE: Experimental
+type InMemoryPayloadCache = extstore.InMemoryPayloadCache
+
+// NewInMemoryPayloadCache creates an [InMemoryPayloadCache]. It returns an
+// error if a limit is negative.
+//
+// NOTE: Experimental
+func NewInMemoryPayloadCache(options InMemoryPayloadCacheOptions) (*InMemoryPayloadCache, error) {
+	return extstore.NewInMemoryPayloadCache(options)
+}
