@@ -93,6 +93,66 @@ func TestActivityStructNameClash(t *testing.T) {
 	}
 }
 
+func TestActivityRegisteredNameClash(t *testing.T) {
+	for _, disableAliasing := range []bool{false, true} {
+		for _, aliasFirst := range []bool{false, true} {
+			for _, local := range []bool{false, true} {
+				t.Run(fmt.Sprintf("disableAliasing=%v/aliasFirst=%v/local=%v", disableAliasing, aliasFirst, local), func(t *testing.T) {
+					logger := ilog.NewMemoryLogger()
+					var suite WorkflowTestSuite
+					suite.SetLogger(logger)
+					suite.SetDisableRegistrationAliasing(disableAliasing)
+					env := suite.NewTestWorkflowEnvironment()
+					if aliasFirst {
+						env.RegisterActivityWithOptions(aliasNameClash2, RegisterActivityOptions{Name: "Activity_v2"})
+						require.Empty(t, logger.Lines())
+						env.RegisterActivityWithOptions(aliasNameClash1, RegisterActivityOptions{Name: "aliasNameClash2"})
+					} else {
+						env.RegisterActivityWithOptions(aliasNameClash1, RegisterActivityOptions{Name: "aliasNameClash2"})
+						require.Empty(t, logger.Lines())
+						env.RegisterActivityWithOptions(aliasNameClash2, RegisterActivityOptions{Name: "Activity_v2"})
+					}
+					lines := logger.Lines()
+					if disableAliasing {
+						require.Empty(t, lines)
+					} else {
+						require.Len(t, lines, 1)
+						require.Contains(t, lines[0], "WARN")
+						require.Contains(t, lines[0], `Ambiguous activity name "aliasNameClash2"`)
+						require.Contains(t, lines[0], "go.temporal.io/sdk/internal.aliasNameClash1")
+						require.Contains(t, lines[0], "go.temporal.io/sdk/internal.aliasNameClash2")
+						require.Contains(t, lines[0], `registered as "aliasNameClash2"`)
+						require.Contains(t, lines[0], `registered as "Activity_v2"`)
+						require.Contains(t, lines[0], "worker.Options.DisableRegistrationAliasing")
+					}
+
+					env.ExecuteWorkflow(func(ctx Context) (string, error) {
+						ctx = WithActivityOptions(ctx, ActivityOptions{StartToCloseTimeout: time.Second})
+						ctx = WithLocalActivityOptions(ctx, LocalActivityOptions{StartToCloseTimeout: time.Second})
+						var future Future
+						if local {
+							future = ExecuteLocalActivity(ctx, "aliasNameClash2")
+						} else {
+							future = ExecuteActivity(ctx, "aliasNameClash2")
+						}
+						var result string
+						err := future.Get(ctx, &result)
+						return result, err
+					})
+					var result string
+					require.NoError(t, env.GetWorkflowResult(&result))
+					if disableAliasing {
+						require.Equal(t, "func1", result)
+					} else {
+						// Preserve the historical alias lookup for registered string names.
+						require.Equal(t, "func2", result)
+					}
+				})
+			}
+		}
+	}
+}
+
 func TestActivityNameCollisionWarning(t *testing.T) {
 	activities := &activityNameClashStruct{}
 	tests := []struct {
@@ -295,4 +355,149 @@ func TestWorkerActivityNameCollisionWarning(t *testing.T) {
 	require.Contains(t, warnings[0], "ExistingRegisteredActivityName ActivityNameClash")
 	require.Contains(t, warnings[0], fmt.Sprintf("registered as %q at %s:%d", "ActivityNameClash", registrationFile, firstLine+1))
 	require.Contains(t, warnings[0], fmt.Sprintf("registered as %q at %s:%d", "Prefix_ActivityNameClash", registrationFile, secondLine+1))
+}
+
+func workflowNameClash1(Context) (string, error) { return "workflow1", nil }
+func workflowNameClash2(Context) (string, error) { return "workflow2", nil }
+
+type workflowNameClashStruct struct{}
+
+func (*workflowNameClashStruct) workflowNameClash1(Context) (string, error) {
+	return "method", nil
+}
+
+func TestWorkflowNameCollisionWarning(t *testing.T) {
+	workflows := &workflowNameClashStruct{}
+	tests := []struct {
+		name         string
+		first        any
+		firstName    string
+		second       any
+		secondName   string
+		wantWarnings int
+	}{
+		{
+			name:  "different unqualified names",
+			first: workflowNameClash1, firstName: "First",
+			second: workflowNameClash2, secondName: "Second",
+		},
+		{
+			name:  "same registration",
+			first: workflowNameClash1, firstName: "First",
+			second: workflowNameClash1, secondName: "First",
+		},
+		{
+			name:  "function aliases",
+			first: workflowNameClash1, firstName: "First",
+			second: workflowNameClash1, secondName: "Second",
+			wantWarnings: 1,
+		},
+		{
+			name:  "registered name collides with function name",
+			first: workflowNameClash1, firstName: "workflowNameClash2",
+			second: workflowNameClash2, secondName: "Workflow_v2",
+			wantWarnings: 1,
+		},
+		{
+			name:  "function name collides with registered name",
+			first: workflowNameClash2, firstName: "Workflow_v2",
+			second: workflowNameClash1, secondName: "workflowNameClash2",
+			wantWarnings: 1,
+		},
+		{
+			name:  "method name collides with function name",
+			first: workflowNameClash1, firstName: "First",
+			second: workflows.workflowNameClash1, secondName: "Method",
+			wantWarnings: 1,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			for _, disableAliasing := range []bool{false, true} {
+				t.Run(fmt.Sprintf("disableAliasing=%v", disableAliasing), func(t *testing.T) {
+					logger := ilog.NewMemoryLogger()
+					var suite WorkflowTestSuite
+					suite.SetLogger(logger)
+					suite.SetDisableRegistrationAliasing(disableAliasing)
+					env := suite.NewTestWorkflowEnvironment()
+					env.RegisterWorkflowWithOptions(tt.first, RegisterWorkflowOptions{Name: tt.firstName})
+					require.Empty(t, logger.Lines())
+					env.RegisterWorkflowWithOptions(tt.second, RegisterWorkflowOptions{
+						Name:                          tt.secondName,
+						DisableAlreadyRegisteredCheck: true,
+					})
+					if disableAliasing {
+						require.Empty(t, logger.Lines())
+					} else {
+						require.Len(t, logger.Lines(), tt.wantWarnings)
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestWorkerWorkflowNameCollisionWarning(t *testing.T) {
+	for _, disableAliasing := range []bool{false, true} {
+		t.Run(fmt.Sprintf("disableAliasing=%v", disableAliasing), func(t *testing.T) {
+			logger := ilog.NewMemoryLogger()
+			service := workflowservicemock.NewMockWorkflowServiceClient(gomock.NewController(t))
+			client := NewServiceClient(service, nil, ClientOptions{Logger: logger})
+			worker := NewAggregatedWorker(client, "test-task-queue", WorkerOptions{DisableRegistrationAliasing: disableAliasing})
+			_, registrationFile, firstLine, _ := runtime.Caller(0)
+			worker.RegisterWorkflow(workflowNameClash1)
+			_, _, secondLine, _ := runtime.Caller(0)
+			worker.RegisterWorkflowWithOptions((&workflowNameClashStruct{}).workflowNameClash1, RegisterWorkflowOptions{Name: "Method"})
+
+			var warnings []string
+			for _, line := range logger.Lines() {
+				if strings.Contains(line, "Ambiguous workflow name") {
+					warnings = append(warnings, line)
+				}
+			}
+			if disableAliasing {
+				require.Empty(t, warnings)
+				return
+			}
+			require.Len(t, warnings, 1)
+			require.Contains(t, warnings[0], "WARN")
+			require.Contains(t, warnings[0], `Ambiguous workflow name "workflowNameClash1"`)
+			require.Contains(t, warnings[0], "WorkflowName workflowNameClash1")
+			require.Contains(t, warnings[0], "RegisteredWorkflowName Method")
+			require.Contains(t, warnings[0], "ExistingRegisteredWorkflowName workflowNameClash1")
+			require.Contains(t, warnings[0], fmt.Sprintf("registered as %q at %s:%d", "workflowNameClash1", registrationFile, firstLine+1))
+			require.Contains(t, warnings[0], fmt.Sprintf("registered as %q at %s:%d", "Method", registrationFile, secondLine+1))
+			function := runtime.FuncForPC(reflect.ValueOf(workflowNameClash1).Pointer())
+			file, line := function.FileLine(function.Entry())
+			require.Contains(t, warnings[0], fmt.Sprintf("%s (%s:%d)", function.Name(), file, line))
+			require.Contains(t, warnings[0], "go.temporal.io/sdk/internal.(*workflowNameClashStruct).workflowNameClash1")
+			require.Contains(t, warnings[0], "worker.Options.DisableRegistrationAliasing")
+			require.NotContains(t, warnings[0], "<autogenerated>")
+			require.NotContains(t, warnings[0], "-fm")
+		})
+	}
+}
+
+func TestWorkflowAndActivityNameCollisionNamespaces(t *testing.T) {
+	logger := ilog.NewMemoryLogger()
+	registry := newRegistryWithOptions(registryOptions{logger: logger})
+	registry.RegisterWorkflowWithOptions(workflowNameClash1, RegisterWorkflowOptions{Name: "ActivityNameClash"})
+	registry.RegisterActivityWithOptions(ActivityNameClash, RegisterActivityOptions{Name: "workflowNameClash1"})
+	require.Empty(t, logger.Lines())
+}
+
+func TestNameCollisionRegistrySnapshot(t *testing.T) {
+	logger := ilog.NewMemoryLogger()
+	var suite WorkflowTestSuite
+	suite.SetLogger(logger)
+	env := suite.NewTestWorkflowEnvironment()
+	restore := env.impl.snapshotRegistry()
+	env.RegisterWorkflowWithOptions(workflowNameClash1, RegisterWorkflowOptions{Name: "TemporaryWorkflow"})
+	env.RegisterActivityWithOptions(ActivityNameClash, RegisterActivityOptions{Name: "TemporaryActivity"})
+	require.Empty(t, logger.Lines())
+
+	restore()
+	env.RegisterWorkflowWithOptions(workflowNameClash1, RegisterWorkflowOptions{Name: "Workflow"})
+	env.RegisterActivityWithOptions(ActivityNameClash, RegisterActivityOptions{Name: "Activity"})
+	require.Empty(t, logger.Lines())
 }

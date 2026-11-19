@@ -415,6 +415,7 @@ type (
 		// Users are STRONGLY encouraged to set this flag if they register ANY
 		// workflow or activity functions with custom names. Otherwise,
 		// if a function name happens to coincide with a registered name,
+		// or if two function names happen to coincide with each other,
 		// the wrong function might be invoked.
 		DisableRegistrationAliasing bool
 

@@ -7,13 +7,13 @@ import (
 	"strings"
 )
 
-type activityRegistration struct {
+type functionRegistration struct {
 	registeredName string
 	function       *runtime.Func
 	registeredAt   string
 }
 
-func (a activityRegistration) String() string {
+func (a functionRegistration) String() string {
 	function := "unknown function"
 	if a.function != nil {
 		function = strings.TrimSuffix(a.function.Name(), "-fm")
@@ -29,8 +29,8 @@ func (a activityRegistration) String() string {
 	return fmt.Sprintf("%s, registered as %q at %s", function, a.registeredName, a.registeredAt)
 }
 
-// activityRegistrationCaller skips the SDK's registration wrappers, including inlined ones.
-func activityRegistrationCaller() string {
+// registrationCaller skips the SDK's registration wrappers, including inlined ones.
+func registrationCaller() string {
 	var callers [16]uintptr
 	count := runtime.Callers(2, callers[:])
 	frames := runtime.CallersFrames(callers[:count])
@@ -38,7 +38,9 @@ func activityRegistrationCaller() string {
 		frame, more := frames.Next()
 		isRegistrationWrapper := strings.HasPrefix(frame.Function, "go.temporal.io/sdk/internal.") &&
 			(strings.HasSuffix(frame.Function, ".RegisterActivity") ||
-				strings.HasSuffix(frame.Function, ".RegisterActivityWithOptions"))
+				strings.HasSuffix(frame.Function, ".RegisterActivityWithOptions") ||
+				strings.HasSuffix(frame.Function, ".RegisterWorkflow") ||
+				strings.HasSuffix(frame.Function, ".RegisterWorkflowWithOptions"))
 		if !isRegistrationWrapper && frame.File != "" && frame.Line > 0 {
 			return fmt.Sprintf("%s:%d", frame.File, frame.Line)
 		}
@@ -48,28 +50,29 @@ func activityRegistrationCaller() string {
 	}
 }
 
-// warnActivityNameCollision must be called with the registry locked.
-func (r *registry) warnActivityNameCollision(fnName, registerName string, fn reflect.Value, registeredAt string) {
-	if r.activityAliasMap == nil {
+// warnNameCollision must be called with the registry locked.
+func (r *registry) warnNameCollision(kind string, registrations map[string]functionRegistration, fnName, registerName string, fn reflect.Value, registeredAt string) {
+	if registrations == nil {
 		return
 	}
-	registration := activityRegistration{
+	registration := functionRegistration{
 		registeredName: registerName,
 		function:       runtime.FuncForPC(fn.Pointer()),
 		registeredAt:   registeredAt,
 	}
+	// Alias lookup also applies to string inputs, so registered names can collide with function names.
 	for _, name := range []string{fnName, registerName} {
-		if previous, ok := r.antialiasingActivityMap[name]; ok && previous.registeredName != registerName {
+		if previous, ok := registrations[name]; ok && previous.registeredName != registerName {
 			r.logger.Warn(
-				fmt.Sprintf("Ambiguous activity name %q:\n  %s\n  %s\n"+
+				fmt.Sprintf("Ambiguous %s name %q:\n  %s\n  %s\n"+
 					"Function references use unqualified names, and aliases can shadow registered string names. "+
 					"Use registered string names and set worker.Options.DisableRegistrationAliasing to true to avoid ambiguity.",
-					name, previous, registration),
-				"ActivityName", name,
-				"RegisteredActivityName", registerName,
-				"ExistingRegisteredActivityName", previous.registeredName,
+					strings.ToLower(kind), name, previous, registration),
+				kind+"Name", name,
+				"Registered"+kind+"Name", registerName,
+				"ExistingRegistered"+kind+"Name", previous.registeredName,
 			)
 		}
-		r.antialiasingActivityMap[name] = registration
+		registrations[name] = registration
 	}
 }

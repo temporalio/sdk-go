@@ -668,6 +668,8 @@ func (env *testWorkflowEnvironmentImpl) snapshotRegistry() func() {
 	workflowVersioningBehaviorMap := maps.Clone(r.workflowVersioningBehaviorMap)
 	activityFuncMap := maps.Clone(r.activityFuncMap)
 	activityAliasMap := maps.Clone(r.activityAliasMap)
+	antialiasingActivityMap := maps.Clone(r.antialiasingActivityMap)
+	antialiasingWorkflowMap := maps.Clone(r.antialiasingWorkflowMap)
 	dynamicWorkflow, dynamicWorkflowOptions, dynamicActivity := r.dynamicWorkflow, r.dynamicWorkflowOptions, r.dynamicActivity
 	return func() {
 		r.Lock()
@@ -678,6 +680,8 @@ func (env *testWorkflowEnvironmentImpl) snapshotRegistry() func() {
 		r.workflowVersioningBehaviorMap = workflowVersioningBehaviorMap
 		r.activityFuncMap = activityFuncMap
 		r.activityAliasMap = activityAliasMap
+		r.antialiasingActivityMap = antialiasingActivityMap
+		r.antialiasingWorkflowMap = antialiasingWorkflowMap
 		r.dynamicWorkflow, r.dynamicWorkflowOptions, r.dynamicActivity = dynamicWorkflow, dynamicWorkflowOptions, dynamicActivity
 	}
 }
