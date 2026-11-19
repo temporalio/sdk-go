@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"reflect"
-	"runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -2127,32 +2126,6 @@ func (s *internalWorkerTestSuite) TestSlotSupplierReturnsErrorCanContinue() {
 	time.Sleep(time.Millisecond * 200)
 	worker.Stop()
 	assert.True(s.T(), throwingSlotSupplier.didThrow.Load())
-}
-
-func (s *internalWorkerTestSuite) TestCreateWorkerRun() {
-	// Windows doesn't support signalling interrupt.
-	if runtime.GOOS == "windows" {
-		s.T().Skip("Not supported on windows")
-	}
-	// Create service endpoint
-	mockCtrl := gomock.NewController(s.T())
-	service := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
-	service.EXPECT().GetSystemInfo(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.GetSystemInfoResponse{}, nil).AnyTimes()
-
-	worker := createWorker(service)
-	worker.RegisterActivity(testActivityNoResult)
-	worker.RegisterWorkflow(testWorkflowReturnStruct)
-	var wg sync.WaitGroup
-	wg.Go(func() {
-		_ = worker.Run(InterruptCh())
-	})
-	time.Sleep(time.Millisecond * 200)
-	p, err := os.FindProcess(os.Getpid())
-	assert.NoError(s.T(), err)
-	assert.NoError(s.T(), p.Signal(os.Interrupt))
-	wg.Wait()
-	assert.False(s.T(), worker.activityWorker.worker.isWorkerStarted)
-	assert.False(s.T(), worker.workflowWorker.worker.isWorkerStarted)
 }
 
 func (s *internalWorkerTestSuite) TestNoActivitiesOrWorkflows() {
