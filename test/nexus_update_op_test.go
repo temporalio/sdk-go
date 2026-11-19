@@ -2,11 +2,14 @@ package test_test
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -16,10 +19,12 @@ import (
 	"go.temporal.io/api/history/v1"
 	nexuspb "go.temporal.io/api/nexus/v1"
 	"go.temporal.io/api/operatorservice/v1"
+	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/temporalnexus"
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
+	"google.golang.org/grpc"
 )
 
 const (
@@ -37,6 +42,7 @@ type updateAddInput struct {
 	SleepDuration      time.Duration
 	WaitForSignal      string
 	ExpectSyncResponse bool // hint to the caller workflow that the async token will not be set (a retried completed update is sync)
+	LoseFirstResponse  bool // the update-with-start handler fails its first successful attempt so the Nexus task is retried
 }
 
 type updateAddOutput struct {
@@ -354,6 +360,230 @@ func (ts *IntegrationTestSuite) TestNexusUpdateWorkflowDelayedOperation() {
 	var out updateAddOutput
 	ts.NoError(callerWorkflowRun.Get(ctx, &out))
 	ts.Equal(out.Count, 5)
+}
+
+func (ts *IntegrationTestSuite) TestNexusUpdateWithStartWorkflowOperation() {
+	skipOnCloud(ts.T(), cloudRequiresProvisioning, "Nexus update tests create namespace endpoints through Operator Service")
+	if os.Getenv("DISABLE_STANDALONE_NEXUS_TESTS") != "" {
+		ts.T().SkipNow()
+	}
+	ctx, cancel := context.WithTimeout(context.TODO(), nexusUpdateTestTimeout)
+	defer cancel()
+
+	uwsTaskQueue := "nexusOpUpdateWithStartTQ-" + uuid.NewString()
+	var lostResponse atomic.Bool
+	addOp, err := temporalnexus.NewTemporalOperation(temporalnexus.TemporalOperationOptions[updateAddInput, updateAddOutput]{
+		Name: addOperation,
+		Start: func(ctx context.Context, nc temporalnexus.NexusClient, input updateAddInput, opts temporalnexus.StartTemporalOperationOptions) (temporalnexus.TemporalOperationResult[updateAddOutput], error) {
+			// TaskQueue is omitted to exercise defaulting to the handler's task queue
+			startOp := nc.NewWithStartWorkflowOperation(client.StartWorkflowOptions{
+				ID:                       input.WorkflowID,
+				WorkflowIDConflictPolicy: enums.WORKFLOW_ID_CONFLICT_POLICY_USE_EXISTING,
+			}, counterWorkflow)
+			res, err := temporalnexus.StartUpdateWithStartWorkflow[updateAddOutput](ctx, nc, client.UpdateWithStartWorkflowOptions{
+				StartWorkflowOperation: startOp,
+				// WorkflowID is left empty to exercise defaulting to the start's workflow ID
+				UpdateOptions: client.UpdateWorkflowOptions{
+					UpdateID:     input.UpdateID,
+					UpdateName:   addUpdate,
+					Args:         []any{input.Amount, input.SleepDuration, input.WaitForSignal},
+					WaitForStage: client.WorkflowUpdateStageAccepted,
+				},
+			})
+			if err == nil && input.LoseFirstResponse && lostResponse.CompareAndSwap(false, true) {
+				// the update-with-start went through, but the response never reaches the caller
+				return temporalnexus.TemporalOperationResult[updateAddOutput]{}, nexus.NewHandlerErrorf(nexus.HandlerErrorTypeInternal, "simulated lost response")
+			}
+			return res, err
+		},
+	})
+	ts.Require().NoError(err)
+
+	endpoint := "update-with-start-nexus-ep-" + uuid.NewString()
+	_, err = ts.client.OperatorService().CreateNexusEndpoint(ctx, &operatorservice.CreateNexusEndpointRequest{
+		Spec: &nexuspb.EndpointSpec{
+			Name: endpoint,
+			Target: &nexuspb.EndpointTarget{
+				Variant: &nexuspb.EndpointTarget_Worker_{
+					Worker: &nexuspb.EndpointTarget_Worker{
+						Namespace: ts.config.Namespace,
+						TaskQueue: uwsTaskQueue,
+					},
+				},
+			},
+		},
+	})
+	ts.Require().NoError(err)
+
+	callerWorkflow := getCallerWorkflow(addOp, endpoint)
+
+	// start request IDs of every update-with-start sent by the handler worker, by workflow ID
+	var startRequestIDsMu sync.Mutex
+	startRequestIDs := map[string][]string{}
+	startRequestIDsFor := func(workflowID string) []string {
+		startRequestIDsMu.Lock()
+		defer startRequestIDsMu.Unlock()
+		return slices.Clone(startRequestIDs[workflowID])
+	}
+	handlerClient, err := ts.newIntegrationTestClient(func(options *client.Options) {
+		options.ConnectionOptions.DialOptions = append(options.ConnectionOptions.DialOptions,
+			grpc.WithChainUnaryInterceptor(func(
+				ctx context.Context, method string, req, reply any, cc *grpc.ClientConn,
+				invoker grpc.UnaryInvoker, opts ...grpc.CallOption,
+			) error {
+				if r, ok := req.(*workflowservice.ExecuteMultiOperationRequest); ok {
+					start := r.GetOperations()[0].GetStartWorkflow()
+					startRequestIDsMu.Lock()
+					startRequestIDs[start.GetWorkflowId()] = append(startRequestIDs[start.GetWorkflowId()], start.GetRequestId())
+					startRequestIDsMu.Unlock()
+				}
+				return invoker(ctx, method, req, reply, cc, opts...)
+			}))
+	})
+	ts.Require().NoError(err)
+	defer handlerClient.Close()
+
+	w := worker.New(handlerClient, uwsTaskQueue, worker.Options{})
+	service := nexus.NewService(serviceName)
+	ts.Require().NoError(service.Register(addOp))
+	w.RegisterNexusService(service)
+	w.RegisterWorkflow(counterWorkflow)
+	w.RegisterWorkflow(callerWorkflow)
+	ts.Require().NoError(w.Start())
+	defer w.Stop()
+
+	startCaller := func(input updateAddInput) client.WorkflowRun {
+		run, err := ts.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
+			ID:                  "uws-caller-" + uuid.NewString(),
+			TaskQueue:           uwsTaskQueue,
+			WorkflowTaskTimeout: time.Second,
+		}, callerWorkflow, input)
+		ts.Require().NoError(err)
+		return run
+	}
+	stopCounter := func(workflowID string) {
+		ts.NoError(ts.client.SignalWorkflow(ctx, workflowID, "", doneSignal, nil))
+		ts.NoError(ts.client.GetWorkflow(ctx, workflowID, "").Get(ctx, nil))
+	}
+	eventTypeFilter := func(t enums.EventType) func(*history.HistoryEvent) bool {
+		return func(e *history.HistoryEvent) bool { return e.EventType == t }
+	}
+
+	ts.Run("starts missing workflow", func() {
+		counterWorkflowID := "counter-" + uuid.NewString()
+		updateID := "uws-" + uuid.NewString()
+		callerRun := startCaller(updateAddInput{WorkflowID: counterWorkflowID, Amount: 5, UpdateID: updateID, SleepDuration: time.Second})
+		defer stopCounter(counterWorkflowID)
+		var out updateAddOutput
+		ts.NoError(callerRun.Get(ctx, &out))
+		ts.Equal(5, out.Count)
+
+		counterRun := ts.client.GetWorkflow(ctx, counterWorkflowID, "")
+		callerRequestID, err := getNexusOpRequestID(ctx, ts.client, callerRun)
+		ts.NoError(err)
+		// the start carries the operation's request ID, so a retried Nexus task is deduplicated
+		requestIDs := startRequestIDsFor(counterWorkflowID)
+		ts.Require().NotEmpty(requestIDs, "handler sent no ExecuteMultiOperation request")
+		ts.Equal(callerRequestID, requestIDs[0])
+
+		// the server links the update to the start event when the same request started the workflow
+		forwardLink := &common.Link{Variant: &common.Link_WorkflowEvent_{WorkflowEvent: &common.Link_WorkflowEvent{
+			Namespace:  ts.config.Namespace,
+			WorkflowId: counterWorkflowID,
+			RunId:      counterRun.GetRunID(),
+			Reference: &common.Link_WorkflowEvent_RequestIdRef{RequestIdRef: &common.Link_WorkflowEvent_RequestIdReference{
+				RequestId: callerRequestID,
+				EventType: enums.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED,
+			}},
+		}}}
+		backwardLink := &common.Link{Variant: &common.Link_WorkflowEvent_{WorkflowEvent: &common.Link_WorkflowEvent{
+			Namespace:  ts.config.Namespace,
+			WorkflowId: callerRun.GetID(),
+			RunId:      callerRun.GetRunID(),
+			Reference: &common.Link_WorkflowEvent_EventRef{EventRef: &common.Link_WorkflowEvent_EventReference{
+				EventId:   getEventIDByType(ctx, ts.client, callerRun, enums.EVENT_TYPE_NEXUS_OPERATION_SCHEDULED),
+				EventType: enums.EVENT_TYPE_NEXUS_OPERATION_SCHEDULED,
+			}},
+		}}}
+		// start links prove the start request carried the Nexus links, update links prove the update did
+		ts.True(checkForLink(getEventLinks(ctx, ts.client, counterRun, eventTypeFilter(enums.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED)), backwardLink))
+		ts.True(checkForLink(getEventLinks(ctx, ts.client, counterRun, eventTypeFilter(enums.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_ACCEPTED)), backwardLink))
+		ts.True(checkForLink(getEventLinks(ctx, ts.client, callerRun, eventTypeFilter(enums.EVENT_TYPE_NEXUS_OPERATION_STARTED)), forwardLink))
+
+		// the async token names the run the server started, which the handler could not know up front
+		started := getEvents(ctx, ts.client, callerRun, eventTypeFilter(enums.EVENT_TYPE_NEXUS_OPERATION_STARTED))
+		ts.Require().Len(started, 1)
+		tokenJSON, err := base64.RawURLEncoding.DecodeString(started[0].GetNexusOperationStartedEventAttributes().GetOperationToken())
+		ts.NoError(err)
+		var token struct {
+			WorkflowID string `json:"wid"`
+			RunID      string `json:"rid"`
+			UpdateID   string `json:"uid"`
+		}
+		ts.NoError(json.Unmarshal(tokenJSON, &token))
+		ts.Equal(counterWorkflowID, token.WorkflowID)
+		ts.Equal(counterRun.GetRunID(), token.RunID)
+		ts.Equal(updateID, token.UpdateID)
+	})
+
+	ts.Run("immediate then repeated update", func() {
+		counterWorkflowID := "counter-" + uuid.NewString()
+		updateID := "uws-" + uuid.NewString()
+		// an update that completes right away is still async
+		callerRun := startCaller(updateAddInput{WorkflowID: counterWorkflowID, Amount: 5, UpdateID: updateID})
+		defer stopCounter(counterWorkflowID)
+		var out updateAddOutput
+		ts.NoError(callerRun.Get(ctx, &out))
+		ts.Equal(5, out.Count)
+
+		// the same UpdateID is deduplicated and returns the completed result synchronously
+		callerRun = startCaller(updateAddInput{WorkflowID: counterWorkflowID, Amount: 5, UpdateID: updateID, ExpectSyncResponse: true})
+		ts.NoError(callerRun.Get(ctx, &out))
+		ts.Equal(5, out.Count)
+	})
+
+	ts.Run("rejected update fails operation", func() {
+		counterWorkflowID := "counter-" + uuid.NewString()
+		callerRun := startCaller(updateAddInput{WorkflowID: counterWorkflowID, Amount: 3, UpdateID: "uws-" + uuid.NewString()})
+		defer stopCounter(counterWorkflowID)
+		ts.ErrorContains(callerRun.Get(ctx, nil), invalidIncrementError.Error())
+		// the rejection fails the operation synchronously, so it never started
+		ts.Empty(getEvents(ctx, ts.client, callerRun, eventTypeFilter(enums.EVENT_TYPE_NEXUS_OPERATION_STARTED)))
+	})
+
+	ts.Run("uses existing workflow", func() {
+		counterWorkflowID := "counter-" + uuid.NewString()
+		existingRun, err := ts.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
+			ID:        counterWorkflowID,
+			TaskQueue: uwsTaskQueue,
+		}, counterWorkflow)
+		ts.Require().NoError(err)
+		defer stopCounter(counterWorkflowID)
+
+		callerRun := startCaller(updateAddInput{WorkflowID: counterWorkflowID, Amount: 5, UpdateID: "uws-" + uuid.NewString(), SleepDuration: time.Second})
+		var out updateAddOutput
+		ts.NoError(callerRun.Get(ctx, &out))
+		ts.Equal(5, out.Count)
+		// USE_EXISTING applied the update to the running workflow instead of starting a new run
+		ts.Len(getEvents(ctx, ts.client, existingRun, eventTypeFilter(enums.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_ACCEPTED)), 1)
+	})
+
+	ts.Run("retry after lost response", func() {
+		counterWorkflowID := "counter-" + uuid.NewString()
+		releaseSignal := "release-" + uuid.NewString()
+		// UpdateID is left empty so it defaults to the request ID, which is stable across retries.
+		// The update waits for a signal so it is still pending when the retried task runs; a completed
+		// update would complete the operation through its callback before the retry.
+		callerRun := startCaller(updateAddInput{WorkflowID: counterWorkflowID, Amount: 5, WaitForSignal: releaseSignal, LoseFirstResponse: true})
+		defer stopCounter(counterWorkflowID)
+		ts.waitForHistoryEvent(callerRun.GetID(), callerRun.GetRunID(), enums.EVENT_TYPE_NEXUS_OPERATION_STARTED, 10*time.Second)
+		ts.NoError(ts.client.SignalWorkflow(ctx, counterWorkflowID, "", releaseSignal, nil))
+		ts.NoError(callerRun.Get(ctx, nil))
+		ts.GreaterOrEqual(len(startRequestIDsFor(counterWorkflowID)), 2, "the Nexus task was not retried")
+		// the caller can't see a duplicate update, so check history
+		counterRun := ts.client.GetWorkflow(ctx, counterWorkflowID, "")
+		ts.Len(getEvents(ctx, ts.client, counterRun, eventTypeFilter(enums.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_ACCEPTED)), 1)
+	})
 }
 
 // caller workflow

@@ -68,6 +68,40 @@ func (nc NexusClient) StartUpdateWorkflow[R any](
 	return StartUpdateWorkflow[R](ctx, nc, updateWorkflowOptions)
 }
 
+// StartUpdateWithStartWorkflow starts a workflow if needed and runs an update on it for a Nexus
+// operation.
+//
+// This method is available when building with Go 1.27 or later. The package-level
+// [StartUpdateWithStartWorkflow] function provides the same behavior for earlier Go versions.
+//
+// Example:
+//
+//	op := MustNewTemporalOperation(TemporalOperationOptions[MyInput, MyOutput]{
+//		Name: "my-update-with-start-operation",
+//		Start: func(ctx context.Context, nc NexusClient, input MyInput, _ StartTemporalOperationOptions) (TemporalOperationResult[MyOutput], error) {
+//			startOp := nc.NewWithStartWorkflowOperation(client.StartWorkflowOptions{
+//				ID:                       input.ID,
+//				WorkflowIDConflictPolicy: enumspb.WORKFLOW_ID_CONFLICT_POLICY_USE_EXISTING,
+//			}, MyWorkflow, input)
+//			return nc.StartUpdateWithStartWorkflow[MyOutput](ctx, client.UpdateWithStartWorkflowOptions{
+//				StartWorkflowOperation: startOp,
+//				UpdateOptions: client.UpdateWorkflowOptions{
+//					UpdateName:   "MyUpdate",
+//					Args:         []any{input},
+//					WaitForStage: client.WorkflowUpdateStageAccepted,
+//				},
+//			})
+//		},
+//	})
+//
+// NOTE: Experimental
+func (nc NexusClient) StartUpdateWithStartWorkflow[R any](
+	ctx context.Context,
+	options client.UpdateWithStartWorkflowOptions,
+) (TemporalOperationResult[R], error) {
+	return StartUpdateWithStartWorkflow[R](ctx, nc, options)
+}
+
 // StartActivity starts a type-safe stand-alone activity execution for a Nexus operation.
 //
 // The activity parameter must have the signature func(context.Context, I) (O, error).
