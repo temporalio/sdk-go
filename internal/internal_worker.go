@@ -764,6 +764,8 @@ type registry struct {
 	_                             DynamicRegisterActivityOptions
 	interceptors                  []WorkerInterceptor
 	logger                        log.Logger
+
+	antialiasingActivityMap map[string]activityRegistration
 }
 
 type registryOptions struct {
@@ -875,8 +877,12 @@ func (r *registry) RegisterActivityWithOptions(
 	}
 	// Validate that it is a function
 	fnType := reflect.TypeOf(af)
+	var registeredAt string
+	if r.activityAliasMap != nil {
+		registeredAt = activityRegistrationCaller()
+	}
 	if fnType.Kind() == reflect.Pointer && fnType.Elem().Kind() == reflect.Struct {
-		registerErr := r.registerActivityStructWithOptions(af, options)
+		registerErr := r.registerActivityStructWithOptions(af, options, registeredAt)
 		if registerErr != nil {
 			panic(registerErr)
 		}
@@ -912,9 +918,10 @@ func (r *registry) RegisterActivityWithOptions(
 	if len(alias) > 0 && r.activityAliasMap != nil {
 		r.activityAliasMap[fnName] = alias
 	}
+	r.warnActivityNameCollision(fnName, registerName, reflect.ValueOf(af), registeredAt)
 }
 
-func (r *registry) registerActivityStructWithOptions(aStruct any, options RegisterActivityOptions) error {
+func (r *registry) registerActivityStructWithOptions(aStruct any, options RegisterActivityOptions, registeredAt string) error {
 	r.Lock()
 	defer r.Unlock()
 
@@ -943,6 +950,8 @@ func (r *registry) registerActivityStructWithOptions(aStruct any, options Regist
 			}
 		}
 		r.activityFuncMap[registerName] = &activityExecutor{name: registerName, fn: methodValue.Interface()}
+		// The unbound method retains its definition location; methodValue is a reflection wrapper.
+		r.warnActivityNameCollision(name, registerName, method.Func, registeredAt)
 		count++
 	}
 	if count == 0 {
@@ -1214,6 +1223,7 @@ func newRegistryWithOptions(options registryOptions) *registry {
 	if !options.disableAliasing {
 		r.workflowAliasMap = make(map[string]string)
 		r.activityAliasMap = make(map[string]string)
+		r.antialiasingActivityMap = make(map[string]activityRegistration)
 	}
 	return r
 }

@@ -131,6 +131,9 @@ type (
 		// When registering the structure that implements activities the name is used as a prefix that is
 		// prepended to the activity method name.
 		//  worker.RegisterActivityWithOptions(&Activities{ ... }, RegisterActivityOptions{Name: "MyActivities_"})
+		// Note that registering a struct does not create aliases for its methods,
+		// even when DisableRegistrationAliasing is false.
+		//
 		// To override each name of activities defined through a structure register the methods one by one:
 		// activities := &Activities{ ... }
 		// worker.RegisterActivityWithOptions(activities.SampleActivity1, RegisterActivityOptions{Name: "Sample1"})

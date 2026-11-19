@@ -93,6 +93,9 @@ type (
 		// worker.Options.DisableRegistrationAliasing at the worker level to prevent
 		// ambiguity between string names and function references. Also users should
 		// always use this string name when executing this activity.
+		//
+		// Registering a struct does not create aliases for its methods; it's as if
+		// the methods were registered with the DisableRegistrationAliasing flag.
 		Name string
 		// DisableAlreadyRegisteredCheck disables the check for already registered activities.
 		DisableAlreadyRegisteredCheck bool

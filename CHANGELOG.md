@@ -22,6 +22,12 @@ to docs, or any other relevant information.
 
 ### Added
 
+- Added registration-time warnings for ambiguous activity names when registration aliasing is enabled,
+  including collisions between unqualified function and struct method names. Warnings show both
+  registered names and registration locations, plus Go function names and definition locations when
+  available. Documented that registering an activity struct does not create aliases for its methods;
+  use the full registered string names when executing them.
+
 ### Changed
 
 ### Deprecated
