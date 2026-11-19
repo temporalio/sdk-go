@@ -1970,13 +1970,16 @@ func (ts *IntegrationTestSuite) TestCancelChildWorkflowAndParentWorkflow() {
 		ts.workflows.ChildWorkflowAndParentCancel)
 	ts.NoError(err)
 
+	const childReadyTimeout = 5 * time.Second
+	queryCtx, cancelQuery := context.WithTimeout(ctx, childReadyTimeout)
+	defer cancelQuery()
 	var childWorkflowID string
 	ts.EventuallyWithT(func(t *assert.CollectT) {
-		v, err := ts.client.QueryWorkflow(ctx, run.GetID(), run.GetRunID(), "child-and-parent-cancel-child-workflow-id")
+		v, err := ts.client.QueryWorkflow(queryCtx, run.GetID(), run.GetRunID(), "child-and-parent-cancel-child-workflow-id")
 		if assert.NoError(t, err) && assert.NoError(t, v.Get(&childWorkflowID)) {
 			assert.NotEmpty(t, childWorkflowID)
 		}
-	}, ctxTimeout, 200*time.Millisecond)
+	}, childReadyTimeout, 200*time.Millisecond)
 
 	err = ts.client.CancelWorkflow(ctx, childWorkflowID, "")
 	ts.NoError(err)
@@ -7325,22 +7328,27 @@ func (ts *IntegrationTestSuite) TestScheduleTrigger() {
 	defer func() {
 		ts.NoError(handle.Delete(ctx))
 	}()
-	for range 5 {
+	for i := range 5 {
+		if i > 0 {
+			// Schedule actions can only trigger once per second.
+			time.Sleep(2 * time.Second)
+		}
 		ts.NoError(handle.Trigger(ctx, client.ScheduleTriggerOptions{
 			Overlap: enumspb.SCHEDULE_OVERLAP_POLICY_ALLOW_ALL,
 		}))
-		// schedule actions can only trigger once per second
-		time.Sleep(2 * time.Second)
 	}
+	const actionsReadyTimeout = 5 * time.Second
+	describeCtx, cancelDescribe := context.WithTimeout(ctx, actionsReadyTimeout)
+	defer cancelDescribe()
 	var description *client.ScheduleDescription
 	ts.EventuallyWithT(func(t *assert.CollectT) {
-		current, err := handle.Describe(ctx)
+		current, err := handle.Describe(describeCtx)
 		if assert.NoError(t, err) {
 			description = current
 			assert.EqualValues(t, 5, current.Info.NumActions)
 			assert.Len(t, current.Info.RecentActions, 5)
 		}
-	}, ctxTimeout, 200*time.Millisecond)
+	}, actionsReadyTimeout, 200*time.Millisecond)
 	for _, wf := range description.Info.RecentActions {
 		wfRun := ts.client.GetWorkflow(ctx, wf.StartWorkflowResult.WorkflowID, wf.StartWorkflowResult.FirstExecutionRunID)
 		var result string
