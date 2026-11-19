@@ -2857,6 +2857,7 @@ func (env *testWorkflowEnvironmentImpl) SignalExternalWorkflow(
 	signalName string,
 	input *commonpb.Payloads,
 	arg any,
+	argConverter converter.DataConverter,
 	header *commonpb.Header,
 	childWorkflowOnly bool,
 	_ []*sdk.EventGroupMarker,
@@ -2889,7 +2890,7 @@ func (env *testWorkflowEnvironmentImpl) SignalExternalWorkflow(
 	// so it can block and wait on the requested delay time (if configured). If we run it in main thread, and the mock
 	// configured to delay, it will block the main loop which stops the world.
 	env.runningCount++
-	sent := env.decodeSignalArg(input, arg)
+	sent := decodeSignalArg(argConverter, input, arg)
 	go func() {
 		args := []any{namespace, workflowID, runID, signalName, sent}
 		// below call will panic if mock is not properly setup.
@@ -2909,17 +2910,17 @@ func (env *testWorkflowEnvironmentImpl) SignalExternalWorkflow(
 }
 
 // decodeSignalArg returns the signal argument decoded from a copy of its
-// payload, so the mock sees the data as it was sent and shares no memory with
-// the workflow. It returns arg itself when arg is nil or the payload does not
-// decode with the root data converter.
-func (env *testWorkflowEnvironmentImpl) decodeSignalArg(input *commonpb.Payloads, arg any) any {
+// payload with dc, the converter that encoded it, so the mock sees the data as
+// it was sent and shares no memory with the workflow. It returns arg itself
+// when arg is nil or the payload does not decode.
+func decodeSignalArg(dc converter.DataConverter, input *commonpb.Payloads, arg any) any {
 	if arg == nil {
 		return nil
 	}
 	// The byte slice converter puts the caller's slice in the payload as is.
 	input = proto.Clone(input).(*commonpb.Payloads)
 	valuePtr := reflect.New(reflect.TypeOf(arg))
-	if err := decodeArg(env.GetRootDataConverter(), input, valuePtr.Interface()); err != nil {
+	if err := decodeArg(dc, input, valuePtr.Interface()); err != nil {
 		return arg
 	}
 	return valuePtr.Elem().Interface()

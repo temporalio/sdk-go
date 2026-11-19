@@ -2011,6 +2011,7 @@ func signalExternalWorkflow(ctx Context, workflowID, runID, signalName string, a
 		signalName,
 		input,
 		arg,
+		dataConverter,
 		header,
 		childWorkflowOnly,
 		eventGroupMarkersToProto(ctx, groups),
