@@ -4377,6 +4377,7 @@ func (ts *IntegrationTestSuite) TestSlotsAvailableCounter() {
 	ctx, cancel := context.WithTimeout(ts.T().Context(), ctxTimeout)
 	defer cancel()
 
+	// Let the test control when each slot is released, independent of heartbeat timing.
 	var releases [3]chan struct{}
 	for i := range releases {
 		releases[i] = make(chan struct{})
@@ -7337,6 +7338,8 @@ func (ts *IntegrationTestSuite) TestScheduleTrigger() {
 			Overlap: enumspb.SCHEDULE_OVERLAP_POLICY_ALLOW_ALL,
 		}))
 	}
+
+	// Trigger can return before the action appears in Describe.
 	const actionsReadyTimeout = 5 * time.Second
 	describeCtx, cancelDescribe := context.WithTimeout(ctx, actionsReadyTimeout)
 	defer cancelDescribe()

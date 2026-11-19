@@ -1136,7 +1136,7 @@ func (ts *WorkerHeartbeatTestSuite) TestActivityCancelDeliveredWithoutHeartbeat(
 	ts.NoError(err)
 	defer c.Close()
 
-	// Start the shared command poller before the first activity poll can omit its control queue.
+	// Activity polls advertise the control queue only after command polling starts.
 	bootstrapWorker := worker.New(c, ts.taskQueueName+"-bootstrap", worker.Options{})
 	ts.NoError(bootstrapWorker.Start())
 	defer bootstrapWorker.Stop()
