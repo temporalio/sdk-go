@@ -758,3 +758,127 @@ func TestWorkflowClientReadInterceptorHistoryShortCircuit(t *testing.T) {
 	_, err := actual.Next()
 	require.ErrorIs(t, err, expected)
 }
+
+type updateWithStartInterceptor struct {
+	ClientInterceptorBase
+	ClientOutboundInterceptorBase
+	updateWithStart func(context.Context, *ClientUpdateWithStartWorkflowInput) (WorkflowUpdateHandle, error)
+}
+
+func (i *updateWithStartInterceptor) InterceptClient(next ClientOutboundInterceptor) ClientOutboundInterceptor {
+	i.Next = next
+	return i
+}
+
+func (i *updateWithStartInterceptor) UpdateWithStartWorkflow(ctx context.Context, in *ClientUpdateWithStartWorkflowInput) (WorkflowUpdateHandle, error) {
+	return i.updateWithStart(ctx, in)
+}
+
+func TestUpdateWithStartInterceptorStartWorkflowInput(t *testing.T) {
+	tests := []struct {
+		name string
+		// modify is applied by the interceptor; it returns the input to pass to Next.
+		modify             func(in *ClientUpdateWithStartWorkflowInput) *ClientUpdateWithStartWorkflowInput
+		expectedWorkflowID string
+		expectedTaskQueue  string
+	}{
+		{
+			name: "read only",
+			modify: func(in *ClientUpdateWithStartWorkflowInput) *ClientUpdateWithStartWorkflowInput {
+				return in
+			},
+			expectedWorkflowID: workflowID,
+			expectedTaskQueue:  taskqueue,
+		},
+		{
+			name: "modify in place",
+			modify: func(in *ClientUpdateWithStartWorkflowInput) *ClientUpdateWithStartWorkflowInput {
+				in.StartWorkflowInput.Options.TaskQueue = "intercepted-task-queue"
+				return in
+			},
+			expectedWorkflowID: workflowID,
+			expectedTaskQueue:  "intercepted-task-queue",
+		},
+		{
+			name: "replace",
+			modify: func(in *ClientUpdateWithStartWorkflowInput) *ClientUpdateWithStartWorkflowInput {
+				options := *in.StartWorkflowInput.Options
+				options.ID = "intercepted-workflow-id"
+				in.StartWorkflowInput = &ClientExecuteWorkflowInput{
+					Options:      &options,
+					WorkflowType: in.StartWorkflowInput.WorkflowType,
+					Args:         in.StartWorkflowInput.Args,
+				}
+				return in
+			},
+			expectedWorkflowID: "intercepted-workflow-id",
+			expectedTaskQueue:  taskqueue,
+		},
+		{
+			name: "nil falls back to operation input",
+			modify: func(in *ClientUpdateWithStartWorkflowInput) *ClientUpdateWithStartWorkflowInput {
+				// Simulates an interceptor written before StartWorkflowInput existed.
+				return &ClientUpdateWithStartWorkflowInput{
+					UpdateOptions:          in.UpdateOptions,
+					StartWorkflowOperation: in.StartWorkflowOperation,
+				}
+			},
+			expectedWorkflowID: workflowID,
+			expectedTaskQueue:  taskqueue,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			service := workflowservicemock.NewMockWorkflowServiceClient(gomock.NewController(t))
+			service.EXPECT().GetSystemInfo(gomock.Any(), gomock.Any(), gomock.Any()).
+				Return(&workflowservice.GetSystemInfoResponse{}, nil).AnyTimes()
+			interceptor := &updateWithStartInterceptor{}
+			interceptor.updateWithStart = func(ctx context.Context, in *ClientUpdateWithStartWorkflowInput) (WorkflowUpdateHandle, error) {
+				require.NotNil(t, in.StartWorkflowInput)
+				require.Equal(t, workflowID, in.StartWorkflowInput.Options.ID)
+				require.Equal(t, taskqueue, in.StartWorkflowInput.Options.TaskQueue)
+				require.Equal(t, workflowType, in.StartWorkflowInput.WorkflowType)
+				require.Equal(t, []any{"arg"}, in.StartWorkflowInput.Args)
+				return interceptor.Next.UpdateWithStartWorkflow(ctx, tc.modify(in))
+			}
+			client := NewServiceClient(service, nil, ClientOptions{Interceptors: []ClientInterceptor{interceptor}})
+			t.Cleanup(client.Close)
+
+			var startReq *workflowservice.StartWorkflowExecutionRequest
+			service.EXPECT().ExecuteMultiOperation(gomock.Any(), gomock.Any(), gomock.Any()).
+				DoAndReturn(func(_ context.Context, req *workflowservice.ExecuteMultiOperationRequest, _ ...grpc.CallOption) (*workflowservice.ExecuteMultiOperationResponse, error) {
+					startReq = req.Operations[0].GetStartWorkflow()
+					return &workflowservice.ExecuteMultiOperationResponse{
+						Responses: []*workflowservice.ExecuteMultiOperationResponse_Response{
+							{Response: &workflowservice.ExecuteMultiOperationResponse_Response_StartWorkflow{
+								StartWorkflow: &workflowservice.StartWorkflowExecutionResponse{RunId: runID},
+							}},
+							{Response: &workflowservice.ExecuteMultiOperationResponse_Response_UpdateWorkflow{
+								UpdateWorkflow: &workflowservice.UpdateWorkflowExecutionResponse{
+									Stage: enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_COMPLETED,
+								},
+							}},
+						},
+					}, nil
+				})
+
+			start := client.NewWithStartWorkflowOperation(StartWorkflowOptions{
+				ID: workflowID, TaskQueue: taskqueue,
+				WorkflowIDConflictPolicy: enumspb.WORKFLOW_ID_CONFLICT_POLICY_FAIL,
+			}, workflowType, "arg")
+			_, err := client.UpdateWithStartWorkflow(t.Context(), UpdateWithStartWorkflowOptions{
+				StartWorkflowOperation: start,
+				UpdateOptions: UpdateWorkflowOptions{
+					UpdateName: "update", WaitForStage: WorkflowUpdateStageCompleted,
+				},
+			})
+			require.NoError(t, err)
+
+			require.Equal(t, tc.expectedWorkflowID, startReq.GetWorkflowId())
+			require.Equal(t, tc.expectedTaskQueue, startReq.GetTaskQueue().GetName())
+			run, err := start.Get(t.Context())
+			require.NoError(t, err)
+			require.Equal(t, tc.expectedWorkflowID, run.GetID())
+		})
+	}
+}
