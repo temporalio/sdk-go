@@ -520,8 +520,10 @@ func SetScheduleTimeSkippingConfig(
 //
 // Duration is required, since they don't have an end like workflows do.
 //
-// Returns (true, nil) once the fast-forward completes, and an error if another
-// caller's fast-forward supersedes it.
+// Returns (true, nil) once the fast-forward completes, and (false, nil) if it
+// stopped first — time skipping switched off, or the session's skip budget
+// spent. A fast-forward that a later one replaced returns an error, since it
+// can never complete.
 //
 // Exposed as: [go.temporal.io/sdk/timeskipping.FastForwardSchedule]
 //
@@ -557,8 +559,10 @@ func FastForwardSchedule(
 		return false, err
 	}
 
-	if res.FailedReason != "" {
-		return false, fmt.Errorf("fast_forward %q did not complete: %s", ffID, res.FailedReason)
+	if cur := res.FastForwardInfo; cur != nil && cur.ID != "" && cur.ID != ffID {
+		return false, fmt.Errorf(
+			"fast_forward %q was replaced by fast_forward %q (schedule: %s)",
+			ffID, cur.ID, res.FailedReason)
 	}
 	return res.Completed, nil
 }

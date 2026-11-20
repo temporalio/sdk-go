@@ -28,6 +28,8 @@ type TimeSkippingScheduleTestSuite struct {
 }
 
 func TestTimeSkippingScheduleTestSuite(t *testing.T) {
+	skipOnCloud(t, cloudRequiresLocalServer,
+		"the suite starts a private dev server pinned to a time-skipping CLI build")
 	suite.Run(t, new(TimeSkippingScheduleTestSuite))
 }
 

@@ -189,6 +189,14 @@ func (s *replayTestSuite) TestReplayWorkflowHistoryFromFile() {
 	}
 }
 
+func (s *replayTestSuite) TestReplayWorkflowWithTimeSkippingTransitioned() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(TimeSkippingWf)
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(),
+		"time-skipping-transitioned.json")
+	require.NoError(s.T(), err)
+}
+
 func (s *replayTestSuite) TestReplayWorkflowWithBadUnknownEvent() {
 	// Test replaying a history with an unknown event that cannot be ignored fails
 	replayer := worker.NewWorkflowReplayer()

@@ -87,6 +87,11 @@ func FastForwardWorkflow(
 // Duration is required: a schedule has no terminal state to skip to, so the
 // server rejects unbounded time skipping on one.
 //
+// Returns true on completion, and false if the fast-forward stopped first —
+// time skipping switched off, or the session's skip budget spent. A
+// fast-forward that a later one replaced returns an error, since it can never
+// complete.
+//
 // NOTE: Experimental
 func FastForwardSchedule(
 	ctx context.Context, handle client.ScheduleHandle, options ScheduleFastForwardOptions,
