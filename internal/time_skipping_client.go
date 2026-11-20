@@ -138,6 +138,12 @@ type (
 		// failed_reason; for a schedule, which has no polling RPC, it is derived
 		// from the schedule's reported state.
 		FailedReason string
+
+		// FastForwardInfo is the fast-forward the resource is on now, which is not
+		// necessarily the one that was waited for. It is nil when there is none,
+		// which is how a cleared fast-forward is told apart from a replaced one:
+		// the server gives the same FailedReason for both.
+		FastForwardInfo *TimeSkippingFastForwardInfo
 	}
 
 	// PollWorkflowFastForwardOptions identifies the workflow fast-forward to

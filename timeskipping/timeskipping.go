@@ -65,9 +65,10 @@ type (
 //
 // With a Duration the fast-forward is bounded: it completes once virtual time
 // reaches the target, and time skipping switches itself off there. Returns true
-// on completion, false if the workflow ends or the fast-forward is superseded
-// first. Without a Duration it is unbounded: skipping stays on and the call
-// waits for the workflow to end, always returning false.
+// on completion, and false if the workflow ends or the fast-forward is cleared
+// first. A fast-forward that a later one replaced returns an error, since it
+// can never complete. Without a Duration it is unbounded: skipping stays on and
+// the call waits for the workflow to end, always returning false.
 //
 // If time skipping is not already enabled on the workflow, this enables it,
 // preserving any DisablePropagation and MaxSessionSkipCount already set.

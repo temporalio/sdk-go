@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -96,10 +95,9 @@ func timeSkippingFastForwardInfoFromProto(p *commonpb.TimeSkippingFastForwardInf
 // With a Duration: bounded — sends a TimeSkippingConfig carrying a fresh
 // FastForwardConfig and long-polls PollWorkflowExecutionTimeSkipping for
 // completion. Returns (true, nil) on FF completion; (false, nil) when the
-// workflow chain terminates or the fast-forward is superseded/reset/TS
-// disabled before completion; (false, err) when the server reports that the
-// fast_forward_id no longer matches (typically means another caller issued
-// a superseding fast-forward).
+// workflow chain terminates, or the fast-forward is reset or cleared by time
+// skipping being disabled; (false, err) only when a different fast-forward has
+// replaced this one, which it can never recover from.
 //
 // Without a Duration: unbounded — enables time skipping (no bounded FF) and
 // waits for the execution to end, following the chain across retry,
@@ -370,7 +368,10 @@ func (wc *WorkflowClient) pollWorkflowTimeSkipping(
 			if reason == "" {
 				reason = "the server reported the fast-forward as failed without a reason"
 			}
-			return FastForwardPollResult{FailedReason: reason}, nil
+			return FastForwardPollResult{
+				FailedReason:    reason,
+				FastForwardInfo: timeSkippingFastForwardInfoFromProto(resp.GetFastForwardInfo()),
+			}, nil
 		case enumspb.FAST_FORWARD_POLLING_RESULT_POLL_TIMEOUT:
 			continue
 		default:
@@ -420,11 +421,12 @@ func doBoundedFastForward(
 	if err != nil {
 		return false, err
 	}
-	// An id mismatch means another caller superseded this fast-forward, so return an error.
-	if strings.Contains(res.FailedReason, "fast_forward_id does not match") {
+	// Use the current fast-forward ID to tell a replaced fast-forward from one
+	// that time skipping being turned off cleared.
+	if cur := res.FastForwardInfo; cur != nil && cur.ID != "" && cur.ID != ffID {
 		return false, fmt.Errorf(
-			"fast_forward %q was replaced by a later fast_forward call (server: %s)",
-			ffID, res.FailedReason)
+			"fast_forward %q was replaced by fast_forward %q (server: %s)",
+			ffID, cur.ID, res.FailedReason)
 	}
 	return res.Completed, nil
 }
@@ -652,9 +654,12 @@ func PollScheduleFastForward(
 					return FastForwardPollResult{Completed: true}, nil
 				}
 			case ffi.ID != "":
-				return FastForwardPollResult{FailedReason: fmt.Sprintf(
-					"the schedule's current fast-forward is %q, so this one was replaced "+
-						"by a later call", ffi.ID)}, nil
+				return FastForwardPollResult{
+					FailedReason: fmt.Sprintf(
+						"the schedule's current fast-forward is %q, so this one was replaced "+
+							"by a later call", ffi.ID),
+					FastForwardInfo: ffi,
+				}, nil
 			}
 		}
 

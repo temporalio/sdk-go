@@ -970,6 +970,9 @@ func (s *TimeSkippingV2TestSuite) TestPollingASupersededFastForwardIsRejected() 
 	s.False(res.Completed)
 	s.Contains(res.FailedReason, "does not match",
 		"expected the server to name the id mismatch, got %q", res.FailedReason)
+	s.NotNil(res.FastForwardInfo,
+		"a replaced fast-forward must report the one that replaced it")
+	s.NotEqual(supersededID, res.FastForwardInfo.ID)
 
 	require.Eventually(s.T(), func() bool {
 		found, herr := historyHasEventType(ctx, cl, run,
@@ -1350,4 +1353,58 @@ func (s *TimeSkippingV2TestSuite) TestFastForwardRejectsFinishedWorkflow() {
 				"a finished workflow must not be reported as a chain that keeps moving")
 		})
 	}
+}
+
+// TestDisablingTimeSkippingIsNotAReplacement covers the two ways a fast-forward
+// stops with the server's id-mismatch reason. Disabling time skipping clears the
+// execution's fast-forward, which reads as a mismatch just like a replacement
+// does, so the reason alone cannot tell them apart. Being cleared is an outcome;
+// only an actual replacement is an error.
+func (s *TimeSkippingV2TestSuite) TestDisablingTimeSkippingIsNotAReplacement() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+	tq := "tq-" + uuid.NewString()
+	w := worker.New(s.server.Client(), tq, worker.Options{})
+	registerTSTestWorkflows(w)
+	s.NoError(w.Start())
+	defer w.Stop()
+
+	cl := s.server.Client()
+	wfID := "wf-" + uuid.NewString()
+	run, err := cl.ExecuteWorkflow(ctx,
+		client.StartWorkflowOptions{ID: wfID, TaskQueue: tq},
+		ActivityThenSleepWorkflow, 20.0)
+	s.NoError(err)
+	defer func() { _ = cl.CancelWorkflow(ctx, wfID, "") }()
+
+	// A running activity holds the fast-forward open, so it is still pending when
+	// time skipping is switched off underneath it.
+	require.Eventually(s.T(), func() bool {
+		desc, derr := cl.DescribeWorkflow(ctx, wfID, "")
+		return derr == nil && len(desc.RawResponse.GetPendingActivities()) > 0
+	}, 10*time.Second, 100*time.Millisecond, "expected the activity to start")
+
+	ffID := uuid.NewString()
+	s.NoError(s.setFastForward(ctx, wfID, ffID, 2*time.Hour))
+
+	// Clear it by disabling time skipping.
+	_, err = cl.UpdateWorkflowExecutionOptions(ctx, client.UpdateWorkflowExecutionOptionsRequest{
+		WorkflowId: wfID,
+		WorkflowExecutionOptionsChanges: client.WorkflowExecutionOptionsChanges{
+			TimeSkippingConfig: &client.TimeSkippingConfigChange{
+				Value: &client.TimeSkippingConfig{Enabled: false},
+			},
+		},
+	})
+	s.NoError(err)
+
+	res, err := timeskipping.PollWorkflowFastForward(ctx, cl, run,
+		timeskipping.PollWorkflowFastForwardOptions{FastForwardID: ffID})
+	s.NoError(err)
+	s.False(res.Completed)
+	s.Contains(res.FailedReason, "does not match",
+		"the server reports a cleared fast-forward as an id mismatch, same as a replaced one")
+	s.Nil(res.FastForwardInfo,
+		"a cleared fast-forward leaves no current fast-forward, which is how it is "+
+			"told apart from a replaced one")
 }
