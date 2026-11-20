@@ -1213,3 +1213,141 @@ func (s *TimeSkippingV2TestSuite) TestUpdateWithStartSkipsTime() {
 	s.Equal("all done", result.Message)
 	s.assertTimeWasSkipped(ctx, run)
 }
+
+// A fast forward will not be applied to an unrelated workflow that happens to
+// reuse the same workflow ID.
+func (s *TimeSkippingV2TestSuite) TestFastForwardRefusesReusedWorkflowID() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+	tq := "tq-" + uuid.NewString()
+	w := worker.New(s.server.Client(), tq, worker.Options{})
+	registerTSTestWorkflows(w)
+	s.NoError(w.Start())
+	defer w.Stop()
+
+	wfID := "wf-" + uuid.NewString()
+	// First execution: run it to completion so its workflow ID is free again.
+	first, err := s.server.Client().ExecuteWorkflow(ctx,
+		client.StartWorkflowOptions{ID: wfID, TaskQueue: tq},
+		InteractionWorkflow, 1)
+	s.NoError(err)
+	s.NoError(s.server.Client().SignalWorkflow(ctx, first.GetID(), first.GetRunID(), "proceed", nil))
+	s.NoError(first.Get(ctx, nil))
+
+	// Second, unrelated execution reusing the same workflow ID.
+	second, err := s.server.Client().ExecuteWorkflow(ctx,
+		client.StartWorkflowOptions{ID: wfID, TaskQueue: tq},
+		InteractionWorkflow, 1)
+	s.NoError(err)
+	defer func() {
+		_ = s.server.Client().SignalWorkflow(ctx, second.GetID(), second.GetRunID(), "proceed", nil)
+		_ = second.Get(ctx, nil)
+	}()
+	s.NotEqual(first.GetRunID(), second.GetRunID())
+
+	// The stale handle must be refused, naming both chains.
+	_, err = timeskipping.FastForwardWorkflow(ctx, s.server.Client(), first,
+		timeskipping.FastForwardWorkflowOptions{Duration: time.Hour})
+	s.Error(err)
+	s.Contains(err.Error(), "no longer running the execution this handle refers to")
+	s.Contains(err.Error(), first.GetRunID())
+	s.Contains(err.Error(), second.GetRunID())
+
+	// The stranger must be untouched: no time skipping state at all.
+	tsi, err := timeskipping.GetWorkflowTimeSkippingInfo(ctx, s.server.Client(), second)
+	s.NoError(err)
+	s.Nil(tsi, "the reused workflow ID's current execution must not have been configured")
+	s.assertTimeWasNotSkipped(ctx, second)
+}
+
+// A fast forward will not be applied to an unrelated workflow that happens to
+// reuse the same workflow ID, but via GetWorkflow, which does not have
+// first-execution run ID.
+func (s *TimeSkippingV2TestSuite) TestFastForwardRefusesReusedWorkflowIDFromGetWorkflowHandle() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+	tq := "tq-" + uuid.NewString()
+	w := worker.New(s.server.Client(), tq, worker.Options{})
+	registerTSTestWorkflows(w)
+	s.NoError(w.Start())
+	defer w.Stop()
+
+	wfID := "wf-" + uuid.NewString()
+	first, err := s.server.Client().ExecuteWorkflow(ctx,
+		client.StartWorkflowOptions{ID: wfID, TaskQueue: tq},
+		InteractionWorkflow, 1)
+	s.NoError(err)
+	firstRunID := first.GetRunID()
+	s.NoError(s.server.Client().SignalWorkflow(ctx, wfID, firstRunID, "proceed", nil))
+	s.NoError(first.Get(ctx, nil))
+
+	second, err := s.server.Client().ExecuteWorkflow(ctx,
+		client.StartWorkflowOptions{ID: wfID, TaskQueue: tq},
+		InteractionWorkflow, 1)
+	s.NoError(err)
+	defer func() {
+		_ = s.server.Client().SignalWorkflow(ctx, second.GetID(), second.GetRunID(), "proceed", nil)
+		_ = second.Get(ctx, nil)
+	}()
+
+	stale := s.server.Client().GetWorkflow(ctx, wfID, firstRunID)
+	s.Empty(stale.GetFirstExecutionRunID(),
+		"GetWorkflow handles carry no chain ID, which is the path under test")
+	s.Equal(firstRunID, stale.GetRunID())
+
+	_, err = timeskipping.FastForwardWorkflow(ctx, s.server.Client(), stale,
+		timeskipping.FastForwardWorkflowOptions{Duration: time.Hour})
+	s.Error(err)
+	s.Contains(err.Error(), "no longer running the execution this handle refers to")
+	s.Contains(err.Error(), firstRunID)
+	s.Contains(err.Error(), second.GetRunID())
+
+	tsi, err := timeskipping.GetWorkflowTimeSkippingInfo(ctx, s.server.Client(), second)
+	s.NoError(err)
+	s.Nil(tsi, "the reused workflow ID's current execution must not have been configured")
+	s.assertTimeWasNotSkipped(ctx, second)
+}
+
+func (s *TimeSkippingV2TestSuite) TestFastForwardRejectsHandleWithNoRun() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	unknown := s.server.Client().GetWorkflow(ctx, "wf-never-started-"+uuid.NewString(), "")
+	s.Empty(unknown.GetRunID(), "a workflow ID the server cannot resolve yields no run ID")
+
+	_, err := timeskipping.FastForwardWorkflow(ctx, s.server.Client(), unknown,
+		timeskipping.FastForwardWorkflowOptions{Duration: time.Hour})
+	s.Error(err)
+	s.Contains(err.Error(), "neither a first-execution run ID nor a run ID")
+}
+
+func (s *TimeSkippingV2TestSuite) TestFastForwardRejectsFinishedWorkflow() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+	tq := "tq-" + uuid.NewString()
+	w := worker.New(s.server.Client(), tq, worker.Options{})
+	registerTSTestWorkflows(w)
+	s.NoError(w.Start())
+	defer w.Stop()
+
+	run, err := s.server.Client().ExecuteWorkflow(ctx,
+		client.StartWorkflowOptions{ID: "wf-" + uuid.NewString(), TaskQueue: tq},
+		InteractionWorkflow, 1)
+	s.NoError(err)
+	s.NoError(s.server.Client().SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "proceed", nil))
+	s.NoError(run.Get(ctx, nil))
+
+	for name, options := range map[string]timeskipping.FastForwardWorkflowOptions{
+		"bounded":   {Duration: time.Hour},
+		"unbounded": {},
+	} {
+		s.Run(name, func() {
+			_, err := timeskipping.FastForwardWorkflow(ctx, s.server.Client(), run, options)
+			s.Error(err)
+			s.Contains(err.Error(), "has already finished")
+			s.Contains(err.Error(), "nothing left to fast-forward")
+			s.NotContains(err.Error(), "continuing-as-new",
+				"a finished workflow must not be reported as a chain that keeps moving")
+		})
+	}
+}

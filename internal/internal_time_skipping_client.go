@@ -11,6 +11,7 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
+	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/api/workflowservice/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -135,15 +136,11 @@ func FastForwardWorkflow(
 func GetWorkflowTimeSkippingInfo(
 	ctx context.Context, c Client, run WorkflowRun,
 ) (*TimeSkippingInfo, error) {
-	// Empty run ID: TimeSkippingInfo is per-run state that propagates along the
-	// chain, so reading the current run is what reports where time skipping now is.
-	// The run's own ID would pin to whichever run it was built from.
-	desc, err := c.DescribeWorkflow(ctx, run.GetID(), "")
+	live, err := describeLiveRun(ctx, c, run.GetID())
 	if err != nil {
 		return nil, err
 	}
-	return timeSkippingInfoFromProto(
-		desc.RawResponse.GetWorkflowExtendedInfo().GetTimeSkippingInfo()), nil
+	return live.info, nil
 }
 
 // GetWorkflowCurrentTime returns the workflow's current virtual clock, read
@@ -193,25 +190,133 @@ func carryOverFrom(current *TimeSkippingConfig, tsc *TimeSkippingConfig) {
 	tsc.MaxSessionSkipCount = current.MaxSessionSkipCount
 }
 
-// fastForwardConfigFor builds the config for a fast-forward on a workflow,
-// carrying over the fields an update would otherwise reset. A nil duration
-// means unbounded — enable skipping with no bounded fast-forward.
-func fastForwardConfigFor(
-	ctx context.Context, c Client, run WorkflowRun, ffID string, d *time.Duration,
-) (TimeSkippingConfig, error) {
-	tsc := TimeSkippingConfig{Enabled: true}
-	cur, err := GetWorkflowTimeSkippingInfo(ctx, c, run)
-	if err != nil {
-		return TimeSkippingConfig{}, err
-	}
-	if cur != nil {
-		carryOverFrom(cur.EffectiveConfig, &tsc)
-	}
-	if d != nil {
-		tsc.FastForwardConfig = &FastForwardConfig{ID: ffID, Duration: *d}
-	}
-	return tsc, nil
+// liveRun is a time-skipping snapshot of the current run of a workflow.
+type liveRun struct {
+	// runID is the run that was current when the snapshot was taken.
+	runID string
+	// firstExecutionRunID names the execution chain runID belongs to.
+	firstExecutionRunID string
+	// info is the run's time skipping state, nil if it has never had any.
+	info *TimeSkippingInfo
+	// status is the run's execution status.
+	status enumspb.WorkflowExecutionStatus
 }
+
+// describeLiveRun snapshots the currently running run of a workflow ID.
+func describeLiveRun(ctx context.Context, c Client, workflowID string) (liveRun, error) {
+	desc, err := c.DescribeWorkflow(ctx, workflowID, "")
+	if err != nil {
+		return liveRun{}, err
+	}
+	execInfo := desc.RawResponse.GetWorkflowExecutionInfo()
+	return liveRun{
+		runID:               execInfo.GetExecution().GetRunId(),
+		firstExecutionRunID: execInfo.GetFirstRunId(),
+		info: timeSkippingInfoFromProto(
+			desc.RawResponse.GetWorkflowExtendedInfo().GetTimeSkippingInfo()),
+		status: execInfo.GetStatus(),
+	}, nil
+}
+
+// firstExecutionRunIDFor resolves the first-execution run ID naming an
+// execution chain.
+func firstExecutionRunIDFor(ctx context.Context, c Client, run WorkflowRun) (string, error) {
+	if firstExecutionRunID := run.GetFirstExecutionRunID(); firstExecutionRunID != "" {
+		return firstExecutionRunID, nil
+	}
+	// GetRunID resolves and memoizes the current run for a handle that doesn't have one.
+	runID := run.GetRunID()
+	if runID == "" {
+		return "", fmt.Errorf(
+			"cannot tell which execution of workflow %q to fast-forward: the handle carries "+
+				"neither a first-execution run ID nor a run ID. Use the handle returned by "+
+				"ExecuteWorkflow, or give GetWorkflow an explicit run ID",
+			run.GetID())
+	}
+	desc, err := c.DescribeWorkflow(ctx, run.GetID(), runID)
+	if err != nil {
+		return "", fmt.Errorf(
+			"cannot tell which execution chain run %q of workflow %q belongs to: %w",
+			runID, run.GetID(), err)
+	}
+	firstExecutionRunID := desc.RawResponse.GetWorkflowExecutionInfo().GetFirstRunId()
+	if firstExecutionRunID == "" {
+		return "", fmt.Errorf(
+			"server reported no first-execution run ID for run %q of workflow %q",
+			runID, run.GetID())
+	}
+	return firstExecutionRunID, nil
+}
+
+// applyTimeSkippingConfigAttempts bounds its compare-and-swap retries.
+// Each retry costs one describe and one update, and only a run that closes
+// between the two causes one, so a chain would have to be turning over
+// continuously to exhaust these.
+const applyTimeSkippingConfigAttempts = 5
+
+// applyTimeSkippingConfig enables time skipping on the live run of run's chain,
+// optionally with a bounded fast-forward.
+//
+// The write uses the current runID, so that an attempt to update a run that
+// has been superseded fails with NotFound, and is retried.
+func applyTimeSkippingConfig(
+	ctx context.Context, c Client, run WorkflowRun, firstExecutionRunID, ffID string, d *time.Duration,
+) error {
+	workflowID := run.GetID()
+	for attempt := 0; attempt < applyTimeSkippingConfigAttempts; attempt++ {
+		live, err := describeLiveRun(ctx, c, workflowID)
+		if err != nil {
+			return err
+		}
+		if live.firstExecutionRunID == "" {
+			return fmt.Errorf(
+				"server reported no first-execution run ID for the current run of workflow %q, so "+
+					"the fast-forward cannot be confined to the execution this handle refers to",
+				workflowID)
+		}
+		if live.firstExecutionRunID != firstExecutionRunID {
+			return fmt.Errorf(
+				"workflow %q is no longer running the execution this handle refers to: the handle's "+
+					"chain starts at run %q, but the workflow ID now holds a chain starting at run %q",
+				workflowID, firstExecutionRunID, live.firstExecutionRunID)
+		}
+		// The chain is the right one but has finished, so there is nothing left
+		// to skip. Checked before writing, because otherwise the write would be
+		// rejected for a closed run and read as the run having moved.
+		if live.status != enumspb.WORKFLOW_EXECUTION_STATUS_RUNNING {
+			return fmt.Errorf(
+				"workflow %q has already finished (run %q is %v), so there is nothing left to "+
+					"fast-forward",
+				workflowID, live.runID, live.status)
+		}
+
+		tsc := TimeSkippingConfig{Enabled: true}
+		if live.info != nil {
+			carryOverFrom(live.info.EffectiveConfig, &tsc)
+		}
+		if d != nil {
+			tsc.FastForwardConfig = &FastForwardConfig{ID: ffID, Duration: *d}
+		}
+
+		err = updateTimeSkippingConfig(ctx, c, workflowID, live.runID, tsc)
+		if err == nil {
+			return nil
+		}
+		var notFound *serviceerror.NotFound
+		if !errors.As(err, &notFound) {
+			return err
+		}
+		// The run closed between the describe and the update. Either the chain
+		// moved on (continue-as-new, cron, retry) and the next attempt writes
+		// to its successor, or the chain has ended and we error.
+	}
+	return fmt.Errorf(
+		"gave up enabling time skipping on workflow %q after %d attempts: each run closed between "+
+			"being read and being configured, which means the chain is continuing-as-new faster "+
+			"than it can be configured",
+		workflowID, applyTimeSkippingConfigAttempts)
+}
+
 func (wc *WorkflowClient) pollWorkflowTimeSkipping(
 	ctx context.Context, workflowID, fastForwardID string,
 ) (FastForwardPollResult, error) {
@@ -302,12 +407,12 @@ func PollWorkflowFastForward(
 func doBoundedFastForward(
 	ctx context.Context, wc *WorkflowClient, run WorkflowRun, d time.Duration,
 ) (bool, error) {
-	ffID := uuid.NewString()
-	tsc, err := fastForwardConfigFor(ctx, wc, run, ffID, &d)
+	firstExecutionRunID, err := firstExecutionRunIDFor(ctx, wc, run)
 	if err != nil {
 		return false, err
 	}
-	if err := updateTimeSkippingConfig(ctx, wc, run, tsc); err != nil {
+	ffID := uuid.NewString()
+	if err := applyTimeSkippingConfig(ctx, wc, run, firstExecutionRunID, ffID, &d); err != nil {
 		return false, err
 	}
 	res, err := wc.pollWorkflowTimeSkipping(ctx, run.GetID(), ffID)
@@ -326,11 +431,11 @@ func doBoundedFastForward(
 func enableUnboundedAndWait(
 	ctx context.Context, wc *WorkflowClient, run WorkflowRun,
 ) (bool, error) {
-	tsc, err := fastForwardConfigFor(ctx, wc, run, "", nil)
+	firstExecutionRunID, err := firstExecutionRunIDFor(ctx, wc, run)
 	if err != nil {
 		return false, err
 	}
-	if err := updateTimeSkippingConfig(ctx, wc, run, tsc); err != nil {
+	if err := applyTimeSkippingConfig(ctx, wc, run, firstExecutionRunID, "", nil); err != nil {
 		return false, err
 	}
 	// Watch history until the full execution chain ends.
@@ -355,13 +460,13 @@ func enableUnboundedAndWait(
 	}
 }
 
-// updateTimeSkippingConfig sets the config on the current workflow execution
-// run.
+// updateTimeSkippingConfig sets the config on one specific run.
 func updateTimeSkippingConfig(
-	ctx context.Context, c Client, run WorkflowRun, config TimeSkippingConfig,
+	ctx context.Context, c Client, workflowID, runID string, config TimeSkippingConfig,
 ) error {
 	_, err := c.UpdateWorkflowExecutionOptions(ctx, UpdateWorkflowExecutionOptionsRequest{
-		WorkflowId: run.GetID(),
+		WorkflowId: workflowID,
+		RunId:      runID,
 		WorkflowExecutionOptionsChanges: WorkflowExecutionOptionsChanges{
 			TimeSkippingConfig: &TimeSkippingConfigChange{Value: &config},
 		},
