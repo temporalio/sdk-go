@@ -67,7 +67,7 @@ func (m *heartbeatManager) sharedNamespaceWorkerForLocked(namespace string) *sha
 		return hw
 	}
 	// If this is the first worker on the namespace, start a new shared namespace worker.
-	heartbeatCtx, heartbeatCancel := context.WithCancel(context.Background())
+	workerCtx, workerCtxCancel := context.WithCancel(context.Background())
 	controlTaskQueue := workerControlTaskQueue(namespace, m.client.workerGroupingKey)
 	metricsHandler := m.client.metricsHandler
 	if metricsHandler == nil {
@@ -77,8 +77,8 @@ func (m *heartbeatManager) sharedNamespaceWorkerForLocked(namespace string) *sha
 		client:                        m.client,
 		namespace:                     namespace,
 		interval:                      m.interval,
-		workerCtx:                     heartbeatCtx,
-		heartbeatCancel:               heartbeatCancel,
+		workerCtx:                     workerCtx,
+		workerCtxCancel:               workerCtxCancel,
 		callbacks:                     make(map[string]func() *workerpb.WorkerHeartbeat),
 		heartbeatSuccessCallbacks:     make(map[string]func()),
 		activityCancellationCallbacks: newActivityCancellationCallbacks(),
@@ -123,6 +123,7 @@ func (m *heartbeatManager) registerWorker(
 
 	if hw.started.CompareAndSwap(false, true) {
 		hw.workerCommandsSupported = nsData.capabilities.GetWorkerCommands()
+		hw.workerPollCompleteOnShutdown = nsData.capabilities.GetWorkerPollCompleteOnShutdown()
 		go hw.run()
 	}
 
@@ -160,8 +161,9 @@ type sharedNamespaceWorker struct {
 	interval  time.Duration
 	logger    log.Logger
 
+	// Cancellation of workerCtx means stopC has closed or sendHeartbeats returned an error.
 	workerCtx       context.Context
-	heartbeatCancel context.CancelFunc
+	workerCtxCancel context.CancelFunc
 
 	// callbacksMutex should only be unlocked under
 	callbacksMutex sync.RWMutex
@@ -172,6 +174,7 @@ type sharedNamespaceWorker struct {
 
 	activityCancellationCallbacks *activityCancellationCallbacks
 	workerCommandsSupported       bool
+	workerPollCompleteOnShutdown  bool
 	workerCommandsRunning         atomic.Bool
 	workerControlTaskQueue        string
 	workerInstanceKey             string
@@ -199,13 +202,23 @@ func (hw *sharedNamespaceWorker) run() {
 	defer close(hw.stoppedC)
 
 	if hw.workerCommandsSupported {
+		// Use a separate poll context so the server can finish in-flight polls after heartbeats stop.
+		pollCtx, cancelPoll := context.WithCancel(context.WithoutCancel(hw.workerCtx))
 		workerCommandsDone := make(chan struct{})
 		go func() {
 			defer close(workerCommandsDone)
-			hw.runWorkerCommands()
+			hw.runWorkerCommands(pollCtx)
 		}()
 		defer func() {
-			hw.heartbeatCancel()
+			hw.workerCtxCancel()
+			if hw.workerPollCompleteOnShutdown {
+				select {
+				case <-hw.stopC:
+					hw.tryCompleteWorkerCommandPolls(workerCommandsDone)
+				default:
+				}
+			}
+			cancelPoll()
 			<-workerCommandsDone
 		}()
 	}
@@ -276,7 +289,7 @@ func (hw *sharedNamespaceWorker) sendHeartbeats() error {
 	return nil
 }
 
-func (hw *sharedNamespaceWorker) runWorkerCommands() {
+func (hw *sharedNamespaceWorker) runWorkerCommands(pollCtx context.Context) {
 	pollerRunner := newAutoscalingTaskPollerRunner(
 		newPollerAutoscaler(pollerAutoscalerOptions{
 			initialPollerCount: 1,
@@ -303,7 +316,11 @@ func (hw *sharedNamespaceWorker) runWorkerCommands() {
 		pollWG.Go(func() {
 			defer admission.release()
 
-			task, err := hw.pollWorkerCommand(admission.groupLease)
+			// Recheck for shutdown after waiting for a poll slot.
+			if hw.workerCtx.Err() != nil {
+				return
+			}
+			task, err := hw.pollWorkerCommand(pollCtx, admission.groupLease)
 			if err != nil {
 				if hw.workerCtx.Err() == nil {
 					hw.logger.Warn("Failed polling worker command task", "Error", err)
@@ -329,12 +346,13 @@ func (hw *sharedNamespaceWorker) runWorkerCommands() {
 }
 
 func (hw *sharedNamespaceWorker) pollWorkerCommand(
+	ctx context.Context,
 	lease pollerGroupLease,
 ) (
 	*workflowservice.PollNexusTaskQueueResponse,
 	error,
 ) {
-	task, err := hw.pollWorkerCommandTask(lease.groupIDOrEmpty())
+	task, err := hw.pollWorkerCommandTask(ctx, lease.groupIDOrEmpty())
 	if err != nil {
 		return nil, err
 	}
@@ -352,16 +370,17 @@ func (hw *sharedNamespaceWorker) pollWorkerCommand(
 }
 
 func (hw *sharedNamespaceWorker) pollWorkerCommandTask(
+	ctx context.Context,
 	pollerGroupID string,
 ) (*workflowservice.PollNexusTaskQueueResponse, error) {
 	rpcMetricsHandler := hw.metricsHandler.WithTags(metrics.TaskQueueTags(hw.workerControlTaskQueue))
 	grpcCtx, cancel := newGRPCContext(
-		hw.workerCtx,
+		ctx,
 		hw.client.rpcTimeout,
 		grpcMetricsHandler(rpcMetricsHandler),
 		grpcLongPoll(true),
 		grpcTimeout(pollTaskServiceTimeOut),
-		defaultGrpcRetryParameters(hw.workerCtx),
+		defaultGrpcRetryParameters(ctx),
 	)
 	defer cancel()
 
@@ -446,15 +465,46 @@ func (hw *sharedNamespaceWorker) handleWorkerCommandTask(task *workflowservice.P
 	return nil
 }
 
+func (hw *sharedNamespaceWorker) tryCompleteWorkerCommandPolls(workerCommandsDone <-chan struct{}) {
+	// Skip the shutdown RPC if the command poller has already exited.
+	select {
+	case <-workerCommandsDone:
+		return
+	default:
+	}
+
+	ctx, cancel := newGRPCContext(context.Background(), hw.client.rpcTimeout, grpcMetricsHandler(hw.metricsHandler))
+	defer cancel()
+
+	_, err := hw.client.workflowService.ShutdownWorker(ctx, &workflowservice.ShutdownWorkerRequest{
+		Namespace:         hw.namespace,
+		Identity:          hw.client.identity,
+		Reason:            "graceful shutdown",
+		WorkerInstanceKey: hw.workerInstanceKey,
+		TaskQueue:         hw.workerControlTaskQueue,
+		TaskQueueTypes:    []enumspb.TaskQueueType{enumspb.TASK_QUEUE_TYPE_NEXUS},
+	})
+	if err != nil {
+		hw.logger.Warn("ShutdownWorker RPC failed for worker command queue", "TaskQueue", hw.workerControlTaskQueue, "Error", err)
+		return
+	}
+
+	select {
+	case <-workerCommandsDone:
+	case <-ctx.Done():
+		hw.logger.Warn("Timed out waiting for worker command polls to complete", "TaskQueue", hw.workerControlTaskQueue)
+	}
+}
+
 func (hw *sharedNamespaceWorker) stop() {
 	if !hw.started.CompareAndSwap(true, false) {
 		return
 	}
-	if hw.heartbeatCancel != nil {
-		hw.heartbeatCancel()
+	close(hw.stopC)
+	if hw.workerCtxCancel != nil {
+		hw.workerCtxCancel()
 	}
 
-	close(hw.stopC)
 	<-hw.stoppedC
 }
 

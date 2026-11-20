@@ -756,14 +756,14 @@ func testRecordWorkerHeartbeatResourceID(t *testing.T) {
 	wfClient.workerGroupingKey = "test-worker-grouping-key-123"
 
 	// Create a sharedNamespaceWorker and call sendHeartbeats
-	heartbeatCtx, heartbeatCancel := context.WithCancel(t.Context())
-	defer heartbeatCancel()
+	workerCtx, workerCtxCancel := context.WithCancel(t.Context())
+	defer workerCtxCancel()
 
 	hw := &sharedNamespaceWorker{
 		client:          wfClient,
 		namespace:       "test-namespace",
-		workerCtx:       heartbeatCtx,
-		heartbeatCancel: heartbeatCancel,
+		workerCtx:       workerCtx,
+		workerCtxCancel: workerCtxCancel,
 		callbacks: map[string]func() *workerpb.WorkerHeartbeat{
 			"test-worker": func() *workerpb.WorkerHeartbeat {
 				return &workerpb.WorkerHeartbeat{
