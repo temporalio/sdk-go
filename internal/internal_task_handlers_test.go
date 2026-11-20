@@ -25,6 +25,7 @@ import (
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
 	protocolpb "go.temporal.io/api/protocol/v1"
+	"go.temporal.io/api/proxy"
 	querypb "go.temporal.io/api/query/v1"
 	"go.temporal.io/api/sdk/v1"
 	"go.temporal.io/api/serviceerror"
@@ -3392,6 +3393,59 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionWorkerStop() {
 	r := res.response
 	t.NoError(err)
 	t.NotNil(r)
+}
+
+func (t *TaskHandlersTestSuite) TestActivityInputRetrievedAfterWorkerShutdown() {
+	activityName := "activityInputRetrievedAfterWorkerShutdown"
+	t.registry.RegisterActivityWithOptions(
+		func(context.Context) (string, error) { return "done", nil },
+		RegisterActivityOptions{Name: activityName, DisableAlreadyRegisteredCheck: true},
+	)
+
+	ctx, cancel := context.WithCancelCause(context.Background())
+	cancel(ErrWorkerShutdown)
+	wep := t.getTestWorkerExecutionParams()
+	wep.BackgroundContext = ctx
+	wep.BackgroundContextCancel = cancel
+	visited := false
+	// Behaves like a driver doing I/O: it fails if its context is already canceled.
+	wep.inboundPayloadVisitor = visitorFunc(
+		func(vpc *proxy.VisitPayloadsContext, payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+			visited = true
+			if err := vpc.Context.Err(); err != nil {
+				return nil, err
+			}
+			return payloads, nil
+		},
+	)
+
+	mockCtrl := gomock.NewController(t.T())
+	client := WorkflowClient{workflowService: workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)}
+	activityHandler := newActivityTaskHandler(&client, wep, t.registry)
+	now := time.Now()
+	input, err := converter.GetDefaultDataConverter().ToPayloads("input")
+	t.NoError(err)
+	res, err := activityHandler.Execute(taskqueue, &workflowservice.PollActivityTaskQueueResponse{
+		Attempt:   1,
+		TaskToken: []byte("token"),
+		WorkflowExecution: &commonpb.WorkflowExecution{
+			WorkflowId: "wID",
+			RunId:      "rID",
+		},
+		ActivityType:           &commonpb.ActivityType{Name: activityName},
+		ActivityId:             uuid.NewString(),
+		Input:                  input,
+		ScheduledTime:          timestamppb.New(now),
+		ScheduleToCloseTimeout: durationpb.New(time.Minute),
+		StartedTime:            timestamppb.New(now),
+		StartToCloseTimeout:    durationpb.New(time.Minute),
+		WorkflowType:           &commonpb.WorkflowType{Name: "wType"},
+		WorkflowNamespace:      "namespace",
+	})
+	t.NoError(err)
+	t.True(visited)
+	t.NoError(res.failureErr)
+	t.IsType(&workflowservice.RespondActivityTaskCompletedRequest{}, res.response)
 }
 
 func (t *TaskHandlersTestSuite) TestActivityCancellationUsesIsCanceledError() {

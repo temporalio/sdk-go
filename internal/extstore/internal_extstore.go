@@ -388,11 +388,11 @@ func (v *externalRetrievalVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloa
 
 	// Fan out to each driver concurrently. The errgroup context is used as the
 	// StorageDriverRetrieveContext so a failing driver cancels in-flight siblings.
-	// Intentionally creating an empty context so the retrieval path cannot use ambient
+	// The caller's values are withheld so the retrieval path cannot use ambient
 	// information for determing how to retrieve payloads. Drivers should only use information
 	// from the StorageDriverClaim to retrieve payloads.
 	messageSemaphore := messageSemaphoreFrom(ctx.Context, v.params)
-	eg, egCtx := errgroup.WithContext(context.Background())
+	eg, egCtx := errgroup.WithContext(withoutValues{ctx.Context})
 	limiters := make([]*semaphoreLimiter[StorageDriverClaim], len(driverOrder))
 	sizes := make([]int64, len(driverOrder))
 
@@ -436,6 +436,15 @@ func (v *externalRetrievalVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloa
 		}
 	}
 	return result, nil
+}
+
+// withoutValues keeps a context's cancellation and deadline but hides its values.
+type withoutValues struct {
+	context.Context
+}
+
+func (withoutValues) Value(any) any {
+	return nil
 }
 
 func NewExternalRetrievalVisitor(params StorageParameters) PayloadVisitor {

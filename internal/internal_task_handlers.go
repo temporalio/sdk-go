@@ -2467,7 +2467,9 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 		defer unregister()
 	}
 
-	if err := visitProtoPayloads(canCtx, ath.inboundPayloadVisitor, t, ath.storageParams.MaxOperationsPerMessage()); err != nil {
+	// Cancellation is left to the activity, so a cancelled task is still reported as cancelled
+	// rather than as a failed retrieval.
+	if err := visitProtoPayloads(context.WithoutCancel(canCtx), ath.inboundPayloadVisitor, t, ath.storageParams.MaxOperationsPerMessage()); err != nil {
 		return activityTaskResult{
 			response:   ath.visitorErrorToActivityFailure("Activity task preprocess error: ", t, err),
 			failureErr: err,
