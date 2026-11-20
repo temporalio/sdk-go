@@ -5,10 +5,12 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	commandpb "go.temporal.io/api/command/v1"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/converter"
+	"go.temporal.io/sdk/internal/extstore"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -105,6 +107,19 @@ func TestSystemNexusContextPropagation(t *testing.T) {
 			require.Equal(t, enumspb.WORKFLOW_ID_REUSE_POLICY_UNSPECIFIED, sent.GetWorkflowIdReusePolicy(),
 				"the terminal must not reapply defaults changed by an interceptor")
 			require.Equal(t, "callee", sent.GetWorkflowType().GetName())
+			storeContext, err := (&commandAwarePayloadVisitor{}).ContextHook(
+				t.Context(),
+				&commandpb.ScheduleNexusOperationCommandAttributes{
+					Endpoint: systemNexusEndpoint,
+					Input:    capture.calls[0].params.input,
+				},
+			)
+			require.NoError(t, err)
+			require.Equal(t, converter.StorageDriverWorkflowInfo{
+				Namespace:    sent.GetNamespace(),
+				WorkflowID:   "intercepted-id",
+				WorkflowType: "callee",
+			}, extstore.StorageTargetFromContext(storeContext))
 			wantHeaders := map[string]*commonpb.Payload{"interceptor-header": payload}
 			if !tt.noPropagator {
 				wantHeaders["propagated"] = payload

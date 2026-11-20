@@ -42,6 +42,7 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- Route System Nexus signal-with-start external storage using the destination workflow's namespace, ID, and type while retaining the storing worker's namespace.
 - Workers no longer advertise a worker control task queue unless worker heartbeats and commands
   are supported and the shared namespace command poller is running.
 

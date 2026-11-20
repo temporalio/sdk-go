@@ -4,6 +4,7 @@ package internal
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -2299,6 +2300,16 @@ func (v *commandAwarePayloadVisitor) Visit(ctx *proxy.VisitPayloadsContext, payl
 
 func (v *commandAwarePayloadVisitor) ContextHook(ctx context.Context, msg proto.Message) (context.Context, error) {
 	switch attrs := msg.(type) {
+	case *commandpb.ScheduleNexusOperationCommandAttributes:
+		if attrs.GetEndpoint() == systemNexusEndpoint {
+			if encoded := attrs.GetInput().GetMetadata()[systemNexusStorageTargetMetadataKey]; encoded != nil {
+				var target converter.StorageDriverWorkflowInfo
+				if err := json.Unmarshal(encoded, &target); err != nil {
+					return nil, fmt.Errorf("decode System Nexus storage target: %w", err)
+				}
+				ctx = extstore.WithStorageTarget(ctx, target)
+			}
+		}
 	case *commandpb.StartChildWorkflowExecutionCommandAttributes:
 		ctx = extstore.WithStorageTarget(ctx, converter.StorageDriverWorkflowInfo{
 			Namespace:    v.workflowInfo.Namespace,
