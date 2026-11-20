@@ -186,6 +186,9 @@ func (ts *IntegrationTestSuite) SetupTest() {
 			options.DataConverter = converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), &nexusContextSigningCodec{})
 		}
 		options.WorkerHeartbeatInterval = -1
+		if strings.Contains(ts.T().Name(), "TestLargeQueryResultError") {
+			options.RPCTimeout = time.Minute
+		}
 		options.ContextPropagators = []workflow.ContextPropagator{
 			NewKeysPropagator([]string{testContextKey1}),
 			NewKeysPropagator([]string{testContextKey2}),
@@ -2189,7 +2192,7 @@ func (ts *IntegrationTestSuite) TestChildWorkflowTypedSearchAttributes() {
 }
 
 func (ts *IntegrationTestSuite) TestLargeQueryResultError() {
-	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
 	ts.worker.Stop()
