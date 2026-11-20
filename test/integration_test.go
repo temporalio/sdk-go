@@ -207,6 +207,12 @@ func (ts *IntegrationTestSuite) SetupTest() {
 	ts.activities.clearInvoked()
 	ts.activities.client = ts.client
 	ts.taskQueueName = taskQueuePrefix + "-" + ts.T().Name()
+	switch ts.T().Name() {
+	case "TestIntegrationSuite/TestLargeQueryResultError", "TestIntegrationSuite/TestStaleQueryReplayBoundary":
+		// A poll from the stopped setup worker can take a task from the test worker.
+		ts.workerStopped = true
+		return
+	}
 	ts.tracer = newTracingInterceptor()
 	ts.inboundSignalInterceptor = newSignalInterceptor()
 	workerInterceptors = append(workerInterceptors, ts.tracer, ts.inboundSignalInterceptor)
@@ -2198,8 +2204,6 @@ func (ts *IntegrationTestSuite) TestLargeQueryResultError() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
-	ts.worker.Stop()
-	ts.workerStopped = true
 	ts.worker = worker.New(ts.client, ts.taskQueueName, worker.Options{
 		DisablePayloadErrorLimit: true,
 	})
