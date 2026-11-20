@@ -32,7 +32,7 @@ import (
 // sharedNamespaceWorker cancels an in-flight heartbeat RPC. Without the fix
 // (using context.Background() for the RPC), stop() would hang forever because
 // the blocked RPC prevents run() from seeing stopC. With the fix
-// (heartbeatCtx), stop() cancels the context first, unblocking the RPC.
+// (workerCtx), stop() cancels the context first, unblocking the RPC.
 func TestStopCancelsInFlightHeartbeatRPC(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
@@ -53,13 +53,13 @@ func TestStopCancelsInFlightHeartbeatRPC(t *testing.T) {
 
 		wfClient := NewServiceClient(mockService, nil, ClientOptions{})
 
-		heartbeatCtx, heartbeatCancel := context.WithCancel(t.Context())
+		workerCtx, workerCtxCancel := context.WithCancel(t.Context())
 		hw := &sharedNamespaceWorker{
 			client:          wfClient,
 			namespace:       "test-ns",
 			interval:        50 * time.Millisecond,
-			workerCtx:       heartbeatCtx,
-			heartbeatCancel: heartbeatCancel,
+			workerCtx:       workerCtx,
+			workerCtxCancel: workerCtxCancel,
 			callbacks: map[string]func() *workerpb.WorkerHeartbeat{
 				"worker1": func() *workerpb.WorkerHeartbeat { return &workerpb.WorkerHeartbeat{} },
 			},
@@ -75,7 +75,7 @@ func TestStopCancelsInFlightHeartbeatRPC(t *testing.T) {
 			t.Fatal("heartbeat RPC did not start")
 		}
 
-		// stop() should return because heartbeatCancel() unblocks the in-flight RPC.
+		// stop() should return because workerCtxCancel() unblocks the in-flight RPC.
 		hw.stop()
 	})
 }
@@ -141,6 +141,94 @@ func TestWorkerControlTaskQueueLifecycle(t *testing.T) {
 	}
 }
 
+func TestWorkerCommandPollShutdown(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name               string
+		graceful           bool
+		serverFinishesPoll bool
+	}{
+		{name: "server finishes poll", graceful: true, serverFinishesPoll: true},
+		{name: "server leaves poll open", graceful: true},
+		{name: "legacy namespace"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				service := workflowservicemock.NewMockWorkflowServiceClient(gomock.NewController(t))
+				service.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any(), gomock.Any()).
+					Return(&workflowservice.DescribeNamespaceResponse{
+						NamespaceInfo: &namespacepb.NamespaceInfo{Capabilities: &namespacepb.NamespaceInfo_Capabilities{
+							WorkerHeartbeats: true, WorkerCommands: true, WorkerPollCompleteOnShutdown: tc.graceful,
+						}},
+					}, nil)
+				service.EXPECT().GetSystemInfo(gomock.Any(), gomock.Any(), gomock.Any()).
+					Return(&workflowservice.GetSystemInfoResponse{}, nil).AnyTimes()
+				service.EXPECT().RecordWorkerHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).
+					Return(&workflowservice.RecordWorkerHeartbeatResponse{}, nil).AnyTimes()
+
+				finishPoll := make(chan struct{})
+				pollResult := make(chan error, 1)
+				var pollCtx context.Context
+				var pollReq *workflowservice.PollNexusTaskQueueRequest
+				service.EXPECT().PollNexusTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
+					DoAndReturn(func(ctx context.Context, req *workflowservice.PollNexusTaskQueueRequest, _ ...grpc.CallOption) (*workflowservice.PollNexusTaskQueueResponse, error) {
+						pollCtx, pollReq = ctx, req
+						select {
+						case <-finishPoll:
+							pollResult <- ctx.Err()
+							return &workflowservice.PollNexusTaskQueueResponse{}, ctx.Err()
+						case <-ctx.Done():
+							pollResult <- ctx.Err()
+							return nil, ctx.Err()
+						}
+					})
+
+				var shutdownReq *workflowservice.ShutdownWorkerRequest
+				if tc.graceful {
+					service.EXPECT().ShutdownWorker(gomock.Any(), gomock.Any(), gomock.Any()).
+						DoAndReturn(func(_ context.Context, req *workflowservice.ShutdownWorkerRequest, _ ...grpc.CallOption) (*workflowservice.ShutdownWorkerResponse, error) {
+							shutdownReq = req
+							return &workflowservice.ShutdownWorkerResponse{}, nil
+						})
+				}
+
+				client := NewServiceClient(service, nil, ClientOptions{Namespace: "test-ns", RPCTimeout: time.Second})
+				worker := NewAggregatedWorker(client, "worker-queue", WorkerOptions{})
+				otherWorker := NewAggregatedWorker(client, "other-worker-queue", WorkerOptions{})
+				require.NoError(t, client.heartbeatManager.registerWorker(worker))
+				require.NoError(t, client.heartbeatManager.registerWorker(otherWorker))
+				synctest.Wait()
+				require.NotNil(t, pollReq)
+
+				client.heartbeatManager.unregisterWorker(otherWorker)
+				require.NoError(t, pollCtx.Err())
+
+				stopped := make(chan struct{})
+				go func() {
+					client.heartbeatManager.unregisterWorker(worker)
+					close(stopped)
+				}()
+				if tc.graceful {
+					synctest.Wait()
+					require.NotNil(t, shutdownReq)
+					require.Equal(t, pollReq.GetNamespace(), shutdownReq.GetNamespace())
+					require.Equal(t, pollReq.GetTaskQueue().GetName(), shutdownReq.GetTaskQueue())
+					require.Equal(t, pollReq.GetWorkerInstanceKey(), shutdownReq.GetWorkerInstanceKey())
+					require.Equal(t, []enumspb.TaskQueueType{enumspb.TASK_QUEUE_TYPE_NEXUS}, shutdownReq.GetTaskQueueTypes())
+					require.NoError(t, pollCtx.Err())
+				}
+				if tc.serverFinishesPoll {
+					close(finishPoll)
+					require.NoError(t, <-pollResult)
+				} else {
+					require.ErrorIs(t, <-pollResult, context.Canceled)
+				}
+				<-stopped
+			})
+		})
+	}
+}
+
 func TestWorkerCommandPollUsesWorkerCommandsQueue(t *testing.T) {
 	t.Parallel()
 
@@ -194,7 +282,7 @@ func TestWorkerCommandPollUsesWorkerCommandsQueue(t *testing.T) {
 		metricsHandler:         metrics.NopHandler,
 	}
 
-	if _, err := hw.pollWorkerCommandTask(""); err != nil {
+	if _, err := hw.pollWorkerCommandTask(ctx, ""); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -224,14 +312,14 @@ func TestWorkerCommandFirstPollUsesDescribeNamespacePollerGroups(t *testing.T) {
 
 	client := NewServiceClient(mockService, nil, ClientOptions{Namespace: namespace})
 	hw := client.heartbeatManager.sharedNamespaceWorkerFor(namespace)
-	defer hw.heartbeatCancel()
+	defer hw.workerCtxCancel()
 	hw.started.Store(true)
 	worker := NewAggregatedWorker(client, "worker-queue", WorkerOptions{})
 	require.NoError(t, client.heartbeatManager.registerWorker(worker))
 
 	lease := hw.pollerGroups.reserve()
 	defer lease.release()
-	_, err := hw.pollWorkerCommand(lease)
+	_, err := hw.pollWorkerCommand(hw.workerCtx, lease)
 	require.NoError(t, err)
 }
 
@@ -276,7 +364,7 @@ func TestWorkerCommandPollUsesPollerGroups(t *testing.T) {
 	poll := func() {
 		lease := hw.pollerGroups.reserve()
 		defer lease.release()
-		_, err := hw.pollWorkerCommand(lease)
+		_, err := hw.pollWorkerCommand(ctx, lease)
 		require.NoError(t, err)
 	}
 	poll()
@@ -328,7 +416,7 @@ func TestWorkerCommandsMaintainPollerGroupCoverage(t *testing.T) {
 	}
 	done := make(chan struct{})
 	go func() {
-		hw.runWorkerCommands()
+		hw.runWorkerCommands(ctx)
 		close(done)
 	}()
 
@@ -396,7 +484,7 @@ func TestWorkerCommandPollErrorBackoff(t *testing.T) {
 		}
 		done := make(chan struct{})
 		go func() {
-			hw.runWorkerCommands()
+			hw.runWorkerCommands(ctx)
 			close(done)
 		}()
 
@@ -438,7 +526,7 @@ func TestCanceledCommandNoPoll(t *testing.T) {
 		}
 		done := make(chan struct{})
 		go func() {
-			hw.runWorkerCommands()
+			hw.runWorkerCommands(ctx)
 			close(done)
 		}()
 
@@ -507,7 +595,7 @@ func TestCommandCompletionBound(t *testing.T) {
 		}
 		done := make(chan struct{})
 		go func() {
-			hw.runWorkerCommands()
+			hw.runWorkerCommands(ctx)
 			close(done)
 		}()
 
@@ -624,13 +712,13 @@ func TestWorkerCommandsDisabledDoesNotPoll(t *testing.T) {
 			Identity:  "worker-identity",
 		})
 
-		heartbeatCtx, heartbeatCancel := context.WithCancel(t.Context())
+		workerCtx, workerCtxCancel := context.WithCancel(t.Context())
 		hw := &sharedNamespaceWorker{
 			client:                  wfClient,
 			namespace:               "test-ns",
 			interval:                10 * time.Millisecond,
-			workerCtx:               heartbeatCtx,
-			heartbeatCancel:         heartbeatCancel,
+			workerCtx:               workerCtx,
+			workerCtxCancel:         workerCtxCancel,
 			callbacks:               map[string]func() *workerpb.WorkerHeartbeat{"worker1": func() *workerpb.WorkerHeartbeat { return &workerpb.WorkerHeartbeat{} }},
 			workerCommandsSupported: false,
 			workerControlTaskQueue:  "temporal-sys/worker-commands/test-ns/grouping-key",
