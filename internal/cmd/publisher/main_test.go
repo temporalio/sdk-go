@@ -785,8 +785,11 @@ func TestVetCommit(t *testing.T) {
 	a, eff := newMockVet(vetApp{commit: "1234567", modules: []pure.VersionedModule{
 		{Module: pure.SDKModule(), Version: pure.Version{1, 48, 0}},
 	}}, input, func(cmd string) (string, error) {
-		if cmd == "git rev-parse --verify --end-of-options 1234567^{commit}" {
+		switch cmd {
+		case "git rev-parse --verify --end-of-options 1234567^{commit}":
 			return commit + "\n", nil
+		case "git tag --list v*":
+			return "v1.47.2\n", nil
 		}
 		return "", nil
 	})
@@ -812,6 +815,10 @@ func TestVetCommit(t *testing.T) {
 		# Running in /repo:
 		$ git worktree add --detach /tmp/prepare-go-release-123456 `+commit+`
 
+		# Running in /tmp/prepare-go-release-123456:
+		$ git tag --list v*
+		v1.47.2
+
 		# Running in /sdk-rust:
 		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- release-notes --repo /tmp/prepare-go-release-123456 --version 1.48.0 --date 2026-08-04 --changelog CHANGELOG.md
 
@@ -823,6 +830,7 @@ func TestVetCommit(t *testing.T) {
 
 		[1/2] Fetch origin, prepare changelog tool, and create worktree
 		[2/2] Validate release files
+		      go.temporal.io/sdk: validate new version number
 		      go.temporal.io/sdk: validate go.mod
 		      go.temporal.io/sdk: verify that go.mod requirements are published
 		      go.temporal.io/sdk: validate version.go
@@ -858,9 +866,11 @@ func TestVetReportsAllBlockedModules(t *testing.T) {
 
 		[1/2] Fetch origin, prepare changelog tool, and create worktree
 		[2/2] Validate release files
+		      go.temporal.io/sdk/contrib/envconfig: validate new version number
 		      go.temporal.io/sdk/contrib/envconfig: validate go.mod
 		      go.temporal.io/sdk/contrib/envconfig: verify that go.mod requirements are published
 		      go.temporal.io/sdk/contrib/envconfig: validate changelog
+		      go.temporal.io/sdk/contrib/tally: validate new version number
 		      go.temporal.io/sdk/contrib/tally: validate go.mod
 		      go.temporal.io/sdk/contrib/envconfig: failed inspection ✘
 		      go.temporal.io/sdk/contrib/tally: failed inspection ✘
@@ -883,9 +893,15 @@ func TestVetReportsAllBlockedModules(t *testing.T) {
 		# Running in /repo:
 		$ git worktree add --detach /tmp/prepare-go-release-123456 abc123
 
+		# Running in /tmp/prepare-go-release-123456:
+		$ git tag --list contrib/envconfig/v*
+
 		# Running in /sdk-rust:
 		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- release-notes --repo /tmp/prepare-go-release-123456 --version 0.1.0 --date 2026-08-04 --changelog contrib/envconfig/CHANGELOG.md
 		missing release section for 0.1.0
+
+		# Running in /tmp/prepare-go-release-123456:
+		$ git tag --list contrib/tally/v*
 
 		# Running in /repo:
 		$ git worktree remove --force /tmp/prepare-go-release-123456
@@ -965,6 +981,10 @@ func TestTag(t *testing.T) {
 			return strings.TrimSpace(sdkRustRevision), nil
 		case "git rev-parse --verify --end-of-options 1234567^{commit}":
 			return commit + "\n", nil
+		case "git tag --list v*":
+			return "v1.47.2\n", nil
+		case "git tag --list contrib/envconfig/v*":
+			return "contrib/envconfig/v1.0.2\n", nil
 		case "cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- release-notes --repo " + mockTempDir + " --version 1.48.0 --changelog CHANGELOG.md":
 			return sdkNotes, nil
 		case "cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- release-notes --repo " + mockTempDir + " --version 1.0.3 --changelog contrib/envconfig/CHANGELOG.md":
@@ -1000,8 +1020,16 @@ func TestTag(t *testing.T) {
 		# Running in /repo:
 		$ git worktree add --detach /tmp/prepare-go-release-123456 `+commit+`
 
+		# Running in /tmp/prepare-go-release-123456:
+		$ git tag --list v*
+		v1.47.2
+
 		# Running in /sdk-rust:
 		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- release-notes --repo /tmp/prepare-go-release-123456 --version 1.48.0 --date 2026-08-04 --changelog CHANGELOG.md
+
+		# Running in /tmp/prepare-go-release-123456:
+		$ git tag --list contrib/envconfig/v*
+		contrib/envconfig/v1.0.2
 
 		# Running in /sdk-rust:
 		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- release-notes --repo /tmp/prepare-go-release-123456 --version 1.0.3 --date 2026-08-04 --changelog contrib/envconfig/CHANGELOG.md
@@ -1038,10 +1066,12 @@ func TestTag(t *testing.T) {
 
 		[1/4] Fetch origin, prepare changelog tool, and create worktree
 		[2/4] Vet released modules
+		      go.temporal.io/sdk: validate new version number
 		      go.temporal.io/sdk: validate go.mod
 		      go.temporal.io/sdk: verify that go.mod requirements are published
 		      go.temporal.io/sdk: validate version.go
 		      go.temporal.io/sdk: validate changelog
+		      go.temporal.io/sdk/contrib/envconfig: validate new version number
 		      go.temporal.io/sdk/contrib/envconfig: validate go.mod
 		      go.temporal.io/sdk/contrib/envconfig: verify that go.mod requirements are published
 		      go.temporal.io/sdk/contrib/envconfig: validate changelog
@@ -1073,6 +1103,8 @@ func TestTagEmpty(t *testing.T) {
 		switch cmd {
 		case "git rev-parse --verify --end-of-options abc123^{commit}":
 			return "abc123\n", nil
+		case "git tag --list contrib/envconfig/v*":
+			return "contrib/envconfig/v1.0.2\n", nil
 		case "cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- release-notes --repo " + mockTempDir + " --version 1.0.3 --changelog contrib/envconfig/CHANGELOG.md":
 			return "## Notable Changes\n\n", nil
 		case "gh release create contrib/envconfig/v1.0.3 --draft --target abc123 --title contrib/envconfig/v1.0.3 --notes-file /tmp/prepare-go-release-123456/prepare-release-notes.md --latest=false":
@@ -1102,6 +1134,10 @@ func TestTagEmpty(t *testing.T) {
 		# Running in /repo:
 		$ git worktree add --detach /tmp/prepare-go-release-123456 abc123
 
+		# Running in /tmp/prepare-go-release-123456:
+		$ git tag --list contrib/envconfig/v*
+		contrib/envconfig/v1.0.2
+
 		# Running in /sdk-rust:
 		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- release-notes --repo /tmp/prepare-go-release-123456 --version 1.0.3 --date 2026-08-04 --changelog contrib/envconfig/CHANGELOG.md
 
@@ -1121,6 +1157,7 @@ func TestTagEmpty(t *testing.T) {
 
 		[1/4] Fetch origin, prepare changelog tool, and create worktree
 		[2/4] Vet released modules
+		      go.temporal.io/sdk/contrib/envconfig: validate new version number
 		      go.temporal.io/sdk/contrib/envconfig: validate go.mod
 		      go.temporal.io/sdk/contrib/envconfig: verify that go.mod requirements are published
 		      go.temporal.io/sdk/contrib/envconfig: validate changelog
@@ -1150,6 +1187,10 @@ func TestTagVetBeforePublish(t *testing.T) {
 		switch cmd {
 		case "git rev-parse --verify --end-of-options abc123^{commit}":
 			return "abc123\n", nil
+		case "git tag --list v*":
+			return "v1.47.2\n", nil
+		case "git tag --list contrib/envconfig/v*":
+			return "contrib/envconfig/v1.0.2\n", nil
 		case "cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- release-notes --repo " + mockTempDir + " --version 1.0.3 --date 2026-08-04 --changelog contrib/envconfig/CHANGELOG.md":
 			return "", errors.New("wrong release date")
 		}
@@ -1174,8 +1215,16 @@ func TestTagVetBeforePublish(t *testing.T) {
 		# Running in /repo:
 		$ git worktree add --detach /tmp/prepare-go-release-123456 abc123
 
+		# Running in /tmp/prepare-go-release-123456:
+		$ git tag --list v*
+		v1.47.2
+
 		# Running in /sdk-rust:
 		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- release-notes --repo /tmp/prepare-go-release-123456 --version 1.48.0 --date 2026-08-04 --changelog CHANGELOG.md
+
+		# Running in /tmp/prepare-go-release-123456:
+		$ git tag --list contrib/envconfig/v*
+		contrib/envconfig/v1.0.2
 
 		# Running in /sdk-rust:
 		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- release-notes --repo /tmp/prepare-go-release-123456 --version 1.0.3 --date 2026-08-04 --changelog contrib/envconfig/CHANGELOG.md
@@ -1189,10 +1238,12 @@ func TestTagVetBeforePublish(t *testing.T) {
 
 		[1/4] Fetch origin, prepare changelog tool, and create worktree
 		[2/4] Vet released modules
+		      go.temporal.io/sdk: validate new version number
 		      go.temporal.io/sdk: validate go.mod
 		      go.temporal.io/sdk: verify that go.mod requirements are published
 		      go.temporal.io/sdk: validate version.go
 		      go.temporal.io/sdk: validate changelog
+		      go.temporal.io/sdk/contrib/envconfig: validate new version number
 		      go.temporal.io/sdk/contrib/envconfig: validate go.mod
 		      go.temporal.io/sdk/contrib/envconfig: verify that go.mod requirements are published
 		      go.temporal.io/sdk/contrib/envconfig: validate changelog
@@ -1254,8 +1305,14 @@ func TestTagStillReportsCreatedDraftsOnFailure(t *testing.T) {
 		# Running in /repo:
 		$ git worktree add --detach /tmp/prepare-go-release-123456 abc123
 
+		# Running in /tmp/prepare-go-release-123456:
+		$ git tag --list contrib/envconfig/v*
+
 		# Running in /sdk-rust:
 		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- release-notes --repo /tmp/prepare-go-release-123456 --version 0.1.0 --date 2026-08-04 --changelog contrib/envconfig/CHANGELOG.md
+
+		# Running in /tmp/prepare-go-release-123456:
+		$ git tag --list contrib/tally/v*
 
 		# Running in /sdk-rust:
 		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- release-notes --repo /tmp/prepare-go-release-123456 --version 0.1.0 --date 2026-08-04 --changelog contrib/tally/CHANGELOG.md
@@ -1292,9 +1349,11 @@ func TestTagStillReportsCreatedDraftsOnFailure(t *testing.T) {
 
 		[1/4] Fetch origin, prepare changelog tool, and create worktree
 		[2/4] Vet released modules
+		      go.temporal.io/sdk/contrib/envconfig: validate new version number
 		      go.temporal.io/sdk/contrib/envconfig: validate go.mod
 		      go.temporal.io/sdk/contrib/envconfig: verify that go.mod requirements are published
 		      go.temporal.io/sdk/contrib/envconfig: validate changelog
+		      go.temporal.io/sdk/contrib/tally: validate new version number
 		      go.temporal.io/sdk/contrib/tally: validate go.mod
 		      go.temporal.io/sdk/contrib/tally: verify that go.mod requirements are published
 		      go.temporal.io/sdk/contrib/tally: validate changelog
@@ -1345,7 +1404,7 @@ func TestCoreToolSetupFailure(t *testing.T) {
 			if strings.Contains(audit, "git worktree add") || strings.Contains(audit, "cargo ") {
 				t.Fatalf("started release work after a tool setup failure:\n%s", audit)
 			}
-			if strings.Contains(eff.output.String(), "validate go.mod") {
+			if strings.Contains(eff.output.String(), "validate new version number") {
 				t.Fatal("reported a global setup failure during per-module validation")
 			}
 		})

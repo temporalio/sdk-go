@@ -647,6 +647,22 @@ func (c *app) vetModule(w *worktree, module pure.VersionedModule, coreTool *core
 	m := module.Module
 	modulePath := m.ModulePath()
 
+	printDetail(c.eff, "%s: validate new version number", modulePath)
+	tags, err := w.listTags(m.TagPattern())
+	if err != nil {
+		return fmt.Errorf("%s: %w", modulePath, err)
+	}
+	var latest pure.Version
+	if version := pure.LatestReleasedVersion(tags, m.TagPrefix()); version != nil {
+		latest = *version
+	}
+	minor := pure.Version{latest[0], latest[1] + 1, 0}
+	patch := pure.Version{latest[0], latest[1], latest[2] + 1}
+	if module.Version != minor && module.Version != patch {
+		return fmt.Errorf("%s: proposed version %s must be a minor or patch increment of %s; choose %s or %s",
+			modulePath, module.Version, latest, minor, patch)
+	}
+
 	printDetail(c.eff, "%s: validate go.mod", modulePath)
 	contents, err := w.eff.readFile(m.GoMod(w.worktreeRoot))
 	if err != nil {
