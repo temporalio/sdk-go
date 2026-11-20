@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"runtime"
 
 	"go.temporal.io/sdk/internal/cmd/publisher/pure"
 )
@@ -18,7 +19,8 @@ const usage = `usage: publisher (gate|find|stage|vet|tag)
   vet    Find mistakes in a release commit
   tag    Create draft GitHub releases
 
-The command requires a UNIX OS and assumes you have cargo and gh on your PATH.
+Windows is not supported. Use Linux, macOS, or WSL.
+The command assumes you have cargo and gh on your PATH.
 
 The command guides you through the release process. Start with "publisher find".
 If anything goes wrong, publisher prints an audit log with the commands it ran`
@@ -46,6 +48,9 @@ func main() {
 }
 
 func run(eff *realWorld, args []string) (retErr error) {
+	if runtime.GOOS == "windows" {
+		return errors.New("publisher does not support Windows; run it on Linux, macOS, or in WSL")
+	}
 	audit, err := os.CreateTemp("", "publisher-*.log")
 	if err != nil {
 		return fmt.Errorf("create audit log: %w", err)
