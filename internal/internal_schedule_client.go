@@ -671,7 +671,7 @@ func convertToPBScheduleAction(
 			return nil, nil, err
 		}
 
-		userMetadata, err := buildScheduleUserMetadata(action.StaticSummary, action.StaticDetails, described, dataConverter, retained)
+		userMetadata, err := buildScheduleUserMetadata(action.ID, action.StaticSummary, action.StaticDetails, described, dataConverter, retained)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -942,6 +942,7 @@ func (r *retainedPayloads) restore(action *schedulepb.ScheduleAction) {
 type describedScheduleAction struct {
 	args             []*commonpb.Payload
 	memo             []*commonpb.Payload
+	workflowID       string
 	userMetadata     *sdk.UserMetadata
 	summary, details string
 }
@@ -962,21 +963,24 @@ func newDescribedScheduleAction(pb *schedulepb.ScheduleAction, action ScheduleAc
 	return &describedScheduleAction{
 		args:         args,
 		memo:         memo,
+		workflowID:   pb.GetStartWorkflow().GetWorkflowId(),
 		userMetadata: pb.GetStartWorkflow().GetUserMetadata(),
 		summary:      workflowAction.StaticSummary,
 		details:      workflowAction.StaticDetails,
 	}
 }
 
-// An unchanged summary or details goes back as the payload it was described from.
+// An unchanged summary or details goes back as the payload it was described from. The payload was
+// encoded for the described workflow ID, so it is encoded again when the ID changes.
 func buildScheduleUserMetadata(
+	workflowID string,
 	summary string,
 	details string,
 	described *describedScheduleAction,
 	dc converter.DataConverter,
 	retained *retainedPayloads,
 ) (*sdk.UserMetadata, error) {
-	if described != nil {
+	if described != nil && described.workflowID == workflowID {
 		if summary != "" && summary == described.summary {
 			retained.summary, summary = described.userMetadata.GetSummary(), ""
 		}
