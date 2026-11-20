@@ -252,7 +252,7 @@ type (
 
 		workerInstanceKey string
 
-		workerControlTaskQueue   string
+		namespaceWorker          *sharedNamespaceWorker
 		pollerGroupSnapshotStore *pollerGroupSnapshotStore
 
 		sdkName    string
@@ -1357,8 +1357,12 @@ type AggregatedWorker struct {
 	activityWorker *activityWorker
 	sessionWorker  *sessionWorker
 	nexusWorker    *nexusWorker
-	logger         log.Logger
-	registry       *registry
+	// The Nexus worker's slot supplier. Unlike the other workers, nexusWorker is created during
+	// start rather than at construction, so slotUsage reads this atomic instead of nexusWorker to
+	// avoid a data race when called concurrently with start.
+	nexusSlotSupplier atomic.Pointer[trackingSlotSupplier]
+	logger            log.Logger
+	registry          *registry
 	// Stores a boolean indicating whether the worker has already been started.
 	started      atomic.Bool
 	shuttingDown atomic.Bool
@@ -1630,6 +1634,7 @@ func (aw *AggregatedWorker) start() error {
 		if err != nil {
 			return fmt.Errorf("failed to create a nexus worker: %w", err)
 		}
+		aw.nexusSlotSupplier.Store(aw.nexusWorker.worker.slotSupplier)
 		if err := aw.nexusWorker.Start(); err != nil {
 			return fmt.Errorf("failed to start a nexus worker: %w", err)
 		}
@@ -2488,10 +2493,10 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	// should take a pointer to this struct and wait for it to be populated when the worker is run.
 	var capabilities workflowservice.GetSystemInfoResponse_Capabilities
 	var activityCancellationCallbacks *activityCancellationCallbacks
+	var namespaceWorker *sharedNamespaceWorker
 	if client.heartbeatManager != nil {
-		activityCancellationCallbacks = client.heartbeatManager.
-			sharedNamespaceWorkerFor(client.namespace).
-			activityCancellationCallbacks
+		namespaceWorker = client.heartbeatManager.sharedNamespaceWorkerFor(client.namespace)
+		activityCancellationCallbacks = namespaceWorker.activityCancellationCallbacks
 	}
 
 	baseMetricsHandler := client.metricsHandler.WithTags(metrics.TaskQueueTags(taskQueue))
@@ -2527,7 +2532,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	}
 
 	payloadLimitVisitor, setErrorLimits := newPayloadLimitsVisitor(client.payloadWarningLimits, logger)
-	workerStorageParams := client.storageParams.WithOwnDriverOperationLimit().WithLogger(logger)
+	workerStorageParams := client.storageParams.WithOwnDriverOperationLimit().WithLogger(logger).WithNamespace(client.namespace)
 
 	cache, cacheLease := NewWorkerCache()
 	constructionComplete := false
@@ -2577,7 +2582,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		capabilities:                     &capabilities,
 		pollTimeTracker:                  &pollTimeTracker{},
 		workerInstanceKey:                workerInstanceKey,
-		workerControlTaskQueue:           workerControlTaskQueue(client.namespace, client.workerGroupingKey),
+		namespaceWorker:                  namespaceWorker,
 		sdkName:                          client.sdkName,
 		sdkVersion:                       client.sdkVersion,
 		pollerGroupSnapshotStore:         newPollerGroupSnapshotStore(),

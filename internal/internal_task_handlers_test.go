@@ -669,9 +669,23 @@ func (t *TaskHandlersTestSuite) testWorkflowTaskWorkflowExecutionStartedHelper(p
 	response := request.rawRequest.(*workflowservice.RespondWorkflowTaskCompletedRequest)
 	t.NoError(err)
 	t.NotNil(response)
+	t.Equal(params.namespaceWorker.controlTaskQueue(), response.WorkerControlTaskQueue)
 	t.Equal(1, len(response.Commands))
 	t.Equal(enumspb.COMMAND_TYPE_SCHEDULE_ACTIVITY_TASK, response.Commands[0].GetCommandType())
 	t.NotNil(response.Commands[0].GetScheduleActivityTaskCommandAttributes())
+}
+
+func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkerControlTaskQueue() {
+	for _, running := range []bool{false, true} {
+		t.Run(fmt.Sprintf("running=%v", running), func() {
+			params := t.getTestWorkerExecutionParams()
+			params.namespaceWorker = &sharedNamespaceWorker{
+				workerControlTaskQueue: "temporal-sys/worker-commands/test-ns/grouping-key",
+			}
+			params.namespaceWorker.workerCommandsRunning.Store(running)
+			t.testWorkflowTaskWorkflowExecutionStartedHelper(params)
+		})
+	}
 }
 
 func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowExecutionStarted() {

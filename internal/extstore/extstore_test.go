@@ -466,6 +466,54 @@ func TestStoreVisitor_SelectorReceivesSelectContextWithTarget(t *testing.T) {
 	require.NotNil(t, selectCtx.Context)
 }
 
+type storeContextRecordingDriver struct {
+	*testStorageDriver
+	storeCtx StorageDriverStoreContext
+}
+
+func (d *storeContextRecordingDriver) Store(ctx StorageDriverStoreContext, payloads []*commonpb.Payload) ([]StorageDriverClaim, error) {
+	d.storeCtx = ctx
+	return d.testStorageDriver.Store(ctx, payloads)
+}
+
+func TestStoreVisitor_ContextsCarryNamespace(t *testing.T) {
+	target := StorageDriverWorkflowInfo{Namespace: "target-ns", WorkflowID: "wf-id"}
+	for _, tc := range []struct {
+		name   string
+		target StorageDriverTargetInfo
+	}{
+		{name: "with target", target: target},
+		{name: "without target"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			driver := &storeContextRecordingDriver{testStorageDriver: newTestDriver("d")}
+			var selectCtx StorageDriverSelectContext
+			selector := &funcDriverSelector{fn: func(ctx StorageDriverSelectContext, _ *commonpb.Payload) (StorageDriver, error) {
+				selectCtx = ctx
+				return driver, nil
+			}}
+			params, err := ExternalStorageToParams(ExternalStorage{
+				Drivers:        []StorageDriver{driver},
+				DriverSelector: selector,
+			})
+			require.NoError(t, err)
+			visitor := NewExternalStorageVisitor(params.WithNamespace("ambient-ns"))
+
+			ctx := t.Context()
+			if tc.target != nil {
+				ctx = WithStorageTarget(ctx, tc.target)
+			}
+			p := makeOversizedPayload(t, defaultPayloadSizeThreshold+1)
+			_, err = visitPayloads(ctx, visitor, []*commonpb.Payload{p})
+			require.NoError(t, err)
+			require.Equal(t, "ambient-ns", selectCtx.Namespace)
+			require.Equal(t, tc.target, selectCtx.Target)
+			require.Equal(t, "ambient-ns", driver.storeCtx.Namespace)
+			require.Equal(t, tc.target, driver.storeCtx.Target)
+		})
+	}
+}
+
 func TestStoreVisitor_SelectorBelowThreshold_NotCalled(t *testing.T) {
 	driver := newTestDriver("d")
 	selectorCalled := false

@@ -142,7 +142,7 @@ func (d *gcsStorageDriver) Store(
 				}
 				hexDigest := sha256Hex(data)
 				bucket := d.bucketFunc(ctx, p)
-				name := objectName(ctx.Target, hexDigest)
+				name := objectName(ctx.Target, ctx.Namespace, hexDigest)
 				exists, err := d.client.ObjectExists(gctx, bucket, name)
 				if err != nil {
 					return fmt.Errorf("existence check failed [bucket=%s, object_name=%s%s]: %w", bucket, name, describeClient(d.client), err)
@@ -235,39 +235,29 @@ func (d *gcsStorageDriver) Retrieve(
 	return payloads, nil
 }
 
-func objectName(target converter.StorageDriverTargetInfo, hexDigest string) string {
+// objectName uses namespace only when target carries no namespace of its own.
+func objectName(target converter.StorageDriverTargetInfo, namespace, hexDigest string) string {
 	digestSegment := "/d/" + hashAlgorithm + "/" + hexDigest
-	var name string
+	ns := namespace
+	var contextSegments string
 	switch t := target.(type) {
 	case converter.StorageDriverWorkflowInfo:
-		name = objectNameVersion +
-			"/ns/" + encodeObjectNameSegment(t.Namespace) +
-			"/wt/" + encodeObjectNameSegment(t.WorkflowType) +
+		ns = t.Namespace
+		contextSegments = "/wt/" + encodeObjectNameSegment(t.WorkflowType) +
 			"/wi/" + encodeObjectNameSegment(t.WorkflowID) +
-			"/ri/" + encodeObjectNameSegment(t.RunID) +
-			digestSegment
+			"/ri/" + encodeObjectNameSegment(t.RunID)
 	case converter.StorageDriverActivityInfo:
-		name = objectNameVersion +
-			"/ns/" + encodeObjectNameSegment(t.Namespace) +
-			"/at/" + encodeObjectNameSegment(t.ActivityType) +
+		ns = t.Namespace
+		contextSegments = "/at/" + encodeObjectNameSegment(t.ActivityType) +
 			"/ai/" + encodeObjectNameSegment(t.ActivityID) +
-			"/ri/" + encodeObjectNameSegment(t.RunID) +
-			digestSegment
-	default:
-		return objectNameVersion + digestSegment
+			"/ri/" + encodeObjectNameSegment(t.RunID)
 	}
-	if len(name) > maxGCSObjectNameBytes {
-		// Preserve namespace scope for authorization policies.
-		var ns string
-		switch t := target.(type) {
-		case converter.StorageDriverWorkflowInfo:
-			ns = t.Namespace
-		case converter.StorageDriverActivityInfo:
-			ns = t.Namespace
-		}
-		return objectNameVersion + "/ns/" + encodeObjectNameSegment(ns) + digestSegment
+	prefix := objectNameVersion + "/ns/" + encodeObjectNameSegment(ns)
+	if name := prefix + contextSegments + digestSegment; len(name) <= maxGCSObjectNameBytes {
+		return name
 	}
-	return name
+	// Preserve namespace scope for authorization policies.
+	return prefix + digestSegment
 }
 
 // describeClient returns ", k=v, k=v" diagnostic info from the client's
