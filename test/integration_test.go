@@ -193,6 +193,11 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		options.MetricsHandler = metricsHandler
 		options.TrafficController = trafficController
 		options.Interceptors = clientInterceptors
+		if t := ts.T(); t.Name() == "TestIntegrationSuite/TestLargeQueryResultError" {
+			options.ConnectionOptions.DialOptions = append(options.ConnectionOptions.DialOptions,
+				grpc.WithChainUnaryInterceptor(logLargeQueryRPCs(t)),
+			)
+		}
 	})
 	ts.NoError(err)
 
@@ -2209,6 +2214,48 @@ func (ts *IntegrationTestSuite) TestLargeQueryResultError() {
 	ts.IsType(&serviceerror.QueryFailed{}, err)
 	ts.Equal("Blob data size exceeds limit.", err.Error())
 	ts.Nil(value)
+}
+
+func logLargeQueryRPCs(t *testing.T) grpc.UnaryClientInterceptor {
+	return func(
+		ctx context.Context, method string, req, reply any, cc *grpc.ClientConn,
+		invoker grpc.UnaryInvoker, opts ...grpc.CallOption,
+	) error {
+		start := time.Now()
+		if query, ok := req.(*workflowservice.QueryWorkflowRequest); ok {
+			t.Logf("%s QueryWorkflow started: workflow=%s run=%s query=%s",
+				start.UTC().Format(time.RFC3339Nano), query.GetExecution().GetWorkflowId(),
+				query.GetExecution().GetRunId(), query.GetQuery().GetQueryType())
+		}
+
+		err := invoker(ctx, method, req, reply, cc, opts...)
+		finished := time.Now()
+		timestamp := finished.UTC().Format(time.RFC3339Nano)
+		elapsed := finished.Sub(start)
+		switch request := req.(type) {
+		case *workflowservice.QueryWorkflowRequest:
+			t.Logf("%s QueryWorkflow finished: run=%s duration=%s status=%s error=%v",
+				timestamp, request.GetExecution().GetRunId(), elapsed, status.Code(err), err)
+		case *workflowservice.RespondQueryTaskCompletedRequest:
+			t.Logf("%s RespondQueryTaskCompleted: result_type=%s result_bytes=%d duration=%s status=%s error=%v",
+				timestamp, request.GetCompletedType(), proto.Size(request.GetQueryResult()),
+				elapsed, status.Code(err), err)
+		case *workflowservice.RespondWorkflowTaskCompletedRequest:
+			var resultBytes int
+			for _, result := range request.GetQueryResults() {
+				resultBytes += proto.Size(result.GetAnswer())
+			}
+			t.Logf("%s RespondWorkflowTaskCompleted: query_results=%d result_bytes=%d duration=%s status=%s error=%v",
+				timestamp, len(request.GetQueryResults()), resultBytes, elapsed, status.Code(err), err)
+		}
+		if task, ok := reply.(*workflowservice.PollWorkflowTaskQueueResponse); ok && err == nil &&
+			(task.GetQuery() != nil || len(task.GetQueries()) > 0) {
+			t.Logf("%s PollWorkflowTaskQueue received query: workflow=%s run=%s standalone=%t attached_queries=%d",
+				timestamp, task.GetWorkflowExecution().GetWorkflowId(), task.GetWorkflowExecution().GetRunId(),
+				task.GetQuery() != nil, len(task.GetQueries()))
+		}
+		return err
+	}
 }
 
 func (ts *IntegrationTestSuite) TestMutatingQuery() {
