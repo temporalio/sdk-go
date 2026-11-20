@@ -764,9 +764,8 @@ type registry struct {
 	_                             DynamicRegisterActivityOptions
 	interceptors                  []WorkerInterceptor
 	logger                        log.Logger
-
-	antialiasingActivityMap map[string]functionRegistration
-	antialiasingWorkflowMap map[string]functionRegistration
+	antialiasingActivityMap       map[string]antialiasingRegistration
+	antialiasingWorkflowMap       map[string]antialiasingRegistration
 }
 
 type registryOptions struct {
@@ -831,9 +830,7 @@ func (r *registry) RegisterWorkflowWithOptions(
 	if len(alias) > 0 && r.workflowAliasMap != nil {
 		r.workflowAliasMap[fnName] = alias
 	}
-	if r.workflowAliasMap != nil {
-		r.warnNameCollision("Workflow", r.antialiasingWorkflowMap, fnName, registerName, reflect.ValueOf(wf), registrationCaller())
-	}
+	r.antialiasingRecordRegistration(workflowAntialiasing, wf, registerName)
 }
 
 func (r *registry) RegisterDynamicWorkflow(wf any, options DynamicRegisterWorkflowOptions) {
@@ -881,12 +878,8 @@ func (r *registry) RegisterActivityWithOptions(
 	}
 	// Validate that it is a function
 	fnType := reflect.TypeOf(af)
-	var registeredAt string
-	if r.activityAliasMap != nil {
-		registeredAt = registrationCaller()
-	}
 	if fnType.Kind() == reflect.Pointer && fnType.Elem().Kind() == reflect.Struct {
-		registerErr := r.registerActivityStructWithOptions(af, options, registeredAt)
+		registerErr := r.registerActivityStructWithOptions(af, options)
 		if registerErr != nil {
 			panic(registerErr)
 		}
@@ -922,10 +915,10 @@ func (r *registry) RegisterActivityWithOptions(
 	if len(alias) > 0 && r.activityAliasMap != nil {
 		r.activityAliasMap[fnName] = alias
 	}
-	r.warnNameCollision("Activity", r.antialiasingActivityMap, fnName, registerName, reflect.ValueOf(af), registeredAt)
+	r.antialiasingRecordRegistration(activityAntialiasing, af, registerName)
 }
 
-func (r *registry) registerActivityStructWithOptions(aStruct any, options RegisterActivityOptions, registeredAt string) error {
+func (r *registry) registerActivityStructWithOptions(aStruct any, options RegisterActivityOptions) error {
 	r.Lock()
 	defer r.Unlock()
 
@@ -955,7 +948,7 @@ func (r *registry) registerActivityStructWithOptions(aStruct any, options Regist
 		}
 		r.activityFuncMap[registerName] = &activityExecutor{name: registerName, fn: methodValue.Interface()}
 		// The unbound method retains its definition location; methodValue is a reflection wrapper.
-		r.warnNameCollision("Activity", r.antialiasingActivityMap, name, registerName, method.Func, registeredAt)
+		r.antialiasingRecordRegistration(activityAntialiasing, method.Func.Interface(), registerName)
 		count++
 	}
 	if count == 0 {
@@ -1227,8 +1220,8 @@ func newRegistryWithOptions(options registryOptions) *registry {
 	if !options.disableAliasing {
 		r.workflowAliasMap = make(map[string]string)
 		r.activityAliasMap = make(map[string]string)
-		r.antialiasingActivityMap = make(map[string]functionRegistration)
-		r.antialiasingWorkflowMap = make(map[string]functionRegistration)
+		r.antialiasingActivityMap = make(map[string]antialiasingRegistration)
+		r.antialiasingWorkflowMap = make(map[string]antialiasingRegistration)
 	}
 	return r
 }
