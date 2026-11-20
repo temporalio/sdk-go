@@ -198,7 +198,8 @@ type liveRun struct {
 	firstExecutionRunID string
 	// info is the run's time skipping state, nil if it has never had any.
 	info *TimeSkippingInfo
-	// status is the run's execution status.
+	// status is the run's execution status. Anything but running means the
+	// chain has ended, since a run that continued-as-new is not the latest.
 	status enumspb.WorkflowExecutionStatus
 }
 
