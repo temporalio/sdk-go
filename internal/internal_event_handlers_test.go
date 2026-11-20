@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	historypb "go.temporal.io/api/history/v1"
 	protocolpb "go.temporal.io/api/protocol/v1"
 	updatepb "go.temporal.io/api/update/v1"
+	"go.temporal.io/api/workflowservice/v1"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 
@@ -122,6 +124,121 @@ func Test_ExecuteChildWorkflowVersioningOverride(t *testing.T) {
 			)
 		})
 	}
+}
+
+// Regression test for https://github.com/temporalio/sdk-go/issues/2761:
+// when the child workflow cannot even be scheduled because its memo or search
+// attributes fail to encode, the execution ("started") future must be resolved
+// with that encoding error, not with a bare ChildWorkflowExecutionAlreadyStartedError.
+func Test_ExecuteChildWorkflowEncodingErrorPropagatesToStartedHandler(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		options WorkflowOptions
+	}{
+		{
+			name: "memo encoding failure",
+			options: WorkflowOptions{
+				Memo: map[string]any{"bad": make(chan int)},
+			},
+		},
+		{
+			name: "search attribute encoding failure",
+			options: WorkflowOptions{
+				SearchAttributes: map[string]any{"bad": make(chan int)},
+			},
+		},
+		{
+			name: "conflicting typed and untyped search attributes",
+			options: WorkflowOptions{
+				SearchAttributes:      map[string]any{"a": "b"},
+				TypedSearchAttributes: NewSearchAttributes(NewSearchAttributeKeyString("c").ValueSet("d")),
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			helper := newCommandsHelper()
+			_, ctx := createRootTestContext()
+			env := &workflowEnvironmentImpl{
+				commandsHelper: helper,
+				workflowInfo:   GetWorkflowInfo(ctx),
+				sdkFlags:       newSDKFlagSet(&workflowservice.GetSystemInfoResponse_Capabilities{SdkMetadata: true}),
+				dataConverter:  converter.GetDefaultDataConverter(),
+				logger:         ilog.NewNopLogger(),
+			}
+
+			opts := tt.options
+			opts.Namespace = "namespace"
+			opts.WorkflowID = "child-workflow-id"
+			opts.TaskQueueName = "task-queue"
+
+			var resultErr, startedErr error
+			resultCalled, startedCalled := false, false
+			env.ExecuteChildWorkflow(
+				ExecuteWorkflowParams{
+					WorkflowOptions: opts,
+					WorkflowType:    &WorkflowType{Name: "child-workflow"},
+				},
+				func(_ *commonpb.Payloads, err error) { resultCalled, resultErr = true, err },
+				func(_ WorkflowExecution, err error) { startedCalled, startedErr = true, err },
+			)
+
+			// No command may have been produced: the child was never scheduled.
+			require.Empty(t, helper.getCommands(false))
+
+			require.True(t, resultCalled, "result callback must be invoked")
+			require.Error(t, resultErr)
+
+			require.True(t, startedCalled, "started callback must be invoked so the execution future does not hang")
+			require.Error(t, startedErr)
+
+			var alreadyStarted *ChildWorkflowExecutionAlreadyStartedError
+			require.False(t, errors.As(startedErr, &alreadyStarted),
+				"started future must not report ChildWorkflowExecutionAlreadyStartedError for an encoding failure, got: %v", startedErr)
+			require.Equal(t, resultErr.Error(), startedErr.Error(),
+				"started future and result future must report the same encoding error")
+		})
+	}
+}
+
+// When the SDK flag is disabled (e.g. replaying old histories), the started
+// handler must not be invoked, preserving the legacy behaviour.
+func Test_ExecuteChildWorkflowEncodingErrorFlagDisabled(t *testing.T) {
+	t.Parallel()
+
+	helper := newCommandsHelper()
+	_, ctx := createRootTestContext()
+	env := &workflowEnvironmentImpl{
+		commandsHelper: helper,
+		workflowInfo:   GetWorkflowInfo(ctx),
+		sdkFlags:       newSDKFlagSet(&workflowservice.GetSystemInfoResponse_Capabilities{SdkMetadata: true}),
+		dataConverter:  converter.GetDefaultDataConverter(),
+		logger:         ilog.NewNopLogger(),
+		isReplay:       true,
+	}
+
+	startedCalled := false
+	var resultErr error
+	env.ExecuteChildWorkflow(
+		ExecuteWorkflowParams{
+			WorkflowOptions: WorkflowOptions{
+				Namespace:     "namespace",
+				WorkflowID:    "child-workflow-id",
+				TaskQueueName: "task-queue",
+				Memo:          map[string]any{"bad": make(chan int)},
+			},
+			WorkflowType: &WorkflowType{Name: "child-workflow"},
+		},
+		func(_ *commonpb.Payloads, err error) { resultErr = err },
+		func(WorkflowExecution, error) { startedCalled = true },
+	)
+	require.Error(t, resultErr)
+	require.False(t, startedCalled, "started handler must not fire when the SDK flag cannot be used")
 }
 
 func TestDecodedValueWithDataConverter(t *testing.T) {
