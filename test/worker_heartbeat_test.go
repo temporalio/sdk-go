@@ -1018,16 +1018,18 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerPollCompleteOnShutdown() {
 		Namespace: ts.config.Namespace,
 	})
 	ts.NoError(err)
-	if !resp.GetNamespaceInfo().GetCapabilities().GetWorkerPollCompleteOnShutdown() {
+	capabilities := resp.GetNamespaceInfo().GetCapabilities()
+	if !capabilities.GetWorkerPollCompleteOnShutdown() {
 		ts.T().Skip("server does not support worker_poll_complete_on_shutdown namespace capability")
 	}
 
 	taskQueue := taskQueuePrefix + "-worker-poll-complete-on-shutdown-" + ts.T().Name()
 
 	var (
-		mu                sync.Mutex
-		shutdownReq       *workflowservice.ShutdownWorkerRequest
-		pollContextErrors []error
+		mu                       sync.Mutex
+		shutdownReq              *workflowservice.ShutdownWorkerRequest
+		pollContextErrors        []error
+		workerCommandPollStarted atomic.Bool
 	)
 
 	c, err := ts.newDefaultClient(func(options *client.Options) {
@@ -1043,10 +1045,15 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerPollCompleteOnShutdown() {
 				invoker grpc.UnaryInvoker,
 				opts ...grpc.CallOption,
 			) error {
-				if strings.HasSuffix(method, "/ShutdownWorker") {
+				if shutdown, ok := req.(*workflowservice.ShutdownWorkerRequest); ok && shutdown.GetTaskQueue() == taskQueue {
 					mu.Lock()
-					shutdownReq = req.(*workflowservice.ShutdownWorkerRequest)
+					shutdownReq = shutdown
 					mu.Unlock()
+				}
+
+				if pollReq, ok := req.(*workflowservice.PollNexusTaskQueueRequest); ok &&
+					pollReq.GetTaskQueue().GetKind() == enumspb.TASK_QUEUE_KIND_WORKER_COMMANDS {
+					workerCommandPollStarted.Store(true)
 				}
 
 				err := invoker(ctx, method, req, reply, cc, opts...)
@@ -1056,7 +1063,7 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerPollCompleteOnShutdown() {
 					strings.HasSuffix(method, "/PollNexusTaskQueue")
 				if isPoll && ctx.Err() != nil {
 					mu.Lock()
-					pollContextErrors = append(pollContextErrors, ctx.Err())
+					pollContextErrors = append(pollContextErrors, fmt.Errorf("%s: %w", method, ctx.Err()))
 					mu.Unlock()
 				}
 
@@ -1072,6 +1079,12 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerPollCompleteOnShutdown() {
 	})
 	w.RegisterWorkflow(simpleWorkflow)
 	ts.NoError(w.Start())
+	defer w.Stop()
+
+	if capabilities.GetWorkerCommands() {
+		ts.Eventually(workerCommandPollStarted.Load, 10*time.Second, 200*time.Millisecond,
+			"Worker-command poll did not start")
+	}
 
 	// Wait for pollers to be registered on the server, ensuring polls are
 	// blocked in the matcher before we trigger shutdown.
@@ -1103,7 +1116,8 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerPollCompleteOnShutdown() {
 }
 
 func (ts *WorkerHeartbeatTestSuite) TestActivityCancelDeliveredWithoutHeartbeat() {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(ts.T().Context(), ctxTimeout)
+	defer cancel()
 	internalClient := ts.client.(internal.Client)
 	workflowClient := internalClient.(*internal.WorkflowClient)
 	resp, err := workflowClient.WorkflowService().DescribeNamespace(ctx, &workflowservice.DescribeNamespaceRequest{
@@ -1114,16 +1128,48 @@ func (ts *WorkerHeartbeatTestSuite) TestActivityCancelDeliveredWithoutHeartbeat(
 		ts.T().Skip("server does not support worker_commands namespace capability")
 	}
 
-	ts.worker = worker.New(ts.client, ts.taskQueueName, worker.Options{
+	commandPollStarted := make(chan struct{})
+	markCommandPollStarted := sync.OnceFunc(func() { close(commandPollStarted) })
+	c, err := ts.newDefaultClient(func(options *client.Options) {
+		options.ConnectionOptions.GetSystemInfoTimeout = ctxTimeout
+		options.WorkerHeartbeatInterval = time.Second
+		options.ConnectionOptions.DialOptions = []grpc.DialOption{
+			grpc.WithUnaryInterceptor(func(
+				ctx context.Context, method string, req any, reply any, cc *grpc.ClientConn,
+				invoker grpc.UnaryInvoker, opts ...grpc.CallOption,
+			) error {
+				if poll, ok := req.(*workflowservice.PollNexusTaskQueueRequest); ok &&
+					poll.GetTaskQueue().GetKind() == enumspb.TASK_QUEUE_KIND_WORKER_COMMANDS {
+					markCommandPollStarted()
+				}
+				return invoker(ctx, method, req, reply, cc, opts...)
+			}),
+		}
+	})
+	ts.NoError(err)
+	defer c.Close()
+
+	// Activity polls advertise the control queue only after command polling starts.
+	bootstrapWorker := worker.New(c, ts.taskQueueName+"-bootstrap", worker.Options{})
+	ts.NoError(bootstrapWorker.Start())
+	defer bootstrapWorker.Stop()
+	select {
+	case <-commandPollStarted:
+	case <-ctx.Done():
+		ts.FailNow("timed out waiting for the worker command poller", ctx.Err().Error())
+	}
+
+	w := worker.New(c, ts.taskQueueName, worker.Options{
 		DisableEagerActivities: true,
 	})
-	ts.worker.RegisterWorkflow(workerCommandCancelActivityWorkflow)
-	ts.worker.RegisterActivity(workerCommandWaitForCancelActivity)
-	ts.NoError(ts.worker.Start())
+	w.RegisterWorkflow(workerCommandCancelActivityWorkflow)
+	w.RegisterActivity(workerCommandWaitForCancelActivity)
+	ts.NoError(w.Start())
+	defer w.Stop()
 
 	options := ts.startWorkflowOptions("test-worker-command-activity-cancel-" + uuid.NewString())
 	options.WorkflowExecutionTimeout = 10 * time.Second
-	run, err := ts.client.ExecuteWorkflow(ctx, options, workerCommandCancelActivityWorkflow)
+	run, err := c.ExecuteWorkflow(ctx, options, workerCommandCancelActivityWorkflow)
 	ts.NoError(err)
 	ts.NoError(run.Get(ctx, nil))
 }
