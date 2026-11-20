@@ -96,6 +96,8 @@ func headerCodecWorkflow(ctx workflow.Context, continued bool) ([]string, error)
 }
 
 func (ts *IntegrationTestSuite) TestHeaderCodec() {
+	ts.startWorker()
+
 	recorder := tracetest.NewSpanRecorder()
 	tracer := trace.NewTracerProvider(trace.WithSpanProcessor(recorder)).Tracer("header-codec")
 	tracing, err := opentelemetry.NewTracingInterceptor(opentelemetry.TracerOptions{Tracer: tracer, EncodeHeaders: true})

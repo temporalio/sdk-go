@@ -80,6 +80,8 @@ func (ts *IntegrationTestSuite) newFailOnceClientAndWorker(taskQueue string, cod
 // fails only the current Workflow Task; the server retries it, the retry decodes
 // cleanly, and the Workflow Execution completes.
 func (ts *IntegrationTestSuite) TestWorkflowTaskFailureMarker_InputDecode_RetriesThenCompletes() {
+	ts.startWorker()
+
 	sentinel := "wft-marker-input-sentinel"
 	codec := &failOnceDecodeCodec{sentinel: sentinel}
 	taskQueue := "test-wft-marker-input-" + ts.T().Name()
@@ -131,6 +133,8 @@ func wftMarkerActivityWorkflow(ctx workflow.Context) (string, error) {
 // (so the activity runs exactly once) and decodes cleanly, and the Workflow
 // Execution completes.
 func (ts *IntegrationTestSuite) TestWorkflowTaskFailureMarker_ActivityResultDecode_RetriesThenCompletes() {
+	ts.startWorker()
+
 	atomic.StoreInt32(&wftMarkerActivityRuns, 0)
 	sentinel := "wft-marker-activity-sentinel"
 	codec := &failOnceDecodeCodec{sentinel: sentinel}

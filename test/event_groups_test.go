@@ -49,6 +49,8 @@ import (
 //     child context still requests cancel and inherits the start command's groups.
 
 func (ts *IntegrationTestSuite) TestEventGroups_Commands() {
+	ts.startWorker()
+
 	if os.Getenv("DISABLE_EVENT_GROUPS_TESTS") != "" {
 		ts.T().Skip("event-groups-capable temporal server required")
 	}
@@ -83,6 +85,8 @@ func (ts *IntegrationTestSuite) TestEventGroups_Commands() {
 }
 
 func (ts *IntegrationTestSuite) TestEventGroups_LocalActivityBackoff() {
+	ts.startWorker()
+
 	if os.Getenv("DISABLE_EVENT_GROUPS_TESTS") != "" {
 		ts.T().Skip("event-groups-capable temporal server required")
 	}
@@ -111,6 +115,8 @@ func (ts *IntegrationTestSuite) TestEventGroups_LocalActivityBackoff() {
 }
 
 func (ts *IntegrationTestSuite) TestEventGroups_LocalActivityCancel() {
+	ts.startWorker()
+
 	if os.Getenv("DISABLE_EVENT_GROUPS_TESTS") != "" {
 		ts.T().Skip("event-groups-capable temporal server required")
 	}
@@ -133,6 +139,8 @@ func (ts *IntegrationTestSuite) TestEventGroups_LocalActivityCancel() {
 }
 
 func (ts *IntegrationTestSuite) TestEventGroups_CancelInherits() {
+	ts.startWorker()
+
 	if os.Getenv("DISABLE_EVENT_GROUPS_TESTS") != "" {
 		ts.T().Skip("event-groups-capable temporal server required")
 	}
@@ -153,6 +161,8 @@ func (ts *IntegrationTestSuite) TestEventGroups_CancelInherits() {
 }
 
 func (ts *IntegrationTestSuite) TestEventGroups_Child() {
+	ts.startWorker()
+
 	if os.Getenv("DISABLE_EVENT_GROUPS_TESTS") != "" {
 		ts.T().Skip("event-groups-capable temporal server required")
 	}
@@ -175,6 +185,8 @@ func (ts *IntegrationTestSuite) TestEventGroups_Child() {
 }
 
 func (ts *IntegrationTestSuite) TestEventGroups_External() {
+	ts.startWorker()
+
 	if os.Getenv("DISABLE_EVENT_GROUPS_TESTS") != "" {
 		ts.T().Skip("event-groups-capable temporal server required")
 	}
@@ -193,6 +205,8 @@ func (ts *IntegrationTestSuite) TestEventGroups_External() {
 }
 
 func (ts *IntegrationTestSuite) TestEventGroups_ScopeAndAggregation() {
+	ts.startWorker()
+
 	if os.Getenv("DISABLE_EVENT_GROUPS_TESTS") != "" {
 		ts.T().Skip("event-groups-capable temporal server required")
 	}
@@ -220,6 +234,8 @@ func (ts *IntegrationTestSuite) TestEventGroups_ScopeAndAggregation() {
 }
 
 func (ts *IntegrationTestSuite) TestEventGroups_UpdateImplicit() {
+	ts.startWorker()
+
 	if os.Getenv("DISABLE_EVENT_GROUPS_TESTS") != "" {
 		ts.T().Skip("event-groups-capable temporal server required")
 	}
@@ -252,6 +268,8 @@ func (ts *IntegrationTestSuite) TestEventGroups_UpdateImplicit() {
 }
 
 func (ts *IntegrationTestSuite) TestEventGroups_ContinueAsNew() {
+	ts.startWorker()
+
 	if os.Getenv("DISABLE_EVENT_GROUPS_TESTS") != "" {
 		ts.T().Skip("event-groups-capable temporal server required")
 	}
@@ -276,6 +294,8 @@ func (ts *IntegrationTestSuite) TestEventGroups_ContinueAsNew() {
 }
 
 func (ts *IntegrationTestSuite) TestEventGroups_LabelPayload() {
+	ts.startWorker()
+
 	if os.Getenv("DISABLE_EVENT_GROUPS_TESTS") != "" {
 		ts.T().Skip("event-groups-capable temporal server required")
 	}
@@ -300,6 +320,8 @@ func (ts *IntegrationTestSuite) TestEventGroups_LabelPayload() {
 }
 
 func (ts *IntegrationTestSuite) TestEventGroups_LabelPayloadIgnoresCustomConverter() {
+	ts.startWorker()
+
 	if os.Getenv("DISABLE_EVENT_GROUPS_TESTS") != "" {
 		ts.T().Skip("event-groups-capable temporal server required")
 	}
@@ -363,6 +385,8 @@ func (ts *IntegrationTestSuite) TestEventGroups_LabelPayloadIgnoresCustomConvert
 }
 
 func (ts *IntegrationTestSuite) TestEventGroups_ScopeBaseline() {
+	ts.startWorker()
+
 	if os.Getenv("DISABLE_EVENT_GROUPS_TESTS") != "" {
 		ts.T().Skip("event-groups-capable temporal server required")
 	}
@@ -381,6 +405,8 @@ func (ts *IntegrationTestSuite) TestEventGroups_ScopeBaseline() {
 }
 
 func (ts *IntegrationTestSuite) TestEventGroups_ScopeNesting() {
+	ts.startWorker()
+
 	if os.Getenv("DISABLE_EVENT_GROUPS_TESTS") != "" {
 		ts.T().Skip("event-groups-capable temporal server required")
 	}
@@ -410,6 +436,8 @@ func (ts *IntegrationTestSuite) TestEventGroups_ScopeNesting() {
 }
 
 func (ts *IntegrationTestSuite) TestEventGroups_ScopeReenter() {
+	ts.startWorker()
+
 	if os.Getenv("DISABLE_EVENT_GROUPS_TESTS") != "" {
 		ts.T().Skip("event-groups-capable temporal server required")
 	}
@@ -431,6 +459,8 @@ func (ts *IntegrationTestSuite) TestEventGroups_ScopeReenter() {
 }
 
 func (ts *IntegrationTestSuite) TestEventGroups_ScopeConcurrent() {
+	ts.startWorker()
+
 	if os.Getenv("DISABLE_EVENT_GROUPS_TESTS") != "" {
 		ts.T().Skip("event-groups-capable temporal server required")
 	}
@@ -463,6 +493,8 @@ func (ts *IntegrationTestSuite) TestEventGroups_ScopeConcurrent() {
 }
 
 func (ts *IntegrationTestSuite) TestEventGroups_Aggregation() {
+	ts.startWorker()
+
 	if os.Getenv("DISABLE_EVENT_GROUPS_TESTS") != "" {
 		ts.T().Skip("event-groups-capable temporal server required")
 	}
@@ -496,6 +528,8 @@ func (ts *IntegrationTestSuite) TestEventGroups_Aggregation() {
 }
 
 func (ts *IntegrationTestSuite) TestEventGroups_LabelIDs() {
+	ts.startWorker()
+
 	if os.Getenv("DISABLE_EVENT_GROUPS_TESTS") != "" {
 		ts.T().Skip("event-groups-capable temporal server required")
 	}
@@ -522,6 +556,8 @@ func (ts *IntegrationTestSuite) TestEventGroups_LabelIDs() {
 }
 
 func (ts *IntegrationTestSuite) TestEventGroups_LabelPayloadCodec() {
+	ts.startWorker()
+
 	if os.Getenv("DISABLE_EVENT_GROUPS_TESTS") != "" {
 		ts.T().Skip("event-groups-capable temporal server required")
 	}
@@ -580,6 +616,8 @@ func (ts *IntegrationTestSuite) TestEventGroups_LabelPayloadCodec() {
 }
 
 func (ts *IntegrationTestSuite) TestEventGroups_Nexus() {
+	ts.startWorker()
+
 	if os.Getenv("DISABLE_EVENT_GROUPS_TESTS") != "" {
 		ts.T().Skip("event-groups-capable temporal server required")
 	}
@@ -1272,6 +1310,8 @@ func eventGroupLabelPayload(event *historypb.HistoryEvent, id string) *commonpb.
 }
 
 func (ts *IntegrationTestSuite) TestEventGroups_InterceptorCanAdjustGroups() {
+	ts.startWorker()
+
 	if os.Getenv("DISABLE_EVENT_GROUPS_TESTS") != "" {
 		ts.T().Skip("event-groups-capable temporal server required")
 	}

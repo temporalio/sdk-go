@@ -25,6 +25,8 @@ func isPaused(state enumspb.PendingActivityState) bool {
 }
 
 func (ts *IntegrationTestSuite) TestActivityOperatorCommandsSuite() {
+	ts.startWorker()
+
 	if os.Getenv("DISABLE_STANDALONE_ACTIVITY_TESTS") != "" {
 		ts.T().SkipNow()
 	}

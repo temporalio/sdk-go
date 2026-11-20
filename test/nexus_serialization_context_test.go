@@ -65,6 +65,11 @@ func (c *nexusContextSigningCodec) Decode(payloads []*commonpb.Payload) ([]*comm
 }
 
 func (ts *IntegrationTestSuite) TestNexusSerializationContextPropagation() {
+	ts.startClient(func(opts *client.Options) {
+		opts.DataConverter = converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), &nexusContextSigningCodec{})
+	})
+	ts.startWorker()
+
 	if os.Getenv("DISABLE_NEXUS_SERIALIZATION_CONTEXT_TESTS") != "" {
 		ts.T().Skip("server does not support propagated Nexus serialization context")
 	}

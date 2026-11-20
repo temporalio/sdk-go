@@ -95,7 +95,6 @@ type IntegrationTestSuite struct {
 	interceptorCallRecorder   *interceptortest.CallRecordingInvoker
 	openTelemetryTracer       trace.Tracer
 	openTelemetrySpanRecorder *tracetest.SpanRecorder
-	openTracingTracer         opentracing.Tracer
 }
 
 func TestIntegrationSuite(t *testing.T) {
@@ -106,7 +105,12 @@ func (ts *IntegrationTestSuite) SetupSuite() {
 	ts.Assertions = require.New(ts.T())
 	ts.activities = newActivities()
 	ts.workflows = &Workflows{}
-	ts.NoError(ts.InitConfigAndNamespace())
+	err := ts.InitConfigAndNamespace()
+	if ts.client != nil {
+		ts.client.Close()
+		ts.client = nil
+	}
+	ts.NoError(err)
 }
 
 func (ts *IntegrationTestSuite) TearDownSuite() {
@@ -140,167 +144,66 @@ func (ts *IntegrationTestSuite) SetupTest() {
 	ts.Assertions = require.New(ts.T())
 	// Restore configuration changed by tests that temporarily disable caching.
 	worker.SetStickyWorkflowCacheSize(ts.config.maxWorkflowCacheSize)
+	// The previous test's cleanup can still reference the client after TearDownTest.
+	ts.client = nil
+	ts.worker = nil
+	ts.workerStopped = false
+	ts.taskQueueName = taskQueuePrefix + "-" + ts.T().Name()
 	ts.metricsHandler = metrics.NewCapturingHandler()
-	var metricsHandler client.MetricsHandler = ts.metricsHandler
-	// Use Tally handler for Tally test
-	if strings.HasPrefix(ts.T().Name(), "TestIntegrationSuite/TestTallyScopeAccess") {
-		ts.tallyScope = tally.NewTestScope("", nil)
-		metricsHandler = contribtally.NewMetricsHandler(ts.tallyScope)
-	}
+	ts.activities.clearInvoked()
+	ts.tracer = newTracingInterceptor()
+	ts.inboundSignalInterceptor = newSignalInterceptor()
+}
 
-	var clientInterceptors []interceptor.ClientInterceptor
-	var workerInterceptors []interceptor.WorkerInterceptor
-	// Record calls for interceptor test
-	if strings.HasPrefix(ts.T().Name(), "TestIntegrationSuite/TestInterceptor") {
-		ts.interceptorCallRecorder = &interceptortest.CallRecordingInvoker{}
-		clientInterceptors = append(clientInterceptors, interceptortest.NewProxy(ts.interceptorCallRecorder))
-	}
-
-	// Record spans for tracing test
-	if strings.HasPrefix(ts.T().Name(), "TestIntegrationSuite/TestOpenTelemetryTracing") ||
-		strings.HasPrefix(ts.T().Name(), "TestIntegrationSuite/TestOpenTelemetryBaggageHandling") ||
-		strings.HasPrefix(ts.T().Name(), "TestIntegrationSuite/TestStandaloneActivityTracing") {
-		ts.openTelemetrySpanRecorder = tracetest.NewSpanRecorder()
-		ts.openTelemetryTracer = sdktrace.NewTracerProvider(
-			sdktrace.WithSpanProcessor(ts.openTelemetrySpanRecorder)).Tracer("")
-		interceptor, err := opentelemetry.NewTracingInterceptor(opentelemetry.TracerOptions{
-			Tracer:               ts.openTelemetryTracer,
-			DisableSignalTracing: strings.HasSuffix(ts.T().Name(), "WithoutMessages"),
-			DisableQueryTracing:  strings.HasSuffix(ts.T().Name(), "WithoutMessages"),
-			DisableUpdateTracing: strings.HasSuffix(ts.T().Name(), "WithoutMessages"),
-			DisableBaggage:       strings.HasSuffix(ts.T().Name(), "WithDisableBaggageOption"),
-		})
-		ts.NoError(err)
-		clientInterceptors = append(clientInterceptors, interceptor)
-	} else if strings.HasPrefix(ts.T().Name(), "TestIntegrationSuite/TestOpenTracingNoopTracer") {
-		ts.openTracingTracer = opentracing.NoopTracer{}
-		interceptor, err := sdkopentracing.NewInterceptor(sdkopentracing.TracerOptions{Tracer: ts.openTracingTracer})
-		ts.NoError(err)
-		clientInterceptors = append(clientInterceptors, interceptor)
-	}
-
-	var err error
-	trafficController := test.NewSimpleTrafficController()
-	ts.client, err = ts.newDefaultClient(func(options *client.Options) {
-		if strings.Contains(ts.T().Name(), "TestNexusSerializationContextPropagation") {
-			options.DataConverter = converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), &nexusContextSigningCodec{})
-		}
+func (ts *IntegrationTestSuite) startClient(configure ...ConfigureClientOptions) {
+	ts.trafficController = test.NewSimpleTrafficController()
+	c, err := ts.newDefaultClient(func(options *client.Options) {
 		options.WorkerHeartbeatInterval = -1
 		options.ContextPropagators = []workflow.ContextPropagator{
 			NewKeysPropagator([]string{testContextKey1}),
 			NewKeysPropagator([]string{testContextKey2}),
 		}
-		options.MetricsHandler = metricsHandler
-		options.TrafficController = trafficController
-		options.Interceptors = clientInterceptors
+		options.MetricsHandler = ts.metricsHandler
+		options.TrafficController = ts.trafficController
+		options.Interceptors = nil
+		for _, opt := range configure {
+			opt(options)
+		}
 	})
 	ts.NoError(err)
+	ts.client = c
+	ts.activities.client = c
+}
 
-	ts.trafficController = trafficController
-	ts.activities.clearInvoked()
-	ts.activities.client = ts.client
-	ts.taskQueueName = taskQueuePrefix + "-" + ts.T().Name()
-	ts.tracer = newTracingInterceptor()
-	ts.inboundSignalInterceptor = newSignalInterceptor()
-	workerInterceptors = append(workerInterceptors, ts.tracer, ts.inboundSignalInterceptor)
-	panicPolicy := worker.FailWorkflow
-
-	if strings.Contains(ts.T().Name(), "TestSlotSupplierWFTFailMetrics") {
-		panicPolicy = worker.BlockWorkflow
+func (ts *IntegrationTestSuite) newWorker(configure ...func(*worker.Options)) worker.Worker {
+	if ts.client == nil {
+		ts.startClient()
 	}
-
 	options := worker.Options{
-		Interceptors:        workerInterceptors,
-		WorkflowPanicPolicy: panicPolicy,
+		Interceptors:        []interceptor.WorkerInterceptor{ts.tracer, ts.inboundSignalInterceptor},
+		WorkflowPanicPolicy: worker.FailWorkflow,
 	}
+	for _, opt := range configure {
+		opt(&options)
+	}
+	w := worker.New(ts.client, ts.taskQueueName, options)
+	ts.registerWorkflowsAndActivities(w)
+	return w
+}
 
-	if strings.Contains(ts.T().Name(), "Session") {
-		options.EnableSessionWorker = true
-		// Limit the session execution size
-		if strings.Contains(ts.T().Name(), "TestMaxConcurrentSessionExecutionSize") {
-			options.MaxConcurrentSessionExecutionSize = 3
-		}
-	}
+func (ts *IntegrationTestSuite) startWorker(configure ...func(*worker.Options)) {
+	ts.startRegisteredWorker(ts.newWorker(configure...))
+}
 
-	if strings.Contains(ts.T().Name(), "TestSessionOnWorkerFailure") ||
-		strings.Contains(ts.T().Name(), "TestNonDeterminismFailureCause") {
-		// We disable sticky execution here since we kill the worker and restart it
-		// and sticky execution adds a 5s penalty
-		worker.SetStickyWorkflowCacheSize(0)
-	}
-
-	if strings.Contains(ts.T().Name(), "LocalActivityWorkerOnly") {
-		options.LocalActivityWorkerOnly = true
-	}
-
-	if strings.Contains(ts.T().Name(), "TestNumPollersCounter") {
-		// Explicit poller counts opt out of poller autoscaling auto-enrollment, which namespaces
-		// with the PollerAutoscalingAutoEnroll capability apply to pollers left at their defaults.
-		options.MaxConcurrentWorkflowTaskPollers = 2
-		options.MaxConcurrentActivityTaskPollers = 2
-	}
-
-	if strings.Contains(ts.T().Name(), "WorkflowTaskCompletionPagination") {
-		// This workflow serializes a large (~5 MiB) completion in a single workflow task; on slow CI
-		// hardware that can exceed the default 1s deadlock-detection window.
-		options.DeadlockDetectionTimeout = 10 * time.Second
-	}
-
-	if strings.Contains(ts.T().Name(), "CancelTimerViaDeferAfterWFTFailure") ||
-		strings.Contains(ts.T().Name(), "TestNonDeterminismFailureCause") {
-		options.WorkflowPanicPolicy = worker.BlockWorkflow
-	}
-
-	if strings.Contains(ts.T().Name(), "GracefulActivityCompletion") ||
-		strings.Contains(ts.T().Name(), "LocalActivityCompleteWithinGracefulShutdown") ||
-		strings.Contains(ts.T().Name(), "LocalActivityTaskTimeoutHeartbeat") ||
-		strings.Contains(ts.T().Name(), "ShutdownDuringActiveTimerActivityWorkflows") ||
-		strings.Contains(ts.T().Name(), "SessionWorkerShutdownWithPollComplete") {
-		options.WorkerStopTimeout = 10 * time.Second
-	}
-
-	if strings.Contains(ts.T().Name(), "ReplayerWithInterceptor") {
-		options.Interceptors = append(options.Interceptors, &localActivityInterceptor{})
-	}
-
-	if strings.Contains(ts.T().Name(), "SlotSupplierWontExceedLimits") {
-		options.MaxConcurrentWorkflowTaskExecutionSize = 2
-		options.MaxConcurrentActivityExecutionSize = 2
-		options.MaxConcurrentLocalActivityExecutionSize = 2
-	}
-	if strings.Contains(ts.T().Name(), "ResourceBasedSlotSupplier") {
-		tuner, err := worker.NewResourceBasedTuner(worker.ResourceBasedTunerOptions{
-			TargetMem:    0.9,
-			TargetCpu:    0.9,
-			InfoSupplier: sysinfo.SysInfoProvider(),
-		})
-		ts.NoError(err)
-		options.Tuner = tuner
-	}
-	if strings.Contains(ts.T().Name(), "SlotSuppliersWithSession") {
-		options.MaxConcurrentActivityExecutionSize = 1
-		// Apparently this is on by default in these tests anyway, but to be explicit
-		options.EnableSessionWorker = true
-	}
-
-	ts.worker = worker.New(ts.client, ts.taskQueueName, options)
+func (ts *IntegrationTestSuite) startRegisteredWorker(w worker.Worker) {
+	ts.worker = w
 	ts.workerStopped = false
-	ts.registerWorkflowsAndActivities(ts.worker)
-	if strings.Contains(ts.T().Name(), "TestExecuteNexusOperationSuite") ||
-		strings.Contains(ts.T().Name(), "TestStandaloneActivityStartLinks") {
-		ts.registerStandaloneNexusOperations(ts.worker)
-	}
-	if strings.Contains(ts.T().Name(), "NoWorker") {
-		// Don't even start the worker
-		ts.workerStopped = true
-		return
-	}
-	ts.Nil(ts.worker.Start())
+	ts.NoError(w.Start())
 }
 
 func (ts *IntegrationTestSuite) TearDownTest() {
-	// Stop worker before closing client so ShutdownWorker RPC reaches the server
-	if !ts.workerStopped {
+	// Stop worker before closing client so ShutdownWorker RPC reaches the server.
+	if ts.worker != nil && !ts.workerStopped {
 		ts.worker.Stop()
 		ts.workerStopped = true
 	}
@@ -310,6 +213,11 @@ func (ts *IntegrationTestSuite) TearDownTest() {
 }
 
 func (ts *IntegrationTestSuite) TestWorkflowTaskCompletionPagination() {
+	ts.startWorker(func(opts *worker.Options) {
+		// A ~5 MiB completion can exceed the default deadlock-detection window on slow CI.
+		opts.DeadlockDetectionTimeout = 10 * time.Second
+	})
+
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
@@ -334,6 +242,8 @@ func (ts *IntegrationTestSuite) TestWorkflowTaskCompletionPagination() {
 }
 
 func (ts *IntegrationTestSuite) TestBasic() {
+	ts.startWorker()
+
 	var expected []string
 	err := ts.executeWorkflow("test-basic-"+ts.taskQueueName, ts.workflows.Basic, &expected)
 	ts.NoError(err)
@@ -352,6 +262,8 @@ func (ts *IntegrationTestSuite) TestBasic() {
 }
 
 func (ts *IntegrationTestSuite) TestActivityScheduleToStartLatency() {
+	ts.startWorker()
+
 	ts.worker.Stop()
 	ts.workerStopped = true
 
@@ -430,6 +342,8 @@ func (ts *IntegrationTestSuite) TestActivityScheduleToStartLatency() {
 }
 
 func (ts *IntegrationTestSuite) TestPreferredVersionProvider() {
+	ts.startWorker()
+
 	ts.worker.Stop()
 	ts.workerStopped = true
 
@@ -470,6 +384,8 @@ func (ts *IntegrationTestSuite) TestPreferredVersionProvider() {
 }
 
 func (ts *IntegrationTestSuite) TestPreferredVersionProviderRollout() {
+	ts.startWorker()
+
 	const (
 		workflowName = "preferred-version-provider-rollout"
 		changeID     = "preferred-version"
@@ -617,6 +533,8 @@ func (ts *IntegrationTestSuite) TestPreferredVersionProviderRollout() {
 // 2) workflow task heartbeat is happening when local activity takes longer than workflow task timeout
 // 3) server side timer is created when backoff is longer than workflow task timeout
 func (ts *IntegrationTestSuite) TestLocalActivityRetryBehavior() {
+	ts.startWorker()
+
 	localActivityFn := func(ctx context.Context) (int32, error) {
 		info := activity.GetInfo(ctx)
 		if info.Attempt <= 3 {
@@ -718,6 +636,8 @@ func (ts *IntegrationTestSuite) waitForHistoryEvent(workflowID string, runID str
 }
 
 func (ts *IntegrationTestSuite) TestPanicFailWorkflow() {
+	ts.startWorker()
+
 	var expected []string
 	wfOpts := ts.startWorkflowOptions("test-panic")
 	wfOpts.WorkflowTaskTimeout = 5 * time.Second
@@ -731,6 +651,8 @@ func (ts *IntegrationTestSuite) TestPanicFailWorkflow() {
 }
 
 func (ts *IntegrationTestSuite) TestPanicActivityWorkflow() {
+	ts.startWorker()
+
 	var res []string
 	// Retry once on each activity
 	const maxAttempts int32 = 2
@@ -743,6 +665,8 @@ func (ts *IntegrationTestSuite) TestPanicActivityWorkflow() {
 }
 
 func (ts *IntegrationTestSuite) TestSDKNameAndVersionWritten() {
+	ts.startWorker()
+
 	const wfID = "test-sdk-name-and-version"
 	wfOpts := ts.startWorkflowOptions(wfID)
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
@@ -777,6 +701,8 @@ func (ts *IntegrationTestSuite) TestSDKNameAndVersionWritten() {
 }
 
 func (ts *IntegrationTestSuite) TestDeadlockDetection() {
+	ts.startWorker()
+
 	var expected []string
 	wfOpts := ts.startWorkflowOptions("test-deadlock")
 	wfOpts.WorkflowTaskTimeout = 5 * time.Second
@@ -794,6 +720,8 @@ func (ts *IntegrationTestSuite) TestDeadlockDetection() {
 }
 
 func (ts *IntegrationTestSuite) TestDeadlockDetectionViaLocalActivity() {
+	ts.startWorker()
+
 	var expected []string
 	wfOpts := ts.startWorkflowOptions("test-deadlock-local-activity")
 	wfOpts.WorkflowTaskTimeout = 5 * time.Second
@@ -807,6 +735,8 @@ func (ts *IntegrationTestSuite) TestDeadlockDetectionViaLocalActivity() {
 }
 
 func (ts *IntegrationTestSuite) TestLocalActivityNextRetryDelay() {
+	ts.startWorker()
+
 	var activityExecutionTime time.Duration
 	wfOpts := ts.startWorkflowOptions("test-local-activity-next-retry-delay")
 	wfOpts.WorkflowTaskTimeout = 5 * time.Second
@@ -817,6 +747,8 @@ func (ts *IntegrationTestSuite) TestLocalActivityNextRetryDelay() {
 }
 
 func (ts *IntegrationTestSuite) TestActivityRetryOnError() {
+	ts.startWorker()
+
 	var expected []string
 	err := ts.executeWorkflow("test-activity-retry-on-error", ts.workflows.ActivityRetryOnError, &expected)
 	ts.NoError(err)
@@ -835,6 +767,8 @@ func (ts *IntegrationTestSuite) TestActivityRetryOnError() {
 }
 
 func (ts *IntegrationTestSuite) TestActivityNotRegisteredRetry() {
+	ts.startWorker()
+
 	var expected string
 	err := ts.executeWorkflow("test-activity-retry-on-error", ts.workflows.CallUnregisteredActivityRetry, &expected)
 	ts.NoError(err)
@@ -846,12 +780,16 @@ func (ts *IntegrationTestSuite) TestActivityNotRegisteredRetry() {
 }
 
 func (ts *IntegrationTestSuite) TestActivityRetryOnTimeoutStableError() {
+	ts.startWorker()
+
 	var expected []string
 	err := ts.executeWorkflow("test-activity-retry-on-timeout-stable-error", ts.workflows.RetryTimeoutStableErrorWorkflow, &expected)
 	ts.Nil(err)
 }
 
 func (ts *IntegrationTestSuite) TestActivityRetryOptionsChange() {
+	ts.startWorker()
+
 	var expected []string
 	err := ts.executeWorkflow("test-activity-retry-options-change", ts.workflows.ActivityRetryOptionsChange, &expected)
 	ts.NoError(err)
@@ -859,6 +797,8 @@ func (ts *IntegrationTestSuite) TestActivityRetryOptionsChange() {
 }
 
 func (ts *IntegrationTestSuite) TestActivityRetryOnStartToCloseTimeout() {
+	ts.startWorker()
+
 	ts.T().Skip("temporal server 1.26.2 has a bug reporting activity failures")
 	var expected []string
 	err := ts.executeWorkflow(
@@ -872,6 +812,8 @@ func (ts *IntegrationTestSuite) TestActivityRetryOnStartToCloseTimeout() {
 }
 
 func (ts *IntegrationTestSuite) TestActivityRetryOnHBTimeout() {
+	ts.startWorker()
+
 	var expected []string
 	err := ts.executeWorkflow("test-activity-retry-on-hbtimeout", ts.workflows.ActivityRetryOnHBTimeout, &expected)
 	ts.NoError(err)
@@ -879,6 +821,8 @@ func (ts *IntegrationTestSuite) TestActivityRetryOnHBTimeout() {
 }
 
 func (ts *IntegrationTestSuite) TestLongRunningActivityWithHB() {
+	ts.startWorker()
+
 	var expected []string
 	err := ts.executeWorkflow("test-long-running-activity-with-hb", ts.workflows.LongRunningActivityWithHB, &expected)
 	ts.NoError(err)
@@ -886,6 +830,8 @@ func (ts *IntegrationTestSuite) TestLongRunningActivityWithHB() {
 }
 
 func (ts *IntegrationTestSuite) TestLongRunningActivityWithHBAndGrpcRetries() {
+	ts.startWorker()
+
 	const (
 		heartbeatOperation = "RecordActivityTaskHeartbeat"
 		heartbeatMethod    = "/temporal.api.workflowservice.v1.WorkflowService/" + heartbeatOperation
@@ -960,6 +906,8 @@ func (ts *IntegrationTestSuite) TestLongRunningActivityWithHBAndGrpcRetries() {
 }
 
 func (ts *IntegrationTestSuite) TestLongRunningActivityWithHBAndRpcDeadline() {
+	ts.startWorker()
+
 	ts.trafficController.AddError("RecordActivityTaskHeartbeat", status.Error(codes.DeadlineExceeded, "persistence timeout"), 0)
 	var expected []string
 	err := ts.executeWorkflow("test-heartbeat-rpc-deadline", ts.workflows.LongRunningActivityWithHB, &expected)
@@ -970,6 +918,8 @@ func (ts *IntegrationTestSuite) TestLongRunningActivityWithHBAndRpcDeadline() {
 }
 
 func (ts *IntegrationTestSuite) TestLongRunningActivityWithHBAndBatchedRpcDeadline() {
+	ts.startWorker()
+
 	ts.trafficController.AddError("RecordActivityTaskHeartbeat", status.Error(codes.DeadlineExceeded, "persistence timeout"), 1)
 	var expected []string
 	err := ts.executeWorkflow("test-batched-heartbeat-rpc-deadline", ts.workflows.LongRunningActivityWithHB, &expected)
@@ -979,6 +929,8 @@ func (ts *IntegrationTestSuite) TestLongRunningActivityWithHBAndBatchedRpcDeadli
 }
 
 func (ts *IntegrationTestSuite) TestLongRunningActivityWithHBAndPersistentRpcDeadline() {
+	ts.startWorker()
+
 	ts.trafficController.AddError("RecordActivityTaskHeartbeat", status.Error(codes.DeadlineExceeded, "persistence timeout"), test.FailAllAttempts)
 	const workflowID = "test-persistent-heartbeat-rpc-deadline"
 	var expected []string
@@ -997,6 +949,8 @@ func (ts *IntegrationTestSuite) TestLongRunningActivityWithHBAndPersistentRpcDea
 }
 
 func (ts *IntegrationTestSuite) TestHeartbeatOnActivityFailure() {
+	ts.startWorker()
+
 	var heartbeatCounts int
 	err := ts.executeWorkflow("test-heartbeat-on-activity-failure",
 		ts.workflows.ActivityHeartbeatWithRetry, &heartbeatCounts)
@@ -1009,6 +963,8 @@ func (ts *IntegrationTestSuite) TestHeartbeatOnActivityFailure() {
 }
 
 func (ts *IntegrationTestSuite) TestActivityPause() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 	// Run ActivityHeartbeat workflow, this workflow will call
@@ -1047,6 +1003,8 @@ func (ts *IntegrationTestSuite) TestActivityPause() {
 }
 
 func (ts *IntegrationTestSuite) TestActivityReset() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 	// Run ActivityHeartbeat workflow, this workflow will call
@@ -1069,6 +1027,8 @@ func (ts *IntegrationTestSuite) TestActivityReset() {
 }
 
 func (ts *IntegrationTestSuite) TestContinueAsNew() {
+	ts.startWorker()
+
 	var result int
 	err := ts.executeWorkflow("test-continueasnew", ts.workflows.ContinueAsNew, &result, 4, ts.taskQueueName)
 	ts.NoError(err)
@@ -1076,6 +1036,8 @@ func (ts *IntegrationTestSuite) TestContinueAsNew() {
 }
 
 func (ts *IntegrationTestSuite) TestWorkflowLocalVar() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
@@ -1142,6 +1104,8 @@ func (ts *IntegrationTestSuite) TestWorkflowLocalVar() {
 }
 
 func (ts *IntegrationTestSuite) TestContinueAsNewCarryOver() {
+	ts.startWorker()
+
 	skipOnCloud(ts.T(), cloudNeedsAdaptation, "requires custom namespace search attributes")
 	var result string
 	startOptions := ts.startWorkflowOptions("test-continueasnew-carryover")
@@ -1160,6 +1124,8 @@ func (ts *IntegrationTestSuite) TestContinueAsNewCarryOver() {
 }
 
 func (ts *IntegrationTestSuite) TestContinueAsNewOmitsUnsetSearchAttributes() {
+	ts.startWorker()
+
 	skipOnCloud(ts.T(), cloudNeedsAdaptation, "requires custom namespace search attributes")
 	var result string
 	stringKey := temporal.NewSearchAttributeKeyString("CustomStringField")
@@ -1180,6 +1146,8 @@ func (ts *IntegrationTestSuite) TestContinueAsNewOmitsUnsetSearchAttributes() {
 }
 
 func (ts *IntegrationTestSuite) TestContinueAsNewWithRetryPolicy() {
+	ts.startWorker()
+
 	const (
 		initialMaximumAttempts = 3
 		newMaximumAttempts     = 100
@@ -1211,6 +1179,8 @@ func (ts *IntegrationTestSuite) TestContinueAsNewWithRetryPolicy() {
 }
 
 func (ts *IntegrationTestSuite) TestContinueAsNewWithWithChildWF() {
+	ts.startWorker()
+
 	const (
 		iterations = 6
 	)
@@ -1231,6 +1201,8 @@ func (ts *IntegrationTestSuite) TestContinueAsNewWithWithChildWF() {
 }
 
 func (ts *IntegrationTestSuite) TestCancellation() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 	run, err := ts.client.ExecuteWorkflow(ctx,
@@ -1245,6 +1217,8 @@ func (ts *IntegrationTestSuite) TestCancellation() {
 }
 
 func (ts *IntegrationTestSuite) TestCancellationWithOptions() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 	workflowID := "test-cancellation-with-options"
@@ -1285,6 +1259,8 @@ func (ts *IntegrationTestSuite) TestCancellationWithOptions() {
 }
 
 func (ts *IntegrationTestSuite) TestTerminationWithOptions() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 	workflowID := "test-termination-with-options"
@@ -1311,6 +1287,8 @@ func (ts *IntegrationTestSuite) TestTerminationWithOptions() {
 }
 
 func (ts *IntegrationTestSuite) TestCascadingCancellation() {
+	ts.startWorker()
+
 	workflowID := "test-cascading-cancellation-" + uuid.NewString()
 	childWorkflowID := workflowID + "-child"
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
@@ -1351,6 +1329,8 @@ func (ts *IntegrationTestSuite) TestCascadingCancellation() {
 }
 
 func (ts *IntegrationTestSuite) TestStackTraceQuery() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 	run, err := ts.client.ExecuteWorkflow(ctx,
@@ -1365,6 +1345,8 @@ func (ts *IntegrationTestSuite) TestStackTraceQuery() {
 }
 
 func (ts *IntegrationTestSuite) TestConsistentQuery() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 	// this workflow will start a local activity which blocks for long enough
@@ -1399,6 +1381,8 @@ func (ts *IntegrationTestSuite) TestConsistentQuery() {
 }
 
 func (ts *IntegrationTestSuite) TestSignalWorkflow() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
@@ -1423,6 +1407,8 @@ func (ts *IntegrationTestSuite) TestSignalWorkflow() {
 }
 
 func (ts *IntegrationTestSuite) TestSignalWorkflowWithInterceptorError() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
@@ -1447,6 +1433,8 @@ func (ts *IntegrationTestSuite) TestSignalWorkflowWithInterceptorError() {
 }
 
 func (ts *IntegrationTestSuite) TestSignalWorkflowWithStubbornGrpcError() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
@@ -1461,6 +1449,8 @@ func (ts *IntegrationTestSuite) TestSignalWorkflowWithStubbornGrpcError() {
 }
 
 func (ts *IntegrationTestSuite) TestWorkflowIDReuseRejectDuplicateNoChildWorkflow() {
+	ts.startWorker()
+
 	specialstr := uuid.NewString()
 	wfOpts := ts.startWorkflowOptions("test-workflow-id-reuse-reject-dupes-no-children-" + specialstr)
 	wfOpts.WorkflowIDReusePolicy = enumspb.WORKFLOW_ID_REUSE_POLICY_REJECT_DUPLICATE
@@ -1488,6 +1478,8 @@ func (ts *IntegrationTestSuite) TestWorkflowIDReuseRejectDuplicateNoChildWorkflo
 }
 
 func (ts *IntegrationTestSuite) TestWorkflowIDReuseRejectDuplicate() {
+	ts.startWorker()
+
 	var result string
 	err := ts.executeWorkflow(
 		"test-workflowidreuse-reject-duplicate",
@@ -1507,6 +1499,8 @@ func (ts *IntegrationTestSuite) TestWorkflowIDReuseRejectDuplicate() {
 }
 
 func (ts *IntegrationTestSuite) TestWorkflowIDReuseAllowDuplicateFailedOnly1() {
+	ts.startWorker()
+
 	var result string
 	err := ts.executeWorkflow(
 		"test-workflowidreuse-reject-duplicate-failed-only1",
@@ -1526,6 +1520,8 @@ func (ts *IntegrationTestSuite) TestWorkflowIDReuseAllowDuplicateFailedOnly1() {
 }
 
 func (ts *IntegrationTestSuite) TestWorkflowIDReuseAllowDuplicateFailedOnly2() {
+	ts.startWorker()
+
 	var result string
 	err := ts.executeWorkflow(
 		"test-workflowidreuse-reject-duplicate-failed-only2",
@@ -1541,6 +1537,8 @@ func (ts *IntegrationTestSuite) TestWorkflowIDReuseAllowDuplicateFailedOnly2() {
 }
 
 func (ts *IntegrationTestSuite) TestWorkflowIDReuseAllowDuplicate() {
+	ts.startWorker()
+
 	var result string
 	err := ts.executeWorkflow(
 		"test-workflowidreuse-allow-duplicate",
@@ -1556,6 +1554,8 @@ func (ts *IntegrationTestSuite) TestWorkflowIDReuseAllowDuplicate() {
 }
 
 func (ts *IntegrationTestSuite) TestWorkflowIDReuseIgnoreDuplicateWhileRunning() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -1595,6 +1595,8 @@ func (ts *IntegrationTestSuite) TestWorkflowIDReuseIgnoreDuplicateWhileRunning()
 }
 
 func (ts *IntegrationTestSuite) TestWorkflowIDConflictPolicy() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -1632,14 +1634,20 @@ func (ts *IntegrationTestSuite) TestWorkflowIDConflictPolicy() {
 }
 
 func (ts *IntegrationTestSuite) TestChildWFWithRetryPolicy_ShortLived() {
+	ts.startWorker()
+
 	ts.testChildWFWithRetryPolicy(ts.workflows.ChildWorkflowWithRetryPolicy, 0)
 }
 
 func (ts *IntegrationTestSuite) TestChildWFWithRetryPolicy_LongRunning() {
+	ts.startWorker()
+
 	ts.testChildWFWithRetryPolicy(ts.workflows.ChildWorkflowWithRetryPolicy, 4)
 }
 
 func (ts *IntegrationTestSuite) TestChildWFWithRetryPolicy_LongRunningWithCustomRetry() {
+	ts.startWorker()
+
 	ts.testChildWFWithRetryPolicy(ts.workflows.ChildWorkflowWithCustomRetryPolicy, 6)
 }
 
@@ -1672,18 +1680,24 @@ func (ts *IntegrationTestSuite) testChildWFWithRetryPolicy(wfFunc any, iteration
 }
 
 func (ts *IntegrationTestSuite) TestChildWFRetryOnError() {
+	ts.startWorker()
+
 	err := ts.executeWorkflow("test-childwf-retry-on-error", ts.workflows.ChildWorkflowRetryOnError, nil)
 	ts.Error(err)
 	ts.EqualValues([]string{"toUpper", "toUpper", "toUpper"}, ts.activities.invoked())
 }
 
 func (ts *IntegrationTestSuite) TestChildWFRetryOnTimeout() {
+	ts.startWorker()
+
 	err := ts.executeWorkflow("test-childwf-retry-on-timeout", ts.workflows.ChildWorkflowRetryOnTimeout, nil)
 	ts.Error(err)
 	ts.EqualValues([]string{"sleep", "sleep", "sleep"}, ts.activities.invoked())
 }
 
 func (ts *IntegrationTestSuite) TestChildWFWithMemoAndSearchAttributes() {
+	ts.startWorker()
+
 	skipOnCloud(ts.T(), cloudNeedsAdaptation, "requires custom namespace search attributes")
 	var result string
 	err := ts.executeWorkflow("test-childwf-success-memo-searchAttr", ts.workflows.ChildWorkflowSuccess, &result)
@@ -1694,6 +1708,8 @@ func (ts *IntegrationTestSuite) TestChildWFWithMemoAndSearchAttributes() {
 }
 
 func (ts *IntegrationTestSuite) TestChildWFWithParentClosePolicyTerminate() {
+	ts.startWorker()
+
 	var childWorkflowID string
 	err := ts.executeWorkflow("test-childwf-parent-close-policy", ts.workflows.ChildWorkflowSuccessWithParentClosePolicyTerminate, &childWorkflowID)
 	ts.NoError(err)
@@ -1709,6 +1725,8 @@ func (ts *IntegrationTestSuite) TestChildWFWithParentClosePolicyTerminate() {
 }
 
 func (ts *IntegrationTestSuite) TestChildWFWithParentClosePolicyAbandon() {
+	ts.startWorker()
+
 	var childWorkflowID string
 	err := ts.executeWorkflow("test-childwf-parent-close-policy", ts.workflows.ChildWorkflowSuccessWithParentClosePolicyAbandon, &childWorkflowID)
 	ts.NoError(err)
@@ -1725,6 +1743,8 @@ func (ts *IntegrationTestSuite) TestChildWFWithParentClosePolicyAbandon() {
 }
 
 func (ts *IntegrationTestSuite) TestActivityCancelUsingReplay() {
+	ts.startWorker()
+
 	replayer := worker.NewWorkflowReplayer()
 	replayer.RegisterWorkflowWithOptions(ts.workflows.ActivityCancelRepro, workflow.RegisterOptions{DisableAlreadyRegisteredCheck: true})
 	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "fixtures/activity.cancel.sm.repro.json")
@@ -1732,6 +1752,8 @@ func (ts *IntegrationTestSuite) TestActivityCancelUsingReplay() {
 }
 
 func (ts *IntegrationTestSuite) TestActivityCancelRepro() {
+	ts.startWorker()
+
 	var expected []string
 	err := ts.executeWorkflow("test-activity-cancel-sm", ts.workflows.ActivityCancelRepro, &expected)
 	ts.NoError(err)
@@ -1739,6 +1761,8 @@ func (ts *IntegrationTestSuite) TestActivityCancelRepro() {
 }
 
 func (ts *IntegrationTestSuite) TestCancelActivity() {
+	ts.startWorker()
+
 	var expected []string
 	err := ts.executeWorkflow("test-cancel-activity", ts.workflows.CancelActivity, &expected)
 	ts.NoError(err)
@@ -1746,6 +1770,8 @@ func (ts *IntegrationTestSuite) TestCancelActivity() {
 }
 
 func (ts *IntegrationTestSuite) TestCancelTimer() {
+	ts.startWorker()
+
 	var expected []string
 	err := ts.executeWorkflow("test-cancel-timer", ts.workflows.CancelTimer, &expected)
 	ts.NoError(err)
@@ -1753,6 +1779,8 @@ func (ts *IntegrationTestSuite) TestCancelTimer() {
 }
 
 func (ts *IntegrationTestSuite) TestCancelTimerAfterActivity() {
+	ts.startWorker()
+
 	var wfResult string
 	err := ts.executeWorkflow("test-cancel-timer-after-activity", ts.workflows.CancelTimerAfterActivity, &wfResult)
 	ts.NoError(err)
@@ -1760,12 +1788,17 @@ func (ts *IntegrationTestSuite) TestCancelTimerAfterActivity() {
 }
 
 func (ts *IntegrationTestSuite) TestCancelTimerViaDeferAfterWFTFailure() {
-	// NOTE: Uses test name to adjust worker options to make panic fail WFT
+	ts.startWorker(func(opts *worker.Options) {
+		opts.WorkflowPanicPolicy = worker.BlockWorkflow
+	})
+
 	err := ts.executeWorkflow("test-cancel-timer-via-defer", ts.workflows.CancelTimerViaDeferAfterWFTFailure, nil)
 	ts.NoError(err)
 }
 
 func (ts *IntegrationTestSuite) TestAwaitWithTimeoutCancelTimerOnCondition() {
+	ts.startWorker()
+
 	// TODO: Remove this skip when SDKFlagCancelAwaitTimerOnCondition is enabled by default.
 	// This test verifies the timer cancellation behavior when the flag is ON.
 	// Currently the flag is OFF by default to allow a gradual rollout.
@@ -1825,6 +1858,8 @@ func (ts *IntegrationTestSuite) TestAwaitWithTimeoutCancelTimerOnCondition() {
 // before the timeout expires. This is the current default behavior.
 // TODO: Remove this test when SDKFlagCancelAwaitTimerOnCondition is enabled by default.
 func (ts *IntegrationTestSuite) TestAwaitWithTimeoutTimerNotCancelledByDefault() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
@@ -1877,6 +1912,8 @@ func (ts *IntegrationTestSuite) TestAwaitWithTimeoutTimerNotCancelledByDefault()
 }
 
 func (ts *IntegrationTestSuite) TestAwaitWithTimeoutConditionAlreadyTrue() {
+	ts.startWorker()
+
 	var result bool
 	err := ts.executeWorkflow("test-await-condition-already-true", ts.workflows.AwaitWithTimeoutConditionAlreadyTrue, &result)
 	ts.NoError(err)
@@ -1884,6 +1921,8 @@ func (ts *IntegrationTestSuite) TestAwaitWithTimeoutConditionAlreadyTrue() {
 }
 
 func (ts *IntegrationTestSuite) TestCancelTimerAfterActivity_Replay() {
+	ts.startWorker()
+
 	replayer := worker.NewWorkflowReplayer()
 	replayer.RegisterWorkflowWithOptions(ts.workflows.CancelTimerAfterActivity, workflow.RegisterOptions{DisableAlreadyRegisteredCheck: true})
 	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "replaytests/cancel-timer-after-activity.json")
@@ -1891,6 +1930,8 @@ func (ts *IntegrationTestSuite) TestCancelTimerAfterActivity_Replay() {
 }
 
 func (ts *IntegrationTestSuite) TestCancelChildWorkflow() {
+	ts.startWorker()
+
 	var expected []string
 	err := ts.executeWorkflow("test-cancel-child-workflow", ts.workflows.CancelChildWorkflow, &expected)
 	ts.NoError(err)
@@ -1898,6 +1939,8 @@ func (ts *IntegrationTestSuite) TestCancelChildWorkflow() {
 }
 
 func (ts *IntegrationTestSuite) TestConcurrentMapWriteWorkflow() {
+	ts.startWorker()
+
 	testCases := []string{"activity", "child_workflow", "timer"}
 	for _, t := range testCases {
 		err := ts.executeWorkflow("test-concurrent-map-write-workflow", ts.workflows.RaceOnCacheEviction, nil, t)
@@ -1906,6 +1949,8 @@ func (ts *IntegrationTestSuite) TestConcurrentMapWriteWorkflow() {
 }
 
 func (ts *IntegrationTestSuite) TestCantStartChildAfterBeingCancelled() {
+	ts.startWorker()
+
 	const wfID = "test-cant-start-child-after-cancel"
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
@@ -1924,6 +1969,8 @@ func (ts *IntegrationTestSuite) TestCantStartChildAfterBeingCancelled() {
 }
 
 func (ts *IntegrationTestSuite) TestCancelChildWorkflowUnusualTransitions() {
+	ts.startWorker()
+
 	wfid := "test-cancel-child-workflow-unusual-transitions"
 	run, err := ts.client.ExecuteWorkflow(context.Background(),
 		ts.startWorkflowOptions(wfid),
@@ -1962,6 +2009,8 @@ func (ts *IntegrationTestSuite) TestCancelChildWorkflowUnusualTransitions() {
 }
 
 func (ts *IntegrationTestSuite) TestCancelChildWorkflowAndParentWorkflow() {
+	ts.startWorker()
+
 	wfid := "test-cancel-child-workflow-and-parent-workflow"
 	run, err := ts.client.ExecuteWorkflow(context.Background(),
 		ts.startWorkflowOptions(wfid),
@@ -1995,6 +2044,8 @@ func (ts *IntegrationTestSuite) TestCancelChildWorkflowAndParentWorkflow() {
 }
 
 func (ts *IntegrationTestSuite) TestChildWorkflowDuplicatePanic_Regression() {
+	ts.startWorker()
+
 	wfid := "test-child-workflow-duplicate-panic-regression"
 	run, err := ts.client.ExecuteWorkflow(context.Background(),
 		ts.startWorkflowOptions(wfid),
@@ -2005,6 +2056,8 @@ func (ts *IntegrationTestSuite) TestChildWorkflowDuplicatePanic_Regression() {
 }
 
 func (ts *IntegrationTestSuite) TestChildWorkflowDuplicateGetExecutionStuck_Regression() {
+	ts.startWorker()
+
 	wfid := "test-child-workflow-duplicate-get-execution-stuck-regression"
 	run, err := ts.client.ExecuteWorkflow(context.Background(),
 		ts.startWorkflowOptions(wfid),
@@ -2015,6 +2068,8 @@ func (ts *IntegrationTestSuite) TestChildWorkflowDuplicateGetExecutionStuck_Regr
 }
 
 func (ts *IntegrationTestSuite) TestCancelActivityImmediately() {
+	ts.startWorker()
+
 	var expected []string
 	err := ts.executeWorkflow("test-cancel-activity-immediately", ts.workflows.CancelActivityImmediately, &expected)
 	ts.NoError(err)
@@ -2022,6 +2077,8 @@ func (ts *IntegrationTestSuite) TestCancelActivityImmediately() {
 }
 
 func (ts *IntegrationTestSuite) TestCancelMultipleCommandsOverMultipleTasks() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 	run, err := ts.client.ExecuteWorkflow(ctx,
@@ -2038,6 +2095,8 @@ func (ts *IntegrationTestSuite) TestCancelMultipleCommandsOverMultipleTasks() {
 }
 
 func (ts *IntegrationTestSuite) TestWorkflowWithLocalActivityCtxPropagation() {
+	ts.startWorker()
+
 	var expected string
 	err := ts.executeWorkflow("test-wf-local-activity-ctx-prop", ts.workflows.WorkflowWithLocalActivityCtxPropagation, &expected)
 	ts.NoError(err)
@@ -2045,10 +2104,14 @@ func (ts *IntegrationTestSuite) TestWorkflowWithLocalActivityCtxPropagation() {
 }
 
 func (ts *IntegrationTestSuite) TestWorkflowWithParallelLocalActivities() {
+	ts.startWorker()
+
 	ts.NoError(ts.executeWorkflow("test-wf-parallel-local-activities", ts.workflows.WorkflowWithParallelLocalActivities, nil))
 }
 
 func (ts *IntegrationTestSuite) TestWorkflowWithParallelLocalActivitiesUsingReplay() {
+	ts.startWorker()
+
 	replayer := worker.NewWorkflowReplayer()
 	replayer.RegisterWorkflowWithOptions(ts.workflows.WorkflowWithParallelLocalActivities, workflow.RegisterOptions{DisableAlreadyRegisteredCheck: true})
 	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "replaytests/parallel-local-activities.json")
@@ -2056,6 +2119,8 @@ func (ts *IntegrationTestSuite) TestWorkflowWithParallelLocalActivitiesUsingRepl
 }
 
 func (ts *IntegrationTestSuite) TestActivityStartedAtSameTimeAsTimerCancel() {
+	ts.startWorker()
+
 	wfID := "test-activity-start-with-timer-cancel"
 	wfOpts := ts.startWorkflowOptions(wfID)
 	wfOpts.WorkflowExecutionTimeout = 5 * time.Second
@@ -2077,6 +2142,8 @@ func (ts *IntegrationTestSuite) TestActivityStartedAtSameTimeAsTimerCancel() {
 }
 
 func (ts *IntegrationTestSuite) TestActivityStartedAtSameTimeAsTimerCancel_Replay() {
+	ts.startWorker()
+
 	replayer := worker.NewWorkflowReplayer()
 	replayer.RegisterWorkflowWithOptions(ts.workflows.WorkflowWithLocalActivityStartWhenTimerCancel, workflow.RegisterOptions{DisableAlreadyRegisteredCheck: true})
 	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "replaytests/activity-same-time-as-cancel.json")
@@ -2084,32 +2151,46 @@ func (ts *IntegrationTestSuite) TestActivityStartedAtSameTimeAsTimerCancel_Repla
 }
 
 func (ts *IntegrationTestSuite) TestWorkflowWithLocalActivityRetries() {
+	ts.startWorker()
+
 	ts.NoError(ts.executeWorkflow("test-wf-local-activity-retries", ts.workflows.WorkflowWithLocalActivityRetries, nil))
 }
 
 func (ts *IntegrationTestSuite) TestWorkflowWithLocalActivityRetriesDefaultRetryPolicy() {
+	ts.startWorker()
+
 	ts.NoError(ts.executeWorkflow("test-wf-local-activity-retries-default-policy", ts.workflows.WorkflowWithLocalActivityRetriesAndDefaultRetryPolicy, nil))
 }
 
 func (ts *IntegrationTestSuite) TestWorkflowWithLocalActivityRetriesPartialPolicy() {
+	ts.startWorker()
+
 	ts.NoError(ts.executeWorkflow("test-wf-local-activity-retries-partial-policy", ts.workflows.WorkflowWithLocalActivityRetriesAndPartialRetryPolicy, nil))
 }
 
 func (ts *IntegrationTestSuite) TestWorkflowWithParallelLongLocalActivityAndHeartbeat() {
+	ts.startWorker()
+
 	if ts.config.maxWorkflowCacheSize > 0 {
 		ts.NoError(ts.executeWorkflow("test-wf-parallel-long-local-activities-and-heartbeat", ts.workflows.WorkflowWithParallelLongLocalActivityAndHeartbeat, nil))
 	}
 }
 
 func (ts *IntegrationTestSuite) TestWorkflowWithParallelSideEffects() {
+	ts.startWorker()
+
 	ts.NoError(ts.executeWorkflow("test-wf-parallel-side-effects", ts.workflows.WorkflowWithParallelSideEffects, nil))
 }
 
 func (ts *IntegrationTestSuite) TestWorkflowWithLocalActivityStartToClose() {
+	ts.startWorker()
+
 	ts.NoError(ts.executeWorkflow("test-wf-la-start-to-close", ts.workflows.WorkflowWithLocalActivityStartToCloseTimeout, nil))
 }
 
 func (ts *IntegrationTestSuite) TestActivityTimeoutsWorkflow() {
+	ts.startWorker()
+
 	ts.NoError(ts.executeWorkflow("test-activity-timeout-workflow", ts.workflows.ActivityTimeoutsWorkflow, nil, workflow.ActivityOptions{
 		ScheduleToCloseTimeout: 5 * time.Second,
 	}))
@@ -2125,6 +2206,8 @@ func (ts *IntegrationTestSuite) TestActivityTimeoutsWorkflow() {
 }
 
 func (ts *IntegrationTestSuite) TestWorkflowWithParallelSideEffectsUsingReplay() {
+	ts.startWorker()
+
 	replayer := worker.NewWorkflowReplayer()
 	replayer.RegisterWorkflowWithOptions(ts.workflows.WorkflowWithParallelSideEffects, workflow.RegisterOptions{DisableAlreadyRegisteredCheck: true})
 	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "replaytests/parallel-side-effect.json")
@@ -2132,10 +2215,14 @@ func (ts *IntegrationTestSuite) TestWorkflowWithParallelSideEffectsUsingReplay()
 }
 
 func (ts *IntegrationTestSuite) TestWorkflowWithParallelMutableSideEffects() {
+	ts.startWorker()
+
 	ts.NoError(ts.executeWorkflow("test-wf-parallel-mutable-side-effects", ts.workflows.WorkflowWithParallelMutableSideEffects, nil))
 }
 
 func (ts *IntegrationTestSuite) TestWorkflowTypedSearchAttributes() {
+	ts.startWorker()
+
 	skipOnCloud(ts.T(), cloudNeedsAdaptation, "requires custom namespace search attributes")
 	options := ts.startWorkflowOptions("test-wf-typed-search-attributes")
 	// Need to disable eager workflow start until https://github.com/temporalio/temporal/pull/5124 fixed
@@ -2148,6 +2235,8 @@ func (ts *IntegrationTestSuite) TestWorkflowTypedSearchAttributes() {
 }
 
 func (ts *IntegrationTestSuite) TestSignalWithStartWorkflowTypedSearchAttributes() {
+	ts.startWorker()
+
 	skipOnCloud(ts.T(), cloudNeedsAdaptation, "requires custom namespace search attributes")
 	wfID := "test-signal-with-start-wf-typed-search-attributes"
 	options := ts.startWorkflowOptions(wfID)
@@ -2168,6 +2257,8 @@ func (ts *IntegrationTestSuite) TestSignalWithStartWorkflowTypedSearchAttributes
 }
 
 func (ts *IntegrationTestSuite) TestChildWorkflowTypedSearchAttributes() {
+	ts.startWorker()
+
 	skipOnCloud(ts.T(), cloudNeedsAdaptation, "requires custom namespace search attributes")
 	options := ts.startWorkflowOptions("test-child-wf-typed-search-attributes")
 	// Need to disable eager workflow start until https://github.com/temporalio/temporal/pull/5124 fixed
@@ -2188,6 +2279,8 @@ func (ts *IntegrationTestSuite) TestChildWorkflowTypedSearchAttributes() {
 }
 
 func (ts *IntegrationTestSuite) TestLargeQueryResultError() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
@@ -2212,6 +2305,8 @@ func (ts *IntegrationTestSuite) TestLargeQueryResultError() {
 }
 
 func (ts *IntegrationTestSuite) TestMutatingQuery() {
+	ts.startWorker()
+
 	ctx := context.Background()
 	run, err := ts.client.ExecuteWorkflow(ctx,
 		ts.startWorkflowOptions("test-mutating-query"), ts.workflows.MutatingQueryWorkflow)
@@ -2222,6 +2317,8 @@ func (ts *IntegrationTestSuite) TestMutatingQuery() {
 }
 
 func (ts *IntegrationTestSuite) TestMutatingUpdateValidator() {
+	ts.startWorker()
+
 	ctx := context.Background()
 	run, err := ts.client.ExecuteWorkflow(ctx,
 		ts.startWorkflowOptions("test-mutating-update-validator"), ts.workflows.MutatingUpdateValidatorWorkflow)
@@ -2240,6 +2337,8 @@ func (ts *IntegrationTestSuite) TestMutatingUpdateValidator() {
 }
 
 func (ts *IntegrationTestSuite) TestWaitForCancelWithDisconnectedContext() {
+	ts.startWorker()
+
 	ctx := context.Background()
 	run, err := ts.client.ExecuteWorkflow(ctx,
 		ts.startWorkflowOptions("test-wait-for-cancel-with-disconnected-contex"), ts.workflows.WaitForCancelWithDisconnectedContextWorkflow)
@@ -2252,38 +2351,56 @@ func (ts *IntegrationTestSuite) TestWaitForCancelWithDisconnectedContext() {
 }
 
 func (ts *IntegrationTestSuite) TestMutatingSideEffect() {
+	ts.startWorker()
+
 	ctx := context.Background()
 	err := ts.executeWorkflowWithContextAndOption(ctx, ts.startWorkflowOptions("test-mutating-side-effect"), ts.workflows.MutatingSideEffectWorkflow, nil)
 	ts.Error(err)
 }
 
 func (ts *IntegrationTestSuite) TestMutatingMutableSideEffect() {
+	ts.startWorker()
+
 	ctx := context.Background()
 	err := ts.executeWorkflowWithContextAndOption(ctx, ts.startWorkflowOptions("test-mutating-mutable-side-effect"), ts.workflows.MutatingMutableSideEffectWorkflow, nil)
 	ts.Error(err)
 }
 
 func (ts *IntegrationTestSuite) TestInspectActivityInfo() {
+	ts.startWorker()
+
 	err := ts.executeWorkflow("test-activity-info", ts.workflows.InspectActivityInfo, nil)
 	ts.Nil(err)
 }
 
 func (ts *IntegrationTestSuite) TestInspectActivityInfoLocalActivityWorkerOnly() {
+	ts.startWorker(func(opts *worker.Options) {
+		opts.LocalActivityWorkerOnly = true
+	})
+
 	err := ts.executeWorkflow("test-activity-info-local-worker-only", ts.workflows.InspectActivityInfo, nil)
 	ts.Error(err)
 }
 
 func (ts *IntegrationTestSuite) TestInspectLocalActivityInfo() {
+	ts.startWorker()
+
 	err := ts.executeWorkflow("test-local-activity-info", ts.workflows.InspectLocalActivityInfo, nil)
 	ts.Nil(err)
 }
 
 func (ts *IntegrationTestSuite) TestInspectLocalActivityInfoLocalActivityWorkerOnly() {
+	ts.startWorker(func(opts *worker.Options) {
+		opts.LocalActivityWorkerOnly = true
+	})
+
 	err := ts.executeWorkflow("test-local-activity-info-local-activity-worker-only", ts.workflows.InspectLocalActivityInfo, nil)
 	ts.Nil(err)
 }
 
 func (ts *IntegrationTestSuite) TestUpdateInfo() {
+	ts.startWorker()
+
 	ctx := context.Background()
 	run, err := ts.client.ExecuteWorkflow(ctx,
 		ts.startWorkflowOptions("test-update-info"), ts.workflows.UpdateInfoWorkflow)
@@ -2318,6 +2435,8 @@ func (ts *IntegrationTestSuite) TestUpdateInfo() {
 }
 
 func (ts *IntegrationTestSuite) TestUpdateValidatorRejectedFirstWFT() {
+	ts.startWorker()
+
 	ctx := context.Background()
 	wfOptions := ts.startWorkflowOptions("test-update-validator-rejected-first-wft")
 	// Add start delay to make sure the update is in the first WFT
@@ -2341,6 +2460,8 @@ func (ts *IntegrationTestSuite) TestUpdateValidatorRejectedFirstWFT() {
 }
 
 func (ts *IntegrationTestSuite) TestUpdateValidatorRejected() {
+	ts.startWorker()
+
 	ctx := context.Background()
 	wfOptions := ts.startWorkflowOptions("test-update-validator-rejected")
 	run, err := ts.client.ExecuteWorkflow(ctx,
@@ -2364,6 +2485,8 @@ func (ts *IntegrationTestSuite) TestUpdateValidatorRejected() {
 }
 
 func (ts *IntegrationTestSuite) TestUpdateWorkflowCancelled() {
+	ts.startWorker()
+
 	ctx := context.Background()
 	wfOptions := ts.startWorkflowOptions("test-update-workflow-cancelled")
 	run, err := ts.client.ExecuteWorkflow(ctx,
@@ -2393,6 +2516,8 @@ func (ts *IntegrationTestSuite) TestUpdateWorkflowCancelled() {
 }
 
 func (ts *IntegrationTestSuite) TestUpdateWithMutex() {
+	ts.startWorker()
+
 	ctx := context.Background()
 	wfOptions := ts.startWorkflowOptions("test-update-with-mutex")
 	run, err := ts.client.ExecuteWorkflow(ctx,
@@ -2459,6 +2584,8 @@ func (ts *IntegrationTestSuite) TestUpdateWithMutex() {
 }
 
 func (ts *IntegrationTestSuite) TestUpdateWithSemaphore() {
+	ts.startWorker()
+
 	ctx := context.Background()
 	wfOptions := ts.startWorkflowOptions("test-update-with-semaphore")
 	run, err := ts.client.ExecuteWorkflow(ctx,
@@ -2509,6 +2636,10 @@ func (ts *IntegrationTestSuite) TestUpdateWithSemaphore() {
 }
 
 func (ts *IntegrationTestSuite) TestBasicSession() {
+	ts.startWorker(func(opts *worker.Options) {
+		opts.EnableSessionWorker = true
+	})
+
 	var expected []string
 	err := ts.executeWorkflow("test-basic-session", ts.workflows.BasicSession, &expected)
 	ts.NoError(err)
@@ -2519,6 +2650,11 @@ func (ts *IntegrationTestSuite) TestBasicSession() {
 }
 
 func (ts *IntegrationTestSuite) TestSessionWorkerShutdownWithPollComplete() {
+	ts.startWorker(func(opts *worker.Options) {
+		opts.EnableSessionWorker = true
+		opts.WorkerStopTimeout = 10 * time.Second
+	})
+
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
@@ -2541,6 +2677,8 @@ func (ts *IntegrationTestSuite) TestSessionWorkerShutdownWithPollComplete() {
 }
 
 func (ts *IntegrationTestSuite) TestEagerWorkflowDispatchRaceWithWorkerStop() {
+	ts.startWorker()
+
 	// Attempt to stop a worker while trying to schedule an eager workflow task
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -2561,6 +2699,10 @@ func (ts *IntegrationTestSuite) TestEagerWorkflowDispatchRaceWithWorkerStop() {
 }
 
 func (ts *IntegrationTestSuite) TestSessionStateFailedWorkerFailed() {
+	ts.startWorker(func(opts *worker.Options) {
+		opts.EnableSessionWorker = true
+	})
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	ts.activities.manualStopContext = ctx
@@ -2594,6 +2736,8 @@ func (ts *IntegrationTestSuite) TestSessionStateFailedWorkerFailed() {
 }
 
 func (ts *IntegrationTestSuite) TestAsyncActivityCompletion() {
+	ts.startWorker()
+
 	workflowID := "test-async-activity-completion"
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
@@ -2647,6 +2791,8 @@ func (ts *IntegrationTestSuite) TestAsyncActivityCompletion() {
 }
 
 func (ts *IntegrationTestSuite) TestVersionLoopWorkflow() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 	run, err := ts.client.ExecuteWorkflow(ctx,
@@ -2663,6 +2809,8 @@ func (ts *IntegrationTestSuite) TestVersionLoopWorkflow() {
 }
 
 func (ts *IntegrationTestSuite) TestContextPropagator() {
+	ts.startWorker()
+
 	var propagatedValues []string
 	ctx := context.Background()
 	// Propagate values using different context propagators.
@@ -2681,6 +2829,8 @@ func (ts *IntegrationTestSuite) TestContextPropagator() {
 const CronWorkflowID = "test-cron"
 
 func (ts *IntegrationTestSuite) TestFailurePropagation() {
+	ts.startWorker()
+
 	var expected int
 	err := ts.executeWorkflow(CronWorkflowID, ts.workflows.CronWorkflow, &expected)
 	// Workflow asks to be cancelled
@@ -2693,6 +2843,8 @@ func (ts *IntegrationTestSuite) TestFailurePropagation() {
 }
 
 func (ts *IntegrationTestSuite) TestTimerCancellationConcurrentWithOtherCommandDoesNotCausePanic() {
+	ts.startWorker()
+
 	const wfID = "test-timer-cancel-concurrent-with-other-cmd"
 	wfOpts := ts.startWorkflowOptions(wfID)
 	wfOpts.WorkflowTaskTimeout = 10 * time.Second
@@ -2711,6 +2863,8 @@ func (ts *IntegrationTestSuite) TestTimerCancellationConcurrentWithOtherCommandD
 }
 
 func (ts *IntegrationTestSuite) TestStartDelay() {
+	ts.startWorker()
+
 	const wfID = "test-start-delay"
 	wfOpts := ts.startWorkflowOptions(wfID)
 	wfOpts.StartDelay = 5 * time.Second
@@ -2732,6 +2886,8 @@ func (ts *IntegrationTestSuite) TestStartDelay() {
 }
 
 func (ts *IntegrationTestSuite) TestStartDelaySignalWithStart() {
+	ts.startWorker()
+
 	const wfID = "test-start-delay-signal-with-start"
 	wfOpts := ts.startWorkflowOptions(wfID)
 	wfOpts.StartDelay = 5 * time.Second
@@ -2753,6 +2909,8 @@ func (ts *IntegrationTestSuite) TestStartDelaySignalWithStart() {
 }
 
 func (ts *IntegrationTestSuite) TestSignalWithStartIdConflictPolicy() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -2788,6 +2946,8 @@ func (ts *IntegrationTestSuite) TestSignalWithStartIdConflictPolicy() {
 }
 
 func (ts *IntegrationTestSuite) TestResetWorkflowExecution() {
+	ts.startWorker()
+
 	var originalResult []string
 	err := ts.executeWorkflow("basic-reset-workflow-execution", ts.workflows.Basic, &originalResult)
 	ts.NoError(err)
@@ -2812,6 +2972,8 @@ func (ts *IntegrationTestSuite) TestResetWorkflowExecution() {
 // TestResetWorkflowExecutionWithChildren tests the behavior of child workflow ID generation when a workflow with children is reset.
 // It repeatedly resets the workflow at different points in its execution and verifies that the child workflow IDs are generated correctly.
 func (ts *IntegrationTestSuite) TestResetWorkflowExecutionWithChildren() {
+	ts.startWorker()
+
 	wfID := "reset-workflow-with-children"
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
@@ -2947,6 +3109,8 @@ func (ts *IntegrationTestSuite) getWorkflowTaskFinishEventIdAfterChild(ctx conte
 }
 
 func (ts *IntegrationTestSuite) TestResetWorkflowExecutionWithUpdate() {
+	ts.startWorker()
+
 	ctx := context.Background()
 	wfId := "reset-workflow-execution-with-update"
 	run, err := ts.client.ExecuteWorkflow(ctx,
@@ -3004,6 +3168,8 @@ func (ts *IntegrationTestSuite) TestResetWorkflowExecutionWithUpdate() {
 }
 
 func (ts *IntegrationTestSuite) TestWorkflowExecutionUpdateDeadline() {
+	ts.startWorker()
+
 	ctx := context.Background()
 	wfId := "workflow-execution-update-deadline-exceeded"
 	run, err := ts.client.ExecuteWorkflow(ctx,
@@ -3032,6 +3198,8 @@ func (ts *IntegrationTestSuite) TestWorkflowExecutionUpdateDeadline() {
 }
 
 func (ts *IntegrationTestSuite) TestWorkflowExecutionUpdateCancelled() {
+	ts.startWorker()
+
 	ctx := context.Background()
 	wfId := "workflow-execution-update-cancelled"
 	run, err := ts.client.ExecuteWorkflow(ctx,
@@ -3056,6 +3224,8 @@ func (ts *IntegrationTestSuite) TestWorkflowExecutionUpdateCancelled() {
 }
 
 func (ts *IntegrationTestSuite) TestEndToEndLatencyMetrics() {
+	ts.startWorker()
+
 	fetchMetrics := func() (localMetric, nonLocalMetric *metrics.CapturedTimer) {
 		for _, timer := range ts.metricsHandler.Timers() {
 			if timer.Name == "temporal_activity_succeed_endtoend_latency" {
@@ -3093,6 +3263,8 @@ func (ts *IntegrationTestSuite) TestEndToEndLatencyMetrics() {
 }
 
 func (ts *IntegrationTestSuite) TestEndToEndLatencyOnFailureMetrics() {
+	ts.startWorker()
+
 	fetchMetrics := func() (localMetric, nonLocalMetric *metrics.CapturedTimer) {
 		for _, timer := range ts.metricsHandler.Timers() {
 			if timer.Name == "temporal_activity_succeed_endtoend_latency" {
@@ -3125,6 +3297,10 @@ func (ts *IntegrationTestSuite) TestEndToEndLatencyOnFailureMetrics() {
 }
 
 func (ts *IntegrationTestSuite) TestGracefulActivityCompletion() {
+	ts.startWorker(func(opts *worker.Options) {
+		opts.WorkerStopTimeout = 10 * time.Second
+	})
+
 	// FYI, setup of this test allows the worker to wait to stop for 10 seconds
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -3166,6 +3342,10 @@ func (ts *IntegrationTestSuite) TestGracefulActivityCompletion() {
 }
 
 func (ts *IntegrationTestSuite) TestLocalActivityTaskTimeoutHeartbeat() {
+	ts.startWorker(func(opts *worker.Options) {
+		opts.WorkerStopTimeout = 10 * time.Second
+	})
+
 	// FYI, setup of this test allows the worker to wait to stop for 10 seconds
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
@@ -3242,11 +3422,15 @@ func (ts *IntegrationTestSuite) TestLocalActivityTaskTimeoutHeartbeat() {
 }
 
 func (ts *IntegrationTestSuite) TestCancelChildAndExecuteActivityRace() {
+	ts.startWorker()
+
 	err := ts.executeWorkflow("cancel-child-and-execute-act-race", ts.workflows.CancelChildAndExecuteActivityRace, nil)
 	ts.NoError(err)
 }
 
 func (ts *IntegrationTestSuite) TestQueryWorkflowRejectNotOpen() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -3293,6 +3477,8 @@ func (ts *IntegrationTestSuite) TestQueryWorkflowRejectNotOpen() {
 }
 
 func (ts *IntegrationTestSuite) TestQueryWorkflowRejectNotCompleteCleanly() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -3336,7 +3522,17 @@ func (ts *IntegrationTestSuite) TestQueryWorkflowRejectNotCompleteCleanly() {
 	ts.Equal(enumspb.WORKFLOW_EXECUTION_STATUS_FAILED, queryVal.QueryRejected.Status)
 }
 
+func (ts *IntegrationTestSuite) startWorkerWithCallRecorder() {
+	ts.interceptorCallRecorder = &interceptortest.CallRecordingInvoker{}
+	ts.startClient(func(opts *client.Options) {
+		opts.Interceptors = append(opts.Interceptors, interceptortest.NewProxy(ts.interceptorCallRecorder))
+	})
+	ts.startWorker()
+}
+
 func (ts *IntegrationTestSuite) TestInterceptorCalls() {
+	ts.startWorkerWithCallRecorder()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -3545,6 +3741,8 @@ func (ts *IntegrationTestSuite) TestInterceptorCalls() {
 }
 
 func (ts *IntegrationTestSuite) TestInterceptorWorkflowIDMapping() {
+	ts.startWorkerWithCallRecorder()
+
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 	run, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("test-interceptor-workflow-id-mapping"),
@@ -3581,6 +3779,8 @@ func (ts *IntegrationTestSuite) TestInterceptorWorkflowIDMapping() {
 }
 
 func (ts *IntegrationTestSuite) TestInterceptorStartWithSignal() {
+	ts.startWorkerWithCallRecorder()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -3604,6 +3804,8 @@ func (ts *IntegrationTestSuite) TestInterceptorStartWithSignal() {
 }
 
 func (ts *IntegrationTestSuite) TestInterceptorStandaloneActivity() {
+	ts.startWorkerWithCallRecorder()
+
 	if os.Getenv("DISABLE_STANDALONE_ACTIVITY_TESTS") != "" {
 		ts.T().SkipNow()
 	}
@@ -3700,6 +3902,9 @@ func (ts *IntegrationTestSuite) TestInterceptorStandaloneActivity() {
 }
 
 func (ts *IntegrationTestSuite) TestStandaloneActivityTracing() {
+	ts.startOpenTelemetryClient(opentelemetry.TracerOptions{})
+	ts.startWorker()
+
 	if os.Getenv("DISABLE_STANDALONE_ACTIVITY_TESTS") != "" {
 		ts.T().SkipNow()
 	}
@@ -3757,6 +3962,10 @@ func (ts *IntegrationTestSuite) TestStandaloneActivityTracing() {
 // TestStandaloneActivityStartLinks verifies that a stand-alone activity started from a stand-alone
 // Nexus operation handler carries a link back to the Nexus operation on its start request.
 func (ts *IntegrationTestSuite) TestStandaloneActivityStartLinks() {
+	w := ts.newWorker()
+	ts.registerStandaloneNexusOperations(w)
+	ts.startRegisteredWorker(w)
+
 	skipOnCloud(ts.T(), cloudRequiresProvisioning, "standalone activity test creates a Nexus endpoint through Operator Service")
 	if os.Getenv("DISABLE_STANDALONE_ACTIVITY_TESTS") != "" {
 		ts.T().SkipNow()
@@ -3918,6 +4127,18 @@ func (ts *IntegrationTestSuite) TestStandaloneActivityStartLinks() {
 	ts.Equal(expectedActivityLinks, actualActivityLinks)
 }
 
+func (ts *IntegrationTestSuite) startOpenTelemetryClient(options opentelemetry.TracerOptions) {
+	ts.openTelemetrySpanRecorder = tracetest.NewSpanRecorder()
+	ts.openTelemetryTracer = sdktrace.NewTracerProvider(
+		sdktrace.WithSpanProcessor(ts.openTelemetrySpanRecorder)).Tracer("")
+	options.Tracer = ts.openTelemetryTracer
+	tracing, err := opentelemetry.NewTracingInterceptor(options)
+	ts.NoError(err)
+	ts.startClient(func(opts *client.Options) {
+		opts.Interceptors = append(opts.Interceptors, tracing)
+	})
+}
+
 func (ts *IntegrationTestSuite) TestOpenTelemetryTracing() {
 	ts.testOpenTelemetryTracing(true, false)
 }
@@ -3931,6 +4152,9 @@ func (ts *IntegrationTestSuite) TestOpenTelemetryTracingWithoutMessages() {
 }
 
 func (ts *IntegrationTestSuite) TestOpenTelemetryTracingSpanOrder() {
+	ts.startOpenTelemetryClient(opentelemetry.TracerOptions{})
+	ts.startWorker()
+
 	const rootName = "root"
 	const firstName = "first"
 	const secondName = "second"
@@ -3955,6 +4179,9 @@ func (ts *IntegrationTestSuite) TestOpenTelemetryTracingSpanOrder() {
 }
 
 func (ts *IntegrationTestSuite) TestOpenTelemetryTracingQueryReplay() {
+	ts.startOpenTelemetryClient(opentelemetry.TracerOptions{})
+	ts.startWorker()
+
 	const workflowName = "query-after-replay"
 	const queryName = "is-replaying"
 	ts.worker.RegisterWorkflowWithOptions(func(ctx workflow.Context) error {
@@ -3993,6 +4220,13 @@ func (ts *IntegrationTestSuite) TestOpenTelemetryTracingQueryReplay() {
 }
 
 func (ts *IntegrationTestSuite) testOpenTelemetryTracing(withMessages bool, updateWithStart bool) {
+	ts.startOpenTelemetryClient(opentelemetry.TracerOptions{
+		DisableSignalTracing: !withMessages,
+		DisableQueryTracing:  !withMessages,
+		DisableUpdateTracing: !withMessages,
+	})
+	ts.startWorker()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	// Start a top-level span
@@ -4230,6 +4464,9 @@ func (ts *IntegrationTestSuite) TestOpenTelemetryBaggageHandlingWithDisableBagga
 }
 
 func (ts *IntegrationTestSuite) testOpenTelemetryBaggageHandling(disableBaggage bool) {
+	ts.startOpenTelemetryClient(opentelemetry.TracerOptions{DisableBaggage: disableBaggage})
+	ts.startWorker()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	// Start a top-level span
@@ -4258,16 +4495,22 @@ func (ts *IntegrationTestSuite) testOpenTelemetryBaggageHandling(disableBaggage 
 }
 
 func (ts *IntegrationTestSuite) TestOpenTracingNoopTracer() {
-	// The setup of the test already puts a noop tracer on the client. In past
-	// versions, this would break due to tracer.Extract returning an error every
-	// time.
-	ts.NotNil(ts.openTracingTracer)
+	tracing, err := sdkopentracing.NewInterceptor(sdkopentracing.TracerOptions{Tracer: opentracing.NoopTracer{}})
+	ts.NoError(err)
+	ts.startClient(func(opts *client.Options) {
+		opts.Interceptors = append(opts.Interceptors, tracing)
+	})
+	ts.startWorker()
+
+	// NoopTracer.Extract returns an error, which used to break workflow execution.
 	var ret string
 	ts.NoError(ts.executeWorkflow("test-open-tracing-worker-no-client", ts.workflows.SimplestWorkflow, &ret))
 	ts.Equal("hello", ret)
 }
 
 func (ts *IntegrationTestSuite) TestAdvancedPostCancellation() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -4315,6 +4558,8 @@ func (ts *IntegrationTestSuite) TestAdvancedPostCancellation() {
 }
 
 func (ts *IntegrationTestSuite) TestAdvancedPostCancellationChildWithDone() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -4350,6 +4595,12 @@ func (ts *IntegrationTestSuite) waitForQueryTrue(run client.WorkflowRun, query s
 }
 
 func (ts *IntegrationTestSuite) TestNumPollersCounter() {
+	ts.startWorker(func(opts *worker.Options) {
+		// Explicit poller counts opt out of poller autoscaling auto-enrollment.
+		opts.MaxConcurrentWorkflowTaskPollers = 2
+		opts.MaxConcurrentActivityTaskPollers = 2
+	})
+
 	assertNumPollersEventually := func(expected float64, pollerType string) {
 		ts.Require().EventuallyWithT(func(t *assert.CollectT) {
 			lastCount := ts.metricGauge(
@@ -4371,6 +4622,8 @@ func (ts *IntegrationTestSuite) TestNumPollersCounter() {
 }
 
 func (ts *IntegrationTestSuite) TestSlotsAvailableCounter() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -4450,6 +4703,8 @@ func (w *waitToProceedActivities) JustPanic(_ context.Context) error {
 }
 
 func (ts *IntegrationTestSuite) TestSlotSupplierIntraWFTMetrics() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
@@ -4544,6 +4799,10 @@ func (ts *IntegrationTestSuite) TestSlotSupplierIntraWFTMetrics() {
 }
 
 func (ts *IntegrationTestSuite) TestSlotSupplierWFTFailMetrics() {
+	ts.startWorker(func(opts *worker.Options) {
+		opts.WorkflowPanicPolicy = worker.BlockWorkflow
+	})
+
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
@@ -4623,6 +4882,12 @@ func (h *highWaterMarkActivities) DoActivity(ctx context.Context, index int) err
 }
 
 func (ts *IntegrationTestSuite) TestSlotSupplierWontExceedLimits() {
+	ts.startWorker(func(opts *worker.Options) {
+		opts.MaxConcurrentWorkflowTaskExecutionSize = 2
+		opts.MaxConcurrentActivityExecutionSize = 2
+		opts.MaxConcurrentLocalActivityExecutionSize = 2
+	})
+
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
@@ -4687,7 +4952,21 @@ func (ts *IntegrationTestSuite) TestSlotSupplierWontExceedLimits() {
 	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsAvailable, wfWorkertags, 2)
 }
 
+func (ts *IntegrationTestSuite) startResourceBasedWorker() {
+	tuner, err := worker.NewResourceBasedTuner(worker.ResourceBasedTunerOptions{
+		TargetMem:    0.9,
+		TargetCpu:    0.9,
+		InfoSupplier: sysinfo.SysInfoProvider(),
+	})
+	ts.NoError(err)
+	ts.startWorker(func(opts *worker.Options) {
+		opts.Tuner = tuner
+	})
+}
+
 func (ts *IntegrationTestSuite) TestResourceBasedSlotSupplierWorks() {
+	ts.startResourceBasedWorker()
+
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
@@ -4715,6 +4994,8 @@ func (ts *IntegrationTestSuite) TestResourceBasedSlotSupplierWorks() {
 }
 
 func (ts *IntegrationTestSuite) TestResourceBasedSlotSupplierManyActs() {
+	ts.startResourceBasedWorker()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
 	defer cancel()
 
@@ -4744,6 +5025,11 @@ func (ts *IntegrationTestSuite) TestResourceBasedSlotSupplierManyActs() {
 }
 
 func (ts *IntegrationTestSuite) TestSlotSuppliersWithSessionAndOneConcurrentMax() {
+	ts.startWorker(func(opts *worker.Options) {
+		opts.EnableSessionWorker = true
+		opts.MaxConcurrentActivityExecutionSize = 1
+	})
+
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
 	defer cancel()
 
@@ -4765,6 +5051,8 @@ func (ts *IntegrationTestSuite) TestSlotSuppliersWithSessionAndOneConcurrentMax(
 }
 
 func (ts *IntegrationTestSuite) TestTooFewParams() {
+	ts.startWorker()
+
 	var res ParamsValue
 	// Only give first param
 	ts.NoError(ts.executeWorkflow("test-too-few-params", "TooFewParams", &res, "first param"))
@@ -4773,6 +5061,12 @@ func (ts *IntegrationTestSuite) TestTooFewParams() {
 }
 
 func (ts *IntegrationTestSuite) TestTallyScopeAccess() {
+	ts.tallyScope = tally.NewTestScope("", nil)
+	ts.startClient(func(opts *client.Options) {
+		opts.MetricsHandler = contribtally.NewMetricsHandler(ts.tallyScope)
+	})
+	ts.startWorker()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -4808,6 +5102,8 @@ func (ts *IntegrationTestSuite) TestTallyScopeAccess() {
 }
 
 func (ts *IntegrationTestSuite) TestActivityOnlyWorker() {
+	ts.startWorker()
+
 	// Start worker
 	taskQueue := "test-activity-only-queue-" + uuid.NewString()
 	activityOnlyWorker := worker.New(ts.client, taskQueue, worker.Options{DisableWorkflowWorker: true})
@@ -4826,6 +5122,8 @@ func (ts *IntegrationTestSuite) TestActivityOnlyWorker() {
 }
 
 func (ts *IntegrationTestSuite) TestReturnCancelError() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	wfIDPrefix := "test-return-cancel-error-"
@@ -4903,6 +5201,8 @@ func (ts *IntegrationTestSuite) TestReturnCancelError() {
 }
 
 func (ts *IntegrationTestSuite) TestLocalActivityStringNameReplay() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -4930,6 +5230,11 @@ func (ts *IntegrationTestSuite) TestLocalActivityStringNameReplay() {
 }
 
 func (ts *IntegrationTestSuite) TestMaxConcurrentSessionExecutionSizeNoWait() {
+	ts.startWorker(func(opts *worker.Options) {
+		opts.EnableSessionWorker = true
+		opts.MaxConcurrentSessionExecutionSize = 3
+	})
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	ts.activities.manualStopContext = ctx
@@ -4945,6 +5250,11 @@ func (ts *IntegrationTestSuite) TestMaxConcurrentSessionExecutionSizeNoWait() {
 }
 
 func (ts *IntegrationTestSuite) TestMaxConcurrentSessionExecutionSizeWithRecreationAndWait() {
+	ts.startWorker(func(opts *worker.Options) {
+		opts.EnableSessionWorker = true
+		opts.MaxConcurrentSessionExecutionSize = 3
+	})
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	var manualCancel context.CancelFunc
@@ -4985,6 +5295,8 @@ func (ts *IntegrationTestSuite) TestMaxConcurrentSessionExecutionSizeWithRecreat
 }
 
 func (ts *IntegrationTestSuite) TestUpdateBasic() {
+	ts.startWorker()
+
 	ctx := context.Background()
 	run, err := ts.client.ExecuteWorkflow(ctx,
 		ts.startWorkflowOptions("test-update-basic"), ts.workflows.UpdateBasicWorkflow)
@@ -5035,6 +5347,8 @@ func (ts *IntegrationTestSuite) TestUpdateBasic() {
 }
 
 func (ts *IntegrationTestSuite) TestLongUpdateWaitOnCompleted() {
+	ts.startWorker()
+
 	ctx := context.Background()
 	run, err := ts.client.ExecuteWorkflow(ctx,
 		ts.startWorkflowOptions("test-long-update-wait-on-completed"), ts.workflows.UpdateBasicWorkflow)
@@ -5058,6 +5372,8 @@ func (ts *IntegrationTestSuite) TestLongUpdateWaitOnCompleted() {
 }
 
 func (ts *IntegrationTestSuite) TestUpdateAdmittedNoWorker() {
+	ts.startClient()
+
 	ctx := context.Background()
 
 	run, err := ts.client.ExecuteWorkflow(ctx,
@@ -5079,6 +5395,8 @@ func (ts *IntegrationTestSuite) TestUpdateAdmittedNoWorker() {
 }
 
 func (ts *IntegrationTestSuite) TestUpdateWithNoHandlerRejected() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	options := ts.startWorkflowOptions("test-update-with-no-handle-rejected")
@@ -5102,6 +5420,8 @@ func (ts *IntegrationTestSuite) TestUpdateWithNoHandlerRejected() {
 }
 
 func (ts *IntegrationTestSuite) TestUpdateWithWrongHandleRejected() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	options := ts.startWorkflowOptions("test-update-with-wrong-handle-rejected")
@@ -5126,6 +5446,8 @@ func (ts *IntegrationTestSuite) TestUpdateWithWrongHandleRejected() {
 }
 
 func (ts *IntegrationTestSuite) TestWaitOnUpdate() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	options := ts.startWorkflowOptions("test-wait-on-update")
@@ -5150,6 +5472,8 @@ func (ts *IntegrationTestSuite) TestWaitOnUpdate() {
 }
 
 func (ts *IntegrationTestSuite) TestUpdateHandlerRegisteredLate() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	options := ts.startWorkflowOptions("test-update-handler-registered-late")
@@ -5188,6 +5512,8 @@ func (ts *IntegrationTestSuite) TestUpdateHandlerRegisteredLate() {
 }
 
 func (ts *IntegrationTestSuite) TestUpdateSDKFlag() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	options := ts.startWorkflowOptions("test-update-SDK-flag")
@@ -5233,6 +5559,8 @@ func (ts *IntegrationTestSuite) TestUpdateSDKFlag() {
 }
 
 func (ts *IntegrationTestSuite) TestUpdateOrdering() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	options := ts.startWorkflowOptions("test-update-ordering")
@@ -5266,10 +5594,14 @@ func (ts *IntegrationTestSuite) TestUpdateOrdering() {
 }
 
 func (ts *IntegrationTestSuite) TestMultipleUpdateOrderingCancel() {
+	ts.startWorker()
+
 	ts.testUpdateOrderingCancel(true)
 }
 
 func (ts *IntegrationTestSuite) TestMultipleUpdateOrdering() {
+	ts.startWorker()
+
 	ts.testUpdateOrderingCancel(false)
 }
 
@@ -5328,6 +5660,8 @@ func (ts *IntegrationTestSuite) testUpdateOrderingCancel(cancelWf bool) {
 }
 
 func (ts *IntegrationTestSuite) TestUpdateAlwaysHandled() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	options := ts.startWorkflowOptions("test-update-always-handled")
@@ -5348,6 +5682,8 @@ func (ts *IntegrationTestSuite) TestUpdateAlwaysHandled() {
 }
 
 func (ts *IntegrationTestSuite) TestUpdateRejected() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	options := ts.startWorkflowOptions("test-update-rejected")
@@ -5367,6 +5703,8 @@ func (ts *IntegrationTestSuite) TestUpdateRejected() {
 }
 
 func (ts *IntegrationTestSuite) TestUpdateRejectedDuplicated() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	options := ts.startWorkflowOptions("test-update-rejected-duplicated")
@@ -5396,6 +5734,8 @@ func (ts *IntegrationTestSuite) TestUpdateRejectedDuplicated() {
 }
 
 func (ts *IntegrationTestSuite) TestSpeculativeUpdate() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	options := ts.startWorkflowOptions("test-speculative-update")
@@ -5451,6 +5791,8 @@ func (ts *IntegrationTestSuite) TestSpeculativeUpdate() {
 }
 
 func (ts *IntegrationTestSuite) TestUpdateSettingHandlerInGoroutine() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	options := ts.startWorkflowOptions("test-update-setting-handler-in-goroutine")
@@ -5470,6 +5812,8 @@ func (ts *IntegrationTestSuite) TestUpdateSettingHandlerInGoroutine() {
 }
 
 func (ts *IntegrationTestSuite) TestUpdateSettingHandlerInHandler() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	options := ts.startWorkflowOptions("test-update-setting-handler-in-handler")
@@ -5507,6 +5851,8 @@ func (ts *IntegrationTestSuite) TestUpdateSettingHandlerInHandler() {
 }
 
 func (ts *IntegrationTestSuite) TestUpdateWithStartWorkflow() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -5775,6 +6121,12 @@ func (ts *IntegrationTestSuite) TestUpdateWithStartWorkflow() {
 }
 
 func (ts *IntegrationTestSuite) TestSessionOnWorkerFailure() {
+	ts.startWorker(func(opts *worker.Options) {
+		// Disable sticky execution to avoid the sticky schedule-to-start delay after restart.
+		worker.SetStickyWorkflowCacheSize(0)
+		opts.EnableSessionWorker = true
+	})
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	ts.activities.manualStopContext = ctx
@@ -5813,6 +6165,8 @@ func (ts *IntegrationTestSuite) TestSessionOnWorkerFailure() {
 }
 
 func (ts *IntegrationTestSuite) TestQueryOnlyCoroutineUsage() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
@@ -5861,6 +6215,8 @@ func (ts *IntegrationTestSuite) TestQueryOnlyCoroutineUsage() {
 }
 
 func (ts *IntegrationTestSuite) TestLargeHistoryReplay() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
@@ -5897,10 +6253,14 @@ func (ts *IntegrationTestSuite) TestLargeHistoryReplay() {
 }
 
 func (ts *IntegrationTestSuite) TestWorkerFatalErrorOnRun() {
+	ts.startWorker()
+
 	ts.testWorkerFatalError(true)
 }
 
 func (ts *IntegrationTestSuite) TestWorkerFatalErrorOnStart() {
+	ts.startWorker()
+
 	ts.testWorkerFatalError(false)
 }
 
@@ -5964,6 +6324,14 @@ func (ts *IntegrationTestSuite) testWorkerFatalError(useWorkerRun bool) {
 	}
 }
 
+func (ts *IntegrationTestSuite) startNonDeterminismWorker() {
+	ts.startWorker(func(opts *worker.Options) {
+		// Disable sticky execution to avoid the sticky schedule-to-start delay after restart.
+		worker.SetStickyWorkflowCacheSize(0)
+		opts.WorkflowPanicPolicy = worker.BlockWorkflow
+	})
+}
+
 func (ts *IntegrationTestSuite) TestNonDeterminismFailureCauseBadStateMachine() {
 	ts.testNonDeterminismFailureCause(false)
 }
@@ -5973,6 +6341,8 @@ func (ts *IntegrationTestSuite) TestNonDeterminismFailureCauseHistoryMismatch() 
 }
 
 func (ts *IntegrationTestSuite) testNonDeterminismFailureCause(historyMismatch bool) {
+	ts.startNonDeterminismWorker()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -6027,6 +6397,8 @@ func (ts *IntegrationTestSuite) testNonDeterminismFailureCause(historyMismatch b
 }
 
 func (ts *IntegrationTestSuite) TestNonDeterminismFailureCauseCommandNotFound() {
+	ts.startNonDeterminismWorker()
+
 	// Create a situation in which, on replay, an event (MARKER_RECORDED) is encountered and yet the
 	// code emits no corresponding command.
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -6090,6 +6462,10 @@ func legacyQueryTaskFailureWorkflow(ctx workflow.Context) error {
 }
 
 func (ts *IntegrationTestSuite) TestLegacyQueryTaskFailureReportedToCaller() {
+	w := ts.newWorker()
+	w.RegisterWorkflow(legacyQueryTaskFailureWorkflow)
+	ts.startRegisteredWorker(w)
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -6157,6 +6533,7 @@ func (ts *IntegrationTestSuite) TestLegacyQueryTaskFailureReportedToCaller() {
 		MaxConcurrentWorkflowTaskPollers: 12,
 	})
 	ts.registerWorkflowsAndActivities(nextWorker)
+	nextWorker.RegisterWorkflow(legacyQueryTaskFailureWorkflow)
 	ts.NoError(nextWorker.Start())
 	defer nextWorker.Stop()
 
@@ -6176,6 +6553,8 @@ func (ts *IntegrationTestSuite) TestLegacyQueryTaskFailureReportedToCaller() {
 }
 
 func (ts *IntegrationTestSuite) TestNonDeterminismFailureCauseReplay() {
+	ts.startNonDeterminismWorker()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -6227,6 +6606,8 @@ func (ts *IntegrationTestSuite) TestNonDeterminismFailureCauseReplay() {
 }
 
 func (ts *IntegrationTestSuite) TestDeterminismUpsertSearchAttributesConditional() {
+	ts.startWorker()
+
 	skipOnCloud(ts.T(), cloudNeedsAdaptation, "requires custom namespace search attributes")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -6251,6 +6632,8 @@ func (ts *IntegrationTestSuite) TestDeterminismUpsertSearchAttributesConditional
 }
 
 func (ts *IntegrationTestSuite) TestLocalActivityWorkerRestart() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -6287,6 +6670,8 @@ func (ts *IntegrationTestSuite) TestLocalActivityWorkerRestart() {
 }
 
 func (ts *IntegrationTestSuite) TestLocalActivityStaleCache() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -6323,6 +6708,8 @@ func (ts *IntegrationTestSuite) TestLocalActivityStaleCache() {
 }
 
 func (ts *IntegrationTestSuite) TestDeterminismUpsertMemoConditional() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -6365,6 +6752,8 @@ func (ts *IntegrationTestSuite) testStaleCacheReplayDeterminism(ctx context.Cont
 }
 
 func (ts *IntegrationTestSuite) TestClientGetNotFollowingRuns() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -6392,6 +6781,8 @@ func (ts *IntegrationTestSuite) TestClientGetNotFollowingRuns() {
 }
 
 func (ts *IntegrationTestSuite) TestMutableSideEffects() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -6442,6 +6833,10 @@ func (l *localActivityWorkflowInterceptor) ExecuteWorkflow(
 }
 
 func (ts *IntegrationTestSuite) TestReplayerWithInterceptor() {
+	ts.startWorker(func(opts *worker.Options) {
+		opts.Interceptors = append(opts.Interceptors, &localActivityInterceptor{})
+	})
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -6465,6 +6860,8 @@ func (ts *IntegrationTestSuite) TestReplayerWithInterceptor() {
 
 // We count on the no-cache test to test replay conditions here
 func (ts *IntegrationTestSuite) TestHistoryLength() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -6495,6 +6892,8 @@ func (ts *IntegrationTestSuite) TestHistoryLength() {
 }
 
 func (ts *IntegrationTestSuite) TestRootWorkflow() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -6507,6 +6906,8 @@ func (ts *IntegrationTestSuite) TestRootWorkflow() {
 }
 
 func (ts *IntegrationTestSuite) TestMultiNamespaceClient() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -6538,6 +6939,8 @@ func (ts *IntegrationTestSuite) TestMultiNamespaceClient() {
 }
 
 func (ts *IntegrationTestSuite) TestHeartbeatThrottleDisabled() {
+	ts.startWorker()
+
 	// Heartbeat 4 times, 100ms apart
 	ts.NoError(ts.executeWorkflow("test-heartbeat-throttle-disabled-1", ts.workflows.HeartbeatSpecificCount, nil,
 		100*time.Millisecond, 4))
@@ -6567,6 +6970,8 @@ func (ts *IntegrationTestSuite) TestHeartbeatThrottleDisabled() {
 }
 
 func (ts *IntegrationTestSuite) TestUpsertMemoFromNil() {
+	ts.startWorker()
+
 	ts.T().Skip("temporal server 1.18.0 has a bug")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -6620,6 +7025,8 @@ func (ts *IntegrationTestSuite) TestUpsertMemoFromNil() {
 }
 
 func (ts *IntegrationTestSuite) TestUpsertMemoFromEmptyMap() {
+	ts.startWorker()
+
 	ts.T().Skip("temporal server 1.18.0 has a bug")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -6674,6 +7081,8 @@ func (ts *IntegrationTestSuite) TestUpsertMemoFromEmptyMap() {
 }
 
 func (ts *IntegrationTestSuite) TestUpsertMemoWithExistingMemo() {
+	ts.startWorker()
+
 	ts.T().Skip("temporal server 1.18.0 has a bug")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -6741,6 +7150,8 @@ func (ts *IntegrationTestSuite) createBasicScheduleWorkflowAction(ID string, wor
 }
 
 func (ts *IntegrationTestSuite) TestScheduleCreate() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	handle, err := ts.client.ScheduleClient().Create(ctx, client.ScheduleOptions{
@@ -6763,6 +7174,8 @@ func (ts *IntegrationTestSuite) TestScheduleCreate() {
 }
 
 func (ts *IntegrationTestSuite) TestScheduleTypedSearchAttributes() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	scheduleID := "test-schedule-typed-search-attributes"
@@ -6798,6 +7211,8 @@ func (ts *IntegrationTestSuite) TestScheduleTypedSearchAttributes() {
 }
 
 func (ts *IntegrationTestSuite) TestScheduleWorkflowActionTypedSearchAttributes() {
+	ts.startWorker()
+
 	skipOnCloud(ts.T(), cloudNeedsAdaptation, "requires custom namespace search attributes")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -6871,6 +7286,8 @@ func (ts *IntegrationTestSuite) TestScheduleWorkflowActionTypedSearchAttributes(
 }
 
 func (ts *IntegrationTestSuite) TestScheduleCalendarDefault() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	handle, err := ts.client.ScheduleClient().Create(ctx, client.ScheduleOptions{
@@ -6925,6 +7342,8 @@ func (ts *IntegrationTestSuite) TestScheduleCalendarDefault() {
 }
 
 func (ts *IntegrationTestSuite) TestScheduleCreateDuplicate() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	scheduleOptions := client.ScheduleOptions{
@@ -6946,6 +7365,8 @@ func (ts *IntegrationTestSuite) TestScheduleCreateDuplicate() {
 }
 
 func (ts *IntegrationTestSuite) TestScheduleDescribeSpec() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	handle, err := ts.client.ScheduleClient().Create(ctx, client.ScheduleOptions{
@@ -7105,6 +7526,8 @@ func (ts *IntegrationTestSuite) TestScheduleDescribeSpec() {
 }
 
 func (ts *IntegrationTestSuite) TestScheduleDescribeSpecCron() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -7163,6 +7586,8 @@ func (ts *IntegrationTestSuite) TestScheduleDescribeSpecCron() {
 }
 
 func (ts *IntegrationTestSuite) TestScheduleDescribeState() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	testNote := "test note"
@@ -7237,6 +7662,8 @@ func (ts *IntegrationTestSuite) TestScheduleDescribeState() {
 }
 
 func (ts *IntegrationTestSuite) TestSchedulePause() {
+	ts.startWorker()
+
 	verifyState := func(ctx context.Context, handle client.ScheduleHandle, paused bool, note string) {
 		description, err := handle.Describe(ctx)
 		ts.NoError(err)
@@ -7294,6 +7721,8 @@ func (ts *IntegrationTestSuite) TestSchedulePause() {
 }
 
 func (ts *IntegrationTestSuite) TestScheduleTrigger() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	// Create a paused workflow
@@ -7329,6 +7758,8 @@ func (ts *IntegrationTestSuite) TestScheduleTrigger() {
 }
 
 func (ts *IntegrationTestSuite) TestScheduleBackfillCreate() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	// Create a paused workflow
@@ -7371,6 +7802,8 @@ func (ts *IntegrationTestSuite) TestScheduleBackfillCreate() {
 }
 
 func (ts *IntegrationTestSuite) TestScheduleBackfill() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	// Create a paused workflow
@@ -7418,6 +7851,8 @@ func (ts *IntegrationTestSuite) TestScheduleBackfill() {
 }
 
 func (ts *IntegrationTestSuite) TestScheduleList() {
+	ts.startWorker()
+
 	skipOnCloud(ts.T(), cloudNeedsAdaptation, "requires custom namespace search attributes")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -7490,6 +7925,8 @@ func (ts *IntegrationTestSuite) TestScheduleList() {
 }
 
 func (ts *IntegrationTestSuite) TestScheduleUpdate() {
+	ts.startWorker()
+
 	skipOnCloud(ts.T(), cloudNeedsAdaptation, "requires custom namespace search attributes")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -7656,6 +8093,8 @@ func (ts *IntegrationTestSuite) TestScheduleUpdate() {
 }
 
 func (ts *IntegrationTestSuite) TestScheduleUpdateCancelUpdate() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	// Create a paused workflow
@@ -7699,6 +8138,8 @@ func (ts *IntegrationTestSuite) TestScheduleUpdateCancelUpdate() {
 }
 
 func (ts *IntegrationTestSuite) TestScheduleUpdateError() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	// Create a paused workflow
@@ -7724,6 +8165,8 @@ func (ts *IntegrationTestSuite) TestScheduleUpdateError() {
 }
 
 func (ts *IntegrationTestSuite) TestScheduleUpdateNewAction() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	// Create a paused workflow
@@ -7767,6 +8210,8 @@ func (ts *IntegrationTestSuite) TestScheduleUpdateNewAction() {
 }
 
 func (ts *IntegrationTestSuite) TestScheduleUpdateAction() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	// Create a paused workflow
@@ -7810,6 +8255,8 @@ func (ts *IntegrationTestSuite) TestScheduleUpdateAction() {
 }
 
 func (ts *IntegrationTestSuite) TestScheduleUpdateActionParameter() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	expectedArg1Value, _ := converter.GetDefaultDataConverter().ToPayload("Test Arg 1")
@@ -7867,6 +8314,8 @@ func (ts *IntegrationTestSuite) TestScheduleUpdateActionParameter() {
 }
 
 func (ts *IntegrationTestSuite) TestScheduleUpdateWorkflowActionMemo() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	expectedKey1Value, _ := converter.GetDefaultDataConverter().ToPayload("value")
@@ -7929,6 +8378,8 @@ func (ts *IntegrationTestSuite) TestScheduleUpdateWorkflowActionMemo() {
 }
 
 func (ts *IntegrationTestSuite) TestNoVersioningBehaviorPanics() {
+	ts.startWorker()
+
 	seriesName := "deploy-test-" + uuid.NewString()
 
 	c, err := ts.newDefaultClient()
@@ -7962,6 +8413,8 @@ func (ts *IntegrationTestSuite) TestNoVersioningBehaviorPanics() {
 }
 
 func (ts *IntegrationTestSuite) TestSendsCorrectMeteringData() {
+	ts.startWorker()
+
 	nonfirstLAAttemptCounts := make([]uint32, 0)
 	c, err := ts.newDefaultClient(func(options *client.Options) {
 		options.ConnectionOptions.DialOptions = []grpc.DialOption{
@@ -8004,6 +8457,8 @@ func (ts *IntegrationTestSuite) TestSendsCorrectMeteringData() {
 }
 
 func (ts *IntegrationTestSuite) TestNondeterministicUpdateRegistertion() {
+	ts.startWorker()
+
 	var expected []string
 	err := ts.executeWorkflow("test-activity-retry-options-change", ts.workflows.ActivityRetryOptionsChange, &expected)
 	ts.NoError(err)
@@ -8011,6 +8466,8 @@ func (ts *IntegrationTestSuite) TestNondeterministicUpdateRegistertion() {
 }
 
 func (ts *IntegrationTestSuite) TestRequestFailureMetric() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -8026,6 +8483,8 @@ func (ts *IntegrationTestSuite) TestRequestFailureMetric() {
 }
 
 func (ts *IntegrationTestSuite) TestUserMetadata() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -8138,6 +8597,8 @@ func (ts *IntegrationTestSuite) TestUserMetadata() {
 }
 
 func (ts *IntegrationTestSuite) TestTaskQueuePriority() {
+	ts.startWorker()
+
 	if os.Getenv("DISABLE_PRIORITY_TESTS") != "" {
 		ts.T().SkipNow()
 	}
@@ -8159,6 +8620,8 @@ func (ts *IntegrationTestSuite) TestTaskQueuePriority() {
 }
 
 func (ts *IntegrationTestSuite) TestAwaitWithOptionsTimeout() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	var str string
@@ -8193,6 +8656,8 @@ func (ts *IntegrationTestSuite) TestAwaitWithOptionsTimeout() {
 }
 
 func (ts *IntegrationTestSuite) TestClientFromActivity() {
+	ts.startWorker()
+
 	err := ts.executeWorkflow("client-from-activity", ts.workflows.WorkflowClientFromActivity, nil)
 	ts.NoError(err)
 }
@@ -8263,9 +8728,6 @@ type synchronousActivityRetryState struct {
 func (ts *IntegrationTestSuite) registerWorkflowsAndActivities(w worker.Worker) {
 	ts.workflows.register(w)
 	ts.activities.register(w)
-	if strings.Contains(ts.T().Name(), "TestLegacyQueryTaskFailure") {
-		w.RegisterWorkflow(legacyQueryTaskFailureWorkflow)
-	}
 	w.RegisterNexusService(temporalOpService)
 }
 
@@ -8604,6 +9066,8 @@ func (ts *IntegrationTestSuite) getReportedOperationCount(metricName string, ope
 }
 
 func (ts *IntegrationTestSuite) TestSelectorNoBlock() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	options := ts.startWorkflowOptions("test-selector-no-block")
@@ -8664,6 +9128,8 @@ func (c *coroutineCountingWorkflowOutboundInterceptor) Go(
 }
 
 func (ts *IntegrationTestSuite) TestTemporalPrefixSignal() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	options := ts.startWorkflowOptions("test-temporal-prefix")
@@ -8676,6 +9142,8 @@ func (ts *IntegrationTestSuite) TestTemporalPrefixSignal() {
 }
 
 func (ts *IntegrationTestSuite) TestPartialHistoryReplayFuzzer() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -8719,6 +9187,8 @@ func (ts *IntegrationTestSuite) TestPartialHistoryReplayFuzzer() {
 }
 
 func (ts *IntegrationTestSuite) TestRawValue() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -8741,6 +9211,8 @@ func (ts *IntegrationTestSuite) TestRawValue() {
 }
 
 func (ts *IntegrationTestSuite) TestRawValueQueryMetadata() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	// data converter with no proto support
@@ -8774,6 +9246,8 @@ func (ts *IntegrationTestSuite) TestRawValueQueryMetadata() {
 }
 
 func (ts *IntegrationTestSuite) TestWorkflowTaskFailureMetric_BenignHandling() {
+	ts.startWorker()
+
 	wfWithApplicationErr := func(ctx workflow.Context, isBenign bool) error {
 		if !isBenign {
 			return temporal.NewApplicationError("Non-benign failure", "", false, nil)
@@ -8828,6 +9302,8 @@ func (ts *IntegrationTestSuite) TestWorkflowTaskFailureMetric_BenignHandling() {
 }
 
 func (ts *IntegrationTestSuite) TestActivityFailureMetric_BenignHandling() {
+	ts.startWorker()
+
 	actWithAppErr := func(ctx context.Context, isBenign bool) error {
 		if isBenign {
 			return temporal.NewApplicationErrorWithOptions("Benign act failure", "",
@@ -8911,6 +9387,8 @@ func (ts *IntegrationTestSuite) TestActivityFailureMetric_BenignHandling() {
 }
 
 func (ts *IntegrationTestSuite) TestLocalActivityFailureMetric_BenignHandling() {
+	ts.startWorker()
+
 	localActWithAppErr := func(ctx context.Context, isBenign bool) error {
 		if isBenign {
 			return temporal.NewApplicationErrorWithOptions("Benign local act failure", "",
@@ -9022,6 +9500,8 @@ func (ts *IntegrationTestSuite) registerWorkerShutdownCancelWorkflowWithNames(
 }
 
 func (ts *IntegrationTestSuite) TestActivityCancelFromWorkerShutdown() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -9050,6 +9530,8 @@ func (ts *IntegrationTestSuite) TestActivityCancelFromWorkerShutdown() {
 }
 
 func (ts *IntegrationTestSuite) TestLocalActivityCancelFromWorkerShutdown() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -9094,6 +9576,8 @@ func (ts *IntegrationTestSuite) TestLocalActivityCancelFromWorkerShutdown() {
 }
 
 func (ts *IntegrationTestSuite) TestLocalActivityWorkerShutdownNoHeartbeat() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	localActivityStarted := make(chan struct{})
@@ -9170,6 +9654,10 @@ func (ts *IntegrationTestSuite) TestLocalActivityWorkerShutdownNoHeartbeat() {
 }
 
 func (ts *IntegrationTestSuite) TestLocalActivityCompleteWithinGracefulShutdown() {
+	ts.startWorker(func(opts *worker.Options) {
+		opts.WorkerStopTimeout = 10 * time.Second
+	})
+
 	// FYI, setup of this test allows the worker to wait to stop for 10 seconds
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
@@ -9247,6 +9735,10 @@ func (ts *IntegrationTestSuite) TestLocalActivityCompleteWithinGracefulShutdown(
 }
 
 func (ts *IntegrationTestSuite) TestShutdownDuringActiveTimerActivityWorkflows() {
+	ts.startWorker(func(opts *worker.Options) {
+		opts.WorkerStopTimeout = 10 * time.Second
+	})
+
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
@@ -9303,6 +9795,8 @@ func (ts *IntegrationTestSuite) TestShutdownDuringActiveTimerActivityWorkflows()
 }
 
 func (ts *IntegrationTestSuite) TestStickyCacheSharedWorkerLifecycle() {
+	ts.startWorker()
+
 	if os.Getenv("WORKFLOW_CACHE_SIZE") == "0" {
 		ts.T().Skip("sticky cache is disabled")
 	}
@@ -9383,6 +9877,8 @@ func (ts *IntegrationTestSuite) TestStickyCacheSharedWorkerLifecycle() {
 }
 
 func (ts *IntegrationTestSuite) TestLocalActivitySummary() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	localActivityFn := func(ctx context.Context) error {
@@ -9428,6 +9924,8 @@ func (ts *IntegrationTestSuite) TestLocalActivitySummary() {
 }
 
 func (ts *IntegrationTestSuite) TestSideEffectSummary() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -9472,6 +9970,8 @@ func (ts *IntegrationTestSuite) TestSideEffectSummary() {
 }
 
 func (ts *IntegrationTestSuite) TestMutableSideEffectSummary() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -9518,6 +10018,8 @@ func (ts *IntegrationTestSuite) TestMutableSideEffectSummary() {
 }
 
 func (ts *IntegrationTestSuite) TestGrpcMessageTooLarge() {
+	ts.startWorker()
+
 	ts.T().Skip("temporal server 1.30 has different behavior") // see https://github.com/temporalio/temporal/pull/8610
 
 	assertGrpcErrorInHistory := func(ctx context.Context, run client.WorkflowRun) {
@@ -9595,6 +10097,8 @@ func (ts *IntegrationTestSuite) TestGrpcMessageTooLarge() {
 }
 
 func (ts *IntegrationTestSuite) TestWorkflowCompletionMetrics() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -9668,6 +10172,8 @@ func (ts *IntegrationTestSuite) TestWorkflowCompletionMetrics() {
 }
 
 func (ts *IntegrationTestSuite) TestUnhandledCommandAndMetrics() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -9771,6 +10277,8 @@ func (c *clientPluginForTest) NewClient(
 }
 
 func (ts *IntegrationTestSuite) TestClientPlugin() {
+	ts.startWorker()
+
 	// Stop any existing worker
 	ts.worker.Stop()
 
@@ -9902,6 +10410,8 @@ func (w *workerPluginForTest) ReplayWorkflow(
 }
 
 func (ts *IntegrationTestSuite) TestWorkerPlugin() {
+	ts.startWorker()
+
 	// Stop any existing worker
 	ts.worker.Stop()
 
@@ -9996,6 +10506,8 @@ func (t *toPayloadTrackingDataConverter) ToPayloads(value ...any) (*commonpb.Pay
 }
 
 func (ts *IntegrationTestSuite) TestSimplePlugin() {
+	ts.startWorker()
+
 	// Stop any existing worker
 	ts.worker.Stop()
 
@@ -10108,6 +10620,8 @@ func (ts *IntegrationTestSuite) TestSimplePlugin() {
 }
 
 func (ts *IntegrationTestSuite) TestSimplePluginDoNothing() {
+	ts.startWorker()
+
 	// Stop any existing worker
 	ts.worker.Stop()
 
@@ -10138,6 +10652,8 @@ func (ts *IntegrationTestSuite) TestSimplePluginDoNothing() {
 }
 
 func (ts *IntegrationTestSuite) TestExecuteActivitySuite() {
+	ts.startWorker()
+
 	if os.Getenv("DISABLE_STANDALONE_ACTIVITY_TESTS") != "" {
 		ts.T().SkipNow()
 	}
@@ -10438,6 +10954,10 @@ func (f *poisonDataConverter) ToPayload(value any) (*commonpb.Payload, error) {
 // activity. On replay, the ActivityTaskCancelRequested event for that activity
 // hits the state machine in Initiated state, causing a permanent NDE.
 func (ts *IntegrationTestSuite) TestSessionCancelNDE() {
+	ts.startWorker(func(opts *worker.Options) {
+		opts.EnableSessionWorker = true
+	})
+
 	// Stop the default worker — we need our own with a failing DataConverter.
 	ts.worker.Stop()
 	ts.workerStopped = true
@@ -10510,6 +11030,8 @@ func (ts *IntegrationTestSuite) TestSessionCancelNDE() {
 // completes with the defer's activity command, and the second attempt (which doesn't panic) takes a
 // different code path causing an NDE.
 func (ts *IntegrationTestSuite) TestPanicWithDeferredYield() {
+	ts.startWorker()
+
 	// Stop any existing worker
 	ts.worker.Stop()
 	ts.workerStopped = true
@@ -10566,6 +11088,8 @@ func (ts *IntegrationTestSuite) TestPanicWithDeferredYield() {
 }
 
 func (ts *IntegrationTestSuite) TestPayloadSizeWarningDefaultSize() {
+	ts.startWorker()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -10605,6 +11129,10 @@ func (ts *IntegrationTestSuite) TestPayloadSizeWarningDefaultSize() {
 }
 
 func (ts *IntegrationTestSuite) TestExecuteNexusOperationSuite() {
+	w := ts.newWorker()
+	ts.registerStandaloneNexusOperations(w)
+	ts.startRegisteredWorker(w)
+
 	skipOnCloud(ts.T(), cloudRequiresProvisioning, "standalone Nexus tests create namespace endpoints through Operator Service")
 	if os.Getenv("DISABLE_STANDALONE_NEXUS_TESTS") != "" {
 		ts.T().SkipNow()
@@ -10952,6 +11480,8 @@ func (ts *IntegrationTestSuite) TestExecuteNexusOperationSuite() {
 }
 
 func (ts *IntegrationTestSuite) TestTemporalOperationSuite() {
+	ts.startWorker()
+
 	skipOnCloud(ts.T(), cloudRequiresProvisioning, "Temporal-backed Nexus tests create namespace endpoints through Operator Service")
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
@@ -11091,6 +11621,8 @@ func (ts *IntegrationTestSuite) TestTemporalOperationSuite() {
 // TIMEOUT_TYPE_HEARTBEAT branch builds the terminal failure via createHeartbeatTimeoutFailure()
 // without copying a.LastHeartbeat.Details into TimeoutFailureInfo.LastHeartbeatDetails.
 func (ts *IntegrationTestSuite) TestStandaloneActivityHeartbeatDetailsRegression() {
+	ts.startWorker()
+
 	ts.T().Skip("NEXUS-400: server does not surface LastHeartbeatDetails on stand-alone activity heartbeat timeouts (chasm/lib/activity/statemachine.go TIMEOUT_TYPE_HEARTBEAT branch)")
 
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
@@ -11133,6 +11665,8 @@ func (ts *IntegrationTestSuite) TestStandaloneActivityHeartbeatDetailsRegression
 // and sync operations) so the failure/timeout/retry surface for activity-backed operations
 // can grow without bloating the workflow-backed table.
 func (ts *IntegrationTestSuite) TestActivityBackedNexusOperationSuite() {
+	ts.startWorker()
+
 	skipOnCloud(ts.T(), cloudRequiresProvisioning, "activity-backed Nexus tests create namespace endpoints through Operator Service")
 	if os.Getenv("DISABLE_ACTIVITY_BACKED_NEXUS_TESTS") != "" {
 		ts.T().SkipNow()
