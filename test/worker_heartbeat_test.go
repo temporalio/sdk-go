@@ -1018,16 +1018,18 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerPollCompleteOnShutdown() {
 		Namespace: ts.config.Namespace,
 	})
 	ts.NoError(err)
-	if !resp.GetNamespaceInfo().GetCapabilities().GetWorkerPollCompleteOnShutdown() {
+	capabilities := resp.GetNamespaceInfo().GetCapabilities()
+	if !capabilities.GetWorkerPollCompleteOnShutdown() {
 		ts.T().Skip("server does not support worker_poll_complete_on_shutdown namespace capability")
 	}
 
 	taskQueue := taskQueuePrefix + "-worker-poll-complete-on-shutdown-" + ts.T().Name()
 
 	var (
-		mu                sync.Mutex
-		shutdownReq       *workflowservice.ShutdownWorkerRequest
-		pollContextErrors []error
+		mu                       sync.Mutex
+		shutdownReq              *workflowservice.ShutdownWorkerRequest
+		pollContextErrors        []error
+		workerCommandPollStarted atomic.Bool
 	)
 
 	c, err := ts.newDefaultClient(func(options *client.Options) {
@@ -1043,10 +1045,15 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerPollCompleteOnShutdown() {
 				invoker grpc.UnaryInvoker,
 				opts ...grpc.CallOption,
 			) error {
-				if strings.HasSuffix(method, "/ShutdownWorker") {
+				if shutdown, ok := req.(*workflowservice.ShutdownWorkerRequest); ok && shutdown.GetTaskQueue() == taskQueue {
 					mu.Lock()
-					shutdownReq = req.(*workflowservice.ShutdownWorkerRequest)
+					shutdownReq = shutdown
 					mu.Unlock()
+				}
+
+				if pollReq, ok := req.(*workflowservice.PollNexusTaskQueueRequest); ok &&
+					pollReq.GetTaskQueue().GetKind() == enumspb.TASK_QUEUE_KIND_WORKER_COMMANDS {
+					workerCommandPollStarted.Store(true)
 				}
 
 				err := invoker(ctx, method, req, reply, cc, opts...)
@@ -1056,7 +1063,7 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerPollCompleteOnShutdown() {
 					strings.HasSuffix(method, "/PollNexusTaskQueue")
 				if isPoll && ctx.Err() != nil {
 					mu.Lock()
-					pollContextErrors = append(pollContextErrors, ctx.Err())
+					pollContextErrors = append(pollContextErrors, fmt.Errorf("%s: %w", method, ctx.Err()))
 					mu.Unlock()
 				}
 
@@ -1072,6 +1079,12 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerPollCompleteOnShutdown() {
 	})
 	w.RegisterWorkflow(simpleWorkflow)
 	ts.NoError(w.Start())
+	defer w.Stop()
+
+	if capabilities.GetWorkerCommands() {
+		ts.Eventually(workerCommandPollStarted.Load, 10*time.Second, 200*time.Millisecond,
+			"Worker-command poll did not start")
+	}
 
 	// Wait for pollers to be registered on the server, ensuring polls are
 	// blocked in the matcher before we trigger shutdown.
