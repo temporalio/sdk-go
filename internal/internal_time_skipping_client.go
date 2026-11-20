@@ -444,7 +444,8 @@ func enableUnboundedAndWait(
 	// Watch history until the full execution chain ends.
 	watchRunID := run.GetRunID()
 	for {
-		iter := wc.GetWorkflowHistory(ctx, run.GetID(), watchRunID, true, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+		iter := wc.GetWorkflowHistory(ctx, run.GetID(), watchRunID, true,
+			enumspb.HISTORY_EVENT_FILTER_TYPE_CLOSE_EVENT)
 		var nextRunID string
 		var closed bool
 		for iter.HasNext() {
