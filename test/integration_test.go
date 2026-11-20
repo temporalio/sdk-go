@@ -144,6 +144,8 @@ func (ts *IntegrationTestSuite) SetupTest() {
 	ts.Assertions = require.New(ts.T())
 	// Restore configuration changed by tests that temporarily disable caching.
 	worker.SetStickyWorkflowCacheSize(ts.config.maxWorkflowCacheSize)
+	// The previous test's cleanup can still reference the client after TearDownTest.
+	ts.client = nil
 	ts.worker = nil
 	ts.workerStopped = false
 	ts.taskQueueName = taskQueuePrefix + "-" + ts.T().Name()
@@ -207,7 +209,6 @@ func (ts *IntegrationTestSuite) TearDownTest() {
 	}
 	if ts.client != nil {
 		ts.client.Close()
-		ts.client = nil
 	}
 }
 
