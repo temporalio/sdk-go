@@ -35,6 +35,18 @@ jobs:
         working-directory: sdk-go
         env:
           BASE_COMMIT: ${{ github.event.pull_request.base.sha }}
-          SKIP_CHANGELOG: ${{ contains(github.event.pull_request.labels.*.name, 'skip-changelog') }}
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
         shell: bash
-        run: go run ./internal/cmd/publisher gate -skip-changelog="$SKIP_CHANGELOG" "$BASE_COMMIT"
+        run: |
+          set -euo pipefail
+
+          # Events can run out of order, so read current labels rather than the event snapshot.
+          labels=$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '.labels[].name')
+          skip_changelog=false
+          if grep -Fxq 'skip-changelog' <<< "$labels"; then
+            skip_changelog=true
+          fi
+
+          go run ./internal/cmd/publisher gate -skip-changelog="$skip_changelog" "$BASE_COMMIT"
