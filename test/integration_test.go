@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"log"
 	"math"
 	"math/rand"
 	"os"
@@ -193,11 +194,10 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		options.MetricsHandler = metricsHandler
 		options.TrafficController = trafficController
 		options.Interceptors = clientInterceptors
-		t := ts.T()
-		switch t.Name() {
+		switch ts.T().Name() {
 		case "TestIntegrationSuite/TestLargeQueryResultError", "TestIntegrationSuite/TestStaleQueryReplayBoundary":
 			options.ConnectionOptions.DialOptions = append(options.ConnectionOptions.DialOptions,
-				grpc.WithChainUnaryInterceptor(logQueryTestRPCs(t)),
+				grpc.WithChainUnaryInterceptor(logQueryTestRPCs()),
 			)
 		}
 	})
@@ -2218,7 +2218,8 @@ func (ts *IntegrationTestSuite) TestLargeQueryResultError() {
 	ts.Nil(value)
 }
 
-func logQueryTestRPCs(t *testing.T) grpc.UnaryClientInterceptor {
+func logQueryTestRPCs() grpc.UnaryClientInterceptor {
+	logger := log.New(os.Stderr, "", 0)
 	return func(
 		ctx context.Context, method string, req, reply any, cc *grpc.ClientConn,
 		invoker grpc.UnaryInvoker, opts ...grpc.CallOption,
@@ -2226,12 +2227,18 @@ func logQueryTestRPCs(t *testing.T) grpc.UnaryClientInterceptor {
 		start := time.Now()
 		switch request := req.(type) {
 		case *workflowservice.QueryWorkflowRequest:
-			t.Logf("%s QueryWorkflow started: workflow=%s run=%s query=%s",
+			logger.Printf("%s QueryWorkflow started: workflow=%s run=%s query=%s",
 				start.UTC().Format(time.RFC3339Nano), request.GetExecution().GetWorkflowId(),
 				request.GetExecution().GetRunId(), request.GetQuery().GetQueryType())
 		case *workflowservice.SignalWorkflowExecutionRequest:
-			t.Logf("%s SignalWorkflowExecution started: run=%s signal=%s",
+			logger.Printf("%s SignalWorkflowExecution started: run=%s signal=%s",
 				start.UTC().Format(time.RFC3339Nano), request.GetWorkflowExecution().GetRunId(), request.GetSignalName())
+		case *workflowservice.ShutdownWorkerRequest:
+			logger.Printf("%s ShutdownWorker started: worker_key=%s queue=%s",
+				start.UTC().Format(time.RFC3339Nano), request.GetWorkerInstanceKey(), request.GetTaskQueue())
+		case *workflowservice.PollWorkflowTaskQueueRequest:
+			logger.Printf("%s PollWorkflowTaskQueue started: worker_key=%s queue=%s",
+				start.UTC().Format(time.RFC3339Nano), request.GetWorkerInstanceKey(), request.GetTaskQueue().GetName())
 		}
 
 		err := invoker(ctx, method, req, reply, cc, opts...)
@@ -2240,13 +2247,22 @@ func logQueryTestRPCs(t *testing.T) grpc.UnaryClientInterceptor {
 		elapsed := finished.Sub(start)
 		switch request := req.(type) {
 		case *workflowservice.QueryWorkflowRequest:
-			t.Logf("%s QueryWorkflow finished: run=%s duration=%s status=%s error=%v",
+			logger.Printf("%s QueryWorkflow finished: run=%s duration=%s status=%s error=%v",
 				timestamp, request.GetExecution().GetRunId(), elapsed, status.Code(err), err)
 		case *workflowservice.SignalWorkflowExecutionRequest:
-			t.Logf("%s SignalWorkflowExecution finished: run=%s signal=%s duration=%s status=%s error=%v",
+			logger.Printf("%s SignalWorkflowExecution finished: run=%s signal=%s duration=%s status=%s error=%v",
 				timestamp, request.GetWorkflowExecution().GetRunId(), request.GetSignalName(), elapsed, status.Code(err), err)
+		case *workflowservice.ShutdownWorkerRequest:
+			logger.Printf("%s ShutdownWorker finished: worker_key=%s queue=%s duration=%s status=%s error=%v",
+				timestamp, request.GetWorkerInstanceKey(), request.GetTaskQueue(), elapsed, status.Code(err), err)
+		case *workflowservice.PollWorkflowTaskQueueRequest:
+			task := reply.(*workflowservice.PollWorkflowTaskQueueResponse)
+			logger.Printf("%s PollWorkflowTaskQueue finished: worker_key=%s queue=%s run=%s started_event=%d task=%t standalone_query=%t attached_queries=%d duration=%s status=%s error=%v",
+				timestamp, request.GetWorkerInstanceKey(), request.GetTaskQueue().GetName(),
+				task.GetWorkflowExecution().GetRunId(), task.GetStartedEventId(), len(task.GetTaskToken()) != 0,
+				task.GetQuery() != nil, len(task.GetQueries()), elapsed, status.Code(err), err)
 		case *workflowservice.RespondQueryTaskCompletedRequest:
-			t.Logf("%s RespondQueryTaskCompleted: result_type=%s result_bytes=%d duration=%s status=%s error=%v",
+			logger.Printf("%s RespondQueryTaskCompleted: result_type=%s result_bytes=%d duration=%s status=%s error=%v",
 				timestamp, request.GetCompletedType(), proto.Size(request.GetQueryResult()),
 				elapsed, status.Code(err), err)
 		case *workflowservice.RespondWorkflowTaskCompletedRequest:
@@ -2254,14 +2270,12 @@ func logQueryTestRPCs(t *testing.T) grpc.UnaryClientInterceptor {
 			for _, result := range request.GetQueryResults() {
 				resultBytes += proto.Size(result.GetAnswer())
 			}
-			t.Logf("%s RespondWorkflowTaskCompleted: query_results=%d result_bytes=%d duration=%s status=%s error=%v",
+			logger.Printf("%s RespondWorkflowTaskCompleted: query_results=%d result_bytes=%d duration=%s status=%s error=%v",
 				timestamp, len(request.GetQueryResults()), resultBytes, elapsed, status.Code(err), err)
-		}
-		if task, ok := reply.(*workflowservice.PollWorkflowTaskQueueResponse); ok && err == nil &&
-			(task.GetQuery() != nil || len(task.GetQueries()) > 0) {
-			t.Logf("%s PollWorkflowTaskQueue received query: workflow=%s run=%s standalone=%t attached_queries=%d",
-				timestamp, task.GetWorkflowExecution().GetWorkflowId(), task.GetWorkflowExecution().GetRunId(),
-				task.GetQuery() != nil, len(task.GetQueries()))
+			if task := reply.(*workflowservice.RespondWorkflowTaskCompletedResponse).GetWorkflowTask(); task != nil {
+				logger.Printf("%s RespondWorkflowTaskCompleted returned next task: run=%s started_event=%d attached_queries=%d",
+					timestamp, task.GetWorkflowExecution().GetRunId(), task.GetStartedEventId(), len(task.GetQueries()))
+			}
 		}
 		return err
 	}
