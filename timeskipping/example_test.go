@@ -10,7 +10,7 @@ import (
 )
 
 func MyWorkflow(ctx workflow.Context) error {
-	return workflow.Sleep(ctx, time.Hour)
+	return workflow.Sleep(ctx, 2*time.Hour)
 }
 
 func ExampleFastForwardWorkflow() {
@@ -20,20 +20,33 @@ func ExampleFastForwardWorkflow() {
 		Namespace: "my-namespace",
 	})
 
-	// Time skipping is switched on per execution, when the workflow is started.
-	cfg := client.TimeSkippingConfig{Enabled: true}
-	run, _ := c.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
+	// Start the workflow with a bounded fast forward.
+	cfg := client.TimeSkippingConfig{
+		Enabled: true,
+		FastForwardConfig: &client.FastForwardConfig{
+			ID:       "initial-skip",
+			Duration: 30 * time.Minute,
+		},
+	}
+	run, err := c.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
 		ID:                 "my-workflow-id",
 		TaskQueue:          "my-task-queue",
 		TimeSkippingConfig: &cfg,
 	}, MyWorkflow)
+	if err != nil {
+		return
+	}
 
-	// Advance an hour of virtual time and wait for it to land. The hour-long
-	// sleep in MyWorkflow completes in moments.
-	completed, _ := timeskipping.FastForwardWorkflow(ctx, c, run,
+	// Advance another hour of virtual time. The workflow is now ninety minutes
+	// into its two-hour sleep, having waited no real time.
+	completed, err := timeskipping.FastForwardWorkflow(ctx, c, run,
 		timeskipping.FastForwardWorkflowOptions{Duration: time.Hour})
+	if err != nil {
+		return
+	}
 	if completed {
-		// Virtual time reached the target, and time skipping switched itself
-		// off there.
+		// The fast-forward reached its own target, ninety minutes of virtual
+		// time, and time skipping switched itself off there. The workflow is
+		// still sleeping.
 	}
 }
