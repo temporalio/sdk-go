@@ -687,9 +687,12 @@ func (s *TimeSkippingV2TestSuite) TestUnboundedWaitSpansContinueAsNew() {
 		desc.GetWorkflowExecutionInfo().GetStatus(),
 		"unbounded wait returned before the chain finished")
 
-	n, err := s.countWorkflowsWithID(ctx, wfID)
-	s.NoError(err)
-	s.Equal(3, n, "expected all three runs of the chain")
+	// Visibility lags mutable state, so the chain can read as COMPLETED above
+	// while the run count is still catching up.
+	require.Eventually(s.T(), func() bool {
+		n, err := s.countWorkflowsWithID(ctx, wfID)
+		return err == nil && n == 3
+	}, 10*time.Second, 200*time.Millisecond, "expected all three runs of the chain")
 
 	var result string
 	s.NoError(run.Get(ctx, &result))
