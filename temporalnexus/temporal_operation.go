@@ -146,6 +146,14 @@ func (nc NexusClient) GetWorkflowClient() client.Client {
 	return nc.client
 }
 
+// NewWithStartWorkflowOperation creates a workflow start operation for
+// [StartUpdateWithStartWorkflow]. options.ID must be set explicitly.
+//
+// NOTE: Experimental
+func (nc NexusClient) NewWithStartWorkflowOperation(options client.StartWorkflowOptions, workflow any, args ...any) client.WithStartWorkflowOperation {
+	return nc.client.NewWithStartWorkflowOperation(options, workflow, args...)
+}
+
 // StartWorkflow starts a type-safe workflow run for a Nexus operation, linking the execution
 // chain to the Nexus operation (callbacks, links, request ID). It always returns an async
 // result with a workflow-run operation token.
@@ -214,6 +222,60 @@ func StartUpdateWorkflow[R any](
 	nc NexusClient,
 	updateWorkflowOptions client.UpdateWorkflowOptions,
 ) (TemporalOperationResult[R], error) {
+	return startUpdate[R](ctx, nc, &updateWorkflowOptions, nil, func(ctx context.Context) (client.WorkflowUpdateHandle, error) {
+		return GetClient(ctx).UpdateWorkflow(ctx, updateWorkflowOptions)
+	})
+}
+
+// StartUpdateWithStartWorkflow starts a workflow if needed and runs an update on it for a Nexus
+// operation, linking the execution chain to the Nexus operation (callbacks, links, request ID).
+// The operation completes with the update result: sync if the update already completed, otherwise
+// async with an update operation token. Only [client.WorkflowUpdateStageAccepted] is supported.
+//
+// StartWorkflowOptions.ID must be set so that a retried Nexus task targets the same workflow. If
+// UpdateOptions.WorkflowID is empty, it defaults to that ID. If the start's TaskQueue is empty, it
+// defaults to the current worker's task queue.
+//
+// Use this package-level function for compatibility with Go versions before 1.27. When building
+// with Go 1.27 or later, the same operation is also available as a method on [NexusClient].
+//
+// NOTE: Experimental
+func StartUpdateWithStartWorkflow[R any](
+	ctx context.Context,
+	nc NexusClient,
+	options client.UpdateWithStartWorkflowOptions,
+) (TemporalOperationResult[R], error) {
+	startOpts, err := internal.StartWorkflowOptionsFromWithStartOperation(options.StartWorkflowOperation)
+	if err != nil {
+		return TemporalOperationResult[R]{}, nexus.NewHandlerErrorf(
+			nexus.HandlerErrorTypeInternal, "invalid update-with-start request: %w", err)
+	}
+	if options.UpdateOptions.WorkflowID == "" {
+		options.UpdateOptions.WorkflowID = startOpts.ID
+	} else if options.UpdateOptions.WorkflowID != startOpts.ID {
+		return TemporalOperationResult[R]{}, nexus.NewHandlerErrorf(nexus.HandlerErrorTypeInternal,
+			"invalid update-with-start request: UpdateOptions.WorkflowID %q must match StartWorkflowOptions.ID %q",
+			options.UpdateOptions.WorkflowID, startOpts.ID)
+	}
+	if nctx, ok := internal.NexusOperationContextFromGoContext(ctx); ok && startOpts.TaskQueue == "" {
+		startOpts.TaskQueue = nctx.TaskQueue
+	}
+
+	return startUpdate[R](ctx, nc, &options.UpdateOptions, startOpts, func(ctx context.Context) (client.WorkflowUpdateHandle, error) {
+		return GetClient(ctx).UpdateWithStartWorkflow(ctx, options)
+	})
+}
+
+// startUpdate sets callbacks, links, and request ID on updateWorkflowOptions, and links and request
+// ID on startWorkflowOptions if it is non-nil, then calls execute. execute must send the request
+// built from these options.
+func startUpdate[R any](
+	ctx context.Context,
+	nc NexusClient,
+	updateWorkflowOptions *client.UpdateWorkflowOptions,
+	startWorkflowOptions *client.StartWorkflowOptions,
+	execute func(context.Context) (client.WorkflowUpdateHandle, error),
+) (TemporalOperationResult[R], error) {
 	if updateWorkflowOptions.UpdateID == "" {
 		// If an Update ID is not provided, use the RequestID. This is done to protect
 		// against cases where an unset UpdateID request with the same RequestID is
@@ -221,7 +283,7 @@ func StartUpdateWorkflow[R any](
 		updateWorkflowOptions.UpdateID = nc.startOperationOptions.RequestID
 	}
 
-	if err := validateUpdateWorkflowNexusOperation(updateWorkflowOptions); err != nil {
+	if err := validateUpdateWorkflowNexusOperation(*updateWorkflowOptions); err != nil {
 		return TemporalOperationResult[R]{}, nexus.NewHandlerErrorf(
 			nexus.HandlerErrorTypeInternal, "invalid update request: %w", err)
 	}
@@ -266,14 +328,20 @@ func StartUpdateWorkflow[R any](
 			Cause:   err,
 		}
 	}
-	internal.SetLinksOnNexusOperation(&updateWorkflowOptions, links)
-	internal.SetRequestIDOnNexusOperation(&updateWorkflowOptions, nc.startOperationOptions.RequestID)
+	internal.SetLinksOnNexusOperation(updateWorkflowOptions, links)
+	internal.SetRequestIDOnNexusOperation(updateWorkflowOptions, nc.startOperationOptions.RequestID)
+	if startWorkflowOptions != nil {
+		// The request ID dedupes the start on a retried Nexus task. Callbacks go only on the update,
+		// since the operation completes when the update does.
+		internal.SetLinksOnNexusOperation(startWorkflowOptions, links)
+		internal.SetRequestIDOnNexusOperation(startWorkflowOptions, nc.startOperationOptions.RequestID)
+	}
 	header := nc.startOperationOptions.CallbackHeader
 	if header == nil {
 		header = make(nexus.Header)
 	}
 	header.Set(nexus.HeaderOperationToken, token)
-	internal.SetCallbacksOnNexusOperation(&updateWorkflowOptions, []*commonpb.Callback{
+	internal.SetCallbacksOnNexusOperation(updateWorkflowOptions, []*commonpb.Callback{
 		{
 			Variant: &commonpb.Callback_Nexus_{
 				Nexus: &commonpb.Callback_Nexus{
@@ -285,21 +353,16 @@ func StartUpdateWorkflow[R any](
 		},
 	})
 
-	responseInfo := internal.SetResponseInfoOnUpdateWorkflowOptions(&updateWorkflowOptions)
+	responseInfo := internal.SetResponseInfoOnUpdateWorkflowOptions(updateWorkflowOptions)
 
-	handle, err := GetClient(ctx).UpdateWorkflow(ctx, updateWorkflowOptions)
+	handle, err := execute(ctx)
 	if err != nil {
 		return TemporalOperationResult[R]{}, err
 	}
 
-	if responseInfo.Link == nil {
-		return TemporalOperationResult[R]{}, &nexus.HandlerError{
-			Type:  nexus.HandlerErrorTypeInternal,
-			Cause: errors.New("unexpected error retrieving links from UpdateWorkflow response"),
-		}
+	if responseInfo.Link != nil {
+		nexus.AddHandlerLinks(ctx, ConvertCommonLinkToNexusLink(responseInfo.Link))
 	}
-
-	nexus.AddHandlerLinks(ctx, ConvertCommonLinkToNexusLink(responseInfo.Link))
 
 	if internal.IsUpdateWorkflowCompleted(handle) {
 		// If the update workflow handle is completed already, return a sync response.
@@ -315,6 +378,15 @@ func StartUpdateWorkflow[R any](
 		}
 		// Success case: Required for correctness on retried UpdateWorkflow rpc with same updateID.
 		return NewSyncResult(result), nil
+	}
+	// Only async results need the link, so check it after the sync return: an already-completed
+	// update-with-start may have none (servers 1.32.x and earlier, or completions recorded before
+	// accepted_event_id existed).
+	if responseInfo.Link == nil {
+		return TemporalOperationResult[R]{}, &nexus.HandlerError{
+			Type:  nexus.HandlerErrorTypeInternal,
+			Cause: errors.New("unexpected error retrieving links from UpdateWorkflow response"),
+		}
 	}
 	opFailed = false
 	// regenerate token so it has the actual run ID that update is running on
