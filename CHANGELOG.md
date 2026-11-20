@@ -34,6 +34,9 @@ to docs, or any other relevant information.
 
 - Reduced gRPC interceptor allocations when the effective metrics handler is a
   no-op.
+- `converter.NewZlibCodec` reuses zlib writers and readers across payloads instead of creating them
+  for every payload. A writer is about 1 MB of allocation, so encoding allocates far less, which
+  reduces garbage collection in workers that encode many payloads. The encoded output is unchanged.
 
 ### Deprecated
 
@@ -43,6 +46,8 @@ to docs, or any other relevant information.
 
 - Workers no longer advertise a worker control task queue unless worker heartbeats and commands
   are supported and the shared namespace command poller is running.
+- Workers let the server complete outstanding worker-command polls on namespaces that support
+  graceful poll shutdown.
 
 ### Security
 
