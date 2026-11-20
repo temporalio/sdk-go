@@ -193,9 +193,11 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		options.MetricsHandler = metricsHandler
 		options.TrafficController = trafficController
 		options.Interceptors = clientInterceptors
-		if t := ts.T(); t.Name() == "TestIntegrationSuite/TestLargeQueryResultError" {
+		t := ts.T()
+		switch t.Name() {
+		case "TestIntegrationSuite/TestLargeQueryResultError", "TestIntegrationSuite/TestStaleQueryReplayBoundary":
 			options.ConnectionOptions.DialOptions = append(options.ConnectionOptions.DialOptions,
-				grpc.WithChainUnaryInterceptor(logLargeQueryRPCs(t)),
+				grpc.WithChainUnaryInterceptor(logQueryTestRPCs(t)),
 			)
 		}
 	})
@@ -2216,16 +2218,20 @@ func (ts *IntegrationTestSuite) TestLargeQueryResultError() {
 	ts.Nil(value)
 }
 
-func logLargeQueryRPCs(t *testing.T) grpc.UnaryClientInterceptor {
+func logQueryTestRPCs(t *testing.T) grpc.UnaryClientInterceptor {
 	return func(
 		ctx context.Context, method string, req, reply any, cc *grpc.ClientConn,
 		invoker grpc.UnaryInvoker, opts ...grpc.CallOption,
 	) error {
 		start := time.Now()
-		if query, ok := req.(*workflowservice.QueryWorkflowRequest); ok {
+		switch request := req.(type) {
+		case *workflowservice.QueryWorkflowRequest:
 			t.Logf("%s QueryWorkflow started: workflow=%s run=%s query=%s",
-				start.UTC().Format(time.RFC3339Nano), query.GetExecution().GetWorkflowId(),
-				query.GetExecution().GetRunId(), query.GetQuery().GetQueryType())
+				start.UTC().Format(time.RFC3339Nano), request.GetExecution().GetWorkflowId(),
+				request.GetExecution().GetRunId(), request.GetQuery().GetQueryType())
+		case *workflowservice.SignalWorkflowExecutionRequest:
+			t.Logf("%s SignalWorkflowExecution started: run=%s signal=%s",
+				start.UTC().Format(time.RFC3339Nano), request.GetWorkflowExecution().GetRunId(), request.GetSignalName())
 		}
 
 		err := invoker(ctx, method, req, reply, cc, opts...)
@@ -2236,6 +2242,9 @@ func logLargeQueryRPCs(t *testing.T) grpc.UnaryClientInterceptor {
 		case *workflowservice.QueryWorkflowRequest:
 			t.Logf("%s QueryWorkflow finished: run=%s duration=%s status=%s error=%v",
 				timestamp, request.GetExecution().GetRunId(), elapsed, status.Code(err), err)
+		case *workflowservice.SignalWorkflowExecutionRequest:
+			t.Logf("%s SignalWorkflowExecution finished: run=%s signal=%s duration=%s status=%s error=%v",
+				timestamp, request.GetWorkflowExecution().GetRunId(), request.GetSignalName(), elapsed, status.Code(err), err)
 		case *workflowservice.RespondQueryTaskCompletedRequest:
 			t.Logf("%s RespondQueryTaskCompleted: result_type=%s result_bytes=%d duration=%s status=%s error=%v",
 				timestamp, request.GetCompletedType(), proto.Size(request.GetQueryResult()),
