@@ -591,6 +591,16 @@ func (e *TestWorkflowEnvironment) OnRequestCancelExternalWorkflow(namespace, wor
 	return e.wrapWorkflowCall(call)
 }
 
+// OnRequestCancelExternalWorkflowWithOptions sets up an external workflow cancellation mock,
+// including the options. Return callbacks must have signature
+// func(namespace, workflowID, runID string, options CancelExternalWorkflowOptions) error.
+// Mock callbacks run on a separate goroutine and are not concurrency-safe with workflow code.
+// Existing OnRequestCancelExternalWorkflow expectations also match requests with a reason, but do not check it.
+func (e *TestWorkflowEnvironment) OnRequestCancelExternalWorkflowWithOptions(namespace, workflowID, runID string, options CancelExternalWorkflowOptions) *MockCallWrapper {
+	call := e.workflowMock.On(mockMethodForRequestCancelExternalWorkflow, namespace, workflowID, runID, options)
+	return e.wrapWorkflowCall(call)
+}
+
 // OnGetVersion setup a mock for workflow.GetVersion() call. By default, if mock is not setup, the GetVersion call from
 // workflow code will always return the maxSupported version. Make it not possible to test old version branch. With this
 // mock support, it is possible to test code branch for different versions.
@@ -1200,6 +1210,16 @@ func (e *TestWorkflowEnvironment) CompleteActivity(taskToken []byte, result any,
 // CancelWorkflow requests cancellation (through workflow Context) to the currently running test workflow.
 func (e *TestWorkflowEnvironment) CancelWorkflow() {
 	e.impl.cancelWorkflow(func(result *commonpb.Payloads, err error) {})
+}
+
+// CancelWorkflowWithReason requests cancellation of the currently running test workflow with a reason.
+func (e *TestWorkflowEnvironment) CancelWorkflowWithReason(reason string) {
+	e.impl.cancelWorkflowByIDWithReason(
+		e.impl.workflowInfo.WorkflowExecution.ID,
+		e.impl.workflowInfo.WorkflowExecution.RunID,
+		reason,
+		func(result *commonpb.Payloads, err error) {},
+	)
 }
 
 // CancelWorkflowByID requests cancellation (through workflow Context) to the specified workflow.
