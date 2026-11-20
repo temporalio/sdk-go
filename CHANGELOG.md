@@ -28,8 +28,19 @@ to docs, or any other relevant information.
   names when available. Function literals and multiple names for the same Go function do not warn.
   Documented that registering an activity struct does not create aliases for its methods; use the
   full registered string names when executing them.
+- **Experimental**: `converter.StorageDriverStoreContext` and
+  `converter.StorageDriverSelectContext` have a `Namespace` field holding the
+  namespace of the client or worker performing the operation, so drivers and
+  selectors can partition by namespace even when there is no `Target`.
+- Added experimental `worker.GetSlotUsage`, which returns a snapshot of a worker's task slot usage.
+- Added experimental `worker.GetInfo`, which returns a snapshot of a worker's state, currently its task
+  slot usage.
 
 ### Changed
+
+- `converter.NewZlibCodec` reuses zlib writers and readers across payloads instead of creating them
+  for every payload. A writer is about 1 MB of allocation, so encoding allocates far less, which
+  reduces garbage collection in workers that encode many payloads. The encoded output is unchanged.
 
 ### Deprecated
 

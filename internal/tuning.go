@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	enumspb "go.temporal.io/api/enums/v1"
 	"golang.org/x/sync/semaphore"
@@ -395,8 +396,10 @@ type trackingSlotSupplier struct {
 	issuedSlotsAtomic atomic.Int32
 	slotsMutex        sync.Mutex
 	// Values should eventually become slot info types
-	usedSlots               map[*SlotPermit]struct{}
-	usedSlotsVersion        uint64
+	usedSlots        map[*SlotPermit]struct{}
+	usedSlotsVersion uint64
+	// When a slot was last marked used or a used slot was released.
+	usedSlotsLastChanged    time.Time
 	taskSlotsAvailableGauge metrics.Gauge
 	taskSlotsUsedGauge      metrics.Gauge
 }
@@ -470,6 +473,7 @@ func (t *trackingSlotSupplier) MarkSlotUsed(permit *SlotPermit) {
 	t.slotsMutex.Lock()
 	t.usedSlots[permit] = struct{}{}
 	t.usedSlotsVersion++
+	t.usedSlotsLastChanged = time.Now()
 	t.slotsMutex.Unlock()
 	t.publishMetrics()
 	t.inner.MarkSlotUsed(&slotMarkUsedContextImpl{
@@ -484,7 +488,11 @@ func (t *trackingSlotSupplier) ReleaseSlot(permit *SlotPermit, reason SlotReleas
 		panic("Cannot release with nil permit")
 	}
 	t.slotsMutex.Lock()
-	delete(t.usedSlots, permit)
+	// Slots released without being used, such as after empty polls, don't change the usage.
+	if _, used := t.usedSlots[permit]; used {
+		delete(t.usedSlots, permit)
+		t.usedSlotsLastChanged = time.Now()
+	}
 	t.usedSlotsVersion++
 	t.slotsMutex.Unlock()
 	t.publishMetrics()
@@ -518,6 +526,15 @@ func (t *trackingSlotSupplier) publishMetrics() {
 		if upToDate {
 			return
 		}
+	}
+}
+
+func (t *trackingSlotSupplier) usage() SlotKindUsage {
+	t.slotsMutex.Lock()
+	defer t.slotsMutex.Unlock()
+	return SlotKindUsage{
+		UsedSlots:            len(t.usedSlots),
+		UsedSlotsLastChanged: t.usedSlotsLastChanged,
 	}
 }
 
