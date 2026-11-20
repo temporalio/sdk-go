@@ -11,7 +11,7 @@ permissions:
   actions: read
 
 jobs:
-  # This diagnostic branch runs only the focused Cloud test.
+  # This diagnostic branch runs only the Cloud integration jobs.
   check-generated:
     if: ${{ false }}
     runs-on: ubuntu-latest
@@ -333,9 +333,9 @@ jobs:
           GITHUB_JOB_INDEX: ${{ strategy.job-index }}
           TEMPORAL_CLIENT_CLOUD_API_KEY: ${{ secrets.TEMPORAL_CLIENT_CLOUD_API_KEY }}
           TEMPORAL_CLIENT_CLOUD_API_VERSION: v0.19.1
-      - name: Reproduce oversized query timeout against Cloud
+      - name: Integration tests against cloud
         timeout-minutes: 50
-        run: go run . integration-test -module test -envconfig -cloud -packages . -run '^TestIntegrationSuite$/^TestLargeQueryResultError$' -timeout 2m
+        run: go run . integration-test -module test -envconfig -cloud -p 1 -packages . -timeout 45m
         working-directory: ./internal/cmd/build
         env:
           TEST_LOG_ARTIFACT_NAME: ${{ github.job }}-${{ matrix.go-version }}-fips-${{ matrix.fips }}
