@@ -208,9 +208,9 @@ func TestClientHeaderCodec(t *testing.T) {
 			update, err := interceptor.createUpdateWorkflowRequest(ctx, &ClientUpdateWorkflowInput{WorkflowID: "target"},
 				client.workflowHeaderCodec("target"))
 			require.NoError(t, err)
-			action, err := convertToPBScheduleAction(ctx, client, &ScheduleWorkflowAction{
+			action, _, err := convertToPBScheduleAction(ctx, client, &ScheduleWorkflowAction{
 				ID: "target", Workflow: "workflow", TaskQueue: "queue",
-			})
+			}, nil)
 			require.NoError(t, err)
 			for _, header := range []*commonpb.Header{start.Header, update.Request.Input.Header, action.GetStartWorkflow().Header} {
 				p := header.Fields["_tracer-data"]

@@ -312,7 +312,7 @@ func (wc *WorkflowClient) getWorkflow(ctx context.Context, workflowID string, ru
 		dataConverter:         converter.WithDataConverterSerializationContext(wc.dataConverter, gwCtx),
 		failureConverter:      converter.WithFailureConverterSerializationContext(wc.failureConverter, gwCtx),
 		registry:              wc.registry,
-		inboundPayloadVisitor: extstore.NewExternalRetrievalVisitor(wc.storageParams.WithLogger(wc.logger)),
+		inboundPayloadVisitor: wc.newInboundPayloadVisitor(),
 	}
 }
 
@@ -1794,8 +1794,7 @@ func (wc *WorkflowClient) ensureInitialized(ctx context.Context) error {
 // ScheduleClient implements Client.ScheduleClient.
 func (wc *WorkflowClient) ScheduleClient() ScheduleClient {
 	return &scheduleClient{
-		workflowClient:         wc,
-		outboundPayloadVisitor: wc.newOutboundPayloadVisitor(),
+		workflowClient: wc,
 	}
 }
 
@@ -1852,12 +1851,21 @@ func (wc *WorkflowClient) Close() {
 	}
 }
 
+func (wc *WorkflowClient) newInboundPayloadVisitor() PayloadVisitor {
+	return extstore.NewExternalRetrievalVisitor(wc.storageParams.WithLogger(wc.logger))
+}
+
 func (wc *WorkflowClient) newOutboundPayloadVisitor() PayloadVisitor {
+	return newCompositePayloadVisitor(wc.newStoragePayloadVisitor(), wc.newPayloadLimitsCheckVisitor())
+}
+
+func (wc *WorkflowClient) newStoragePayloadVisitor() PayloadVisitor {
+	return extstore.NewExternalStorageVisitor(wc.storageParams.WithLogger(wc.logger))
+}
+
+func (wc *WorkflowClient) newPayloadLimitsCheckVisitor() PayloadVisitor {
 	payloadLimitVisitor, _ := newPayloadLimitsVisitor(wc.payloadWarningLimits, wc.logger)
-	return newCompositePayloadVisitor(
-		extstore.NewExternalStorageVisitor(wc.storageParams.WithLogger(wc.logger)),
-		payloadLimitVisitor,
-	)
+	return payloadLimitVisitor
 }
 
 // Register a namespace with temporal server

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -13,28 +14,26 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	schedulepb "go.temporal.io/api/schedule/v1"
+	"go.temporal.io/api/sdk/v1"
 	"go.temporal.io/api/serviceerror"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	workflowpb "go.temporal.io/api/workflow/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/extstore"
-	"go.temporal.io/sdk/log"
 )
 
 type (
 
 	// ScheduleClient is the client for starting a workflow execution.
 	scheduleClient struct {
-		workflowClient         *WorkflowClient
-		outboundPayloadVisitor PayloadVisitor
+		workflowClient *WorkflowClient
 	}
 
 	// scheduleHandleImpl is the implementation of ScheduleHandle.
 	scheduleHandleImpl struct {
-		ID                     string
-		client                 *WorkflowClient
-		outboundPayloadVisitor PayloadVisitor
+		ID     string
+		client *WorkflowClient
 	}
 
 	// scheduleListIteratorImpl is the implementation of ScheduleListIterator
@@ -68,7 +67,7 @@ func (w *workflowClientInterceptor) CreateSchedule(ctx context.Context, in *Sche
 	if in.Options.Action == nil {
 		return nil, fmt.Errorf("no schedule action in options")
 	}
-	action, err := convertToPBScheduleAction(ctx, w.client, in.Options.Action)
+	action, _, err := convertToPBScheduleAction(ctx, w.client, in.Options.Action, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -154,9 +153,8 @@ func (w *workflowClientInterceptor) CreateSchedule(ctx context.Context, in *Sche
 	}
 
 	return &scheduleHandleImpl{
-		ID:                     ID,
-		client:                 w.client,
-		outboundPayloadVisitor: w.outboundPayloadVisitor,
+		ID:     ID,
+		client: w.client,
 	}, nil
 }
 
@@ -176,9 +174,8 @@ func (sc *scheduleClient) Create(ctx context.Context, options ScheduleOptions) (
 
 func (sc *scheduleClient) GetHandle(ctx context.Context, scheduleID string) ScheduleHandle {
 	return &scheduleHandleImpl{
-		ID:                     scheduleID,
-		client:                 sc.workflowClient,
-		outboundPayloadVisitor: sc.outboundPayloadVisitor,
+		ID:     scheduleID,
+		client: sc.workflowClient,
 	}
 }
 
@@ -268,11 +265,12 @@ func (scheduleHandle *scheduleHandleImpl) Update(ctx context.Context, options Sc
 	if err != nil {
 		return err
 	}
-	scheduleDescription, err := scheduleDescriptionFromPB(
-		scheduleHandle.client.logger, scheduleHandle.client.namespace, scheduleHandle.client.dataConverter, describeResponse)
+	scheduleDescription, err := scheduleDescriptionFromPB(ctx, scheduleHandle.client, describeResponse)
 	if err != nil {
 		return err
 	}
+	// Captured before DoUpdate, which may change the described action in place.
+	described := newDescribedScheduleAction(describeResponse.GetSchedule().GetAction(), scheduleDescription.Schedule.Action)
 	newSchedule, err := options.DoUpdate(ScheduleUpdateInput{
 		Description: *scheduleDescription,
 	})
@@ -282,7 +280,7 @@ func (scheduleHandle *scheduleHandleImpl) Update(ctx context.Context, options Sc
 		}
 		return err
 	}
-	newSchedulePB, err := convertToPBSchedule(ctx, scheduleHandle.client, newSchedule.Schedule)
+	newSchedulePB, retained, err := convertToPBSchedule(ctx, scheduleHandle.client, newSchedule.Schedule, described)
 	if err != nil {
 		return err
 	}
@@ -312,7 +310,15 @@ func (scheduleHandle *scheduleHandleImpl) Update(ctx context.Context, options Sc
 		WorkflowType: newSchedulePB.GetAction().GetStartWorkflow().GetWorkflowType().GetName(),
 	})
 
-	if err := visitProtoPayloads(storeCtx, scheduleHandle.outboundPayloadVisitor, updateRequest, 0); err != nil {
+	// Retained payloads went through storage when they were first sent, so they are restored only
+	// after the update's own payloads have been stored.
+	if err := visitProtoPayloads(storeCtx, scheduleHandle.client.newStoragePayloadVisitor(), updateRequest, 0); err != nil {
+		return err
+	}
+	if newSchedulePB != nil {
+		retained.restore(newSchedulePB.Action)
+	}
+	if err := visitProtoPayloads(ctx, scheduleHandle.client.newPayloadLimitsCheckVisitor(), updateRequest, 0); err != nil {
 		return err
 	}
 
@@ -331,8 +337,7 @@ func (scheduleHandle *scheduleHandleImpl) Describe(ctx context.Context) (*Schedu
 	if err != nil {
 		return nil, err
 	}
-	return scheduleDescriptionFromPB(
-		scheduleHandle.client.logger, scheduleHandle.client.namespace, scheduleHandle.client.dataConverter, describeResponse)
+	return scheduleDescriptionFromPB(ctx, scheduleHandle.client, describeResponse)
 }
 
 func (scheduleHandle *scheduleHandleImpl) Trigger(ctx context.Context, options ScheduleTriggerOptions) error {
@@ -473,9 +478,8 @@ func convertFromPBScheduleSpec(scheduleSpec *schedulepb.ScheduleSpec) *ScheduleS
 }
 
 func scheduleDescriptionFromPB(
-	logger log.Logger,
-	namespace string,
-	dc converter.DataConverter,
+	ctx context.Context,
+	client *WorkflowClient,
 	describeResponse *workflowservice.DescribeScheduleResponse,
 ) (*ScheduleDescription, error) {
 	if describeResponse == nil {
@@ -497,7 +501,7 @@ func scheduleDescriptionFromPB(
 		nextActionTimes[i] = t.AsTime()
 	}
 
-	actionDescription, err := convertFromPBScheduleAction(logger, namespace, dc, describeResponse.Schedule.Action)
+	actionDescription, err := convertFromPBScheduleAction(ctx, client, describeResponse.Schedule.Action)
 	if err != nil {
 		return nil, err
 	}
@@ -505,7 +509,7 @@ func scheduleDescriptionFromPB(
 	var typedSearchAttributes SearchAttributes
 	searchAttributes := describeResponse.SearchAttributes
 	if searchAttributes != nil {
-		typedSearchAttributes = convertToTypedSearchAttributes(logger, searchAttributes.IndexedFields)
+		typedSearchAttributes = convertToTypedSearchAttributes(client.logger, searchAttributes.IndexedFields)
 	}
 
 	return &ScheduleDescription{
@@ -540,13 +544,18 @@ func scheduleDescriptionFromPB(
 	}, nil
 }
 
-func convertToPBSchedule(ctx context.Context, client *WorkflowClient, schedule *Schedule) (*schedulepb.Schedule, error) {
+func convertToPBSchedule(
+	ctx context.Context,
+	client *WorkflowClient,
+	schedule *Schedule,
+	described *describedScheduleAction,
+) (*schedulepb.Schedule, *retainedPayloads, error) {
 	if schedule == nil {
-		return nil, nil
+		return nil, nil, nil
 	}
-	action, err := convertToPBScheduleAction(ctx, client, schedule.Action)
+	action, retained, err := convertToPBScheduleAction(ctx, client, schedule.Action, described)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	var catchupWindow *durationpb.Duration
@@ -569,7 +578,7 @@ func convertToPBSchedule(ctx context.Context, client *WorkflowClient, schedule *
 			LimitedActions:   schedule.State.LimitedActions,
 			RemainingActions: int64(schedule.State.RemainingActions),
 		},
-	}, nil
+	}, retained, nil
 }
 
 func convertFromPBScheduleListEntry(schedule *schedulepb.ScheduleListEntry) *ScheduleListEntry {
@@ -601,7 +610,8 @@ func convertToPBScheduleAction(
 	ctx context.Context,
 	client *WorkflowClient,
 	scheduleAction ScheduleAction,
-) (*schedulepb.ScheduleAction, error) {
+	described *describedScheduleAction,
+) (*schedulepb.ScheduleAction, *retainedPayloads, error) {
 	switch action := scheduleAction.(type) {
 	case *ScheduleWorkflowAction:
 		// Apply defaults to a copy so callers can reuse the action.
@@ -623,26 +633,27 @@ func convertToPBScheduleAction(
 
 		// Validate function and get name
 		if err := validateFunctionArgs(action.Workflow, action.Args, true); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		workflowType, err := GetWorkflowFunctionName(client.registry, action.Workflow)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
+		retained := &retainedPayloads{}
 		// Encode workflow inputs that may already be encoded
-		input, err := encodeScheduleWorklowArgs(dataConverter, action.Args)
+		input, err := encodeScheduleWorklowArgs(dataConverter, action.Args, described, retained)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		// Encode workflow memos that may already be encoded
-		memo, err := encodeScheduleWorkflowMemo(dataConverter, action.Memo)
+		memo, err := encodeScheduleWorkflowMemo(dataConverter, action.Memo, described, retained)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
 		searchAttrs, err := SerializeSearchAttributes(nil, action.TypedSearchAttributes)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		// Add any untyped search attributes that aren't already there
 		for k, v := range action.UntypedSearchAttributes {
@@ -657,12 +668,12 @@ func convertToPBScheduleAction(
 		// get workflow headers from the context
 		header, err := headerPropagated(ctx, client.contextPropagators, client.workflowHeaderCodec(action.ID))
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
-		userMetadata, err := BuildUserMetadata(action.StaticSummary, action.StaticDetails, dataConverter)
+		userMetadata, err := buildScheduleUserMetadata(action.ID, action.StaticSummary, action.StaticDetails, described, dataConverter, retained)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
 		return &schedulepb.ScheduleAction{
@@ -684,25 +695,25 @@ func convertToPBScheduleAction(
 					Priority:                 ConvertToPBPriority(action.Priority),
 				},
 			},
-		}, nil
+		}, retained, nil
 	default:
 		// TODO maybe just panic instead?
-		return nil, fmt.Errorf("could not parse ScheduleAction")
+		return nil, nil, fmt.Errorf("could not parse ScheduleAction")
 	}
 }
 
 func convertFromPBScheduleAction(
-	logger log.Logger,
-	namespace string,
-	dc converter.DataConverter,
+	ctx context.Context,
+	client *WorkflowClient,
 	action *schedulepb.ScheduleAction,
 ) (ScheduleAction, error) {
 	switch action := action.Action.(type) {
 	case *schedulepb.ScheduleAction_StartWorkflow:
 		workflow := action.StartWorkflow
+		dc := client.dataConverter
 		if workflow.GetWorkflowId() != "" {
 			dc = converter.WithDataConverterSerializationContext(dc, converter.WorkflowSerializationContext{
-				Namespace:  namespace,
+				Namespace:  client.namespace,
 				WorkflowID: workflow.GetWorkflowId(),
 			})
 		}
@@ -717,7 +728,7 @@ func convertFromPBScheduleAction(
 			memos[key] = element
 		}
 
-		searchAttrs := convertToTypedSearchAttributes(logger, workflow.GetSearchAttributes().GetIndexedFields())
+		searchAttrs := convertToTypedSearchAttributes(client.logger, workflow.GetSearchAttributes().GetIndexedFields())
 		// Create untyped list for any attribute not in the existing list
 		untypedSearchAttrs := map[string]*commonpb.Payload{}
 		for k, v := range workflow.GetSearchAttributes().GetIndexedFields() {
@@ -732,21 +743,14 @@ func convertFromPBScheduleAction(
 			}
 		}
 
-		var convertedSummary = new(string)
-		var convertedDetails = new(string)
-		if workflow.GetUserMetadata() != nil {
-			if workflow.GetUserMetadata().GetSummary() != nil {
-				err := dc.FromPayload(workflow.GetUserMetadata().GetSummary(), convertedSummary)
-				if err != nil {
-					return nil, fmt.Errorf("could not decode user metadata summary: %w", err)
-				}
-			}
-			if workflow.GetUserMetadata().GetDetails() != nil {
-				err := dc.FromPayload(workflow.GetUserMetadata().GetDetails(), convertedDetails)
-				if err != nil {
-					return nil, fmt.Errorf("could not decode user metadata details: %w", err)
-				}
-			}
+		inbound := client.newInboundPayloadVisitor()
+		summary, err := decodeScheduleUserMetadataValue(ctx, inbound, dc, workflow.GetUserMetadata().GetSummary())
+		if err != nil {
+			return nil, fmt.Errorf("could not decode user metadata summary: %w", err)
+		}
+		details, err := decodeScheduleUserMetadataValue(ctx, inbound, dc, workflow.GetUserMetadata().GetDetails())
+		if err != nil {
+			return nil, fmt.Errorf("could not decode user metadata details: %w", err)
 		}
 
 		return &ScheduleWorkflowAction{
@@ -762,8 +766,8 @@ func convertFromPBScheduleAction(
 			TypedSearchAttributes:    searchAttrs,
 			UntypedSearchAttributes:  untypedSearchAttrs,
 			VersioningOverride:       versioningOverrideFromProto(workflow.VersioningOverride),
-			StaticSummary:            *convertedSummary,
-			StaticDetails:            *convertedDetails,
+			StaticSummary:            summary,
+			StaticDetails:            details,
 			Priority:                 convertFromPBPriority(workflow.GetPriority()),
 		}, nil
 	default:
@@ -893,18 +897,152 @@ func convertFromPBScheduleActionResultList(aa []*schedulepb.ScheduleActionResult
 	return recentActions
 }
 
-func encodeScheduleWorklowArgs(dc converter.DataConverter, args []any) (*commonpb.Payloads, error) {
-	payloads := make([]*commonpb.Payload, len(args))
+// retainedPayloads are the described payloads an update sends back unchanged. They are left out of
+// the built action until restore, so that the update's store pass doesn't store them again.
+type retainedPayloads struct {
+	args             map[int]*commonpb.Payload
+	memo             map[string]*commonpb.Payload
+	summary, details *commonpb.Payload
+}
+
+func (r *retainedPayloads) restore(action *schedulepb.ScheduleAction) {
+	workflow := action.GetStartWorkflow()
+	if r == nil || workflow == nil {
+		return
+	}
+	if len(r.args) > 0 {
+		encoded := workflow.GetInput().GetPayloads()
+		payloads := make([]*commonpb.Payload, len(encoded)+len(r.args))
+		for i := range payloads {
+			if retained, ok := r.args[i]; ok {
+				payloads[i] = retained
+			} else {
+				payloads[i], encoded = encoded[0], encoded[1:]
+			}
+		}
+		workflow.Input = &commonpb.Payloads{Payloads: payloads}
+	}
+	for k, p := range r.memo {
+		workflow.Memo.Fields[k] = p
+	}
+	if r.summary != nil || r.details != nil {
+		if workflow.UserMetadata == nil {
+			workflow.UserMetadata = &sdk.UserMetadata{}
+		}
+		if r.summary != nil {
+			workflow.UserMetadata.Summary = r.summary
+		}
+		if r.details != nil {
+			workflow.UserMetadata.Details = r.details
+		}
+	}
+}
+
+// describedScheduleAction is the start-workflow action a schedule update started from.
+type describedScheduleAction struct {
+	args             []*commonpb.Payload
+	memo             []*commonpb.Payload
+	workflowID       string
+	userMetadata     *sdk.UserMetadata
+	summary, details string
+}
+
+func newDescribedScheduleAction(pb *schedulepb.ScheduleAction, action ScheduleAction) *describedScheduleAction {
+	workflowAction, ok := action.(*ScheduleWorkflowAction)
+	if !ok || pb.GetStartWorkflow() == nil {
+		return nil
+	}
+	// Cloned because DoUpdate receives these same payloads and may change them in place.
+	var args, memo []*commonpb.Payload
+	for _, p := range pb.GetStartWorkflow().GetInput().GetPayloads() {
+		args = append(args, proto.Clone(p).(*commonpb.Payload))
+	}
+	for _, p := range pb.GetStartWorkflow().GetMemo().GetFields() {
+		memo = append(memo, proto.Clone(p).(*commonpb.Payload))
+	}
+	return &describedScheduleAction{
+		args:         args,
+		memo:         memo,
+		workflowID:   pb.GetStartWorkflow().GetWorkflowId(),
+		userMetadata: pb.GetStartWorkflow().GetUserMetadata(),
+		summary:      workflowAction.StaticSummary,
+		details:      workflowAction.StaticDetails,
+	}
+}
+
+// An unchanged summary or details goes back as the payload it was described from. The payload was
+// encoded for the described workflow ID, so it is encoded again when the ID changes.
+func buildScheduleUserMetadata(
+	workflowID string,
+	summary string,
+	details string,
+	described *describedScheduleAction,
+	dc converter.DataConverter,
+	retained *retainedPayloads,
+) (*sdk.UserMetadata, error) {
+	if described != nil && described.workflowID == workflowID {
+		if summary != "" && summary == described.summary {
+			retained.summary, summary = described.userMetadata.GetSummary(), ""
+		}
+		if details != "" && details == described.details {
+			retained.details, details = described.userMetadata.GetDetails(), ""
+		}
+	}
+	return BuildUserMetadata(summary, details, dc)
+}
+
+func decodeScheduleUserMetadataValue(
+	ctx context.Context,
+	inbound PayloadVisitor,
+	dc converter.DataConverter,
+	payload *commonpb.Payload,
+) (string, error) {
+	if payload == nil {
+		return "", nil
+	}
+	payload, err := visitPayload(ctx, inbound, payload)
+	if err != nil {
+		return "", err
+	}
+	var value string
+	if err := dc.FromPayload(payload, &value); err != nil {
+		return "", err
+	}
+	return value, nil
+}
+
+// An already encoded payload is only known to have been through storage if it was described.
+func containsEqualPayload(payloads []*commonpb.Payload, p *commonpb.Payload) bool {
+	for _, described := range payloads {
+		if proto.Equal(described, p) {
+			return true
+		}
+	}
+	return false
+}
+
+func encodeScheduleWorklowArgs(
+	dc converter.DataConverter,
+	args []any,
+	described *describedScheduleAction,
+	retained *retainedPayloads,
+) (*commonpb.Payloads, error) {
+	payloads := make([]*commonpb.Payload, 0, len(args))
 	for i, arg := range args {
-		// arg is already encoded
-		if enc, ok := arg.(*commonpb.Payload); ok {
-			payloads[i] = enc
+		enc, ok := arg.(*commonpb.Payload)
+		if ok && described != nil && containsEqualPayload(described.args, enc) {
+			if retained.args == nil {
+				retained.args = map[int]*commonpb.Payload{}
+			}
+			retained.args[i] = enc
+		} else if ok {
+			payloads = append(payloads, enc)
 		} else {
 			payload, err := dc.ToPayload(arg)
 			if err != nil {
 				return nil, err
 			}
-			payloads[i] = payload
+			payloads = append(payloads, payload)
 		}
 	}
 	return &commonpb.Payloads{
@@ -912,7 +1050,12 @@ func encodeScheduleWorklowArgs(dc converter.DataConverter, args []any) (*commonp
 	}, nil
 }
 
-func encodeScheduleWorkflowMemo(dc converter.DataConverter, input map[string]any) (*commonpb.Memo, error) {
+func encodeScheduleWorkflowMemo(
+	dc converter.DataConverter,
+	input map[string]any,
+	described *describedScheduleAction,
+	retained *retainedPayloads,
+) (*commonpb.Memo, error) {
 	if input == nil {
 		return nil, nil
 	}
@@ -923,7 +1066,13 @@ func encodeScheduleWorkflowMemo(dc converter.DataConverter, input map[string]any
 	}
 
 	for k, v := range input {
-		if enc, ok := v.(*commonpb.Payload); ok {
+		enc, ok := v.(*commonpb.Payload)
+		if ok && described != nil && containsEqualPayload(described.memo, enc) {
+			if retained.memo == nil {
+				retained.memo = map[string]*commonpb.Payload{}
+			}
+			retained.memo[k] = enc
+		} else if ok {
 			memo[k] = enc
 		} else {
 

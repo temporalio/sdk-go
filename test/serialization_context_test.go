@@ -600,3 +600,40 @@ func (ts *IntegrationTestSuite) TestSerializationContext_StandaloneActivityEndTo
 	ts.NoError(handle.Get(ctx, &result))
 	ts.Equal("HELLO", result)
 }
+
+func (ts *IntegrationTestSuite) TestSerializationContext_ScheduleUpdateWorkflowID() {
+	c, _ := ts.newSerCtxClientAndWorker(ts.taskQueueName)
+	defer c.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	handle, err := c.ScheduleClient().Create(ctx, client.ScheduleOptions{
+		ID:   "ser-ctx-schedule-" + uuid.NewString(),
+		Spec: client.ScheduleSpec{},
+		Action: &client.ScheduleWorkflowAction{
+			ID:            "ser-ctx-schedule-wf-" + uuid.NewString(),
+			Workflow:      intTestChildWorkflow,
+			Args:          []any{"input"},
+			TaskQueue:     ts.taskQueueName,
+			StaticSummary: "summary",
+			StaticDetails: "details",
+		},
+	})
+	ts.NoError(err)
+	defer func() { _ = handle.Delete(ctx) }()
+
+	newID := "ser-ctx-schedule-wf-" + uuid.NewString()
+	ts.NoError(handle.Update(ctx, client.ScheduleUpdateOptions{
+		DoUpdate: func(input client.ScheduleUpdateInput) (*client.ScheduleUpdate, error) {
+			input.Description.Schedule.Action.(*client.ScheduleWorkflowAction).ID = newID
+			return &client.ScheduleUpdate{Schedule: &input.Description.Schedule}, nil
+		},
+	}))
+
+	description, err := handle.Describe(ctx)
+	ts.NoError(err)
+	action := description.Schedule.Action.(*client.ScheduleWorkflowAction)
+	ts.Equal(newID, action.ID)
+	ts.Equal("summary", action.StaticSummary)
+	ts.Equal("details", action.StaticDetails)
+}
