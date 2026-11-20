@@ -53,9 +53,9 @@ func TestGateRequiresFragmentsPerChangedModule(t *testing.T) {
 				"contrib/fragments/go.mod",
 				"contrib/fragments/changelog/README.md",
 			}, "\x00") + "\x00", nil
-		case "git diff --name-only --no-renames base-sha HEAD -- contrib/envconfig/ :(exclude,glob)contrib/envconfig/**/go.mod :(exclude,glob)contrib/envconfig/**/go.sum":
+		case "git diff --name-only --no-renames base-sha HEAD -- contrib/envconfig/ :(exclude,glob)contrib/envconfig/**/go.mod :(exclude,glob)contrib/envconfig/**/go.sum :(exclude,glob)contrib/envconfig/**/README.md":
 			return "contrib/envconfig/envconfig.go\ncontrib/envconfig/changelog/added/helpful-hippo.md\n", nil
-		case "git diff --name-only --no-renames base-sha HEAD -- contrib/fragments/ :(exclude,glob)contrib/fragments/**/go.mod :(exclude,glob)contrib/fragments/**/go.sum":
+		case "git diff --name-only --no-renames base-sha HEAD -- contrib/fragments/ :(exclude,glob)contrib/fragments/**/go.mod :(exclude,glob)contrib/fragments/**/go.sum :(exclude,glob)contrib/fragments/**/README.md":
 			return "contrib/fragments/feature.go\n", nil
 		case "cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- check --repo /repo --fragments contrib/fragments/changelog --base base-sha --require-new":
 			return "", errors.New("add a new changelog fragment")
@@ -82,13 +82,13 @@ func TestGateRequiresFragmentsPerChangedModule(t *testing.T) {
 		contrib/envconfig/go.mod`+"\x00"+`contrib/envconfig/CHANGELOG.md`+"\x00"+`contrib/fragments/go.mod`+"\x00"+`contrib/fragments/changelog/README.md`+"\x00"+`
 
 		# Running in /repo:
-		$ git diff --name-only --no-renames base-sha HEAD -- ./ :(exclude,glob)**/go.mod :(exclude,glob)**/go.sum :(exclude,literal)contrib/envconfig/ :(exclude,literal)contrib/fragments/
+		$ git diff --name-only --no-renames base-sha HEAD -- ./ :(exclude,glob)**/go.mod :(exclude,glob)**/go.sum :(exclude,glob)**/README.md :(exclude,literal)contrib/envconfig/ :(exclude,literal)contrib/fragments/
 
 		# Running in /sdk-rust:
 		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- check --repo /repo --fragments changelog --base base-sha --changelog CHANGELOG.md
 
 		# Running in /repo:
-		$ git diff --name-only --no-renames base-sha HEAD -- contrib/envconfig/ :(exclude,glob)contrib/envconfig/**/go.mod :(exclude,glob)contrib/envconfig/**/go.sum
+		$ git diff --name-only --no-renames base-sha HEAD -- contrib/envconfig/ :(exclude,glob)contrib/envconfig/**/go.mod :(exclude,glob)contrib/envconfig/**/go.sum :(exclude,glob)contrib/envconfig/**/README.md
 		contrib/envconfig/envconfig.go
 		contrib/envconfig/changelog/added/helpful-hippo.md
 
@@ -96,7 +96,7 @@ func TestGateRequiresFragmentsPerChangedModule(t *testing.T) {
 		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- check --repo /repo --fragments contrib/envconfig/changelog --base base-sha --require-new --changelog contrib/envconfig/CHANGELOG.md
 
 		# Running in /repo:
-		$ git diff --name-only --no-renames base-sha HEAD -- contrib/fragments/ :(exclude,glob)contrib/fragments/**/go.mod :(exclude,glob)contrib/fragments/**/go.sum
+		$ git diff --name-only --no-renames base-sha HEAD -- contrib/fragments/ :(exclude,glob)contrib/fragments/**/go.mod :(exclude,glob)contrib/fragments/**/go.sum :(exclude,glob)contrib/fragments/**/README.md
 		contrib/fragments/feature.go
 
 		# Running in /sdk-rust:
@@ -203,6 +203,9 @@ func TestFindReleasableModules(t *testing.T) {
 		case strings.HasPrefix(cmd, "git rev-parse"):
 			return strings.Repeat("a", 40), nil
 		case strings.HasPrefix(cmd, "git log"):
+			if strings.Contains(cmd, ":(exclude,glob)") {
+				t.Fatalf("excluded go.mod, go.sum, or README.md from release discovery: %s", cmd)
+			}
 			return strings.Repeat("b", 40), nil
 		default:
 			return "", nil

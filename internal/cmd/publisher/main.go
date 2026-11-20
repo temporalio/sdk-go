@@ -211,7 +211,12 @@ func (c *findApp) run() (retErr error) {
 		if latestVersion != nil {
 			ref = module.Tag(*latestVersion) + "..HEAD"
 		}
-		pathspecs := modulePathspecs(module, contribModules)
+
+		pathspecs := modulePathspecs(module, contribModules, modulePathspecOptions{
+			includeGoMod:  true,
+			includeGoSum:  true,
+			includeReadme: true,
+		})
 		changed, err := w.hasCommits(ref, pathspecs...)
 		if err != nil {
 			return err
@@ -219,6 +224,7 @@ func (c *findApp) run() (retErr error) {
 		if !changed {
 			continue
 		}
+
 		nextVersion, err := c.chooseVersion(w, module, latestVersion, pathspecs)
 		if err != nil {
 			return err
@@ -279,10 +285,7 @@ func (c *findApp) chooseVersion(w *worktree, module pure.Module, latestVersion *
 		baseline = "never released"
 	}
 
-	name := module.Dir
-	if name == "" {
-		name = "sdk"
-	}
+	name := module.Name()
 	printLine(c.eff, "%s — %s", name, baseline)
 	printLine(c.eff, "Make a minor release [m], patch release [p], view commit log [c], view diff [d], or skip [s]. ")
 	for {

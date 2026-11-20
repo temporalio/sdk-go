@@ -34,18 +34,29 @@ func listContribModules(eff effects, root string) ([]pure.Module, error) {
 	return pure.ContribModules(paths), nil
 }
 
-func modulePathspecs(module pure.Module, contribModules []pure.Module) []string {
+type modulePathspecOptions struct {
+	includeGoMod  bool
+	includeGoSum  bool
+	includeReadme bool
+}
+
+func modulePathspecs(module pure.Module, contribModules []pure.Module, opts modulePathspecOptions) []string {
 	dir := module.Dir
 	if module.Name() == "sdk" {
 		dir = "."
 	}
 
-	// Pathspecs matching all files in the module except go.mod,
-	// go.sum, and any nested contrib modules.
 	pathspecs := []string{dir + "/"}
-	for _, file := range []string{"go.mod", "go.sum"} {
-		pathspecs = append(pathspecs, ":(exclude,glob)"+path.Join(dir, "**", file))
+	if !opts.includeGoMod {
+		pathspecs = append(pathspecs, ":(exclude,glob)"+path.Join(dir, "**", "go.mod"))
 	}
+	if !opts.includeGoSum {
+		pathspecs = append(pathspecs, ":(exclude,glob)"+path.Join(dir, "**", "go.sum"))
+	}
+	if !opts.includeReadme {
+		pathspecs = append(pathspecs, ":(exclude,glob)"+path.Join(dir, "**", "README.md"))
+	}
+	// Nested contrib modules are released independently.
 	for _, nested := range contribModules {
 		if module.Name() == "sdk" || strings.HasPrefix(nested.Dir, dir+"/") {
 			pathspecs = append(pathspecs, ":(exclude,literal)"+nested.Dir+"/")
@@ -68,7 +79,7 @@ func repoRoot() (string, error) {
 
 func (r *repo) moduleChanged(module pure.Module, baseCommit string, contribModules []pure.Module) (bool, error) {
 	args := []string{"diff", "--name-only", "--no-renames", baseCommit, "HEAD", "--"}
-	args = append(args, modulePathspecs(module, contribModules)...)
+	args = append(args, modulePathspecs(module, contribModules, modulePathspecOptions{})...)
 	output, err := r.eff.runCommand(r.repoRoot, "git", args...)
 	if err != nil {
 		return false, fmt.Errorf("check changes for %s since %s: %w", module.Name(), baseCommit, err)
