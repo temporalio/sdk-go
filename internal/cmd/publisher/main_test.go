@@ -308,7 +308,7 @@ func TestStage(t *testing.T) {
 			return "contrib/envconfig/changelog/added/singing-swan.md\x00", nil
 		case `git commit -m "Prepare release 2026-08-04\n\nsdk=1.48.0 contrib/envconfig=1.0.3"`:
 			testEqualMaps(t, eff.files, output)
-		case `gh pr create --draft --base main --head chore/release-2026-08-04-abc234de --label skip-changelog --title "Prepare release 2026-08-04" --body "sdk=1.48.0 contrib/envconfig=1.0.3"`:
+		case `gh pr create --draft --base main --head chore/release-2026-08-04-abc234de --label skip-changelog --label release --title "Prepare release 2026-08-04" --body "sdk=1.48.0 contrib/envconfig=1.0.3" --label "Release: sdk" --label "Release: contrib/envconfig"`:
 			return "https://github.com/temporalio/sdk-go/pull/123\n", nil
 		}
 		return "", nil
@@ -355,7 +355,16 @@ func TestStage(t *testing.T) {
 		$ git push --set-upstream origin chore/release-2026-08-04-abc234de
 
 		# Running in /tmp/prepare-go-release-123456:
-		$ gh pr create --draft --base main --head chore/release-2026-08-04-abc234de --label skip-changelog --title "Prepare release 2026-08-04" --body "sdk=1.48.0 contrib/envconfig=1.0.3"
+		$ gh label create release --color 0e8a16 --description "Run release CI" --force
+
+		# Running in /tmp/prepare-go-release-123456:
+		$ gh label create "Release: sdk" --color 0e8a16 --description "Run release CI for sdk" --force
+
+		# Running in /tmp/prepare-go-release-123456:
+		$ gh label create "Release: contrib/envconfig" --color 0e8a16 --description "Run release CI for contrib/envconfig" --force
+
+		# Running in /tmp/prepare-go-release-123456:
+		$ gh pr create --draft --base main --head chore/release-2026-08-04-abc234de --label skip-changelog --label release --title "Prepare release 2026-08-04" --body "sdk=1.48.0 contrib/envconfig=1.0.3" --label "Release: sdk" --label "Release: contrib/envconfig"
 		https://github.com/temporalio/sdk-go/pull/123
 
 		# Running in /repo:

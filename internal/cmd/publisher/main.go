@@ -338,7 +338,8 @@ type stageApp struct {
 
 func newStageApp(eff effects, args []string) (*stageApp, error) {
 	const usage = "usage: publisher stage [-branch BRANCH] MODULE=VERSION [MODULE=VERSION ...]\n" +
-		"MODULE is 'sdk' for the Go SDK or a slash-separated contrib module directory like 'contrib/envconfig'"
+		"MODULE is 'sdk' for the Go SDK or a slash-separated contrib module directory like 'contrib/envconfig'\n" +
+		"The draft PR receives a 'release' label and 'Release: MODULE' labels to enable release CI"
 	var branch string
 	flags := flag.NewFlagSet("publisher stage", flag.ContinueOnError)
 	flags.SetOutput(errorWriter{eff: eff})
