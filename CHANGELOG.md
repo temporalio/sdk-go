@@ -44,6 +44,9 @@ to docs, or any other relevant information.
 
 - Workers no longer advertise a worker control task queue unless worker heartbeats and commands
   are supported and the shared namespace command poller is running.
+- **Experimental**: `converter.StorageDriverRetrieveContext.Context` is now cancelled with the
+  caller's context and carries its deadline, so a slow driver no longer holds a client call past
+  its deadline. The caller's context values are still withheld.
 
 ### Security
 

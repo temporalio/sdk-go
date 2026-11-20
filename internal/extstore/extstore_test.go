@@ -918,6 +918,53 @@ func TestRetrievalVisitor_CancelOnError(t *testing.T) {
 	}
 }
 
+func TestRetrievalVisitor_CallerCancellation(t *testing.T) {
+	driver := &blockingDriver{name: "block-driver", startedCh: make(chan struct{}), cancelledCh: make(chan struct{})}
+	params, err := ExternalStorageToParams(ExternalStorage{
+		Drivers: []StorageDriver{driver},
+	})
+	require.NoError(t, err)
+	visitor := NewExternalRetrievalVisitor(params)
+
+	ref, err := storageReferenceToPayload(&sdkpb.ExternalStorageReference{
+		DriverName: "block-driver",
+		ClaimData:  map[string]string{"key": "k"},
+	}, 10)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	go func() {
+		<-driver.startedCh
+		cancel()
+	}()
+	_, err = visitPayloads(ctx, visitor, []*commonpb.Payload{ref})
+	require.ErrorIs(t, err, context.Canceled)
+}
+
+type retrievalContextKey struct{}
+
+func TestRetrievalVisitor_CallerDeadlineWithoutValues(t *testing.T) {
+	driver := &contextRecordingDriver{testStorageDriver: newTestDriver("d")}
+	params, err := ExternalStorageToParams(ExternalStorage{
+		Drivers:              []StorageDriver{driver},
+		PayloadSizeThreshold: 1,
+	})
+	require.NoError(t, err)
+	refs, err := visitPayloads(t.Context(), NewExternalStorageVisitor(params), []*commonpb.Payload{makePayload(t, "x")})
+	require.NoError(t, err)
+
+	deadline := time.Now().Add(time.Hour)
+	ctx, cancel := context.WithDeadline(context.WithValue(t.Context(), retrievalContextKey{}, "ambient"), deadline)
+	defer cancel()
+	_, err = visitPayloads(ctx, NewExternalRetrievalVisitor(params), refs)
+	require.NoError(t, err)
+
+	driverDeadline, ok := driver.retrieveCtx.Deadline()
+	require.True(t, ok)
+	require.Equal(t, deadline, driverDeadline)
+	require.Nil(t, driver.retrieveCtx.Value(retrievalContextKey{}))
+}
+
 func TestRetrievalVisitor_WrongPayloadCount(t *testing.T) {
 	driver := &badCountRetrieveDriver{name: "my-bad-count-driver"}
 	params, err := ExternalStorageToParams(ExternalStorage{
@@ -1239,6 +1286,16 @@ func (d *blockingDriver) Retrieve(ctx StorageDriverRetrieveContext, _ []StorageD
 	<-ctx.Context.Done()
 	close(d.cancelledCh)
 	return nil, ctx.Context.Err()
+}
+
+type contextRecordingDriver struct {
+	*testStorageDriver
+	retrieveCtx context.Context
+}
+
+func (d *contextRecordingDriver) Retrieve(ctx StorageDriverRetrieveContext, claims []StorageDriverClaim) ([]*commonpb.Payload, error) {
+	d.retrieveCtx = ctx.Context
+	return d.testStorageDriver.Retrieve(ctx, claims)
 }
 
 type funcDriverSelector struct {

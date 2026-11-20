@@ -301,14 +301,15 @@ func TestNexusPollerCompletionUsesResponsePollerGroupID(t *testing.T) {
 			metricsHandler:  metrics.NopHandler,
 			pollTimeTracker: &pollTimeTracker{},
 		},
-		namespace:       namespace,
-		taskQueueName:   taskQueue,
-		identity:        identity,
-		service:         service,
-		taskHandler:     handler,
-		logger:          ilog.NewDefaultLogger(),
-		numPollerMetric: newNumPollerMetric(metrics.NopHandler, metrics.PollerTypeNexusTask),
-		pollerGroups:    pollerGroups,
+		namespace:         namespace,
+		taskQueueName:     taskQueue,
+		identity:          identity,
+		service:           service,
+		taskHandler:       handler,
+		logger:            ilog.NewDefaultLogger(),
+		numPollerMetric:   newNumPollerMetric(metrics.NopHandler, metrics.PollerTypeNexusTask),
+		pollerGroups:      pollerGroups,
+		backgroundContext: t.Context(),
 	}
 
 	polledTask, err := poller.PollTask(lease)

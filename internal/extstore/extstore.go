@@ -137,9 +137,10 @@ type StorageDriverSelectContext struct {
 //
 // NOTE: Experimental
 type StorageDriverRetrieveContext struct {
-	// Context is the context of the operation that triggered the driver call.
-	// Drivers should use it to respect cancellation and to propagate deadlines
-	// and trace information to downstream calls (e.g. cloud storage SDKs).
+	// Context carries the cancellation and deadline of the operation that
+	// triggered the driver call, but none of its values, so a retrieve depends
+	// only on the claim. Drivers should use it to respect cancellation and to
+	// propagate deadlines to downstream calls (e.g. cloud storage SDKs).
 	Context context.Context
 	// Limiter limits the concurrent operations this driver performs.
 	Limiter StorageDriverLimiter[StorageDriverClaim]
