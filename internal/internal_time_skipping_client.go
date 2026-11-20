@@ -493,6 +493,25 @@ func runClosedBy(e *historypb.HistoryEvent) (nextRunID string, closed bool) {
 	return "", false
 }
 
+type scheduleTimeSkipper interface {
+	SetTimeSkippingConfig(ctx context.Context, options ScheduleSetTimeSkippingConfigOptions) error
+}
+
+// Exposed as: [go.temporal.io/sdk/timeskipping.SetScheduleTimeSkippingConfig]
+//
+// NOTE: Experimental
+func SetScheduleTimeSkippingConfig(
+	ctx context.Context, handle ScheduleHandle, options ScheduleSetTimeSkippingConfigOptions,
+) error {
+	ts, ok := handle.(scheduleTimeSkipper)
+	if !ok {
+		return fmt.Errorf(
+			"time skipping needs a schedule handle with a SetTimeSkippingConfig method, got %T",
+			handle)
+	}
+	return ts.SetTimeSkippingConfig(ctx, options)
+}
+
 // FastForwardSchedule advances a schedule's virtual clock by the given
 // duration and waits for the fast-forward to finish.
 //
@@ -526,7 +545,7 @@ func FastForwardSchedule(
 	if cur != nil {
 		carryOverFrom(cur.EffectiveConfig, &tsc)
 	}
-	if err := handle.SetTimeSkippingConfig(ctx,
+	if err := SetScheduleTimeSkippingConfig(ctx, handle,
 		ScheduleSetTimeSkippingConfigOptions{Config: &tsc}); err != nil {
 		return false, err
 	}

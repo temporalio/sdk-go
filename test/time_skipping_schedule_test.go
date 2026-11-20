@@ -212,7 +212,7 @@ func (s *TimeSkippingScheduleTestSuite) TestPollScheduleFastForwardIssuedSeparat
 	defer func() { _ = handle.Delete(ctx) }()
 
 	ffID := uuid.NewString()
-	s.NoError(handle.SetTimeSkippingConfig(ctx, client.ScheduleSetTimeSkippingConfigOptions{
+	s.NoError(timeskipping.SetScheduleTimeSkippingConfig(ctx, handle, timeskipping.ScheduleSetTimeSkippingConfigOptions{
 		Config: &client.TimeSkippingConfig{
 			Enabled:           true,
 			FastForwardConfig: &client.FastForwardConfig{ID: ffID, Duration: 3 * time.Hour},
@@ -262,13 +262,13 @@ func (s *TimeSkippingScheduleTestSuite) TestPollScheduleFastForwardReportsTimeSk
 	s.NoError(handle.Pause(ctx, client.SchedulePauseOptions{Note: "hold for disable test"}))
 
 	ffID := uuid.NewString()
-	s.NoError(handle.SetTimeSkippingConfig(ctx, client.ScheduleSetTimeSkippingConfigOptions{
+	s.NoError(timeskipping.SetScheduleTimeSkippingConfig(ctx, handle, timeskipping.ScheduleSetTimeSkippingConfigOptions{
 		Config: &client.TimeSkippingConfig{
 			Enabled:           true,
 			FastForwardConfig: &client.FastForwardConfig{ID: ffID, Duration: 3 * time.Hour},
 		},
 	}))
-	s.NoError(handle.SetTimeSkippingConfig(ctx, client.ScheduleSetTimeSkippingConfigOptions{
+	s.NoError(timeskipping.SetScheduleTimeSkippingConfig(ctx, handle, timeskipping.ScheduleSetTimeSkippingConfigOptions{
 		Config: &client.TimeSkippingConfig{Enabled: false},
 	}))
 
@@ -372,7 +372,7 @@ func (s *TimeSkippingScheduleTestSuite) TestScheduleWithPropagationDisabled() {
 	handle := s.createHourlySchedule(ctx, tq, ScheduleTargetWorkflow)
 	defer func() { _ = handle.Delete(ctx) }()
 
-	s.NoError(handle.SetTimeSkippingConfig(ctx, client.ScheduleSetTimeSkippingConfigOptions{
+	s.NoError(timeskipping.SetScheduleTimeSkippingConfig(ctx, handle, timeskipping.ScheduleSetTimeSkippingConfigOptions{
 		Config: &client.TimeSkippingConfig{DisablePropagation: true},
 	}))
 	ok, err := timeskipping.FastForwardSchedule(ctx, handle,
@@ -457,7 +457,7 @@ func (s *TimeSkippingScheduleTestSuite) TestNilConfigClearsActiveFastForward() {
 	s.NoError(handle.Pause(ctx, client.SchedulePauseOptions{Note: "hold for nil-clear test"}))
 
 	ffID := uuid.NewString()
-	s.NoError(handle.SetTimeSkippingConfig(ctx, client.ScheduleSetTimeSkippingConfigOptions{
+	s.NoError(timeskipping.SetScheduleTimeSkippingConfig(ctx, handle, timeskipping.ScheduleSetTimeSkippingConfigOptions{
 		Config: &client.TimeSkippingConfig{
 			Enabled:           true,
 			FastForwardConfig: &client.FastForwardConfig{ID: ffID, Duration: 3 * time.Hour},
@@ -469,7 +469,7 @@ func (s *TimeSkippingScheduleTestSuite) TestNilConfigClearsActiveFastForward() {
 	s.NotNil(tsi)
 	s.True(tsi.EffectiveConfig.Enabled, "expected the fast-forward to be in flight before clearing")
 
-	s.NoError(handle.SetTimeSkippingConfig(ctx, client.ScheduleSetTimeSkippingConfigOptions{Config: nil}))
+	s.NoError(timeskipping.SetScheduleTimeSkippingConfig(ctx, handle, timeskipping.ScheduleSetTimeSkippingConfigOptions{Config: nil}))
 
 	tsi, err = timeskipping.GetScheduleTimeSkippingInfo(ctx, handle)
 	s.NoError(err)

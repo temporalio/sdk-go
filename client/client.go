@@ -699,11 +699,6 @@ type (
 	// NOTE: Experimental
 	TimeSkippingConfigChange = internal.TimeSkippingConfigChange
 
-	// ScheduleSetTimeSkippingConfigOptions configures [ScheduleHandle.SetTimeSkippingConfig].
-	//
-	// NOTE: Experimental
-	ScheduleSetTimeSkippingConfigOptions = internal.ScheduleSetTimeSkippingConfigOptions
-
 	// VersioningOverride is a property in [WorkflowExecutionOptions] that changes the versioning
 	// configuration of a specific workflow execution.
 	//

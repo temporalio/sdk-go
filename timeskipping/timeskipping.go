@@ -46,6 +46,12 @@ type (
 	// NOTE: Experimental
 	SchedulePollFastForwardOptions = internal.SchedulePollFastForwardOptions
 
+	// ScheduleSetTimeSkippingConfigOptions configures
+	// [SetScheduleTimeSkippingConfig].
+	//
+	// NOTE: Experimental
+	ScheduleSetTimeSkippingConfigOptions = internal.ScheduleSetTimeSkippingConfigOptions
+
 	// FastForwardPollResult is the outcome of waiting for a fast-forward. A
 	// fast-forward that stops without completing is reported in FailedReason
 	// rather than as an error; errors mean the call itself failed.
@@ -85,6 +91,20 @@ func FastForwardSchedule(
 	ctx context.Context, handle client.ScheduleHandle, options ScheduleFastForwardOptions,
 ) (bool, error) {
 	return internal.FastForwardSchedule(ctx, handle, options)
+}
+
+// SetScheduleTimeSkippingConfig applies a time skipping configuration to a
+// schedule. A nil Config clears it.
+//
+// FastForwardSchedule sets its own configuration, so this is for the cases it
+// does not cover, such as turning skipping off again.
+//
+// NOTE: Experimental
+func SetScheduleTimeSkippingConfig(
+	ctx context.Context, handle client.ScheduleHandle,
+	options ScheduleSetTimeSkippingConfigOptions,
+) error {
+	return internal.SetScheduleTimeSkippingConfig(ctx, handle, options)
 }
 
 // PollWorkflowFastForward waits for the identified fast-forward on a workflow

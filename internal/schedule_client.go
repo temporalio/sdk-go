@@ -642,18 +642,14 @@ type (
 
 		// Unpause the Schedule will also overwrite the Schedules current note with the new note.
 		Unpause(ctx context.Context, options ScheduleUnpauseOptions) error
-
-		// SetTimeSkippingConfig applies a time skipping configuration to the Schedule.
-		//
-		// NOTE: Experimental
-		SetTimeSkippingConfig(ctx context.Context, options ScheduleSetTimeSkippingConfigOptions) error
 	}
 
-	// ScheduleSetTimeSkippingConfigOptions configures [ScheduleHandle.SetTimeSkippingConfig].
+	// ScheduleSetTimeSkippingConfigOptions configures
+	// [go.temporal.io/sdk/timeskipping.SetScheduleTimeSkippingConfig].
 	//
 	// NOTE: Experimental
 	//
-	// Exposed as: [go.temporal.io/sdk/client.ScheduleSetTimeSkippingConfigOptions]
+	// Exposed as: [go.temporal.io/sdk/timeskipping.ScheduleSetTimeSkippingConfigOptions]
 	ScheduleSetTimeSkippingConfigOptions struct {
 		// Config to apply. A nil Config clears the Schedule's time skipping configuration.
 		Config *TimeSkippingConfig
