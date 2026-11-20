@@ -149,7 +149,6 @@ func (ts *IntegrationTestSuite) SetupTest() {
 	}
 
 	var clientInterceptors []interceptor.ClientInterceptor
-	var workerInterceptors []interceptor.WorkerInterceptor
 	// Record calls for interceptor test
 	if strings.HasPrefix(ts.T().Name(), "TestIntegrationSuite/TestInterceptor") {
 		ts.interceptorCallRecorder = &interceptortest.CallRecordingInvoker{}
@@ -202,7 +201,10 @@ func (ts *IntegrationTestSuite) SetupTest() {
 	ts.taskQueueName = taskQueuePrefix + "-" + ts.T().Name()
 	ts.tracer = newTracingInterceptor()
 	ts.inboundSignalInterceptor = newSignalInterceptor()
-	workerInterceptors = append(workerInterceptors, ts.tracer, ts.inboundSignalInterceptor)
+	ts.setupWorker()
+}
+
+func (ts *IntegrationTestSuite) setupWorker() {
 	panicPolicy := worker.FailWorkflow
 
 	if strings.Contains(ts.T().Name(), "TestSlotSupplierWFTFailMetrics") {
@@ -210,7 +212,7 @@ func (ts *IntegrationTestSuite) SetupTest() {
 	}
 
 	options := worker.Options{
-		Interceptors:        workerInterceptors,
+		Interceptors:        []interceptor.WorkerInterceptor{ts.tracer, ts.inboundSignalInterceptor},
 		WorkflowPanicPolicy: panicPolicy,
 	}
 
