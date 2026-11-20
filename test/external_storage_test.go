@@ -1221,6 +1221,36 @@ func (s *ExternalStorageTestSuite) TestScheduleUpdate_ChangedArgsAndMemoStoredIn
 	}
 }
 
+func (s *ExternalStorageTestSuite) TestScheduleUpdate_EncodedArgsAndMemoStored() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	handle := s.createStoredSchedule(ctx)
+	defer func() { _ = handle.Delete(ctx) }()
+	encodedArg, err := converter.GetDefaultDataConverter().ToPayload(oversized(73))
+	s.NoError(err)
+	encodedMemo, err := converter.GetDefaultDataConverter().ToPayload(oversized(74))
+	s.NoError(err)
+	s.driver.resetStoreContexts()
+
+	s.NoError(handle.Update(ctx, client.ScheduleUpdateOptions{
+		DoUpdate: func(input client.ScheduleUpdateInput) (*client.ScheduleUpdate, error) {
+			action := input.Description.Schedule.Action.(*client.ScheduleWorkflowAction)
+			action.Args = append(action.Args, encodedArg)
+			action.Memo["encoded"] = encodedMemo
+			return &client.ScheduleUpdate{Schedule: &input.Description.Schedule}, nil
+		},
+	}))
+
+	s.Len(s.driver.getStoreContexts(), 2)
+	after, err := handle.Describe(ctx)
+	s.NoError(err)
+	afterAction := after.Schedule.Action.(*client.ScheduleWorkflowAction)
+	for _, p := range []*commonpb.Payload{afterAction.Args[1].(*commonpb.Payload), afterAction.Memo["encoded"].(*commonpb.Payload)} {
+		s.Equal("temporal.api.sdk.v1.ExternalStorageReference", string(p.GetMetadata()["messageType"]))
+	}
+}
+
 func (s *ExternalStorageTestSuite) TestScheduleUpdate_StoredArgsWithoutStorage() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()

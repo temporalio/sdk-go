@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -66,11 +67,10 @@ func (w *workflowClientInterceptor) CreateSchedule(ctx context.Context, in *Sche
 	if in.Options.Action == nil {
 		return nil, fmt.Errorf("no schedule action in options")
 	}
-	action, retained, err := convertToPBScheduleAction(ctx, w.client, in.Options.Action, nil)
+	action, _, err := convertToPBScheduleAction(ctx, w.client, in.Options.Action, nil)
 	if err != nil {
 		return nil, err
 	}
-	retained.restore(action)
 
 	memo, err := GetWorkflowMemo(in.Options.Memo, dataConverter, sdkFlagsAllowed[SDKFlagMemoUserDCEncode])
 	if err != nil {
@@ -641,12 +641,12 @@ func convertToPBScheduleAction(
 		}
 		retained := &retainedPayloads{}
 		// Encode workflow inputs that may already be encoded
-		input, err := encodeScheduleWorklowArgs(dataConverter, action.Args, retained)
+		input, err := encodeScheduleWorklowArgs(dataConverter, action.Args, described, retained)
 		if err != nil {
 			return nil, nil, err
 		}
 		// Encode workflow memos that may already be encoded
-		memo, err := encodeScheduleWorkflowMemo(dataConverter, action.Memo, retained)
+		memo, err := encodeScheduleWorkflowMemo(dataConverter, action.Memo, described, retained)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -897,9 +897,8 @@ func convertFromPBScheduleActionResultList(aa []*schedulepb.ScheduleActionResult
 	return recentActions
 }
 
-// retainedPayloads are the payloads a schedule action was given already encoded. They are left out
-// of the built action until restore, so that an update can store the payloads it encoded without
-// storing these again.
+// retainedPayloads are the described payloads an update sends back unchanged. They are left out of
+// the built action until restore, so that the update's store pass doesn't store them again.
 type retainedPayloads struct {
 	args             map[int]*commonpb.Payload
 	memo             map[string]*commonpb.Payload
@@ -941,6 +940,8 @@ func (r *retainedPayloads) restore(action *schedulepb.ScheduleAction) {
 
 // describedScheduleAction is the start-workflow action a schedule update started from.
 type describedScheduleAction struct {
+	args             []*commonpb.Payload
+	memo             []*commonpb.Payload
 	userMetadata     *sdk.UserMetadata
 	summary, details string
 }
@@ -950,7 +951,17 @@ func newDescribedScheduleAction(pb *schedulepb.ScheduleAction, action ScheduleAc
 	if !ok || pb.GetStartWorkflow() == nil {
 		return nil
 	}
+	// Cloned because DoUpdate receives these same payloads and may change them in place.
+	var args, memo []*commonpb.Payload
+	for _, p := range pb.GetStartWorkflow().GetInput().GetPayloads() {
+		args = append(args, proto.Clone(p).(*commonpb.Payload))
+	}
+	for _, p := range pb.GetStartWorkflow().GetMemo().GetFields() {
+		memo = append(memo, proto.Clone(p).(*commonpb.Payload))
+	}
 	return &describedScheduleAction{
+		args:         args,
+		memo:         memo,
 		userMetadata: pb.GetStartWorkflow().GetUserMetadata(),
 		summary:      workflowAction.StaticSummary,
 		details:      workflowAction.StaticDetails,
@@ -996,15 +1007,32 @@ func decodeScheduleUserMetadataValue(
 	return value, nil
 }
 
-func encodeScheduleWorklowArgs(dc converter.DataConverter, args []any, retained *retainedPayloads) (*commonpb.Payloads, error) {
+// An already encoded payload is only known to have been through storage if it was described.
+func containsEqualPayload(payloads []*commonpb.Payload, p *commonpb.Payload) bool {
+	for _, described := range payloads {
+		if proto.Equal(described, p) {
+			return true
+		}
+	}
+	return false
+}
+
+func encodeScheduleWorklowArgs(
+	dc converter.DataConverter,
+	args []any,
+	described *describedScheduleAction,
+	retained *retainedPayloads,
+) (*commonpb.Payloads, error) {
 	payloads := make([]*commonpb.Payload, 0, len(args))
 	for i, arg := range args {
-		// arg is already encoded
-		if enc, ok := arg.(*commonpb.Payload); ok {
+		enc, ok := arg.(*commonpb.Payload)
+		if ok && described != nil && containsEqualPayload(described.args, enc) {
 			if retained.args == nil {
 				retained.args = map[int]*commonpb.Payload{}
 			}
 			retained.args[i] = enc
+		} else if ok {
+			payloads = append(payloads, enc)
 		} else {
 			payload, err := dc.ToPayload(arg)
 			if err != nil {
@@ -1018,7 +1046,12 @@ func encodeScheduleWorklowArgs(dc converter.DataConverter, args []any, retained 
 	}, nil
 }
 
-func encodeScheduleWorkflowMemo(dc converter.DataConverter, input map[string]any, retained *retainedPayloads) (*commonpb.Memo, error) {
+func encodeScheduleWorkflowMemo(
+	dc converter.DataConverter,
+	input map[string]any,
+	described *describedScheduleAction,
+	retained *retainedPayloads,
+) (*commonpb.Memo, error) {
 	if input == nil {
 		return nil, nil
 	}
@@ -1029,11 +1062,14 @@ func encodeScheduleWorkflowMemo(dc converter.DataConverter, input map[string]any
 	}
 
 	for k, v := range input {
-		if enc, ok := v.(*commonpb.Payload); ok {
+		enc, ok := v.(*commonpb.Payload)
+		if ok && described != nil && containsEqualPayload(described.memo, enc) {
 			if retained.memo == nil {
 				retained.memo = map[string]*commonpb.Payload{}
 			}
 			retained.memo[k] = enc
+		} else if ok {
+			memo[k] = enc
 		} else {
 
 			memoBytes, err := encodeMemoValue(v, dc, sdkFlagsAllowed[SDKFlagMemoUserDCEncode])
