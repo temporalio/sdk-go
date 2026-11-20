@@ -257,7 +257,6 @@ func TestStage(t *testing.T) {
 		module go.temporal.io/sdk/contrib/envconfig
 		require go.temporal.io/sdk v1.47.0
 	`)
-	input["contrib/envconfig/CHANGELOG.md"] = "# Changelog\n"
 	input["contrib/envconfig/changelog/added/singing-swan.md"] = "A contrib feature.\n"
 	input["contrib/tally/changelog/fixed/patient-panda.md"] = "An unrelated fix.\n"
 
@@ -294,10 +293,12 @@ func TestStage(t *testing.T) {
 		case "git rev-parse HEAD":
 			return strings.TrimSpace(sdkRustRevision), nil
 		case "cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- prepare --repo " + mockTempDir + " --version 1.48.0 --date 2026-08-04 --changelog CHANGELOG.md --fragments changelog":
+			testEqual(t, eff.files["CHANGELOG.md"], input["CHANGELOG.md"])
 			testEqual(t, eff.files["changelog/fixed/dancing-duck.md"], input["changelog/fixed/dancing-duck.md"])
 			eff.files["CHANGELOG.md"] = output["CHANGELOG.md"]
 			delete(eff.files, "changelog/fixed/dancing-duck.md")
 		case "cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- prepare --repo " + mockTempDir + " --version 1.0.3 --date 2026-08-04 --changelog contrib/envconfig/CHANGELOG.md --fragments contrib/envconfig/changelog":
+			testEqual(t, eff.files["contrib/envconfig/CHANGELOG.md"], "# Changelog\n")
 			testEqual(t, eff.files["contrib/envconfig/changelog/added/singing-swan.md"], input["contrib/envconfig/changelog/added/singing-swan.md"])
 			eff.files["contrib/envconfig/CHANGELOG.md"] = output["contrib/envconfig/CHANGELOG.md"]
 			delete(eff.files, "contrib/envconfig/changelog/added/singing-swan.md")

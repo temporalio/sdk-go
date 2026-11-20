@@ -69,6 +69,14 @@ func (t *coreTool) checkChangelog(root string, module pure.Module, baseCommit st
 // checking for unexpected subdirectories, non-markdown files, etc) and
 // moves them into the module's CHANGELOG.md with the given date and version.
 func (t *coreTool) prepareChangelog(root string, module pure.VersionedModule, date time.Time) error {
+	changelog := module.Module.Changelog(root)
+	if _, err := t.eff.readFile(changelog); errors.Is(err, os.ErrNotExist) {
+		if err := t.eff.writeFile(changelog, "# Changelog\n"); err != nil {
+			return fmt.Errorf("initialize %s: %w", changelog, err)
+		}
+	} else if err != nil {
+		return fmt.Errorf("read %s: %w", changelog, err)
+	}
 	_, err := t.run(root, "prepare",
 		"--version", module.Version.String(), "--date", date.Format(time.DateOnly),
 		"--changelog", module.Module.Changelog(""), "--fragments", module.Module.Fragments(""))
