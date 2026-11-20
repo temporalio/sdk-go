@@ -207,8 +207,7 @@ func (ts *IntegrationTestSuite) SetupTest() {
 	ts.activities.clearInvoked()
 	ts.activities.client = ts.client
 	ts.taskQueueName = taskQueuePrefix + "-" + ts.T().Name()
-	switch ts.T().Name() {
-	case "TestIntegrationSuite/TestLargeQueryResultError", "TestIntegrationSuite/TestStaleQueryReplayBoundary":
+	if ts.T().Name() == "TestIntegrationSuite/TestStaleQueryReplayBoundary" {
 		// A poll from the stopped setup worker can take a task from the test worker.
 		ts.workerStopped = true
 		return
@@ -257,6 +256,10 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		// This workflow serializes a large (~5 MiB) completion in a single workflow task; on slow CI
 		// hardware that can exceed the default 1s deadlock-detection window.
 		options.DeadlockDetectionTimeout = 10 * time.Second
+	}
+
+	if strings.Contains(ts.T().Name(), "TestLargeQueryResultError") {
+		options.DisablePayloadErrorLimit = true
 	}
 
 	if strings.Contains(ts.T().Name(), "CancelTimerViaDeferAfterWFTFailure") ||
@@ -1975,35 +1978,36 @@ func (ts *IntegrationTestSuite) TestCancelChildWorkflowUnusualTransitions() {
 }
 
 func (ts *IntegrationTestSuite) TestCancelChildWorkflowAndParentWorkflow() {
+	ctx, cancel := context.WithTimeout(ts.T().Context(), ctxTimeout)
+	defer cancel()
 	wfid := "test-cancel-child-workflow-and-parent-workflow"
-	run, err := ts.client.ExecuteWorkflow(context.Background(),
+	run, err := ts.client.ExecuteWorkflow(ctx,
 		ts.startWorkflowOptions(wfid),
 		ts.workflows.ChildWorkflowAndParentCancel)
 	ts.NoError(err)
 
-	// Give it a sec to populate the query
-	<-time.After(1 * time.Second)
-
-	v, err := ts.client.QueryWorkflow(context.Background(), run.GetID(), "", "child-and-parent-cancel-child-workflow-id")
-	ts.NoError(err)
-
+	const childReadyTimeout = 5 * time.Second
+	queryCtx, cancelQuery := context.WithTimeout(ctx, childReadyTimeout)
+	defer cancelQuery()
 	var childWorkflowID string
-	err = v.Get(&childWorkflowID)
-	ts.NoError(err)
-	ts.NotNil(childWorkflowID)
-	ts.NotEmpty(childWorkflowID)
+	ts.EventuallyWithT(func(t *assert.CollectT) {
+		v, err := ts.client.QueryWorkflow(queryCtx, run.GetID(), run.GetRunID(), "child-and-parent-cancel-child-workflow-id")
+		if assert.NoError(t, err) && assert.NoError(t, v.Get(&childWorkflowID)) {
+			assert.NotEmpty(t, childWorkflowID)
+		}
+	}, childReadyTimeout, 200*time.Millisecond)
 
-	err = ts.client.CancelWorkflow(context.Background(), childWorkflowID, "")
+	err = ts.client.CancelWorkflow(ctx, childWorkflowID, "")
 	ts.NoError(err)
 
-	err = ts.client.GetWorkflow(context.Background(), childWorkflowID, "").Get(context.Background(), nil)
+	err = ts.client.GetWorkflow(ctx, childWorkflowID, "").Get(ctx, nil)
 	var canceledError *temporal.CanceledError
 	ts.ErrorAs(err, &canceledError)
 
-	err = ts.client.CancelWorkflow(context.Background(), run.GetID(), "")
+	err = ts.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID())
 	ts.NoError(err)
 
-	err = run.Get(context.Background(), nil)
+	err = run.Get(ctx, nil)
 	ts.NoError(err)
 }
 
@@ -2203,13 +2207,6 @@ func (ts *IntegrationTestSuite) TestChildWorkflowTypedSearchAttributes() {
 func (ts *IntegrationTestSuite) TestLargeQueryResultError() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
-
-	ts.worker = worker.New(ts.client, ts.taskQueueName, worker.Options{
-		DisablePayloadErrorLimit: true,
-	})
-	ts.registerWorkflowsAndActivities(ts.worker)
-	ts.NoError(ts.worker.Start())
-	ts.workerStopped = false
 
 	run, err := ts.client.ExecuteWorkflow(ctx,
 		ts.startWorkflowOptions("test-large-query-error"), ts.workflows.LargeQueryResultWorkflow)
@@ -3244,13 +3241,15 @@ func (ts *IntegrationTestSuite) TestLocalActivityTaskTimeoutHeartbeat() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
+	// Leave time for the workflow task heartbeat RPC to reach the server.
+	const workflowTaskTimeout = 3 * time.Second
 	localActivityStarted := make(chan struct{})
 	var localActivityStartedOnce sync.Once
 	localActivityFn := func(ctx context.Context) error {
 		localActivityStartedOnce.Do(func() { close(localActivityStarted) })
-		// wait for worker shutdown to be started and WorkflowTaskTimeout to be hit
+		// Keep the local activity running past the first workflow task heartbeat during shutdown.
 		<-activity.GetWorkerStopChannel(ctx)
-		time.Sleep(1500 * time.Millisecond) // 1.5 seconds
+		time.Sleep(workflowTaskTimeout)
 		return ctx.Err()
 	}
 
@@ -3273,7 +3272,7 @@ func (ts *IntegrationTestSuite) TestLocalActivityTaskTimeoutHeartbeat() {
 	startOptions := client.StartWorkflowOptions{
 		ID:                  workflowID,
 		TaskQueue:           ts.taskQueueName,
-		WorkflowTaskTimeout: 1 * time.Second,
+		WorkflowTaskTimeout: workflowTaskTimeout,
 	}
 
 	// Start workflow
@@ -4445,8 +4444,28 @@ func (ts *IntegrationTestSuite) TestNumPollersCounter() {
 }
 
 func (ts *IntegrationTestSuite) TestSlotsAvailableCounter() {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(ts.T().Context(), ctxTimeout)
 	defer cancel()
+
+	// Let the test control when each slot is released, independent of heartbeat timing.
+	var releases [3]chan struct{}
+	for i := range releases {
+		releases[i] = make(chan struct{})
+	}
+	waitForSlotRelease := func(ctx context.Context, index int) error {
+		select {
+		case <-releases[index]:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	useActivitySlot := func(ctx workflow.Context, index int) error {
+		ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{StartToCloseTimeout: ctxTimeout})
+		return workflow.ExecuteActivity(ctx, waitForSlotRelease, index).Get(ctx, nil)
+	}
+	ts.worker.RegisterActivity(waitForSlotRelease)
+	ts.worker.RegisterWorkflow(useActivitySlot)
 
 	actWorkertags := []string{"worker_type", "ActivityWorker", "task_queue", ts.taskQueueName}
 	wfWorkertags := []string{"worker_type", "WorkflowWorker", "task_queue", ts.taskQueueName}
@@ -4462,34 +4481,31 @@ func (ts *IntegrationTestSuite) TestSlotsAvailableCounter() {
 
 	// Start workflow and confirm reduced by one
 	run1, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("test-slots-available-counter-1"),
-		ts.workflows.ActivityHeartbeatUntilSignal)
+		useActivitySlot, 0)
 	ts.NoError(err)
 	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsAvailable, actWorkertags, 999)
 	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsUsed, actWorkertags, 1)
 
 	// Start two more and confirm reduced by two
 	run2, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("test-slots-available-counter-2"),
-		ts.workflows.ActivityHeartbeatUntilSignal)
+		useActivitySlot, 1)
 	ts.NoError(err)
 	run3, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("test-slots-available-counter-3"),
-		ts.workflows.ActivityHeartbeatUntilSignal)
+		useActivitySlot, 2)
 	ts.NoError(err)
 	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsAvailable, actWorkertags, 997)
 	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsUsed, actWorkertags, 3)
 
-	// Signal the first and last to close and confirm increased by two
-	// Give the workflows enough time to enter the timer/activity loop so
-	// shutdown overlaps active polling and dispatch.
-	time.Sleep(500 * time.Millisecond)
-	ts.NoError(ts.client.SignalWorkflow(ctx, run1.GetID(), run1.GetRunID(), "cancel", nil))
-	ts.NoError(ts.client.SignalWorkflow(ctx, run3.GetID(), run3.GetRunID(), "cancel", nil))
+	// Release the first and last activities and confirm two slots are freed.
+	close(releases[0])
+	close(releases[2])
 	ts.NoError(run1.Get(ctx, nil))
 	ts.NoError(run3.Get(ctx, nil))
 	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsAvailable, actWorkertags, 999)
 	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsUsed, actWorkertags, 1)
 
-	// Signal the middle to close and confirm increased by one
-	ts.NoError(ts.client.SignalWorkflow(ctx, run2.GetID(), run2.GetRunID(), "cancel", nil))
+	// Release the remaining activity and confirm all slots are free.
+	close(releases[1])
 	ts.NoError(run2.Get(ctx, nil))
 	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsAvailable, actWorkertags, 1000)
 	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsUsed, actWorkertags, 0)
@@ -7368,7 +7384,7 @@ func (ts *IntegrationTestSuite) TestSchedulePause() {
 }
 
 func (ts *IntegrationTestSuite) TestScheduleTrigger() {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithTimeout(ts.T().Context(), ctxTimeout)
 	defer cancel()
 	// Create a paused workflow
 	handle, err := ts.client.ScheduleClient().Create(ctx, client.ScheduleOptions{
@@ -7383,17 +7399,29 @@ func (ts *IntegrationTestSuite) TestScheduleTrigger() {
 	defer func() {
 		ts.NoError(handle.Delete(ctx))
 	}()
-	for range 5 {
+	for i := range 5 {
+		if i > 0 {
+			// Schedule actions can only trigger once per second.
+			time.Sleep(2 * time.Second)
+		}
 		ts.NoError(handle.Trigger(ctx, client.ScheduleTriggerOptions{
 			Overlap: enumspb.SCHEDULE_OVERLAP_POLICY_ALLOW_ALL,
 		}))
-		// schedule actions can only trigger once per second
-		time.Sleep(2 * time.Second)
 	}
-	description, err := handle.Describe(ctx)
-	ts.NoError(err)
-	ts.EqualValues(5, description.Info.NumActions)
-	ts.EqualValues(5, len(description.Info.RecentActions))
+
+	// Trigger can return before the action appears in Describe.
+	const actionsReadyTimeout = 5 * time.Second
+	describeCtx, cancelDescribe := context.WithTimeout(ctx, actionsReadyTimeout)
+	defer cancelDescribe()
+	var description *client.ScheduleDescription
+	ts.EventuallyWithT(func(t *assert.CollectT) {
+		current, err := handle.Describe(describeCtx)
+		if assert.NoError(t, err) {
+			description = current
+			assert.EqualValues(t, 5, current.Info.NumActions)
+			assert.Len(t, current.Info.RecentActions, 5)
+		}
+	}, actionsReadyTimeout, 200*time.Millisecond)
 	for _, wf := range description.Info.RecentActions {
 		wfRun := ts.client.GetWorkflow(ctx, wf.StartWorkflowResult.WorkflowID, wf.StartWorkflowResult.FirstExecutionRunID)
 		var result string
