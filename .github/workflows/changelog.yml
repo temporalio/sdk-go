@@ -13,7 +13,7 @@ jobs:
     name: Changelog checkpoint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           path: sdk-go
           fetch-depth: 0
@@ -21,12 +21,12 @@ jobs:
         id: tool
         working-directory: sdk-go
         run: echo "revision=$(cat internal/cmd/publisher/sdk-rust-revision)" >> "$GITHUB_OUTPUT"
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           repository: temporalio/sdk-rust
           ref: ${{ steps.tool.outputs.revision }}
           path: sdk-rust
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: sdk-go/go.mod
