@@ -246,6 +246,10 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		options.DeadlockDetectionTimeout = 10 * time.Second
 	}
 
+	if strings.Contains(ts.T().Name(), "TestLargeQueryResultError") {
+		options.DisablePayloadErrorLimit = true
+	}
+
 	if strings.Contains(ts.T().Name(), "CancelTimerViaDeferAfterWFTFailure") ||
 		strings.Contains(ts.T().Name(), "TestNonDeterminismFailureCause") {
 		options.WorkflowPanicPolicy = worker.BlockWorkflow
@@ -2191,15 +2195,6 @@ func (ts *IntegrationTestSuite) TestChildWorkflowTypedSearchAttributes() {
 func (ts *IntegrationTestSuite) TestLargeQueryResultError() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
-
-	ts.worker.Stop()
-	ts.workerStopped = true
-	ts.worker = worker.New(ts.client, ts.taskQueueName, worker.Options{
-		DisablePayloadErrorLimit: true,
-	})
-	ts.registerWorkflowsAndActivities(ts.worker)
-	ts.NoError(ts.worker.Start())
-	ts.workerStopped = false
 
 	run, err := ts.client.ExecuteWorkflow(ctx,
 		ts.startWorkflowOptions("test-large-query-error"), ts.workflows.LargeQueryResultWorkflow)
