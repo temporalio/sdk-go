@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - master
+      - yuandrew/diagnose-cloud-query-restart
 
 permissions:
   contents: read
