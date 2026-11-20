@@ -947,7 +947,7 @@ func (r *registry) registerActivityStructWithOptions(aStruct any, options Regist
 			}
 		}
 		r.activityFuncMap[registerName] = &activityExecutor{name: registerName, fn: methodValue.Interface()}
-		// The unbound method retains its definition location; methodValue is a reflection wrapper.
+		// The unbound method retains its Go name; methodValue is a shared reflection wrapper.
 		r.antialiasingRecordRegistration(activityAntialiasing, method.Func.Interface(), registerName)
 		count++
 	}
