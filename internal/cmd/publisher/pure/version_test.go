@@ -1,4 +1,4 @@
-package main
+package pure
 
 import (
 	"strings"
@@ -20,43 +20,6 @@ func TestVersionRegexps(t *testing.T) {
 			// rejected:
 			[]string{`SDKName = "temporal-go"`, `SDKVersion := "1.48.0"`})
 	})
-}
-
-func TestValidateIncrease(t *testing.T) {
-	tests := []struct {
-		name    string
-		current string
-		next    string
-		valid   bool
-	}{
-		{name: "patch", current: "1.47.0", next: "1.47.1", valid: true},
-		{name: "minor", current: "1.47.9", next: "1.48.0", valid: true},
-		{name: "equal", current: "1.47.0", next: "1.47.0"},
-		{name: "skip patch", current: "1.47.0", next: "1.47.2"},
-		{name: "skip minor", current: "1.47.0", next: "1.49.0"},
-		{name: "minor without patch reset", current: "1.47.9", next: "1.48.1"},
-		{name: "major", current: "1.47.9", next: "2.0.0"},
-		{name: "lower", current: "1.48.0", next: "1.47.9"},
-
-		// Contrib modules live on 0.x lines and may graduate to a stable release.
-		{name: "prerelease patch", current: "0.2.0", next: "0.2.1", valid: true},
-		{name: "prerelease minor", current: "0.2.1", next: "0.3.0", valid: true},
-		{name: "graduate to stable", current: "0.2.1", next: "1.0.0", valid: true},
-		{name: "graduate past stable", current: "0.2.1", next: "2.0.0"},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			current, next := mustVersion(t, test.current), mustVersion(t, test.next)
-			err := validateVersionIncrease(current, next)
-			if test.valid && err != nil {
-				t.Fatalf("expected version increase to be valid, got %v", err)
-			}
-			if !test.valid && err == nil {
-				t.Fatalf("expected version increase error, got %v", err)
-			}
-		})
-	}
 }
 
 func TestLatestReleasedVersion(t *testing.T) {
@@ -85,11 +48,10 @@ func TestLatestReleasedVersion(t *testing.T) {
 			want:      "0.2.1",
 		},
 	}
-
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			var gotVersion string
-			if got := latestReleasedVersion(test.tags, test.tagPrefix); got != nil {
+			if got := LatestReleasedVersion(test.tags, test.tagPrefix); got != nil {
 				gotVersion = got.String()
 			}
 			if gotVersion != test.want {
@@ -130,7 +92,7 @@ func TestExtractSDKVersion(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			got, err := extractSDKVersion(test.text)
+			got, err := ExtractSDKVersion(test.text)
 			if test.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), test.wantErr) {
 					t.Fatalf("expected error containing %q, got %v", test.wantErr, err)
@@ -147,6 +109,44 @@ func TestExtractSDKVersion(t *testing.T) {
 	}
 }
 
+func TestValidateVersionConstant(t *testing.T) {
+	tests := []struct {
+		name     string
+		text     string
+		expected Version
+		wantErr  string
+	}{
+		{
+			name:     "matches",
+			text:     "SDKVersion = \"1.48.0\"\n",
+			expected: Version{1, 48, 0},
+		},
+		{
+			name:     "stale declaration",
+			text:     "SDKVersion = \"1.47.0\"\n",
+			expected: Version{1, 48, 0},
+			wantErr:  "internal/version.go declares version 1.47.0, expected 1.48.0",
+		},
+		{
+			name:     "missing declaration",
+			expected: Version{1, 48, 0},
+			wantErr:  "expected exactly one SDKVersion declaration in version.go, found 0",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := ValidateVersionConstant(test.text, SDKModule(), test.expected)
+			if test.wantErr == "" {
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else if err == nil || err.Error() != test.wantErr {
+				t.Fatalf("got %v, want %q", err, test.wantErr)
+			}
+		})
+	}
+}
+
 func TestComputeNewVersionFile(t *testing.T) {
 	input := `
 const (
@@ -154,7 +154,7 @@ const (
 	SupportedServerVersions = ">=1.0.0 <2.0.0"
 )
 `
-	got, err := computeNewVersionFile(input, semver{1, 48, 0})
+	got, err := ComputeNewVersionFile(input, Version{1, 48, 0})
 	if err != nil {
 		t.Fatal(err)
 	}
