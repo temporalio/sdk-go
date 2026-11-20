@@ -644,17 +644,6 @@ type (
 		Unpause(ctx context.Context, options ScheduleUnpauseOptions) error
 	}
 
-	// ScheduleSetTimeSkippingConfigOptions configures
-	// [go.temporal.io/sdk/timeskipping.SetScheduleTimeSkippingConfig].
-	//
-	// NOTE: Experimental
-	//
-	// Exposed as: [go.temporal.io/sdk/timeskipping.ScheduleSetTimeSkippingConfigOptions]
-	ScheduleSetTimeSkippingConfigOptions struct {
-		// Config to apply. A nil Config clears the Schedule's time skipping configuration.
-		Config *TimeSkippingConfig
-	}
-
 	// ScheduleActionResult describes when a schedule action took place
 	//
 	// Exposed as: [go.temporal.io/sdk/client.ScheduleActionResult]

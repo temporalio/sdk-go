@@ -163,4 +163,15 @@ type (
 		// FastForwardConfig.ID. Required.
 		FastForwardID string
 	}
+
+	// ScheduleSetTimeSkippingConfigOptions configures
+	// [go.temporal.io/sdk/timeskipping.SetScheduleTimeSkippingConfig].
+	//
+	// Exposed as: [go.temporal.io/sdk/timeskipping.ScheduleSetTimeSkippingConfigOptions]
+	//
+	// NOTE: Experimental
+	ScheduleSetTimeSkippingConfigOptions struct {
+		// Config to apply. A nil Config clears the Schedule's time skipping configuration.
+		Config *TimeSkippingConfig
+	}
 )
