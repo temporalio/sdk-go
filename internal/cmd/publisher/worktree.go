@@ -135,6 +135,9 @@ func (w *worktree) createDraftRelease(module pure.VersionedModule, commit, relea
 	}
 	url = strings.TrimSpace(url)
 	printDetail(w.eff, "Draft release: %s", url)
+	if !m.MarkLatest() {
+		printDetail(w.eff, "WARNING: Editing on GitHub enables \"Set as the latest release\". Make sure to toggle it back off when you release %s.", tag)
+	}
 	return url, nil
 }
 

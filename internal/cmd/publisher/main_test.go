@@ -1048,6 +1048,7 @@ func TestTag(t *testing.T) {
 		[4/4] Create draft release(s)
 		      Draft release: https://github.com/temporalio/sdk-go/releases/tag/untagged-sdk
 		      Draft release: https://github.com/temporalio/sdk-go/releases/tag/untagged-contrib
+		      WARNING: Editing on GitHub enables "Set as the latest release". Make sure to toggle it back off when you release contrib/envconfig/v1.0.3.
 
 		To roll back successful draft releases, run:
 		      gh release delete v1.48.0 --yes
@@ -1124,6 +1125,7 @@ func TestTagEmpty(t *testing.T) {
 		[3/4] Get release notes
 		[4/4] Create draft release(s)
 		      Draft release: https://github.com/temporalio/sdk-go/releases/tag/draft
+		      WARNING: Editing on GitHub enables "Set as the latest release". Make sure to toggle it back off when you release contrib/envconfig/v1.0.3.
 
 		To roll back successful draft releases, run:
 		      gh release delete contrib/envconfig/v1.0.3 --yes
@@ -1298,6 +1300,7 @@ func TestTagStillReportsCreatedDraftsOnFailure(t *testing.T) {
 		[3/4] Get release notes
 		[4/4] Create draft release(s)
 		      Draft release: https://github.com/temporalio/sdk-go/releases/tag/untagged-envconfig
+		      WARNING: Editing on GitHub enables "Set as the latest release". Make sure to toggle it back off when you release contrib/envconfig/v0.1.0.
 
 		To roll back successful draft releases, run:
 		      gh release delete contrib/envconfig/v0.1.0 --yes
