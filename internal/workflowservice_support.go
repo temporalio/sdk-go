@@ -21,12 +21,21 @@ func WorkflowNamespace(ctx Context) string {
 type SignalWithStartWorkflowModelRequest interface {
 	GetNamespace() string
 	GetID() string
+	GetWorkflow() string
 }
 
 func SignalWithStartWorkflowSerializationContext(request SignalWithStartWorkflowModelRequest) converter.WorkflowSerializationContext {
 	return converter.WorkflowSerializationContext{
 		Namespace:  request.GetNamespace(),
 		WorkflowID: request.GetID(),
+	}
+}
+
+func SignalWithStartWorkflowStorageTarget(request SignalWithStartWorkflowModelRequest) converter.StorageDriverWorkflowInfo {
+	return converter.StorageDriverWorkflowInfo{
+		Namespace:    request.GetNamespace(),
+		WorkflowID:   request.GetID(),
+		WorkflowType: request.GetWorkflow(),
 	}
 }
 
