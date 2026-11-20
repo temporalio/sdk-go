@@ -3,10 +3,11 @@ package replaytests
 import (
 	"context"
 	"fmt"
-	"go.temporal.io/sdk/converter"
-	iconverter "go.temporal.io/sdk/internal/converter"
 	"math/rand"
 	"time"
+
+	"go.temporal.io/sdk/converter"
+	iconverter "go.temporal.io/sdk/internal/converter"
 
 	"github.com/google/uuid"
 	"github.com/nexus-rpc/sdk-go/nexus"
@@ -110,6 +111,10 @@ func TimerWf(ctx workflow.Context) error {
 		_ = workflow.NewTimer(newCtx, 10*time.Minute).Get(ctx, nil)
 	}()
 	return workflow.NewTimer(ctx, time.Minute*10).Get(ctx, nil)
+}
+
+func TimeSkippingWf(ctx workflow.Context) error {
+	return workflow.Sleep(ctx, time.Hour)
 }
 
 func LocalActivityWorkflow(ctx workflow.Context, name string) error {

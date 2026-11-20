@@ -10,6 +10,7 @@ var (
 	_ client.Client               = (*Client)(nil)
 	_ client.HistoryEventIterator = (*HistoryEventIterator)(nil)
 	_ client.NamespaceClient      = (*NamespaceClient)(nil)
+	_ client.ScheduleHandle       = (*ScheduleHandle)(nil)
 	_ converter.EncodedValue      = (*Value)(nil)
 	_ client.WorkflowRun          = (*WorkflowRun)(nil)
 )

@@ -22,6 +22,14 @@ to docs, or any other relevant information.
 
 ### Added
 
+- Added experimental time skipping (v2) for workflows and schedules. A test can
+  advance an execution's virtual clock instead of waiting out its timers, so an
+  hour-long sleep or a week of scheduled runs completes in moments. Unlike the
+  older Java test server (used by SDKs other than Go), each execution has its
+  own virtual clock. See the
+  [timeskipping](https://pkg.go.dev/go.temporal.io/sdk/timeskipping) package.
+  Requires a Temporal Server with time skipping enabled, such as with
+  `timeskipping.StartDevServer`.
 - **Experimental**: `converter.StorageDriverStoreContext` and
   `converter.StorageDriverSelectContext` have a `Namespace` field holding the
   namespace of the client or worker performing the operation, so drivers and
