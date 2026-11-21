@@ -249,77 +249,41 @@ func TestPayloadSerializerSystemPayloadWithCodec(t *testing.T) {
 	require.Equal(t, systemNexusModel{Value: "input"}, result)
 }
 
+// The poller validates the envelope during payload visitation, including the message type. See
+// TestNexusPollerInvalidSystemPayload. Without that visitation, Deserialize must still keep the envelope away from the
+// user codec and report a bad request.
 func TestPayloadSerializerInvalidSystemPayload(t *testing.T) {
 	for _, test := range []struct {
 		name        string
 		messageType string
 		encoding    string
 		data        []byte
-		errorType   nexus.HandlerErrorType
-		message     string
 	}{
-		{
-			name:        "unknown type",
-			messageType: "temporal.api.workflowservice.v1.UnknownRequest",
-			encoding:    converter.MetadataEncodingProto,
-			errorType:   nexus.HandlerErrorTypeInternal,
-			message:     `unrecognized system Nexus envelope message type "temporal.api.workflowservice.v1.UnknownRequest"`,
-		},
-		{
-			name:      "missing type",
-			encoding:  converter.MetadataEncodingProto,
-			errorType: nexus.HandlerErrorTypeInternal,
-			message:   `unrecognized system Nexus envelope message type "<missing>"`,
-		},
-		{
-			name:        "invalid encoding",
-			messageType: "temporal.api.common.v1.Payload",
-			encoding:    converter.MetadataEncodingJSON,
-			errorType:   nexus.HandlerErrorTypeBadRequest,
-			message:     `cannot deserialize system Nexus operation input: expected encoding "binary/protobuf", got "json/plain"`,
-		},
-		{
-			name:        "malformed protobuf",
-			messageType: "temporal.api.common.v1.Payload",
-			encoding:    converter.MetadataEncodingProto,
-			data:        []byte{0xff},
-			errorType:   nexus.HandlerErrorTypeBadRequest,
-			message:     `cannot deserialize system Nexus envelope "temporal.api.common.v1.Payload"`,
-		},
+		{name: "invalid encoding", messageType: "temporal.api.common.v1.Payload", encoding: converter.MetadataEncodingJSON},
+		{name: "malformed protobuf", messageType: "temporal.api.common.v1.Payload", encoding: converter.MetadataEncodingProto, data: []byte{0xff}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			for _, withCodec := range []bool{false, true} {
-				t.Run(fmt.Sprintf("codec=%v", withCodec), func(t *testing.T) {
-					dc := converter.GetDefaultDataConverter()
-					if withCodec {
-						dc = converter.NewCodecDataConverter(dc, nexusInputCodec{
-							decode: func([]*commonpb.Payload) ([]*commonpb.Payload, error) {
-								t.Fatal("invalid system payload must not reach the codec")
-								return nil, nil
-							},
-						})
-					}
-					serializer := payloadSerializer{
-						converter: dc,
-						payload: &commonpb.Payload{
-							Metadata: map[string][]byte{
-								proxy.SystemPayloadMetadataKey: []byte("true"),
-								converter.MetadataEncoding:     []byte(test.encoding),
-								converter.MetadataMessageType:  []byte(test.messageType),
-							},
-							Data: test.data,
-						},
-					}
-					var result systemNexusModel
-					var handlerErr *nexus.HandlerError
-					require.ErrorAs(t, serializer.Deserialize(nil, &result), &handlerErr)
-					require.Equal(t, test.errorType, handlerErr.Type)
-					require.Equal(t, test.message, handlerErr.Message)
-					if test.errorType == nexus.HandlerErrorTypeInternal {
-						require.Equal(t, nexus.HandlerErrorRetryBehaviorRetryable, handlerErr.RetryBehavior)
-					}
-				})
+			dc := converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), nexusInputCodec{
+				decode: func([]*commonpb.Payload) ([]*commonpb.Payload, error) {
+					t.Fatal("invalid system payload must not reach the codec")
+					return nil, nil
+				},
+			})
+			serializer := payloadSerializer{
+				converter: dc,
+				payload: &commonpb.Payload{
+					Metadata: map[string][]byte{
+						proxy.SystemPayloadMetadataKey: []byte("true"),
+						converter.MetadataEncoding:     []byte(test.encoding),
+						converter.MetadataMessageType:  []byte(test.messageType),
+					},
+					Data: test.data,
+				},
 			}
+			var result systemNexusModel
+			var handlerErr *nexus.HandlerError
+			require.ErrorAs(t, serializer.Deserialize(nil, &result), &handlerErr)
+			require.Equal(t, nexus.HandlerErrorTypeBadRequest, handlerErr.Type)
 		})
 	}
 }

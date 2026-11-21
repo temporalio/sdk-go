@@ -24,9 +24,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
-	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/reflect/protoreflect"
-	"google.golang.org/protobuf/reflect/protoregistry"
 
 	"go.temporal.io/sdk/converter"
 	commonconverter "go.temporal.io/sdk/internal/common/converter"
@@ -681,46 +678,28 @@ type payloadSerializer struct {
 	payload   *common.Payload
 }
 
-// Validate before payload visitation so unsupported envelopes are not reported as external storage failures.
-func validateSystemNexusInput(payload *common.Payload) (bool, *nexus.HandlerError) {
-	if string(payload.GetMetadata()[proxy.SystemPayloadMetadataKey]) != "true" {
-		return false, nil
-	}
-	messageType := string(payload.GetMetadata()[converter.MetadataMessageType])
-	if messageType == "" {
-		messageType = "<missing>"
-	}
-	descriptor, err := protoregistry.GlobalTypes.FindMessageByName(protoreflect.FullName(messageType))
-	if err != nil {
-		return true, &nexus.HandlerError{
+// systemPayloadErrorToHandlerError converts an invalid system envelope error from payload visitation to a Nexus
+// handler error. Only an unknown message type is retryable, because a worker with a newer API version can know it.
+func systemPayloadErrorToHandlerError(err *proxy.SystemPayloadError) *nexus.HandlerError {
+	if err.Reason == proxy.SystemPayloadErrorUnknownMessageType {
+		return &nexus.HandlerError{
 			Type:          nexus.HandlerErrorTypeInternal,
-			Message:       fmt.Sprintf("unrecognized system Nexus envelope message type %q", messageType),
-			Cause:         fmt.Errorf("unrecognized system Nexus envelope message type %q: %w", messageType, err),
+			Message:       fmt.Sprintf("unrecognized system Nexus envelope message type %q", err.MessageType),
+			Cause:         err,
 			RetryBehavior: nexus.HandlerErrorRetryBehaviorRetryable,
 		}
 	}
-	if encoding := string(payload.GetMetadata()[converter.MetadataEncoding]); encoding != converter.MetadataEncodingProto {
-		err := fmt.Errorf(
-			"cannot deserialize system Nexus operation input: expected encoding %q, got %q", converter.MetadataEncodingProto, encoding)
-		return true, &nexus.HandlerError{Type: nexus.HandlerErrorTypeBadRequest, Message: err.Error(), Cause: err}
+	return &nexus.HandlerError{
+		Type:    nexus.HandlerErrorTypeBadRequest,
+		Message: "invalid system Nexus operation input",
+		Cause:   err,
 	}
-	if err := proto.Unmarshal(payload.GetData(), descriptor.New().Interface()); err != nil {
-		return true, &nexus.HandlerError{
-			Type:    nexus.HandlerErrorTypeBadRequest,
-			Message: fmt.Sprintf("cannot deserialize system Nexus envelope %q", messageType),
-			Cause:   fmt.Errorf("cannot deserialize system Nexus envelope %q: %w", messageType, err),
-		}
-	}
-	return true, nil
 }
 
 func (p *payloadSerializer) Deserialize(_ *nexus.Content, v any) error {
-	isSystemPayload, validationErr := validateSystemNexusInput(p.payload)
-	if validationErr != nil {
-		return validationErr
-	}
 	dc := p.converter
-	if isSystemPayload {
+	// The poller validates the envelope during payload visitation, before the handler reads the input.
+	if string(p.payload.GetMetadata()[proxy.SystemPayloadMetadataKey]) == "true" {
 		dc = commonconverter.WithDataConverterSystemNexusContext(systemNexusDataConverter, dc)
 	}
 	err := dc.FromPayload(p.payload, v)

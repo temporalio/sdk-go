@@ -31,7 +31,8 @@ to docs, or any other relevant information.
   slot usage.
 - Nexus workers decode marked System Nexus inputs with the system protobuf converter and use the
   configured data converter and codecs for embedded user values, keeping the outer envelope out of
-  user codecs. Unrecognized system envelope types produce retryable internal handler errors.
+  user codecs. Unrecognized system envelope types produce retryable internal handler errors. Other
+  invalid system envelopes produce bad-request handler errors.
 
 ### Changed
 
