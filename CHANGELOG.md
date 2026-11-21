@@ -29,6 +29,9 @@ to docs, or any other relevant information.
 - Added experimental `worker.GetSlotUsage`, which returns a snapshot of a worker's task slot usage.
 - Added experimental `worker.GetInfo`, which returns a snapshot of a worker's state, currently its task
   slot usage.
+- Added `StartWorkflowInput` to `interceptor.ClientUpdateWithStartWorkflowInput`, so client
+  interceptors can inspect and modify the start options, workflow type, and arguments of an
+  update-with-start call without reflection.
 
 ### Changed
 
