@@ -1199,7 +1199,11 @@ func (s *coroutineState) call(timeout time.Duration) {
 		}
 		msg := fmt.Sprintf("[TMPRL1101] Potential deadlock detected: "+
 			"workflow goroutine %q didn't yield for over %s", s.name, timeout)
+		// Hold the dispatcher lock so a coroutine the stuck goroutine starts later
+		// sees it as closed instead of racing with the dispatcher.
+		s.dispatcher.mutex.Lock()
 		s.closed.Store(true)
+		s.dispatcher.mutex.Unlock()
 		s.panicError = newWorkflowPanicError(msg, st)
 	}
 }
@@ -1264,6 +1268,13 @@ func (s *coroutineState) run(ctx Context, f func(ctx Context)) {
 }
 
 func (d *dispatcherImpl) NewCoroutine(ctx Context, name string, highPriority bool, f func(ctx Context)) Context {
+	d.mutex.Lock()
+	defer d.mutex.Unlock()
+	if parent, ok := ctx.Value(coroutinesContextKey).(*coroutineState); ok && parent.closed.Load() {
+		// The parent was reported as deadlocked but kept running. The dispatcher no
+		// longer waits for it, so leave the dispatcher state alone and do not start f.
+		return WithValue(ctx, coroutinesContextKey, &coroutineState{name: name, dispatcher: d})
+	}
 	if name == "" {
 		name = fmt.Sprintf("%v", d.sequence+1)
 	}
@@ -1388,12 +1399,13 @@ func (d *dispatcherImpl) Close() {
 		return
 	}
 	d.closed = true
+	coroutines := slices.Clone(d.coroutines)
 	d.mutex.Unlock()
 	// We need to exit the coroutines in a separate goroutine because:
 	// 	* The coroutine may be stuck and won't respond to the exit request.
 	// 	* On exit the coroutines defers will still run and that may block.
 	go func() {
-		for _, c := range d.coroutines {
+		for _, c := range coroutines {
 			c.exit(d.logger, defaultDeadlockDetectionTimeout)
 		}
 	}()
