@@ -29,6 +29,9 @@ to docs, or any other relevant information.
 - Added experimental `worker.GetSlotUsage`, which returns a snapshot of a worker's task slot usage.
 - Added experimental `worker.GetInfo`, which returns a snapshot of a worker's state, currently its task
   slot usage.
+- Add experimental `NewDynamicTemporalOperation` and `MustNewDynamicTemporalOperation` which sets a
+  catch-all Nexus operation handler for a Nexus service. This handler will be used when an unknown
+  operation is dispatched to this service.
 
 ### Changed
 

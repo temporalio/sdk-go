@@ -4091,16 +4091,24 @@ func (r *testNexusHandler) StartOperation(
 	}
 
 	opRef := r.env.nexusOperationRefs[service][operation]
-	op := s.Operation(operation)
 	if opRef == nil {
-		if op == nil {
+		if s.Operation(operation) == nil {
 			panic(fmt.Sprintf(
 				"nexus service %q operation %q not registered and not mocked",
 				service,
 				operation,
 			))
 		}
-		opRef = op.(testNexusOperationReference)
+		// opRef == nil means the operation is not mocked.
+		// However, if s.Operation(operation) != nil, then we can assume that
+		// there is a handler that can handle this operation -- most likely a dynamic
+		// handler registered to the service.
+		//
+		// Since the dynamic handler consumes the entire input value, we do not need to
+		// decode the input, we should just passthrough the operation and input as-is.
+		dataConverter := cmp.Or(r.opHandle.params.dataConverter, r.env.dataConverter)
+		r.notifyStarted(service, operation, r.opHandle.params.input, dataConverter)
+		return r.handler.StartOperation(ctx, service, operation, input, options)
 	}
 
 	inputPtr := reflect.New(opRef.InputType())
@@ -4132,21 +4140,7 @@ func (r *testNexusHandler) StartOperation(
 		},
 	)
 
-	if r.env.onNexusOperationStartedListener != nil {
-		waitCh := make(chan struct{})
-		r.env.postCallback(func() {
-			r.env.onNexusOperationStartedListener(
-				service,
-				operation,
-				newEncodedValue(
-					&commonpb.Payloads{Payloads: []*commonpb.Payload{payload}},
-					dataConverter,
-				),
-			)
-			close(waitCh)
-		}, false)
-		<-waitCh // wait until listener returns
-	}
+	r.notifyStarted(service, operation, payload, dataConverter)
 
 	m := &mockWrapper{
 		env:           r.env,
@@ -4209,6 +4203,26 @@ func (r *testNexusHandler) StartOperation(
 	}
 
 	return r.handler.StartOperation(ctx, service, operation, input, options)
+}
+
+// Run the test's operation-started listener and wait for it to finish.
+// Shared by mocked operations and operations dispatched to the Nexus registry.
+func (r *testNexusHandler) notifyStarted(service, operation string, payload *commonpb.Payload, dataConverter converter.DataConverter) {
+	if r.env.onNexusOperationStartedListener != nil {
+		waitCh := make(chan struct{})
+		r.env.postCallback(func() {
+			r.env.onNexusOperationStartedListener(
+				service,
+				operation,
+				newEncodedValue(
+					&commonpb.Payloads{Payloads: []*commonpb.Payload{payload}},
+					dataConverter,
+				),
+			)
+			close(waitCh)
+		}, false)
+		<-waitCh // wait until listener returns
+	}
 }
 
 func (r *testNexusHandler) CancelOperation(
