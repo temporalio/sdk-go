@@ -8,8 +8,10 @@ import (
 	"github.com/nexus-rpc/sdk-go/nexus"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
+	"go.temporal.io/api/proxy"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
+	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/log"
 )
@@ -163,20 +165,7 @@ func (ntp *nexusTaskPoller) ProcessTask(task any) error {
 
 	nctx, handlerErr := ntp.taskHandler.newNexusOperationContext(response)
 	if handlerErr != nil {
-		// context wasn't propagated to us, use a background context.
-		failedRequest, err := ntp.taskHandler.fillInFailure(
-			response.TaskToken,
-			handlerErr,
-			getEffectiveTemporalFailureResponses(response.GetRequest().GetCapabilities().GetTemporalFailureResponses()),
-			ntp.taskHandler.failureConverter,
-			response.GetPollerGroupId(),
-		)
-		if err != nil {
-			return err
-		}
-		_, err = ntp.taskHandler.client.WorkflowService().RespondNexusTaskFailed(
-			context.Background(), failedRequest)
-		return err
+		return ntp.respondTaskFailed(response, handlerErr, ntp.taskHandler.failureConverter)
 	}
 
 	// Retrieve any operation input payloads that were offloaded to external storage
@@ -184,6 +173,14 @@ func (ntp *nexusTaskPoller) ProcessTask(task any) error {
 	// one result payload, so payload visits are unconcurrent (the configurable
 	// visit concurrency is scoped to workflow tasks).
 	if visitErr := visitProtoPayloads(ntp.backgroundContext, ntp.inboundPayloadVisitor, response, 0); visitErr != nil {
+		var systemPayloadErr *proxy.SystemPayloadError
+		if errors.As(visitErr, &systemPayloadErr) {
+			return ntp.respondTaskFailed(
+				response,
+				systemPayloadErrorToHandlerError(systemPayloadErr),
+				converter.WithFailureConverterSerializationContext(ntp.taskHandler.failureConverter, nctx.nexusSerializationContext),
+			)
+		}
 		return ntp.reportExternalStorageFailure(response, "retrieve Nexus operation input from external storage", visitErr)
 	}
 
@@ -295,6 +292,24 @@ func (ntp *nexusTaskPoller) reportCompletion(
 	return err
 }
 
+func (ntp *nexusTaskPoller) respondTaskFailed(
+	response *workflowservice.PollNexusTaskQueueResponse,
+	handlerErr *nexus.HandlerError,
+	failureConverter converter.FailureConverter,
+) error {
+	failedRequest, err := ntp.taskHandler.fillInFailure(
+		response.TaskToken,
+		handlerErr,
+		getEffectiveTemporalFailureResponses(response.GetRequest().GetCapabilities().GetTemporalFailureResponses()),
+		failureConverter,
+		response.GetPollerGroupId(),
+	)
+	if err != nil {
+		return err
+	}
+	return ntp.reportCompletion(nil, failedRequest)
+}
+
 // reportExternalStorageFailure fails the task with a retryable internal error when
 // external storage retrieval or offload fails, so the server redelivers the task.
 func (ntp *nexusTaskPoller) reportExternalStorageFailure(
@@ -302,16 +317,9 @@ func (ntp *nexusTaskPoller) reportExternalStorageFailure(
 	action string,
 	cause error,
 ) error {
-	handlerErr := nexus.NewHandlerErrorf(nexus.HandlerErrorTypeInternal, "failed to %s: %v", action, cause)
-	failedRequest, err := ntp.taskHandler.fillInFailure(
-		response.TaskToken,
-		handlerErr,
-		getEffectiveTemporalFailureResponses(response.GetRequest().GetCapabilities().GetTemporalFailureResponses()),
+	return ntp.respondTaskFailed(
+		response,
+		nexus.NewHandlerErrorf(nexus.HandlerErrorTypeInternal, "failed to %s: %v", action, cause),
 		ntp.taskHandler.failureConverter,
-		response.GetPollerGroupId(),
 	)
-	if err != nil {
-		return err
-	}
-	return ntp.reportCompletion(nil, failedRequest)
 }
