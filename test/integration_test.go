@@ -2,10 +2,12 @@ package test_test
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
 	"errors"
 	"flag"
 	"fmt"
+	"log"
 	"math"
 	"math/rand"
 	"os"
@@ -193,6 +195,10 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		options.MetricsHandler = metricsHandler
 		options.TrafficController = trafficController
 		options.Interceptors = clientInterceptors
+		if ts.T().Name() == "TestIntegrationSuite/TestMultipleUpdateOrdering" {
+			options.ConnectionOptions.DialOptions = append(options.ConnectionOptions.DialOptions,
+				grpc.WithChainUnaryInterceptor(logUpdateOrderingRPCs()))
+		}
 	})
 	ts.NoError(err)
 
@@ -5340,6 +5346,63 @@ func (ts *IntegrationTestSuite) testUpdateOrderingCancel(cancelWf bool) {
 	var result int
 	ts.NoError(run.Get(ctx, &result))
 	ts.Equal(10, result)
+}
+
+func logUpdateOrderingRPCs() grpc.UnaryClientInterceptor {
+	logger := log.New(os.Stderr, "update-ordering: ", log.Ldate|log.Ltime|log.Lmicroseconds|log.LUTC)
+	taskID := func(token []byte) string {
+		sum := sha256.Sum256(token)
+		return fmt.Sprintf("%x", sum[:8])
+	}
+	logEcho := func(delivery string, task *workflowservice.PollActivityTaskQueueResponse) {
+		if task.GetActivityType().GetName() != "Echo" {
+			return
+		}
+		logger.Printf("Echo delivered: %s run=%s activity_id=%s attempt=%d task=%s scheduled=%s started=%s",
+			delivery, task.GetWorkflowExecution().GetRunId(), task.GetActivityId(), task.GetAttempt(),
+			taskID(task.GetTaskToken()), task.GetScheduledTime().AsTime().Format(time.RFC3339Nano),
+			task.GetStartedTime().AsTime().Format(time.RFC3339Nano))
+	}
+	return func(
+		ctx context.Context, method string, req, reply any, cc *grpc.ClientConn,
+		invoker grpc.UnaryInvoker, opts ...grpc.CallOption,
+	) error {
+		start := time.Now()
+		switch request := req.(type) {
+		case *workflowservice.ShutdownWorkerRequest:
+			logger.Printf("ShutdownWorker started: worker=%s queue=%s", request.GetWorkerInstanceKey(), request.GetTaskQueue())
+		case *workflowservice.PollActivityTaskQueueRequest:
+			logger.Printf("PollActivityTaskQueue started: worker=%s queue=%s", request.GetWorkerInstanceKey(), request.GetTaskQueue().GetName())
+		}
+
+		err := invoker(ctx, method, req, reply, cc, opts...)
+		elapsed := time.Since(start)
+		switch request := req.(type) {
+		case *workflowservice.ShutdownWorkerRequest:
+			logger.Printf("ShutdownWorker finished: worker=%s queue=%s duration=%s status=%s error=%v",
+				request.GetWorkerInstanceKey(), request.GetTaskQueue(), elapsed, status.Code(err), err)
+		case *workflowservice.PollActivityTaskQueueRequest:
+			task := reply.(*workflowservice.PollActivityTaskQueueResponse)
+			logger.Printf("PollActivityTaskQueue finished: worker=%s duration=%s status=%s task_received=%t",
+				request.GetWorkerInstanceKey(), elapsed, status.Code(err), len(task.GetTaskToken()) > 0)
+			logEcho("poll worker="+request.GetWorkerInstanceKey(), task)
+		case *workflowservice.PollWorkflowTaskQueueRequest:
+			task := reply.(*workflowservice.PollWorkflowTaskQueueResponse)
+			if len(task.GetTaskToken()) > 0 {
+				logger.Printf("Workflow task delivered: worker=%s run=%s task=%s", request.GetWorkerInstanceKey(),
+					task.GetWorkflowExecution().GetRunId(), taskID(task.GetTaskToken()))
+			}
+		case *workflowservice.RespondWorkflowTaskCompletedRequest:
+			for _, task := range reply.(*workflowservice.RespondWorkflowTaskCompletedResponse).GetActivityTasks() {
+				logEcho("eager workflow_task="+taskID(request.GetTaskToken()), task)
+			}
+		case *workflowservice.RespondActivityTaskCompletedRequest, *workflowservice.RespondActivityTaskFailedRequest, *workflowservice.RespondActivityTaskCanceledRequest:
+			call := req.(interface{ GetTaskToken() []byte })
+			logger.Printf("%s finished: task=%s duration=%s status=%s error=%v",
+				method, taskID(call.GetTaskToken()), elapsed, status.Code(err), err)
+		}
+		return err
+	}
 }
 
 func (ts *IntegrationTestSuite) TestUpdateAlwaysHandled() {

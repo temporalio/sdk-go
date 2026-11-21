@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - master
+      - yuandrew/investigate-post-shutdown-ci
 
 permissions:
   contents: read
@@ -12,6 +13,7 @@ permissions:
 
 jobs:
   check-generated:
+    if: github.ref_name != 'yuandrew/investigate-post-shutdown-ci'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -35,6 +37,7 @@ jobs:
         working-directory: ./internal/cmd/build
 
   check:
+    if: github.ref_name != 'yuandrew/investigate-post-shutdown-ci'
     strategy:
       fail-fast: false
       matrix:
@@ -60,6 +63,7 @@ jobs:
         working-directory: ./internal/cmd/build
 
   unit-test:
+    if: github.ref_name != 'yuandrew/investigate-post-shutdown-ci'
     strategy:
       fail-fast: false
       matrix:
@@ -109,6 +113,7 @@ jobs:
           ARTIFACT_URL: ${{ steps.upload-test-logs.outputs.artifact-url }}
 
   integ-test:
+    if: github.ref_name != 'yuandrew/investigate-post-shutdown-ci'
     strategy:
       fail-fast: false
       matrix:
@@ -158,6 +163,7 @@ jobs:
           ARTIFACT_URL: ${{ steps.upload-test-logs.outputs.artifact-url }}
 
   integ-test-cache:
+    if: github.ref_name != 'yuandrew/investigate-post-shutdown-ci'
     strategy:
       fail-fast: false
       matrix:
@@ -206,6 +212,7 @@ jobs:
           ARTIFACT_URL: ${{ steps.upload-test-logs.outputs.artifact-url }}
 
   docker-compose-test:
+    if: github.ref_name != 'yuandrew/investigate-post-shutdown-ci'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -362,6 +369,7 @@ jobs:
           ARTIFACT_URL: ${{ steps.upload-test-logs.outputs.artifact-url }}
 
   features-test:
+    if: github.ref_name != 'yuandrew/investigate-post-shutdown-ci'
     uses: temporalio/features/.github/workflows/go.yaml@main
     with:
       go-repo-path: ${{github.event.pull_request.head.repo.full_name}}
