@@ -1052,6 +1052,23 @@ type (
 		// NOTE: Experimental
 		ExternalStorage converter.ExternalStorage
 
+		// PayloadCache keeps External Storage payloads that this client stores or
+		// retrieves, so the same payload is not downloaded again. Workers created
+		// from this client use the same cache. Nil means no cache.
+		//
+		// Workers report cache metrics for their own task processing. Calls made
+		// with this client, including from inside Activities and Nexus handlers,
+		// report no cache metrics.
+		//
+		// NOTE: Experimental
+		PayloadCache converter.PayloadCache
+
+		// DisablePayloadCache turns payload caching off. It cannot be set together
+		// with PayloadCache.
+		//
+		// NOTE: Experimental
+		DisablePayloadCache bool
+
 		// Configuration for when payload sizes exceed limits.
 		//
 		// NOTE: Experimental
@@ -1620,6 +1637,12 @@ func newClient(ctx context.Context, options ClientOptions, existing Client) (Cli
 }
 
 func newClientPluginRoot(ctx context.Context, options ClientPluginNewClientOptions) (Client, error) {
+	// Checked here rather than in newClient because plugin NewClient hooks may
+	// still change the options before this point.
+	if options.ClientOptions.PayloadCache != nil && options.ClientOptions.DisablePayloadCache {
+		return nil, fmt.Errorf("cannot set both PayloadCache and DisablePayloadCache")
+	}
+
 	// Dial or use existing connection
 	var connection *grpc.ClientConn
 	var err error
@@ -1737,7 +1760,8 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 	if err != nil {
 		panic(fmt.Sprintf("invalid ExternalStorage options: %v", err))
 	}
-	storageParams = storageParams.WithNamespace(options.Namespace)
+	storageParams = storageParams.WithNamespace(options.Namespace).
+		WithPayloadCache(resolvePayloadCache(options.PayloadCache, options.DisablePayloadCache))
 
 	storageDriverTypes := collectStorageDriverTypes(options.ExternalStorage.Drivers)
 
@@ -1801,6 +1825,15 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 	}
 
 	return client
+}
+
+// resolvePayloadCache returns the cache the client uses, or nil when payload
+// caching is off.
+func resolvePayloadCache(cache converter.PayloadCache, disable bool) converter.PayloadCache {
+	if disable {
+		return nil
+	}
+	return cache
 }
 
 func (op *withStartWorkflowOperationImpl) Get(ctx context.Context) (WorkflowRun, error) {

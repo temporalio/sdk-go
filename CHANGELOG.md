@@ -26,6 +26,9 @@ to docs, or any other relevant information.
   `converter.StorageDriverSelectContext` have a `Namespace` field holding the
   namespace of the client or worker performing the operation, so drivers and
   selectors can partition by namespace even when there is no `Target`.
+- **Experimental**: Opt-in payload caching for External Storage is now available. To enable
+  it, set `client.Options.PayloadCache` to a cache (e.g. `converter.NewInMemoryPayloadCache`)
+  or set `client.Options.DisablePayloadCache` to true to disable caching.
 - Added experimental `worker.GetSlotUsage`, which returns a snapshot of a worker's task slot usage.
 - Added experimental `worker.GetInfo`, which returns a snapshot of a worker's state, currently its task
   slot usage.
