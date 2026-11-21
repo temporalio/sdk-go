@@ -335,7 +335,19 @@ jobs:
           TEMPORAL_CLIENT_CLOUD_API_VERSION: v0.19.1
       - name: Integration tests against cloud
         timeout-minutes: 50
-        run: go run . integration-test -module test -envconfig -cloud -p 1 -packages . -timeout 45m
+        run: |
+          if [[ "$GITHUB_REF_NAME" != "yuandrew/investigate-post-shutdown-ci" ]]; then
+            go run . integration-test -module test -envconfig -cloud -p 1 -packages . -timeout 45m
+            exit
+          fi
+
+          result=0
+          for trial in {1..8}; do
+            go run . integration-test -module test -envconfig -cloud -packages . \
+              -run '^TestIntegrationSuite$/^TestMultipleUpdateOrdering$' -timeout 2m \
+              -log-dir "$GITHUB_WORKSPACE/.build/test-logs/trial-$trial" || result=1
+          done
+          exit "$result"
         working-directory: ./internal/cmd/build
         env:
           TEST_LOG_ARTIFACT_NAME: ${{ github.job }}-${{ matrix.go-version }}-fips-${{ matrix.fips }}
