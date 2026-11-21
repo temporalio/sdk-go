@@ -3,6 +3,7 @@ package internal
 import (
 	"cmp"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
@@ -3301,7 +3302,9 @@ func (wc *workflowEnvironmentInterceptor) prepareNexusOperationParams(ctx Contex
 			Service:   service,
 			Operation: operationName,
 		}]; ok {
-			sc = info.SerializationContext(input.Input)
+			if info.SerializationContext != nil {
+				sc = info.SerializationContext(input.Input)
+			}
 		}
 	} else {
 		sc = converter.NexusSerializationContext{
@@ -3322,6 +3325,21 @@ func (wc *workflowEnvironmentInterceptor) prepareNexusOperationParams(ctx Contex
 	payload, err := dc.ToPayload(input.Input)
 	if err != nil {
 		return ExecuteNexusOperationParams{}, err
+	}
+	if endpoint == systemNexusEndpoint {
+		info := systemNexusRegistry[SystemNexusRegistryKey{Service: service, Operation: operationName}]
+		if info.StorageTarget != nil {
+			target, err := json.Marshal(info.StorageTarget(input.Input))
+			if err != nil {
+				return ExecuteNexusOperationParams{}, fmt.Errorf("encode System Nexus storage target: %w", err)
+			}
+			// The outbound traversal sees the envelope rather than the generated
+			// request, so carry its resolved destination across that boundary.
+			if payload.Metadata == nil {
+				payload.Metadata = make(map[string][]byte)
+			}
+			payload.Metadata[systemNexusStorageTargetMetadataKey] = target
+		}
 	}
 
 	if input.Options.CancellationType == NexusOperationCancellationTypeUnspecified {

@@ -8,6 +8,8 @@ import (
 
 var systemNexusRegistry = make(map[SystemNexusRegistryKey]SystemNexusRegistryEntry)
 
+const systemNexusStorageTargetMetadataKey = "__temporal_system_storage_target"
+
 type SystemNexusRegistryKey struct {
 	// Service is the fully-qualified name of the temporal service that the
 	// operation belongs to, e.g. "temporal.api.workflowservice.v1.WorkflowService".
@@ -21,6 +23,9 @@ type SystemNexusRegistryEntry struct {
 	// system nexus request. The SDK uses that context to encode payloads
 	// inside the request.
 	SerializationContext func(request any) converter.SerializationContext
+	// StorageTarget identifies the execution receiving the request's embedded
+	// payloads, independently of the client or worker performing the store.
+	StorageTarget func(request any) converter.StorageDriverWorkflowInfo
 }
 
 // UpdateSystemNexusRegistry merges newEntries into the system nexus registry,
