@@ -763,10 +763,14 @@ type registry struct {
 	dynamicActivity               activity
 	_                             DynamicRegisterActivityOptions
 	interceptors                  []WorkerInterceptor
+	logger                        log.Logger
+	antialiasingActivityMap       map[string]antialiasingRegistration
+	antialiasingWorkflowMap       map[string]antialiasingRegistration
 }
 
 type registryOptions struct {
 	disableAliasing bool
+	logger          log.Logger
 }
 
 func (r *registry) RegisterWorkflow(af any) {
@@ -826,6 +830,7 @@ func (r *registry) RegisterWorkflowWithOptions(
 	if len(alias) > 0 && r.workflowAliasMap != nil {
 		r.workflowAliasMap[fnName] = alias
 	}
+	r.antialiasingRecordRegistration(workflowAntialiasing, wf, registerName)
 }
 
 func (r *registry) RegisterDynamicWorkflow(wf any, options DynamicRegisterWorkflowOptions) {
@@ -910,6 +915,7 @@ func (r *registry) RegisterActivityWithOptions(
 	if len(alias) > 0 && r.activityAliasMap != nil {
 		r.activityAliasMap[fnName] = alias
 	}
+	r.antialiasingRecordRegistration(activityAntialiasing, af, registerName)
 }
 
 func (r *registry) registerActivityStructWithOptions(aStruct any, options RegisterActivityOptions) error {
@@ -941,6 +947,8 @@ func (r *registry) registerActivityStructWithOptions(aStruct any, options Regist
 			}
 		}
 		r.activityFuncMap[registerName] = &activityExecutor{name: registerName, fn: methodValue.Interface()}
+		// The unbound method retains its Go name; methodValue is a shared reflection wrapper.
+		r.antialiasingRecordRegistration(activityAntialiasing, method.Func.Interface(), registerName)
 		count++
 	}
 	if count == 0 {
@@ -1199,15 +1207,21 @@ func validateFnFormat(fnType reflect.Type, isWorkflow, isDynamic bool) error {
 func newRegistry() *registry { return newRegistryWithOptions(registryOptions{}) }
 
 func newRegistryWithOptions(options registryOptions) *registry {
+	if options.logger == nil {
+		options.logger = ilog.NewDefaultLogger()
+	}
 	r := &registry{
 		workflowFuncMap:               make(map[string]any),
 		workflowVersioningBehaviorMap: make(map[string]VersioningBehavior),
 		activityFuncMap:               make(map[string]activity),
 		nexusServices:                 make(map[string]*nexus.Service),
+		logger:                        options.logger,
 	}
 	if !options.disableAliasing {
 		r.workflowAliasMap = make(map[string]string)
 		r.activityAliasMap = make(map[string]string)
+		r.antialiasingActivityMap = make(map[string]antialiasingRegistration)
+		r.antialiasingWorkflowMap = make(map[string]antialiasingRegistration)
 	}
 	return r
 }
@@ -2638,7 +2652,10 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	processTestTags(&options, &workerParams)
 
 	// worker specific registry
-	registry := newRegistryWithOptions(registryOptions{disableAliasing: options.DisableRegistrationAliasing})
+	registry := newRegistryWithOptions(registryOptions{
+		disableAliasing: options.DisableRegistrationAliasing,
+		logger:          workerParams.Logger,
+	})
 	// Build set of interceptors using the applicable client ones first (being
 	// careful not to append to the existing slice)
 	registry.interceptors = make([]WorkerInterceptor, 0, len(client.workerInterceptors)+len(options.Interceptors))

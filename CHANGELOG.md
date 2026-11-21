@@ -22,6 +22,12 @@ to docs, or any other relevant information.
 
 ### Added
 
+- Added registration-time warnings for ambiguous workflow and activity names when registration
+  aliasing is enabled, including collisions between unqualified function or method names and
+  registered names. Warnings show both registered names and registration locations, plus Go function
+  names when available. Function literals and multiple names for the same Go function do not warn.
+  Documented that registering an activity struct does not create aliases for its methods; use the
+  full registered string names when executing them.
 - **Experimental**: `converter.StorageDriverStoreContext` and
   `converter.StorageDriverSelectContext` have a `Namespace` field holding the
   namespace of the client or worker performing the operation, so drivers and
