@@ -42,6 +42,7 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- Marked `workflow.SignalWithStart` as experimental.
 - Workers no longer advertise a worker control task queue unless worker heartbeats and commands
   are supported and the shared namespace command poller is running.
 - Workers let the server complete outstanding worker-command polls on namespaces that support
