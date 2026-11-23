@@ -32,6 +32,8 @@ to docs, or any other relevant information.
 
 ### Changed
 
+- Reduced gRPC interceptor allocations when the effective metrics handler is a
+  no-op.
 - `converter.NewZlibCodec` reuses zlib writers and readers across payloads instead of creating them
   for every payload. A writer is about 1 MB of allocation, so encoding allocates far less, which
   reduces garbage collection in workers that encode many payloads. The encoded output is unchanged.
@@ -43,6 +45,8 @@ to docs, or any other relevant information.
 ### Fixed
 
 - Marked `workflow.SignalWithStart` as experimental.
+- `client.Options.SdkName` and `client.Options.SdkVersion` now also apply to the
+  SDK metadata of workflow task completions, not only to worker heartbeats.
 - Workers no longer advertise a worker control task queue unless worker heartbeats and commands
   are supported and the shared namespace command poller is running.
 - Workers let the server complete outstanding worker-command polls on namespaces that support

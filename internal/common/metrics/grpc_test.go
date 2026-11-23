@@ -9,9 +9,11 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/status"
 )
 
 func TestGRPCInterceptor(t *testing.T) {
@@ -68,4 +70,22 @@ func TestGRPCInterceptor(t *testing.T) {
 	require.Equal(t, metrics.TemporalLongRequestFailure+"_my_suffix", counters[1].Name)
 	require.Equal(t, map[string]string{metrics.OperationTagName: "Check", "roottag": "roottagval", metrics.NamespaceTagName: "_unknown_"}, counters[1].Tags)
 	require.Equal(t, int64(1), counters[1].Value())
+}
+
+func TestGRPCInterceptorContextHandlerOverridesNopDefault(t *testing.T) {
+	handler := metrics.NewCapturingHandler()
+	interceptor := metrics.NewGRPCInterceptor(metrics.NopHandler, "", false)
+	ctx := context.WithValue(t.Context(), metrics.HandlerContextKey{}, handler)
+	rpcErr := status.Error(codes.Unavailable, "unavailable")
+
+	err := interceptor(ctx, grpc_health_v1.Health_Check_FullMethodName, nil, nil, nil,
+		func(context.Context, string, any, any, *grpc.ClientConn, ...grpc.CallOption) error {
+			return rpcErr
+		})
+
+	require.ErrorIs(t, err, rpcErr)
+	counters := handler.Counters()
+	require.Len(t, counters, 2)
+	require.Equal(t, metrics.TemporalRequestFailure, counters[1].Name)
+	require.EqualValues(t, 1, counters[1].Value())
 }
