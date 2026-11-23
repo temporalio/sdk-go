@@ -20,66 +20,66 @@ import (
 	"go.temporal.io/sdk/log"
 )
 
-// Archive identifies the release artifact selected by temporal.download.
-type Archive struct {
+// ArchiveInfo gives the download URL and executable to extract from a CLI archive.
+type ArchiveInfo struct {
 	ArchiveURL    string `json:"archiveUrl"`
 	FileToExtract string `json:"fileToExtract"`
 }
 
-// Resolve returns the CLI archive for this SDK version and platform.
-func Resolve(ctx context.Context, version string, logger log.Logger) (Archive, error) {
+// Resolve returns CLI archive information for this SDK version and platform.
+func Resolve(ctx context.Context, version string, logger log.Logger) (ArchiveInfo, error) {
 	platform := runtime.GOOS
 	if platform != "windows" && platform != "darwin" && platform != "linux" {
-		return Archive{}, fmt.Errorf("unsupported platform %v", platform)
+		return ArchiveInfo{}, fmt.Errorf("unsupported platform %v", platform)
 	}
 	arch := runtime.GOARCH
 	if arch != "amd64" && arch != "arm64" {
-		return Archive{}, fmt.Errorf("unsupported architecture %v", arch)
+		return ArchiveInfo{}, fmt.Errorf("unsupported architecture %v", arch)
 	}
 	infoURL := fmt.Sprintf("https://temporal.download/cli/%v?platform=%v&arch=%v&sdk-name=sdk-go&sdk-version=%v", url.QueryEscape(version), platform, arch, internal.SDKVersion)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", infoURL, nil)
 	if err != nil {
-		return Archive{}, fmt.Errorf("failed preparing request: %w", err)
+		return ArchiveInfo{}, fmt.Errorf("failed preparing request: %w", err)
 	}
 	resp, err := (&http.Client{}).Do(req)
 	if err != nil {
-		return Archive{}, fmt.Errorf("failed fetching info: %w", err)
+		return ArchiveInfo{}, fmt.Errorf("failed fetching info: %w", err)
 	}
 	b, err := io.ReadAll(resp.Body)
 	if closeErr := resp.Body.Close(); closeErr != nil {
 		logger.Warn("Failed to close response body: %v", closeErr)
 	}
 	if err != nil {
-		return Archive{}, fmt.Errorf("failed fetching info body: %w", err)
+		return ArchiveInfo{}, fmt.Errorf("failed fetching info body: %w", err)
 	}
 	if resp.StatusCode != 200 {
-		return Archive{}, fmt.Errorf("failed fetching info, status: %v, body: %s", resp.Status, b)
+		return ArchiveInfo{}, fmt.Errorf("failed fetching info, status: %v, body: %s", resp.Status, b)
 	}
-	var info Archive
+	var info ArchiveInfo
 	if err := json.Unmarshal(b, &info); err != nil {
-		return Archive{}, fmt.Errorf("failed unmarshaling info: %w", err)
+		return ArchiveInfo{}, fmt.Errorf("failed unmarshaling info: %w", err)
 	}
 	if info.ArchiveURL == "" || info.FileToExtract == "" {
-		return Archive{}, fmt.Errorf("incomplete Temporal CLI archive metadata for %q", version)
+		return ArchiveInfo{}, fmt.Errorf("incomplete Temporal CLI archive metadata for %q", version)
 	}
 	return info, nil
 }
 
 // Download returns the cached CLI path, downloading it on a cache miss.
 func Download(ctx context.Context, version, destDir string, logger log.Logger) (string, error) {
-	return download(ctx, version, destDir, Archive{}, logger)
+	return download(ctx, version, destDir, ArchiveInfo{}, logger)
 }
 
 // DownloadDefault uses the resolved archive on a cache miss without resolving the default again.
-func (info Archive) DownloadDefault(ctx context.Context, destDir string, logger log.Logger) (string, error) {
+func (info ArchiveInfo) DownloadDefault(ctx context.Context, destDir string, logger log.Logger) (string, error) {
 	if info.ArchiveURL == "" || info.FileToExtract == "" {
 		return "", fmt.Errorf("resolved default Temporal CLI archive metadata is incomplete")
 	}
 	return download(ctx, "default", destDir, info, logger)
 }
 
-func download(ctx context.Context, version, destDir string, info Archive, logger log.Logger) (string, error) {
+func download(ctx context.Context, version, destDir string, info ArchiveInfo, logger log.Logger) (string, error) {
 	if version == "" {
 		version = "default"
 	}

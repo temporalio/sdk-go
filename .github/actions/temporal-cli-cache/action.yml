@@ -1,9 +1,9 @@
 name: Cache Temporal CLI
 description: Prefetch the Temporal CLI versions used by SDK tests
 inputs:
-  default-only:
-    description: Prefetch only the SDK default CLI
-    default: 'false'
+  include-integration:
+    description: Prefetch the integration prerelease in addition to the SDK default CLI
+    default: 'true'
 runs:
   using: composite
   steps:
@@ -17,14 +17,16 @@ runs:
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: .build/temporal-cli
-        key: temporal-cli-${{ runner.os }}-${{ runner.arch }}-${{ inputs.default-only == 'true' && 'default' || 'default-and-integration' }}-${{ hashFiles('internal/version.go', 'internal/temporalcli/download.go', 'internal/temporalcli/versions.go', '.github/actions/temporal-cli-cache/main.go') }}-${{ steps.default-cli.outputs.fingerprint }}
+        key: temporal-cli-${{ runner.os }}-${{ runner.arch }}-${{ inputs.include-integration == 'true' && 'default-and-integration' || 'default' }}-${{ hashFiles('internal/version.go', 'internal/temporalcli/download.go', 'internal/temporalcli/versions.go', '.github/actions/temporal-cli-cache/main.go') }}-${{ steps.default-cli.outputs.fingerprint }}
 
     - name: Prepare Temporal CLI binaries
       shell: bash
       env:
-        CLI_DEFAULT_ONLY: ${{ inputs.default-only }}
-        CLI_DEFAULT_ARCHIVE: ${{ steps.default-cli.outputs.archive }}
-      run: go run ./.github/actions/temporal-cli-cache -default-only="$CLI_DEFAULT_ONLY"
+        CLI_INCLUDE_INTEGRATION: ${{ inputs.include-integration }}
+        # JSON with the download URL and executable to extract. Reuse this
+        # archive info on a cache miss to avoid a second lookup.
+        CLI_DEFAULT_ARCHIVE_INFO: ${{ steps.default-cli.outputs.archive-info }}
+      run: go run ./.github/actions/temporal-cli-cache -include-integration="$CLI_INCLUDE_INTEGRATION"
 
     - name: Save Temporal CLI cache on main
       if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.restore.outputs.cache-hit != 'true'
