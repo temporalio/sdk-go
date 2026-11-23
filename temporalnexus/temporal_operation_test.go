@@ -9,6 +9,7 @@ import (
 	"github.com/nexus-rpc/sdk-go/nexus"
 	"github.com/stretchr/testify/require"
 	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal"
 	"go.temporal.io/sdk/workflow"
 )
@@ -219,4 +220,38 @@ func TestStartUpdateWorkflowGuards(t *testing.T) {
 	var opError *nexus.HandlerError
 	require.ErrorAs(t, err, &opError)
 	require.Equal(t, opError.Cause.Error(), "nexus op workflow updates only support WorkflowUpdateStageAccepted for async updates")
+}
+
+// TestDynamicTemporalOperationValidation checks constructor errors and the cancellation defaults on a valid unnamed handler.
+func TestDynamicTemporalOperationValidation(t *testing.T) {
+	valid := DynamicTemporalOperationOptions{
+		Start: func(context.Context, NexusClient, converter.RawValue, StartTemporalOperationOptions) (TemporalOperationResult[any], error) {
+			return NewSyncResult[any]("value"), nil
+		},
+	}
+	for _, tc := range []struct {
+		name      string
+		options   DynamicTemporalOperationOptions
+		wantError bool
+	}{
+		{name: "missing start", wantError: true},
+		{name: "valid", options: valid},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			handler, err := NewDynamicTemporalOperation(tc.options)
+			if tc.wantError {
+				require.ErrorContains(t, err, "Start is required")
+				require.Nil(t, handler)
+				require.Panics(t, func() { MustNewDynamicTemporalOperation(tc.options) })
+				return
+			}
+			require.NoError(t, err)
+			require.NotNil(t, MustNewDynamicTemporalOperation(tc.options))
+			operation := handler.(*temporalOperation[*nexus.LazyValue, any])
+			require.Empty(t, operation.Name())
+			require.NotNil(t, operation.options.CancelWorkflowRun)
+			require.NotNil(t, operation.options.CancelWorkflowUpdate)
+			require.NotNil(t, operation.options.CancelActivityExecution)
+		})
+	}
 }

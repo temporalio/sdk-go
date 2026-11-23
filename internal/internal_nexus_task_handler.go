@@ -220,6 +220,7 @@ func (h *nexusTaskHandler) handleStartOperation(
 		converter: dataConverter,
 		payload:   req.GetPayload(),
 	}
+	nctx.inputSerializer = serializer
 	// Create a fake lazy value, Temporal server already converts Nexus content into payloads.
 	input := nexus.NewLazyValue(
 		serializer,
@@ -674,10 +675,25 @@ func (h *nexusTaskHandler) nexusHandlerErrorToProto(
 type payloadSerializer struct {
 	converter converter.DataConverter
 	payload   *common.Payload
+	decoded   bool
 }
 
 func (p *payloadSerializer) Deserialize(_ *nexus.Content, v any) error {
-	err := p.converter.FromPayload(p.payload, v)
+	payload := p.payload
+	var err error
+	if p.decoded {
+		// Temporal dynamic callbacks consume RawValue after codecs have already run.
+		if raw, ok := v.(*converter.RawValue); ok {
+			*raw = converter.NewRawValue(payload)
+			return nil
+		}
+		// Other Nexus handlers may request a concrete type. Restore the encoded form
+		// before invoking their full data converter so custom codecs still work.
+		payload, err = p.converter.ToPayload(converter.NewRawValue(payload))
+	}
+	if err == nil {
+		err = p.converter.FromPayload(payload, v)
+	}
 	if err == nil {
 		return nil
 	}
