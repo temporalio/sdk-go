@@ -20,8 +20,66 @@ import (
 	"go.temporal.io/sdk/log"
 )
 
+// Archive identifies the release artifact selected by temporal.download.
+type Archive struct {
+	ArchiveURL    string `json:"archiveUrl"`
+	FileToExtract string `json:"fileToExtract"`
+}
+
+// Resolve returns the CLI archive for this SDK version and platform.
+func Resolve(ctx context.Context, version string, logger log.Logger) (Archive, error) {
+	platform := runtime.GOOS
+	if platform != "windows" && platform != "darwin" && platform != "linux" {
+		return Archive{}, fmt.Errorf("unsupported platform %v", platform)
+	}
+	arch := runtime.GOARCH
+	if arch != "amd64" && arch != "arm64" {
+		return Archive{}, fmt.Errorf("unsupported architecture %v", arch)
+	}
+	infoURL := fmt.Sprintf("https://temporal.download/cli/%v?platform=%v&arch=%v&sdk-name=sdk-go&sdk-version=%v", url.QueryEscape(version), platform, arch, internal.SDKVersion)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", infoURL, nil)
+	if err != nil {
+		return Archive{}, fmt.Errorf("failed preparing request: %w", err)
+	}
+	resp, err := (&http.Client{}).Do(req)
+	if err != nil {
+		return Archive{}, fmt.Errorf("failed fetching info: %w", err)
+	}
+	b, err := io.ReadAll(resp.Body)
+	if closeErr := resp.Body.Close(); closeErr != nil {
+		logger.Warn("Failed to close response body: %v", closeErr)
+	}
+	if err != nil {
+		return Archive{}, fmt.Errorf("failed fetching info body: %w", err)
+	}
+	if resp.StatusCode != 200 {
+		return Archive{}, fmt.Errorf("failed fetching info, status: %v, body: %s", resp.Status, b)
+	}
+	var info Archive
+	if err := json.Unmarshal(b, &info); err != nil {
+		return Archive{}, fmt.Errorf("failed unmarshaling info: %w", err)
+	}
+	if info.ArchiveURL == "" || info.FileToExtract == "" {
+		return Archive{}, fmt.Errorf("incomplete Temporal CLI archive metadata for %q", version)
+	}
+	return info, nil
+}
+
 // Download returns the cached CLI path, downloading it on a cache miss.
 func Download(ctx context.Context, version, destDir string, logger log.Logger) (string, error) {
+	return download(ctx, version, destDir, Archive{}, logger)
+}
+
+// DownloadDefault uses the resolved archive on a cache miss without resolving the default again.
+func (info Archive) DownloadDefault(ctx context.Context, destDir string, logger log.Logger) (string, error) {
+	if info.ArchiveURL == "" || info.FileToExtract == "" {
+		return "", fmt.Errorf("resolved default Temporal CLI archive metadata is incomplete")
+	}
+	return download(ctx, "default", destDir, info, logger)
+}
+
+func download(ctx context.Context, version, destDir string, info Archive, logger log.Logger) (string, error) {
 	if version == "" {
 		version = "default"
 	}
@@ -29,7 +87,6 @@ func Download(ctx context.Context, version, destDir string, logger log.Logger) (
 		destDir = os.TempDir()
 	}
 	var exePath string
-	// Build path based on version and check if already present
 	if version == "default" {
 		exePath = filepath.Join(destDir, "temporal-cli-go-sdk-"+internal.SDKVersion)
 	} else {
@@ -41,52 +98,21 @@ func Download(ctx context.Context, version, destDir string, logger log.Logger) (
 	if _, err := os.Stat(exePath); err == nil {
 		return exePath, nil
 	}
-
-	client := &http.Client{}
-
-	// Build info URL
-	platform := runtime.GOOS
-	if platform != "windows" && platform != "darwin" && platform != "linux" {
-		return "", fmt.Errorf("unsupported platform %v", platform)
-	}
-	arch := runtime.GOARCH
-	if arch != "amd64" && arch != "arm64" {
-		return "", fmt.Errorf("unsupported architecture %v", arch)
-	}
-	infoURL := fmt.Sprintf("https://temporal.download/cli/%v?platform=%v&arch=%v&sdk-name=sdk-go&sdk-version=%v", url.QueryEscape(version), platform, arch, internal.SDKVersion)
-
-	// Get info
-	info := struct {
-		ArchiveURL    string `json:"archiveUrl"`
-		FileToExtract string `json:"fileToExtract"`
-	}{}
-	req, err := http.NewRequestWithContext(ctx, "GET", infoURL, nil)
-	if err != nil {
-		return "", fmt.Errorf("failed preparing request: %w", err)
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("failed fetching info: %w", err)
-	}
-	b, err := io.ReadAll(resp.Body)
-	if closeErr := resp.Body.Close(); closeErr != nil {
-		logger.Warn("Failed to close response body: %v", closeErr)
-	}
-	if err != nil {
-		return "", fmt.Errorf("failed fetching info body: %w", err)
-	} else if resp.StatusCode != 200 {
-		return "", fmt.Errorf("failed fetching info, status: %v, body: %s", resp.Status, b)
-	} else if err = json.Unmarshal(b, &info); err != nil {
-		return "", fmt.Errorf("failed unmarshaling info: %w", err)
+	if info.ArchiveURL == "" {
+		var err error
+		info, err = Resolve(ctx, version, logger)
+		if err != nil {
+			return "", err
+		}
 	}
 
 	// Download and extract
 	logger.Info("Downloading temporal CLI", "Url", info.ArchiveURL, "ExePath", exePath)
-	req, err = http.NewRequestWithContext(ctx, "GET", info.ArchiveURL, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", info.ArchiveURL, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed preparing request: %w", err)
 	}
-	resp, err = client.Do(req)
+	resp, err := (&http.Client{}).Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed downloading: %w", err)
 	}

@@ -49,6 +49,36 @@ type downloadTransport func(*http.Request) (*http.Response, error)
 
 func (f downloadTransport) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
 
+func TestDownloadDefaultUsesResolvedArchive(t *testing.T) {
+	original := http.DefaultTransport
+	t.Cleanup(func() { http.DefaultTransport = original })
+	const archiveURL = "https://archive.test/resolved-cli.zip"
+	var requests []string
+	http.DefaultTransport = downloadTransport(func(req *http.Request) (*http.Response, error) {
+		requests = append(requests, req.URL.String())
+		if req.URL.Host == "temporal.download" {
+			require.Equal(t, "/cli/default", req.URL.Path)
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(bytes.NewBufferString(`{"archiveUrl":"` + archiveURL + `","fileToExtract":"cli"}`)),
+			}, nil
+		}
+		return &http.Response{
+			Status:     "503 Service Unavailable",
+			StatusCode: http.StatusServiceUnavailable,
+			Body:       http.NoBody,
+		}, nil
+	})
+
+	logger := log.NewNopLogger()
+	archive, err := Resolve(t.Context(), "default", logger)
+	require.NoError(t, err)
+	_, err = archive.DownloadDefault(t.Context(), t.TempDir(), logger)
+	require.ErrorContains(t, err, "failed downloading, status: 503")
+	require.Len(t, requests, 2)
+	require.Equal(t, archiveURL, requests[1])
+}
+
 func TestDownloadIfNeededTemporaryFiles(t *testing.T) {
 	for _, outcome := range []string{"invalid archive", "published", "destination directory"} {
 		t.Run(outcome, func(t *testing.T) {

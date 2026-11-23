@@ -7,17 +7,23 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: Resolve SDK default Temporal CLI
+      id: default-cli
+      shell: bash
+      run: go run ./.github/actions/temporal-cli-cache -resolve-default >> "$GITHUB_OUTPUT"
+
     - name: Restore Temporal CLI cache
       id: restore
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: .build/temporal-cli
-        key: temporal-cli-${{ runner.os }}-${{ runner.arch }}-${{ inputs.default-only == 'true' && 'default' || 'default-and-integration' }}-${{ hashFiles('internal/version.go', 'internal/temporalcli/download.go', 'internal/temporalcli/versions.go', '.github/actions/temporal-cli-cache/main.go') }}
+        key: temporal-cli-${{ runner.os }}-${{ runner.arch }}-${{ inputs.default-only == 'true' && 'default' || 'default-and-integration' }}-${{ hashFiles('internal/version.go', 'internal/temporalcli/download.go', 'internal/temporalcli/versions.go', '.github/actions/temporal-cli-cache/main.go') }}-${{ steps.default-cli.outputs.fingerprint }}
 
     - name: Prepare Temporal CLI binaries
       shell: bash
       env:
         CLI_DEFAULT_ONLY: ${{ inputs.default-only }}
+        CLI_DEFAULT_ARCHIVE: ${{ steps.default-cli.outputs.archive }}
       run: go run ./.github/actions/temporal-cli-cache -default-only="$CLI_DEFAULT_ONLY"
 
     - name: Save Temporal CLI cache on main
