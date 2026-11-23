@@ -1,10 +1,12 @@
 package a
 
 import (
+	"context"
 	"fmt"
 	"log"
 	mathrand "math/rand"
 	"net/http"
+	"net/http/httptrace"
 	"time"
 )
 
@@ -79,6 +81,10 @@ func CallsMathRandom() { // want CallsMathRandom:"calls non-deterministic functi
 
 func CallsHTTP() { // want CallsHTTP:"calls non-deterministic function net/http.Get"
 	http.Get("http://example.com")
+}
+
+func SafeHTTPTraceCall() {
+	httptrace.WithClientTrace(context.Background(), &httptrace.ClientTrace{})
 }
 
 func SafeFmtCall() {
