@@ -846,21 +846,39 @@ func TestVetReportsAllBlockedModules(t *testing.T) {
 		t.Fatal(err)
 	}
 	input := make(map[string]string)
-	input["contrib/envconfig/go.mod"] = "module go.temporal.io/sdk/contrib/envconfig\n"
+	input["contrib/envconfig/go.mod"] = stripIndentation(`
+		module go.temporal.io/sdk/contrib/envconfig
+		require (
+			go.temporal.io/api v1.63.4
+			go.temporal.io/sdk v1.47.0
+		)
+	`)
 	input["contrib/envconfig/CHANGELOG.md"] = "# Changelog\n\n## [0.0.1] - 2026-07-28\n"
 	a, eff := newMockVet(vetApp{commit: "abc123", modules: []pure.VersionedModule{
-		{Module: contribEnvconfig(t), Version: pure.Version{0, 1, 0}},
+		{Module: contribEnvconfig(t), Version: pure.Version{0, 2, 0}},
 		{Module: tally, Version: pure.Version{0, 1, 0}},
 	}}, input, func(cmd string) (string, error) {
 		switch cmd {
-		case "cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- release-notes --repo " + mockTempDir + " --version 0.1.0 --date 2026-08-04 --changelog contrib/envconfig/CHANGELOG.md":
-			return "", errors.New("missing release section for 0.1.0")
+		case "cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- release-notes --repo " + mockTempDir + " --version 0.2.0 --date 2026-08-04 --changelog contrib/envconfig/CHANGELOG.md":
+			return "", errors.New("missing release section for 0.2.0")
+		case "cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- release-notes --repo " + mockTempDir + " --version 0.1.0 --date 2026-08-04 --changelog contrib/tally/CHANGELOG.md":
+			return "", errors.New("missing changelog")
 		case "git rev-parse --verify --end-of-options abc123^{commit}":
 			return "abc123\n", nil
 		}
 		return "", nil
 	})
+	lookupErr := errors.New("look up go.temporal.io/sdk v1.47.0: proxy unavailable")
+	eff.moduleLookupHandler = func(modulePath, version string) (bool, error) {
+		if modulePath == "go.temporal.io/sdk" {
+			return false, lookupErr
+		}
+		return false, nil
+	}
 	err = a.run()
+	if !errors.Is(err, lookupErr) {
+		t.Fatalf("expected the dependency lookup error, got %v", err)
+	}
 	testEqual(t, eff.output.String(), `
 		Checking release readiness
 
@@ -872,6 +890,7 @@ func TestVetReportsAllBlockedModules(t *testing.T) {
 		      go.temporal.io/sdk/contrib/envconfig: validate changelog
 		      go.temporal.io/sdk/contrib/tally: validate new version number
 		      go.temporal.io/sdk/contrib/tally: validate go.mod
+		      go.temporal.io/sdk/contrib/tally: validate changelog
 		      go.temporal.io/sdk/contrib/envconfig: failed inspection ✘
 		      go.temporal.io/sdk/contrib/tally: failed inspection ✘
 	`)
@@ -897,18 +916,26 @@ func TestVetReportsAllBlockedModules(t *testing.T) {
 		$ git tag --list contrib/envconfig/v*
 
 		# Running in /sdk-rust:
-		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- release-notes --repo /tmp/prepare-go-release-123456 --version 0.1.0 --date 2026-08-04 --changelog contrib/envconfig/CHANGELOG.md
-		missing release section for 0.1.0
+		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- release-notes --repo /tmp/prepare-go-release-123456 --version 0.2.0 --date 2026-08-04 --changelog contrib/envconfig/CHANGELOG.md
+		missing release section for 0.2.0
 
 		# Running in /tmp/prepare-go-release-123456:
 		$ git tag --list contrib/tally/v*
+
+		# Running in /sdk-rust:
+		$ cargo run --quiet --manifest-path /sdk-rust/crates/changelog-release-notes/Cargo.toml --bin changelog-tool -- release-notes --repo /tmp/prepare-go-release-123456 --version 0.1.0 --date 2026-08-04 --changelog contrib/tally/CHANGELOG.md
+		missing changelog
 
 		# Running in /repo:
 		$ git worktree remove --force /tmp/prepare-go-release-123456
 	`)
 	testEqual(t, fmt.Sprint(err), `
-		go.temporal.io/sdk/contrib/envconfig: changelog-tool release-notes: missing release section for 0.1.0
+		go.temporal.io/sdk/contrib/envconfig: proposed version 0.2.0 must be a minor or patch increment of 0.0.0; choose 0.1.0 or 0.0.1
+		go.temporal.io/sdk/contrib/envconfig: go.temporal.io/api v1.63.4 is not published on the Go module proxy
+		go.temporal.io/sdk/contrib/envconfig: look up go.temporal.io/sdk v1.47.0: proxy unavailable
+		go.temporal.io/sdk/contrib/envconfig: changelog-tool release-notes: missing release section for 0.2.0
 		go.temporal.io/sdk/contrib/tally: read /tmp/prepare-go-release-123456/contrib/tally/go.mod: file does not exist
+		go.temporal.io/sdk/contrib/tally: changelog-tool release-notes: missing changelog
 	`)
 	testEqualMaps(t, eff.files, input)
 }
@@ -1175,8 +1202,7 @@ func TestTagEmpty(t *testing.T) {
 func TestTagVetBeforePublish(t *testing.T) {
 	t.Setenv("PUBLISHER_SDK_RUST", "/sdk-rust")
 	input := make(map[string]string)
-	input["go.mod"] = "module go.temporal.io/sdk\n"
-	input["internal/version.go"] = "const (\n\tSDKVersion = \"1.48.0\"\n)"
+	input["go.mod"] = "module incorrect\n"
 	input["CHANGELOG.md"] = "# Changelog\n\n## [1.48.0] - 2026-08-04\n\n### Fixed\n\n- A fix.\n"
 	input["contrib/envconfig/go.mod"] = "module go.temporal.io/sdk/contrib/envconfig\n"
 	input["contrib/envconfig/CHANGELOG.md"] = "# Changelog\n\n## [1.0.3] - 2026-08-03\n"
@@ -1240,17 +1266,20 @@ func TestTagVetBeforePublish(t *testing.T) {
 		[2/4] Vet released modules
 		      go.temporal.io/sdk: validate new version number
 		      go.temporal.io/sdk: validate go.mod
-		      go.temporal.io/sdk: verify that go.mod requirements are published
 		      go.temporal.io/sdk: validate version.go
 		      go.temporal.io/sdk: validate changelog
 		      go.temporal.io/sdk/contrib/envconfig: validate new version number
 		      go.temporal.io/sdk/contrib/envconfig: validate go.mod
 		      go.temporal.io/sdk/contrib/envconfig: verify that go.mod requirements are published
 		      go.temporal.io/sdk/contrib/envconfig: validate changelog
-		      go.temporal.io/sdk: passed inspection ✔
+		      go.temporal.io/sdk: failed inspection ✘
 		      go.temporal.io/sdk/contrib/envconfig: failed inspection ✘
 	`)
-	testEqual(t, fmt.Sprint(err), "go.temporal.io/sdk/contrib/envconfig: changelog-tool release-notes: wrong release date")
+	testEqual(t, fmt.Sprint(err), `
+		go.temporal.io/sdk: go.mod declares module "incorrect", expected "go.temporal.io/sdk"
+		go.temporal.io/sdk: read /tmp/prepare-go-release-123456/internal/version.go: file does not exist
+		go.temporal.io/sdk/contrib/envconfig: changelog-tool release-notes: wrong release date
+	`)
 	testEqualMaps(t, eff.files, input)
 }
 

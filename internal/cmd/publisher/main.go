@@ -646,58 +646,59 @@ func (c *app) vetModules(w *worktree, modules []pure.VersionedModule, coreTool *
 func (c *app) vetModule(w *worktree, module pure.VersionedModule, coreTool *coreTool) error {
 	m := module.Module
 	modulePath := m.ModulePath()
+	var problems []error
 
 	printDetail(c.eff, "%s: validate new version number", modulePath)
 	tags, err := w.listTags(m.TagPattern())
 	if err != nil {
-		return fmt.Errorf("%s: %w", modulePath, err)
-	}
-	var latest pure.Version
-	if version := pure.LatestReleasedVersion(tags, m.TagPrefix()); version != nil {
-		latest = *version
-	}
-	minor := pure.Version{latest[0], latest[1] + 1, 0}
-	patch := pure.Version{latest[0], latest[1], latest[2] + 1}
-	if module.Version != minor && module.Version != patch {
-		return fmt.Errorf("%s: proposed version %s must be a minor or patch increment of %s; choose %s or %s",
-			modulePath, module.Version, latest, minor, patch)
+		problems = append(problems, fmt.Errorf("%s: %w", modulePath, err))
+	} else {
+		var latest pure.Version
+		if version := pure.LatestReleasedVersion(tags, m.TagPrefix()); version != nil {
+			latest = *version
+		}
+		minor := pure.Version{latest[0], latest[1] + 1, 0}
+		patch := pure.Version{latest[0], latest[1], latest[2] + 1}
+		if module.Version != minor && module.Version != patch {
+			problems = append(problems, fmt.Errorf("%s: proposed version %s must be a minor or patch increment of %s; choose %s or %s",
+				modulePath, module.Version, latest, minor, patch))
+		}
 	}
 
 	printDetail(c.eff, "%s: validate go.mod", modulePath)
 	contents, err := w.eff.readFile(m.GoMod(w.worktreeRoot))
-	if err != nil {
-		return fmt.Errorf("%s: %w", modulePath, err)
+	var goMod pure.GoMod
+	if err == nil {
+		goMod, err = pure.NewValidatedGoMod(contents, modulePath)
 	}
-	goMod, err := pure.NewValidatedGoMod(contents, modulePath)
 	if err != nil {
-		return fmt.Errorf("%s: %w", modulePath, err)
-	}
-	printDetail(c.eff, "%s: verify that go.mod requirements are published", modulePath)
-	for _, requirement := range goMod.Requirements {
-		published, err := w.eff.checkModulePublished(requirement.ModulePath, requirement.Version)
-		if err != nil {
-			return fmt.Errorf("%s: %w", modulePath, err)
-		}
-		if !published {
-			return fmt.Errorf("%s: %s %s is not published on the Go module proxy",
-				modulePath, requirement.ModulePath, requirement.Version)
+		problems = append(problems, fmt.Errorf("%s: %w", modulePath, err))
+	} else {
+		printDetail(c.eff, "%s: verify that go.mod requirements are published", modulePath)
+		for _, requirement := range goMod.Requirements {
+			published, err := w.eff.checkModulePublished(requirement.ModulePath, requirement.Version)
+			if err != nil {
+				problems = append(problems, fmt.Errorf("%s: %w", modulePath, err))
+			} else if !published {
+				problems = append(problems, fmt.Errorf("%s: %s %s is not published on the Go module proxy",
+					modulePath, requirement.ModulePath, requirement.Version))
+			}
 		}
 	}
 	if versionFile, ok := m.VersionFile(w.worktreeRoot); ok {
 		printDetail(c.eff, "%s: validate version.go", modulePath)
 		text, err := w.eff.readFile(versionFile)
 		if err != nil {
-			return fmt.Errorf("%s: %w", modulePath, err)
-		}
-		if err := pure.ValidateVersionConstant(text, m, module.Version); err != nil {
-			return fmt.Errorf("%s: %w", modulePath, err)
+			problems = append(problems, fmt.Errorf("%s: %w", modulePath, err))
+		} else if err := pure.ValidateVersionConstant(text, m, module.Version); err != nil {
+			problems = append(problems, fmt.Errorf("%s: %w", modulePath, err))
 		}
 	}
 
 	printDetail(c.eff, "%s: validate changelog", modulePath)
 	if err := coreTool.validateReleaseChangelog(w.worktreeRoot, module, c.eff.today()); err != nil {
-		return fmt.Errorf("%s: %w", modulePath, err)
+		problems = append(problems, fmt.Errorf("%s: %w", modulePath, err))
 	}
 
-	return nil
+	return errors.Join(problems...)
 }
