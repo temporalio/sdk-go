@@ -5302,6 +5302,8 @@ func (ts *IntegrationTestSuite) testUpdateOrderingCancel(cancelWf bool) {
 	if cancelWf {
 		ts.NoError(ts.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID()))
 	}
+	// Run the update calls in goroutines because they wait for completion,
+	// which requires the worker to start polling.
 	var wf sync.WaitGroup
 	updateHandles := []string{"echo", "sleep", "empty"}
 	for range 10 {
