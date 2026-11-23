@@ -255,6 +255,9 @@ type (
 		namespaceWorker          *sharedNamespaceWorker
 		pollerGroupSnapshotStore *pollerGroupSnapshotStore
 
+		sdkName    string
+		sdkVersion string
+
 		activityCancellationCallbacks *activityCancellationCallbacks
 
 		workerPollCompleteOnShutdown *atomic.Bool
@@ -2580,6 +2583,8 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		pollTimeTracker:                  &pollTimeTracker{},
 		workerInstanceKey:                workerInstanceKey,
 		namespaceWorker:                  namespaceWorker,
+		sdkName:                          client.sdkName,
+		sdkVersion:                       client.sdkVersion,
 		pollerGroupSnapshotStore:         newPollerGroupSnapshotStore(),
 		activityCancellationCallbacks:    activityCancellationCallbacks,
 		workerPollCompleteOnShutdown:     workerPollCompleteOnShutdown,
