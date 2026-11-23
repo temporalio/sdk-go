@@ -188,7 +188,9 @@ type (
 		mockClock *clock.Mock
 		wallClock clock.Clock
 
-		callbackChannel            chan testCallbackHandle
+		callbackMu                 sync.Mutex
+		callbacks                  []testCallbackHandle
+		callbackNotify             chan struct{}
 		testTimeout                time.Duration
 		activityTimeoutGracePeriod time.Duration // grace period for activities to react to context deadline
 		header                     *commonpb.Header
@@ -253,8 +255,6 @@ type (
 		isWorkflowCompleted bool
 		testResult          converter.EncodedValue
 		testError           error
-		doneChannel         chan struct{}
-		doneChannelOnce     sync.Once
 		workerOptions       WorkerOptions
 		dataConverter       converter.DataConverter
 		failureConverter    converter.FailureConverter
@@ -325,7 +325,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 			runningNexusOperations:    make(map[int64]*testNexusOperationHandle),
 			nexusAsyncOpHandle:        make(map[string]*testNexusAsyncOperationHandle),
 			nexusOperationRefs:        make(map[string]map[string]testNexusOperationReference),
-			callbackChannel:           make(chan testCallbackHandle, 1000),
+			callbackNotify:            make(chan struct{}, 1),
 			testTimeout:               3 * time.Second,
 			expectedWorkflowMockCalls: make(map[string]struct{}),
 			expectedActivityMockCalls: make(map[string]struct{}),
@@ -353,7 +353,6 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 		randoms:           make(map[string]*workflowRandomStream),
 		mutableSideEffect: make(map[string]*commonpb.Payloads),
 
-		doneChannel:                 make(chan struct{}),
 		workerStopChannel:           make(chan struct{}),
 		dataConverter:               converter.GetDefaultDataConverter(),
 		failureConverter:            GetDefaultFailureConverter(),
@@ -760,11 +759,19 @@ func (env *testWorkflowEnvironmentImpl) executeWorkflow(workflowFn any, args ...
 	if err != nil {
 		panic(err)
 	}
-	env.executeWorkflowInternal(0, workflowType.Name, input)
+	env.executeWorkflowInternal(workflowType.Name, input)
 }
 
-func (env *testWorkflowEnvironmentImpl) executeWorkflowInternal(delayStart time.Duration, workflowType string, input *commonpb.Payloads) {
-	env.locker.Lock()
+func (env *testWorkflowEnvironmentImpl) executeWorkflowInternal(workflowType string, input *commonpb.Payloads) {
+	func() {
+		env.locker.Lock()
+		defer env.locker.Unlock()
+		env.scheduleWorkflowExecution(0, workflowType, input)
+	}()
+	env.startMainLoop()
+}
+
+func (env *testWorkflowEnvironmentImpl) scheduleWorkflowExecution(delayStart time.Duration, workflowType string, input *commonpb.Payloads) {
 	wInfo := env.workflowInfo
 	if wInfo.WorkflowType.Name != workflowTypeNotSpecified {
 		// Current TestWorkflowEnvironment only support to run one workflow.
@@ -798,7 +805,6 @@ func (env *testWorkflowEnvironmentImpl) executeWorkflowInternal(delayStart time.
 		env.dataConverter = converter.WithDataConverterSerializationContext(env.dataConverter, wfCtx)
 		env.failureConverter = converter.WithFailureConverterSerializationContext(env.failureConverter, wfCtx)
 	}
-	env.locker.Unlock()
 
 	workflowDefinition, err := env.getWorkflowDefinition(wInfo.WorkflowType)
 	if err != nil {
@@ -806,10 +812,13 @@ func (env *testWorkflowEnvironmentImpl) executeWorkflowInternal(delayStart time.
 	}
 	env.workflowDef = workflowDefinition
 
-	// env.workflowDef.Execute() method will execute dispatcher. We want the dispatcher to only run in main loop.
-	// In case of child workflow, this executeWorkflowInternal() is run in separate goroutinue, so use postCallback
-	// to make sure workflowDef.Execute() is run in main loop.
 	env.postCallback(func() {
+		if env.isWorkflowCompleted {
+			if env.isChildWorkflow() {
+				env.runningCount--
+			}
+			return
+		}
 		env.workflowDef.Execute(env, env.header, input)
 		// kick off first workflow task to start the workflow
 		if delayStart == 0 {
@@ -818,8 +827,10 @@ func (env *testWorkflowEnvironmentImpl) executeWorkflowInternal(delayStart time.
 			// we need to delayStart start workflow, decrease runningCount so mockClock could auto forward
 			env.runningCount--
 			env.registerDelayedCallback(func() {
-				env.runningCount++
-				env.startWorkflowTask()
+				if !env.isWorkflowCompleted {
+					env.runningCount++
+					env.startWorkflowTask()
+				}
 			}, delayStart)
 		}
 	}, false)
@@ -832,7 +843,6 @@ func (env *testWorkflowEnvironmentImpl) executeWorkflowInternal(delayStart time.
 			}
 		}, timeoutDuration)
 	}
-	env.startMainLoop()
 }
 
 func (env *testWorkflowEnvironmentImpl) getWorkflowDefinition(wt WorkflowType) (WorkflowDefinition, error) {
@@ -1088,7 +1098,7 @@ func (env *testWorkflowEnvironmentImpl) executeLocalActivity(
 }
 
 func (env *testWorkflowEnvironmentImpl) startWorkflowTask() {
-	if !env.isWorkflowCompleted {
+	if !env.isWorkflowCompleted && env.workflowDef != nil {
 		env.workflowDef.OnWorkflowTaskStarted(env.workerOptions.DeadlockDetectionTimeout)
 	}
 }
@@ -1096,45 +1106,29 @@ func (env *testWorkflowEnvironmentImpl) startWorkflowTask() {
 func (env *testWorkflowEnvironmentImpl) isChildWorkflow() bool {
 	return env.parentEnv != nil
 }
-func (env *testWorkflowEnvironmentImpl) closeDoneChannel() {
-	env.doneChannelOnce.Do(func() {
-		close(env.doneChannel)
-	})
-}
+
 func (env *testWorkflowEnvironmentImpl) startMainLoop() {
-	if env.isChildWorkflow() {
-		// child workflow rely on parent workflow's main loop to process events
-		<-env.doneChannel // wait until workflow is complete
-		return
-	}
-
-	// notify all child workflows to exit their main loop
-	defer env.closeDoneChannel()
-
 	for !env.shouldStopEventLoop() {
-		// use non-blocking-select to check if there is anything pending in the main thread.
-		select {
-		case c := <-env.callbackChannel:
-			// this will drain the callbackChannel
+		if c, ok := env.popCallback(); ok {
 			c.processCallback()
-		default:
-			// nothing to process, main thread is blocked at this moment, now check if we should auto fire next timer
-			if !env.autoFireNextTimer() {
-				if env.shouldStopEventLoop() {
-					return
-				}
+			continue
+		}
 
-				// no timer to fire, wait for things to do or timeout.
-				select {
-				case c := <-env.callbackChannel:
-					c.processCallback()
-				case <-time.After(env.testTimeout):
-					// not able to complete workflow within test timeout, workflow likely stuck somewhere,
-					// check workflow stack for more details.
-					panicMsg := fmt.Sprintf("test timeout: %v, workflow stack: %v",
-						env.testTimeout, env.workflowDef.StackTrace())
-					panic(panicMsg)
-				}
+		// nothing to process, main thread is blocked at this moment, now check if we should auto fire next timer
+		if !env.autoFireNextTimer() {
+			if env.shouldStopEventLoop() {
+				return
+			}
+
+			// no timer to fire, wait for things to do or timeout.
+			select {
+			case <-env.callbackNotify:
+			case <-time.After(env.testTimeout):
+				// not able to complete workflow within test timeout, workflow likely stuck somewhere,
+				// check workflow stack for more details.
+				panicMsg := fmt.Sprintf("test timeout: %v, workflow stack: %v",
+					env.testTimeout, env.workflowDef.StackTrace())
+				panic(panicMsg)
 			}
 		}
 	}
@@ -1253,8 +1247,34 @@ func (env *testWorkflowEnvironmentImpl) autoFireNextTimer() bool {
 	return false
 }
 
+func (env *testWorkflowEnvironmentImpl) popCallback() (testCallbackHandle, bool) {
+	env.callbackMu.Lock()
+	defer env.callbackMu.Unlock()
+	if len(env.callbacks) == 0 {
+		return testCallbackHandle{}, false
+	}
+	c := env.callbacks[0]
+	env.callbacks[0] = testCallbackHandle{}
+	env.callbacks = env.callbacks[1:]
+	if len(env.callbacks) == 0 {
+		env.callbacks = nil
+	} else {
+		select {
+		case env.callbackNotify <- struct{}{}:
+		default:
+		}
+	}
+	return c, true
+}
+
 func (env *testWorkflowEnvironmentImpl) postCallback(cb func(), startWorkflowTask bool) {
-	env.callbackChannel <- testCallbackHandle{callback: cb, startWorkflowTask: startWorkflowTask, env: env}
+	env.callbackMu.Lock()
+	env.callbacks = append(env.callbacks, testCallbackHandle{callback: cb, startWorkflowTask: startWorkflowTask, env: env})
+	env.callbackMu.Unlock()
+	select {
+	case env.callbackNotify <- struct{}{}:
+	default:
+	}
 }
 
 func (env *testWorkflowEnvironmentImpl) RequestCancelActivity(activityID ActivityID) {
@@ -1304,7 +1324,9 @@ func (env *testWorkflowEnvironmentImpl) Complete(result *commonpb.Payloads, err 
 		env.logger.Debug("Workflow already completed.")
 		return
 	}
-	env.workflowDef.Close()
+	if env.workflowDef != nil {
+		env.workflowDef.Close()
+	}
 
 	dc := env.GetDataConverter()
 	env.isWorkflowCompleted = true
@@ -1376,12 +1398,11 @@ func (env *testWorkflowEnvironmentImpl) Complete(result *commonpb.Payloads, err 
 
 	// properly handle child workflows based on their ParentClosePolicy
 	env.handleParentClosePolicy()
-	env.closeDoneChannel()
 }
 
 func (env *testWorkflowEnvironmentImpl) handleParentClosePolicy() {
 	for _, handle := range env.runningWorkflows {
-		if handle.env.parentEnv != nil &&
+		if !handle.handled && !handle.env.isWorkflowCompleted && handle.env.parentEnv != nil &&
 			env.workflowInfo.WorkflowExecution.ID == handle.env.parentEnv.workflowInfo.WorkflowExecution.ID {
 
 			switch handle.params.ParentClosePolicy {
@@ -2787,8 +2808,13 @@ func (env *testWorkflowEnvironmentImpl) RequestCancelChildWorkflow(_, workflowID
 
 func (env *testWorkflowEnvironmentImpl) RequestCancelExternalWorkflow(namespace, workflowID, runID string, _ []*sdk.EventGroupMarker, callback ResultHandler) {
 	if env.workflowInfo.WorkflowExecution.ID == workflowID {
+		if env.isWorkflowCompleted {
+			return
+		}
 		cancelFunc := func() {
-			env.workflowCancelHandler()
+			if env.workflowCancelHandler != nil {
+				env.workflowCancelHandler()
+			}
 
 			if env.isChildWorkflow() && env.onChildWorkflowCanceledListener != nil {
 				env.postCallback(func() {
@@ -2800,7 +2826,7 @@ func (env *testWorkflowEnvironmentImpl) RequestCancelExternalWorkflow(namespace,
 		// the workflowCancelHandler. A larger refactor would be needed to handle this similar to non-test code.
 		// Maybe worth doing when https://github.com/temporalio/go-sdk/issues/50 is tackled.
 		if sd, ok := env.workflowDef.(*syncWorkflowDefinition); ok && env.isChildWorkflow() {
-			if !sd.dispatcher.IsClosed() {
+			if sd.dispatcher != nil && !sd.dispatcher.IsClosed() {
 				sd.dispatcher.NewCoroutine(sd.rootCtx, "cancel-self", true, func(ctx Context) {
 					cancelFunc()
 				})
@@ -2924,9 +2950,7 @@ func (env *testWorkflowEnvironmentImpl) executeChildWorkflowWithDelay(delayStart
 	if childEnv != nil {
 		env.logger.Info("ExecuteChildWorkflow", tagWorkflowType, params.WorkflowType.Name)
 		env.runningCount++
-
-		// run child workflow in separate goroutinue
-		go childEnv.executeWorkflowInternal(delayStart, params.WorkflowType.Name, params.Input)
+		childEnv.scheduleWorkflowExecution(delayStart, params.WorkflowType.Name, params.Input)
 	}
 }
 
