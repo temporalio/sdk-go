@@ -12,6 +12,8 @@ import (
 )
 
 func (ts *IntegrationTestSuite) TestRPCTimeout() {
+	ts.startWorker()
+
 	for _, tc := range []struct {
 		name          string
 		callerTimeout time.Duration

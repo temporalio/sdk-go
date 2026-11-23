@@ -58,6 +58,8 @@ func (ts *IntegrationTestSuite) newTransferTypesClientAndWorker(taskQueue string
 }
 
 func (ts *IntegrationTestSuite) TestTransferTypes_WorkflowRoundTrip() {
+	ts.startWorker()
+
 	taskQueue := "transfer-types-workflow-" + ts.T().Name()
 	c, w := ts.newTransferTypesClientAndWorker(taskQueue)
 	defer c.Close()
@@ -81,6 +83,8 @@ func (ts *IntegrationTestSuite) TestTransferTypes_WorkflowRoundTrip() {
 }
 
 func (ts *IntegrationTestSuite) TestTransferTypes_RemoteActivityRoundTrip() {
+	ts.startWorker()
+
 	taskQueue := "transfer-types-activity-" + ts.T().Name()
 	c, w := ts.newTransferTypesClientAndWorker(taskQueue)
 	defer c.Close()

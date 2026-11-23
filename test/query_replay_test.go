@@ -14,8 +14,7 @@ import (
 )
 
 func (ts *IntegrationTestSuite) TestQueryClosedWorkflowWithPendingSignal() {
-	ts.worker.Stop()
-	ts.workerStopped = true
+	ts.startClient()
 	worker.SetStickyWorkflowCacheSize(0)
 	defer worker.SetStickyWorkflowCacheSize(ts.config.maxWorkflowCacheSize)
 
@@ -107,8 +106,7 @@ func queryClosedWorkflowWithPendingSignal(ctx workflow.Context) error {
 }
 
 func (ts *IntegrationTestSuite) TestStaleQueryReplayBoundary() {
-	ts.worker.Stop()
-	ts.workerStopped = true
+	ts.startClient()
 	worker.SetStickyWorkflowCacheSize(0)
 	defer worker.SetStickyWorkflowCacheSize(ts.config.maxWorkflowCacheSize)
 

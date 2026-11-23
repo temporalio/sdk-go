@@ -120,6 +120,8 @@ func (ts *IntegrationTestSuite) newSerCtxClientAndWorker(taskQueue string) (clie
 }
 
 func (ts *IntegrationTestSuite) TestSerializationContext_EndToEnd() {
+	ts.startWorker()
+
 	taskQueue := "test-ser-ctx-combined-" + ts.T().Name()
 	c, w := ts.newSerCtxClientAndWorker(taskQueue)
 	defer c.Close()
@@ -277,6 +279,8 @@ func intTestNexusCallerWorkflow(ctx workflow.Context, hmacEndpointName, zlibEndp
 }
 
 func (ts *IntegrationTestSuite) TestSerializationContext_NexusCallerEndpointIsolation() {
+	ts.startWorker()
+
 	skipOnCloud(ts.T(), cloudRequiresProvisioning, "test creates Nexus endpoints through Operator Service")
 
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
@@ -409,6 +413,8 @@ func (ts *IntegrationTestSuite) TestSerializationContext_NexusCallerEndpointIsol
 }
 
 func (ts *IntegrationTestSuite) TestSerializationContext_StandaloneNexusCallerEndpointIsolation() {
+	ts.startWorker()
+
 	skipOnCloud(ts.T(), cloudRequiresProvisioning, "standalone Nexus tests create namespace endpoints through Operator Service")
 	if os.Getenv("DISABLE_STANDALONE_NEXUS_TESTS") != "" {
 		ts.T().SkipNow()
@@ -572,6 +578,8 @@ func (c *intTestStandaloneActivityCodec) Decode(payloads []*commonpb.Payload) ([
 }
 
 func (ts *IntegrationTestSuite) TestSerializationContext_StandaloneActivityEndToEnd() {
+	ts.startWorker()
+
 	taskQueue := "test-ser-ctx-standalone-" + ts.T().Name()
 	codecDC := converter.NewCodecDataConverter(
 		converter.GetDefaultDataConverter(), &intTestStandaloneActivityCodec{})
