@@ -294,7 +294,9 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		strings.Contains(ts.T().Name(), "TestStandaloneActivityStartLinks") {
 		ts.registerStandaloneNexusOperations(ts.worker)
 	}
-	if strings.Contains(ts.T().Name(), "NoWorker") {
+	if strings.Contains(ts.T().Name(), "NoWorker") ||
+		ts.T().Name() == "TestIntegrationSuite/TestStaleQueryReplayBoundary" ||
+		strings.HasPrefix(ts.T().Name(), "TestIntegrationSuite/TestMultipleUpdateOrdering") {
 		// Don't even start the worker
 		ts.workerStopped = true
 		return
@@ -5291,9 +5293,7 @@ func (ts *IntegrationTestSuite) TestMultipleUpdateOrdering() {
 func (ts *IntegrationTestSuite) testUpdateOrderingCancel(cancelWf bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	// Kill the worker so we can send multiple update requests and possibly a cancel in the same WFT
-	ts.worker.Stop()
-	// Start the workflow
+	// Queue the updates and optional cancellation before the worker polls its first workflow task.
 	options := ts.startWorkflowOptions("test-multiple-update-ordering")
 	run, err := ts.client.ExecuteWorkflow(ctx,
 		options,
@@ -5303,6 +5303,8 @@ func (ts *IntegrationTestSuite) testUpdateOrderingCancel(cancelWf bool) {
 	if cancelWf {
 		ts.NoError(ts.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID()))
 	}
+	// Run the update calls in goroutines because they wait for completion,
+	// which requires the worker to start polling.
 	var wf sync.WaitGroup
 	updateHandles := []string{"echo", "sleep", "empty"}
 	for range 10 {
@@ -5325,16 +5327,10 @@ func (ts *IntegrationTestSuite) testUpdateOrderingCancel(cancelWf bool) {
 		})
 	}
 
-	// The server does not support admitted updates, so we send the update in a separate goroutine.
-	// Keep this shorter than the activity's ScheduleToCloseTimeout (5s) so the new worker
-	// has time to execute activities before they time out.
+	// Give the concurrent update requests time to reach the server before polling.
 	time.Sleep(5 * time.Second)
-	// Now create a new worker on that same task queue to resume the work of the
-	// workflow
-	nextWorker := worker.New(ts.client, ts.taskQueueName, worker.Options{})
-	ts.registerWorkflowsAndActivities(nextWorker)
-	ts.NoError(nextWorker.Start())
-	defer nextWorker.Stop()
+	ts.NoError(ts.worker.Start())
+	ts.workerStopped = false
 	wf.Wait()
 	// Get the result
 	var result int
