@@ -262,11 +262,6 @@ func (ts *IntegrationTestSuite) TestBasic() {
 }
 
 func (ts *IntegrationTestSuite) TestActivityScheduleToStartLatency() {
-	ts.startWorker()
-
-	ts.worker.Stop()
-	ts.workerStopped = true
-
 	for _, delivery := range []string{"polled", "eager"} {
 		ts.T().Run(delivery, func(t *testing.T) {
 			captured := metrics.NewCapturingHandler()
@@ -342,10 +337,7 @@ func (ts *IntegrationTestSuite) TestActivityScheduleToStartLatency() {
 }
 
 func (ts *IntegrationTestSuite) TestPreferredVersionProvider() {
-	ts.startWorker()
-
-	ts.worker.Stop()
-	ts.workerStopped = true
+	ts.startClient()
 
 	providerInputs := make(chan worker.PreferredVersionProviderInput, 1)
 	var providerCalls atomic.Int32
@@ -357,7 +349,6 @@ func (ts *IntegrationTestSuite) TestPreferredVersionProvider() {
 			return &worker.VersionPreference{Version: workflow.DefaultVersion}
 		},
 	})
-	defer preferredWorker.Stop()
 
 	preferredWorkflow := func(ctx workflow.Context) (string, error) {
 		version := workflow.GetVersion(ctx, "preferred-version", workflow.DefaultVersion, 1)
@@ -370,7 +361,7 @@ func (ts *IntegrationTestSuite) TestPreferredVersionProvider() {
 		return "old", nil
 	}
 	preferredWorker.RegisterWorkflow(preferredWorkflow)
-	ts.NoError(preferredWorker.Start())
+	ts.startRegisteredWorker(preferredWorker)
 
 	var result string
 	ts.NoError(ts.executeWorkflow("preferred-version-provider", preferredWorkflow, &result))
@@ -384,7 +375,7 @@ func (ts *IntegrationTestSuite) TestPreferredVersionProvider() {
 }
 
 func (ts *IntegrationTestSuite) TestPreferredVersionProviderRollout() {
-	ts.startWorker()
+	ts.startClient()
 
 	const (
 		workflowName = "preferred-version-provider-rollout"
@@ -392,9 +383,6 @@ func (ts *IntegrationTestSuite) TestPreferredVersionProviderRollout() {
 		signalName   = "release"
 		queryName    = "state"
 	)
-
-	ts.worker.Stop()
-	ts.workerStopped = true
 
 	newWorkflow := func(ctx workflow.Context) (string, error) {
 		releases := 0
@@ -830,8 +818,6 @@ func (ts *IntegrationTestSuite) TestLongRunningActivityWithHB() {
 }
 
 func (ts *IntegrationTestSuite) TestLongRunningActivityWithHBAndGrpcRetries() {
-	ts.startWorker()
-
 	const (
 		heartbeatOperation = "RecordActivityTaskHeartbeat"
 		heartbeatMethod    = "/temporal.api.workflowservice.v1.WorkflowService/" + heartbeatOperation
@@ -839,15 +825,9 @@ func (ts *IntegrationTestSuite) TestLongRunningActivityWithHBAndGrpcRetries() {
 		retryCount         = 2
 	)
 
-	// The completion interceptor must be installed at dial time, so replace the suite's client and worker
-	// to let the activity wait for heartbeat retries and metrics before returning and canceling its context.
-	ts.worker.Stop()
-	ts.workerStopped = true
 	// The first heartbeat is synchronous, so its result must be buffered.
 	heartbeatResults := make(chan error, 1)
-	c, err := ts.newDefaultClient(func(options *client.Options) {
-		options.MetricsHandler = ts.metricsHandler
-		options.TrafficController = ts.trafficController
+	ts.startClient(func(options *client.Options) {
 		options.ConnectionOptions.DialOptions = []grpc.DialOption{
 			grpc.WithUnaryInterceptor(func(
 				ctx context.Context, method string, req, reply any, cc *grpc.ClientConn,
@@ -864,10 +844,8 @@ func (ts *IntegrationTestSuite) TestLongRunningActivityWithHBAndGrpcRetries() {
 			}),
 		}
 	})
-	ts.NoError(err)
-	defer c.Close()
 
-	w := worker.New(c, ts.taskQueueName, worker.Options{})
+	w := worker.New(ts.client, ts.taskQueueName, worker.Options{})
 	w.RegisterWorkflow(ts.workflows.LongRunningActivityWithHB)
 	w.RegisterActivityWithOptions(func(ctx context.Context, _, _ time.Duration) error {
 		ts.activities.append("longRunningHeartbeat")
@@ -886,13 +864,12 @@ func (ts *IntegrationTestSuite) TestLongRunningActivityWithHBAndGrpcRetries() {
 
 		return nil
 	}, activity.RegisterOptions{Name: "LongRunningHeartbeat"})
-	ts.NoError(w.Start())
-	defer w.Stop()
+	ts.startRegisteredWorker(w)
 
 	var expected []string
 	// Fail every other HB attempt, otherwise it's too easy to exceed the HB timeout.
 	ts.trafficController.AddError(heartbeatOperation, errors.New("call not allowed"), 1, 3)
-	err = ts.executeWorkflow("test-long-running-activity-with-hb", ts.workflows.LongRunningActivityWithHB, &expected)
+	err := ts.executeWorkflow("test-long-running-activity-with-hb", ts.workflows.LongRunningActivityWithHB, &expected)
 	ts.NoError(err)
 	ts.EqualValues(expected, ts.activities.invoked())
 	// we induce 2 failures, but they all should be retried
@@ -2279,19 +2256,12 @@ func (ts *IntegrationTestSuite) TestChildWorkflowTypedSearchAttributes() {
 }
 
 func (ts *IntegrationTestSuite) TestLargeQueryResultError() {
-	ts.startWorker()
+	ts.startWorker(func(opts *worker.Options) {
+		opts.DisablePayloadErrorLimit = true
+	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
-
-	ts.worker.Stop()
-	ts.workerStopped = true
-	ts.worker = worker.New(ts.client, ts.taskQueueName, worker.Options{
-		DisablePayloadErrorLimit: true,
-	})
-	ts.registerWorkflowsAndActivities(ts.worker)
-	ts.NoError(ts.worker.Start())
-	ts.workerStopped = false
 
 	run, err := ts.client.ExecuteWorkflow(ctx,
 		ts.startWorkflowOptions("test-large-query-error"), ts.workflows.LargeQueryResultWorkflow)
@@ -5594,23 +5564,18 @@ func (ts *IntegrationTestSuite) TestUpdateOrdering() {
 }
 
 func (ts *IntegrationTestSuite) TestMultipleUpdateOrderingCancel() {
-	ts.startWorker()
-
 	ts.testUpdateOrderingCancel(true)
 }
 
 func (ts *IntegrationTestSuite) TestMultipleUpdateOrdering() {
-	ts.startWorker()
-
 	ts.testUpdateOrderingCancel(false)
 }
 
 func (ts *IntegrationTestSuite) testUpdateOrderingCancel(cancelWf bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	// Kill the worker so we can send multiple update requests and possibly a cancel in the same WFT
-	ts.worker.Stop()
-	// Start the workflow
+	ts.startClient()
+	// Queue the updates and optional cancellation before the worker polls its first workflow task.
 	options := ts.startWorkflowOptions("test-multiple-update-ordering")
 	run, err := ts.client.ExecuteWorkflow(ctx,
 		options,
@@ -5620,6 +5585,8 @@ func (ts *IntegrationTestSuite) testUpdateOrderingCancel(cancelWf bool) {
 	if cancelWf {
 		ts.NoError(ts.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID()))
 	}
+	// Run the update calls in goroutines because they wait for completion,
+	// which requires the worker to start polling.
 	var wf sync.WaitGroup
 	updateHandles := []string{"echo", "sleep", "empty"}
 	for range 10 {
@@ -5642,16 +5609,9 @@ func (ts *IntegrationTestSuite) testUpdateOrderingCancel(cancelWf bool) {
 		})
 	}
 
-	// The server does not support admitted updates, so we send the update in a separate goroutine.
-	// Keep this shorter than the activity's ScheduleToCloseTimeout (5s) so the new worker
-	// has time to execute activities before they time out.
+	// Give the concurrent update requests time to reach the server before polling.
 	time.Sleep(5 * time.Second)
-	// Now create a new worker on that same task queue to resume the work of the
-	// workflow
-	nextWorker := worker.New(ts.client, ts.taskQueueName, worker.Options{})
-	ts.registerWorkflowsAndActivities(nextWorker)
-	ts.NoError(nextWorker.Start())
-	defer nextWorker.Stop()
+	ts.startWorker()
 	wf.Wait()
 	// Get the result
 	var result int
@@ -8378,16 +8338,12 @@ func (ts *IntegrationTestSuite) TestScheduleUpdateWorkflowActionMemo() {
 }
 
 func (ts *IntegrationTestSuite) TestNoVersioningBehaviorPanics() {
-	ts.startWorker()
-
 	seriesName := "deploy-test-" + uuid.NewString()
 
 	c, err := ts.newDefaultClient()
 	ts.NoError(err)
 	defer c.Close()
 
-	ts.worker.Stop()
-	ts.workerStopped = true
 	w := worker.New(c, ts.taskQueueName, worker.Options{
 		DeploymentOptions: worker.DeploymentOptions{
 			UseVersioning: true,
@@ -8413,10 +8369,8 @@ func (ts *IntegrationTestSuite) TestNoVersioningBehaviorPanics() {
 }
 
 func (ts *IntegrationTestSuite) TestSendsCorrectMeteringData() {
-	ts.startWorker()
-
 	nonfirstLAAttemptCounts := make([]uint32, 0)
-	c, err := ts.newDefaultClient(func(options *client.Options) {
+	ts.startClient(func(options *client.Options) {
 		options.ConnectionOptions.DialOptions = []grpc.DialOption{
 			grpc.WithUnaryInterceptor(func(
 				ctx context.Context,
@@ -8435,14 +8389,7 @@ func (ts *IntegrationTestSuite) TestSendsCorrectMeteringData() {
 			}),
 		}
 	})
-	ts.NoError(err)
-	defer c.Close()
-
-	ts.worker.Stop()
-	ts.workerStopped = true
-	w := worker.New(c, ts.taskQueueName, worker.Options{})
-	ts.registerWorkflowsAndActivities(w)
-	ts.Nil(w.Start())
+	ts.startWorker()
 
 	wfOpts := ts.startWorkflowOptions("test-sends-correct-metering-data")
 	wfOpts.WorkflowTaskTimeout = 2 * time.Second
@@ -8453,7 +8400,6 @@ func (ts *IntegrationTestSuite) TestSendsCorrectMeteringData() {
 	for i := 1; i < len(nonfirstLAAttemptCounts); i++ {
 		ts.True(nonfirstLAAttemptCounts[i] > 0)
 	}
-	w.Stop()
 }
 
 func (ts *IntegrationTestSuite) TestNondeterministicUpdateRegistertion() {
@@ -10277,11 +10223,6 @@ func (c *clientPluginForTest) NewClient(
 }
 
 func (ts *IntegrationTestSuite) TestClientPlugin() {
-	ts.startWorker()
-
-	// Stop any existing worker
-	ts.worker.Stop()
-
 	// Failing dial first
 	plugin := &clientPluginForTest{ts: ts, failNew: true}
 	_, err := ts.newDefaultClient(func(options *client.Options) {
@@ -10410,10 +10351,7 @@ func (w *workerPluginForTest) ReplayWorkflow(
 }
 
 func (ts *IntegrationTestSuite) TestWorkerPlugin() {
-	ts.startWorker()
-
-	// Stop any existing worker
-	ts.worker.Stop()
+	ts.startClient()
 
 	// Failing start first
 	plugin := &workerPluginForTest{ts: ts, failStart: true}
@@ -10506,10 +10444,7 @@ func (t *toPayloadTrackingDataConverter) ToPayloads(value ...any) (*commonpb.Pay
 }
 
 func (ts *IntegrationTestSuite) TestSimplePlugin() {
-	ts.startWorker()
-
-	// Stop any existing worker
-	ts.worker.Stop()
+	ts.startClient()
 
 	// Create a simple plugin that just confirms some things are properly set
 	conv := &toPayloadTrackingDataConverter{DataConverter: converter.GetDefaultDataConverter()}
@@ -10620,11 +10555,6 @@ func (ts *IntegrationTestSuite) TestSimplePlugin() {
 }
 
 func (ts *IntegrationTestSuite) TestSimplePluginDoNothing() {
-	ts.startWorker()
-
-	// Stop any existing worker
-	ts.worker.Stop()
-
 	// Just run a simple workflow with a do-nothing plugin and make sure it works as normal
 	plugin, err := temporal.NewSimplePlugin(temporal.SimplePluginOptions{Name: "simple-plugin"})
 	ts.NoError(err)
@@ -10954,13 +10884,7 @@ func (f *poisonDataConverter) ToPayload(value any) (*commonpb.Payload, error) {
 // activity. On replay, the ActivityTaskCancelRequested event for that activity
 // hits the state machine in Initiated state, causing a permanent NDE.
 func (ts *IntegrationTestSuite) TestSessionCancelNDE() {
-	ts.startWorker(func(opts *worker.Options) {
-		opts.EnableSessionWorker = true
-	})
-
-	// Stop the default worker — we need our own with a failing DataConverter.
-	ts.worker.Stop()
-	ts.workerStopped = true
+	ts.startClient()
 
 	// Create a DataConverter that fails when encoding the poison value.
 	const poison = "FAIL_ENCODE_NOW"
@@ -11030,11 +10954,7 @@ func (ts *IntegrationTestSuite) TestSessionCancelNDE() {
 // completes with the defer's activity command, and the second attempt (which doesn't panic) takes a
 // different code path causing an NDE.
 func (ts *IntegrationTestSuite) TestPanicWithDeferredYield() {
-	ts.startWorker()
-
-	// Stop any existing worker
-	ts.worker.Stop()
-	ts.workerStopped = true
+	ts.startClient()
 
 	var panicWithDeferYieldCounter atomic.Int32
 	panicWithDeferYieldCounter.Store(0)
@@ -11070,8 +10990,7 @@ func (ts *IntegrationTestSuite) TestPanicWithDeferredYield() {
 		Name: "PanicWithDeferYield",
 	})
 	ts.activities.register(wrk)
-	ts.NoError(wrk.Start())
-	defer wrk.Stop()
+	ts.startRegisteredWorker(wrk)
 
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
@@ -11088,33 +11007,23 @@ func (ts *IntegrationTestSuite) TestPanicWithDeferredYield() {
 }
 
 func (ts *IntegrationTestSuite) TestPayloadSizeWarningDefaultSize() {
-	ts.startWorker()
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	logger := ilog.NewMemoryLogger()
-	client, err := ts.newDefaultClient(func(options *client.Options) {
+	ts.startClient(func(options *client.Options) {
 		options.Logger = logger
-		options.MetricsHandler = ts.metricsHandler
 	})
-	ts.NoError(err)
-	defer client.Close()
 
-	ts.worker.Stop()
-	ts.workerStopped = true
-
-	testWorker := worker.New(client, ts.taskQueueName, worker.Options{})
+	testWorker := worker.New(ts.client, ts.taskQueueName, worker.Options{})
 	wfname := "payload-size-warning-workflow-result"
 	testWorker.RegisterWorkflowWithOptions(
 		func(ctx workflow.Context) (string, error) { return strings.Repeat("a", 1024*1024), nil },
 		workflow.RegisterOptions{Name: wfname},
 	)
-	err = testWorker.Start()
-	ts.NoError(err)
-	defer testWorker.Stop()
+	ts.startRegisteredWorker(testWorker)
 
-	run, err := client.ExecuteWorkflow(
+	run, err := ts.client.ExecuteWorkflow(
 		ctx,
 		ts.startWorkflowOptions(ts.T().Name()),
 		wfname,
