@@ -148,7 +148,7 @@ func (i *dynamicRecordingInbound) CancelOperation(ctx context.Context, input int
 //     the result returned after its backing Workflow completes.
 //  5. Calls "missing" and check that the caller receives the fallback's NOT_FOUND error.
 //  6. Checks that the interceptor saw decoded string input for the named operation and
-//     raw *nexus.LazyValue input for each operation sent to the dynamic handler.
+//     raw converter.RawValue input for each operation sent to the dynamic handler.
 //
 // This validates named-operation precedence, synchronous and Workflow-backed dynamic
 // results, error propagation, and the input passed to Nexus inbound interceptors.
@@ -203,9 +203,9 @@ func TestNexusDynamicWorkflowCaller(t *testing.T) {
 		wantNotFound bool
 	}{
 		{operation: "list_tools", want: "manifest", inputType: "string"},
-		{operation: "echo_sync", want: "sync:hello", inputType: "*nexus.LazyValue"},
-		{operation: "echo_workflow", want: "hello", inputType: "*nexus.LazyValue"},
-		{operation: "missing", inputType: "*nexus.LazyValue", wantNotFound: true},
+		{operation: "echo_sync", want: "sync:hello", inputType: "converter.RawValue"},
+		{operation: "echo_workflow", want: "hello", inputType: "converter.RawValue"},
+		{operation: "missing", inputType: "converter.RawValue", wantNotFound: true},
 	} {
 		t.Run(testCase.operation, func(t *testing.T) {
 			run, err := tc.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{TaskQueue: tc.taskQueue}, callerWorkflow, testCase.operation, "hello")
@@ -233,7 +233,7 @@ func TestNexusDynamicWorkflowCaller(t *testing.T) {
 //  2. Call "wait_activity" through Nexus and check that it returns a pending operation.
 //  3. Cancel that operation using its pending handle.
 //  4. Wait until the backing Activity's status becomes CANCELED.
-//  5. Check that the interceptor recorded the start with raw *nexus.LazyValue input
+//  5. Check that the interceptor recorded the start with raw converter.RawValue input
 //     and the cancel request, both under the original "wait_activity" name.
 //
 // This validates that the default token-based cancellation reaches a dynamic operation's
@@ -296,7 +296,7 @@ func TestNexusDynamicActivityCancel(t *testing.T) {
 
 	recorder.mu.Lock()
 	defer recorder.mu.Unlock()
-	require.Equal(t, []string{"wait_activity:*nexus.LazyValue"}, recorder.starts)
+	require.Equal(t, []string{"wait_activity:converter.RawValue"}, recorder.starts)
 	require.Equal(t, []string{"wait_activity"}, recorder.cancels)
 }
 

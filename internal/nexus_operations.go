@@ -47,6 +47,7 @@ type NexusOperationContext struct {
 	metricsHandler            metrics.Handler
 	log                       log.Logger
 	registry                  *registry
+	inputSerializer           *payloadSerializer
 
 	// responseLinksMu guards responseLinks. A Nexus operation handler is invoked from a single
 	// goroutine, but handlers are free to issue RPCs from other goroutines they spawn, so the
@@ -344,23 +345,32 @@ func nexusMiddleware(interceptors []WorkerInterceptor) nexus.MiddlewareFunc {
 		if err := in.Init(ctx, &nexusOperationEnvironment{}); err != nil {
 			return nil, err
 		}
-		return newNexusHandler(in, root.outboundInterceptor), nil
+		return newNexusHandler(in, root), nil
 	}
 }
 
 // nexusMiddlewareToInterceptorAdapter is an adapter from the Nexus Handler interface to the Temporal interceptor interface.
 type nexusMiddlewareToInterceptorAdapter struct {
 	nexus.UnimplementedOperation[any, any]
-	inboundInterceptor  NexusOperationInboundInterceptor
-	outboundInterceptor NexusOperationOutboundInterceptor
+	inboundInterceptor NexusOperationInboundInterceptor
+	root               *nexusInterceptorToMiddlewareAdapter
 }
 
-func newNexusHandler(inbound NexusOperationInboundInterceptor, outbound NexusOperationOutboundInterceptor) nexus.OperationHandler[any, any] {
-	return &nexusMiddlewareToInterceptorAdapter{inboundInterceptor: inbound, outboundInterceptor: outbound}
+func newNexusHandler(inbound NexusOperationInboundInterceptor, root *nexusInterceptorToMiddlewareAdapter) nexus.OperationHandler[any, any] {
+	return &nexusMiddlewareToInterceptorAdapter{inboundInterceptor: inbound, root: root}
 }
 
 func (h *nexusMiddlewareToInterceptorAdapter) Start(ctx context.Context, input any, options nexus.StartOperationOptions) (nexus.HandlerStartOperationResult[any], error) {
-	ctx = context.WithValue(ctx, nexusOperationOutboundInterceptorKey, h.outboundInterceptor)
+	ctx = context.WithValue(ctx, nexusOperationOutboundInterceptorKey, h.root.outboundInterceptor)
+	if lazy, ok := input.(*nexus.LazyValue); ok {
+		var raw converter.RawValue
+		if err := lazy.Consume(&raw); err != nil {
+			return nil, err
+		}
+		nctx, _ := NexusOperationContextFromGoContext(ctx)
+		h.root.inputSerializer = nctx.inputSerializer
+		input = raw
+	}
 	return h.inboundInterceptor.StartOperation(ctx, NexusStartOperationInput{
 		Input:   input,
 		Options: options,
@@ -368,7 +378,7 @@ func (h *nexusMiddlewareToInterceptorAdapter) Start(ctx context.Context, input a
 }
 
 func (h *nexusMiddlewareToInterceptorAdapter) Cancel(ctx context.Context, token string, options nexus.CancelOperationOptions) error {
-	ctx = context.WithValue(ctx, nexusOperationOutboundInterceptorKey, h.outboundInterceptor)
+	ctx = context.WithValue(ctx, nexusOperationOutboundInterceptorKey, h.root.outboundInterceptor)
 	return h.inboundInterceptor.CancelOperation(ctx, NexusCancelOperationInput{
 		Token:   token,
 		Options: options,
@@ -380,6 +390,7 @@ type nexusInterceptorToMiddlewareAdapter struct {
 	NexusOperationInboundInterceptorBase
 	handler             nexus.OperationHandler[any, any]
 	outboundInterceptor NexusOperationOutboundInterceptor
+	inputSerializer     *payloadSerializer
 }
 
 // CancelOperation implements NexusOperationInboundInterceptor.
@@ -395,6 +406,14 @@ func (n *nexusInterceptorToMiddlewareAdapter) Init(ctx context.Context, outbound
 
 // StartOperation implements NexusOperationInboundInterceptor.
 func (n *nexusInterceptorToMiddlewareAdapter) StartOperation(ctx context.Context, input NexusStartOperationInput) (nexus.HandlerStartOperationResult[any], error) {
+	if n.inputSerializer != nil {
+		// Restore Nexus's LazyValue contract using the interceptor's edited payload.
+		input.Input = nexus.NewLazyValue(&payloadSerializer{
+			converter: n.inputSerializer.converter,
+			payload:   input.Input.(converter.RawValue).Payload(),
+			decoded:   true,
+		}, &nexus.Reader{ReadCloser: emptyReaderNopCloser})
+	}
 	return n.handler.Start(ctx, input.Input, input.Options)
 }
 

@@ -1141,7 +1141,7 @@ type NexusOperationOutboundInterceptor interface {
 //
 // Note: Experimental
 type NexusStartOperationInput struct {
-	// Input is the input to the operation.
+	// Input is the decoded input to the operation, or converter.RawValue for a dynamic operation.
 	Input any
 	// Options are the options for starting the operation.
 	Options nexus.StartOperationOptions
