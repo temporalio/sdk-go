@@ -32,6 +32,8 @@ to docs, or any other relevant information.
 
 ### Changed
 
+- Reduced gRPC interceptor allocations when the effective metrics handler is a
+  no-op.
 - `converter.NewZlibCodec` reuses zlib writers and readers across payloads instead of creating them
   for every payload. A writer is about 1 MB of allocation, so encoding allocates far less, which
   reduces garbage collection in workers that encode many payloads. The encoded output is unchanged.
