@@ -85,6 +85,9 @@ jobs:
           go-version: ${{ matrix.go-version }}
           cache-dependency-path: '**/go.sum'
 
+      - name: Prepare Temporal CLI
+        uses: ./.github/actions/temporal-cli-cache
+
       - name: Unit test
         run: go run . unit-test
         working-directory: ./internal/cmd/build
@@ -132,6 +135,9 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ matrix.go-version }}
+
+      - name: Prepare Temporal CLI
+        uses: ./.github/actions/temporal-cli-cache
 
       - name: Integration tests (without cache)
         run: go run . integration-test -dev-server
@@ -182,6 +188,9 @@ jobs:
         with:
           go-version: ${{ matrix.go-version }}
 
+      - name: Prepare Temporal CLI
+        uses: ./.github/actions/temporal-cli-cache
+
       - name: Integration tests (with cache)
         run: go run . integration-test -dev-server
         working-directory: ./internal/cmd/build
@@ -221,6 +230,11 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: stable
+
+      - name: Prepare Temporal CLI
+        uses: ./.github/actions/temporal-cli-cache
+        with:
+          default-only: 'true'
 
       - name: Docker compose - checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0

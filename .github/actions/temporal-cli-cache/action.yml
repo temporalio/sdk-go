@@ -1,0 +1,28 @@
+name: Cache Temporal CLI
+description: Prefetch the Temporal CLI versions used by SDK tests
+inputs:
+  default-only:
+    description: Prefetch only the SDK default CLI
+    default: 'false'
+runs:
+  using: composite
+  steps:
+    - name: Restore Temporal CLI cache
+      id: restore
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: .build/temporal-cli
+        key: temporal-cli-${{ runner.os }}-${{ runner.arch }}-${{ inputs.default-only == 'true' && 'default' || 'default-and-integration' }}-${{ hashFiles('internal/version.go', 'internal/temporalcli/download.go', 'internal/temporalcli/versions.go', '.github/actions/temporal-cli-cache/main.go') }}
+
+    - name: Prepare Temporal CLI binaries
+      shell: bash
+      env:
+        CLI_DEFAULT_ONLY: ${{ inputs.default-only }}
+      run: go run ./.github/actions/temporal-cli-cache -default-only="$CLI_DEFAULT_ONLY"
+
+    - name: Save Temporal CLI cache on main
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.restore.outputs.cache-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: .build/temporal-cli
+        key: ${{ steps.restore.outputs.cache-primary-key }}
