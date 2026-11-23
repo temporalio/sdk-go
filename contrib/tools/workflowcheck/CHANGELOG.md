@@ -24,6 +24,9 @@ or Security.
 
 ### Fixed
 
+- `net/http/httptrace.WithClientTrace` is no longer reported as non-deterministic. It only adds trace
+  hooks to a context, but its use of reflection was flagged.
+
 ### Security
 
 ## [0.6.0] - 2026-10-08

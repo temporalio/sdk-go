@@ -39,6 +39,8 @@ var DefaultIdentRefs = IdentRefs{
 	// New Go versions sometimes add godebug settings to allow reverting
 	// behavior, and many stdlib functions check these settings
 	"(*internal/godebug.Setting).Value": false,
+	// Only adds trace hooks to a context, but uses reflection to do it
+	"net/http/httptrace.WithClientTrace": false,
 }
 
 // IdentRefs is a map of whether the key, as a qualified type or var name, is
