@@ -17,6 +17,7 @@ import (
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/interceptor"
 	"go.temporal.io/sdk/temporalnexus"
 	"go.temporal.io/sdk/test/nexusclient"
@@ -48,9 +49,9 @@ func TestNexusDynamicTemporalCatchAll(t *testing.T) {
 		return "", workflow.Await(ctx, func() bool { return false })
 	}
 	operationOptions := temporalnexus.DynamicTemporalOperationOptions{
-		Start: func(ctx context.Context, nc temporalnexus.NexusClient, input *nexus.LazyValue, _ temporalnexus.StartTemporalOperationOptions) (temporalnexus.TemporalOperationResult[any], error) {
+		Start: func(ctx context.Context, nc temporalnexus.NexusClient, input converter.RawValue, _ temporalnexus.StartTemporalOperationOptions) (temporalnexus.TemporalOperationResult[any], error) {
 			var id string
-			if err := input.Consume(&id); err != nil {
+			if err := converter.GetDefaultDataConverter().FromPayload(input.Payload(), &id); err != nil {
 				return temporalnexus.TemporalOperationResult[any]{}, err
 			}
 			if nexus.ExtractHandlerInfo(ctx).Operation != "wait" || !available.Load() {
@@ -165,9 +166,9 @@ func TestNexusDynamicWorkflowCaller(t *testing.T) {
 	}))
 	require.NoError(t, service.RegisterDynamic(temporalnexus.MustNewDynamicTemporalOperation(
 		temporalnexus.DynamicTemporalOperationOptions{
-			Start: func(ctx context.Context, nc temporalnexus.NexusClient, input *nexus.LazyValue, opts temporalnexus.StartTemporalOperationOptions) (temporalnexus.TemporalOperationResult[any], error) {
+			Start: func(ctx context.Context, nc temporalnexus.NexusClient, input converter.RawValue, opts temporalnexus.StartTemporalOperationOptions) (temporalnexus.TemporalOperationResult[any], error) {
 				var value string
-				if err := input.Consume(&value); err != nil {
+				if err := converter.GetDefaultDataConverter().FromPayload(input.Payload(), &value); err != nil {
 					return temporalnexus.TemporalOperationResult[any]{}, err
 				}
 				switch nexus.ExtractHandlerInfo(ctx).Operation {
@@ -258,9 +259,9 @@ func TestNexusDynamicActivityCancel(t *testing.T) {
 	service := nexus.NewService("tools")
 	require.NoError(t, service.RegisterDynamic(temporalnexus.MustNewDynamicTemporalOperation(
 		temporalnexus.DynamicTemporalOperationOptions{
-			Start: func(ctx context.Context, nc temporalnexus.NexusClient, input *nexus.LazyValue, opts temporalnexus.StartTemporalOperationOptions) (temporalnexus.TemporalOperationResult[any], error) {
+			Start: func(ctx context.Context, nc temporalnexus.NexusClient, input converter.RawValue, opts temporalnexus.StartTemporalOperationOptions) (temporalnexus.TemporalOperationResult[any], error) {
 				var id string
-				if err := input.Consume(&id); err != nil {
+				if err := converter.GetDefaultDataConverter().FromPayload(input.Payload(), &id); err != nil {
 					return temporalnexus.TemporalOperationResult[any]{}, err
 				}
 				return temporalnexus.StartUntypedActivity[any](ctx, nc, client.StartActivityOptions{
@@ -328,9 +329,9 @@ func TestNexusDynamicUpdateCustomCancel(t *testing.T) {
 	service := nexus.NewService("tools")
 	require.NoError(t, service.RegisterDynamic(temporalnexus.MustNewDynamicTemporalOperation(
 		temporalnexus.DynamicTemporalOperationOptions{
-			Start: func(ctx context.Context, nc temporalnexus.NexusClient, input *nexus.LazyValue, opts temporalnexus.StartTemporalOperationOptions) (temporalnexus.TemporalOperationResult[any], error) {
+			Start: func(ctx context.Context, nc temporalnexus.NexusClient, input converter.RawValue, opts temporalnexus.StartTemporalOperationOptions) (temporalnexus.TemporalOperationResult[any], error) {
 				var workflowID string
-				if err := input.Consume(&workflowID); err != nil {
+				if err := converter.GetDefaultDataConverter().FromPayload(input.Payload(), &workflowID); err != nil {
 					return temporalnexus.TemporalOperationResult[any]{}, err
 				}
 				return temporalnexus.StartUpdateWorkflow[any](ctx, nc, client.UpdateWorkflowOptions{

@@ -31,7 +31,7 @@ to docs, or any other relevant information.
   slot usage.
 - Add experimental `NewDynamicTemporalOperation` and `MustNewDynamicTemporalOperation` which sets a
   catch-all Nexus operation handler for a Nexus service. This handler will be used when an unknown
-  operation is dispatched to this service.
+  operation is dispatched to this service. The Start callback receives input as `converter.RawValue`.
 
 ### Changed
 

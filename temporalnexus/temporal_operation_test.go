@@ -9,6 +9,7 @@ import (
 	"github.com/nexus-rpc/sdk-go/nexus"
 	"github.com/stretchr/testify/require"
 	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal"
 	"go.temporal.io/sdk/workflow"
 )
@@ -224,7 +225,7 @@ func TestStartUpdateWorkflowGuards(t *testing.T) {
 // TestDynamicTemporalOperationValidation checks constructor errors and the cancellation defaults on a valid unnamed handler.
 func TestDynamicTemporalOperationValidation(t *testing.T) {
 	valid := DynamicTemporalOperationOptions{
-		Start: func(context.Context, NexusClient, *nexus.LazyValue, StartTemporalOperationOptions) (TemporalOperationResult[any], error) {
+		Start: func(context.Context, NexusClient, converter.RawValue, StartTemporalOperationOptions) (TemporalOperationResult[any], error) {
 			return NewSyncResult[any]("value"), nil
 		},
 	}

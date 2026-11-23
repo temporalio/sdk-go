@@ -28,10 +28,10 @@ func TestNexusDynamicWorkflowTestEnvironment(t *testing.T) {
 			// Register a dynamic operation that simply returns the <operation_name>:<input>.
 			require.NoError(t, service.RegisterDynamic(temporalnexus.MustNewDynamicTemporalOperation(
 				temporalnexus.DynamicTemporalOperationOptions{
-					Start: func(ctx context.Context, _ temporalnexus.NexusClient, input *nexus.LazyValue, opts temporalnexus.StartTemporalOperationOptions) (temporalnexus.TemporalOperationResult[any], error) {
+					Start: func(ctx context.Context, _ temporalnexus.NexusClient, input converter.RawValue, opts temporalnexus.StartTemporalOperationOptions) (temporalnexus.TemporalOperationResult[any], error) {
 						require.NotEmpty(t, opts.RequestID)
 						var value string
-						if err := input.Consume(&value); err != nil {
+						if err := converter.GetDefaultDataConverter().FromPayload(input.Payload(), &value); err != nil {
 							return temporalnexus.TemporalOperationResult[any]{}, err
 						}
 						return temporalnexus.NewSyncResult[any](nexus.ExtractHandlerInfo(ctx).Operation + ":" + value), nil
@@ -48,6 +48,10 @@ func TestNexusDynamicWorkflowTestEnvironment(t *testing.T) {
 			}
 			suite := testsuite.WorkflowTestSuite{}
 			env := suite.NewTestWorkflowEnvironment()
+			// The callback receives a RawValue after the payload codec has decoded it.
+			env.SetDataConverter(converter.NewCodecDataConverter(
+				converter.GetDefaultDataConverter(), converter.NewZlibCodec(converter.ZlibCodecOptions{AlwaysEncode: true}),
+			))
 			env.RegisterNexusService(service)
 			started := false
 			env.SetOnNexusOperationStartedListener(func(service, operation string, input converter.EncodedValue) {
@@ -79,7 +83,7 @@ func TestNexusDynamicWorkflowTestEnvironmentMock(t *testing.T) {
 	// Registers a dynamic handler that always throws.
 	require.NoError(t, service.RegisterDynamic(temporalnexus.MustNewDynamicTemporalOperation(
 		temporalnexus.DynamicTemporalOperationOptions{
-			Start: func(context.Context, temporalnexus.NexusClient, *nexus.LazyValue, temporalnexus.StartTemporalOperationOptions) (temporalnexus.TemporalOperationResult[any], error) {
+			Start: func(context.Context, temporalnexus.NexusClient, converter.RawValue, temporalnexus.StartTemporalOperationOptions) (temporalnexus.TemporalOperationResult[any], error) {
 				return temporalnexus.TemporalOperationResult[any]{}, nexus.NewHandlerErrorf(nexus.HandlerErrorTypeInternal, "dynamic handler must not run for a mocked name")
 			},
 		},
@@ -118,9 +122,9 @@ func TestNexusDynamicWorkflowTestEnvironmentMixedMocks(t *testing.T) {
 	service := nexus.NewService("tools")
 	require.NoError(t, service.RegisterDynamic(temporalnexus.MustNewDynamicTemporalOperation(
 		temporalnexus.DynamicTemporalOperationOptions{
-			Start: func(ctx context.Context, _ temporalnexus.NexusClient, input *nexus.LazyValue, _ temporalnexus.StartTemporalOperationOptions) (temporalnexus.TemporalOperationResult[any], error) {
+			Start: func(ctx context.Context, _ temporalnexus.NexusClient, input converter.RawValue, _ temporalnexus.StartTemporalOperationOptions) (temporalnexus.TemporalOperationResult[any], error) {
 				var value string
-				if err := input.Consume(&value); err != nil {
+				if err := converter.GetDefaultDataConverter().FromPayload(input.Payload(), &value); err != nil {
 					return temporalnexus.TemporalOperationResult[any]{}, err
 				}
 				return temporalnexus.NewSyncResult[any](nexus.ExtractHandlerInfo(ctx).Operation + ":" + value), nil
@@ -171,9 +175,9 @@ func TestNexusDynamicWorkflowTestEnvironmentCancel(t *testing.T) {
 	service := nexus.NewService("tools")
 	require.NoError(t, service.RegisterDynamic(temporalnexus.MustNewDynamicTemporalOperation(
 		temporalnexus.DynamicTemporalOperationOptions{
-			Start: func(ctx context.Context, nc temporalnexus.NexusClient, input *nexus.LazyValue, _ temporalnexus.StartTemporalOperationOptions) (temporalnexus.TemporalOperationResult[any], error) {
+			Start: func(ctx context.Context, nc temporalnexus.NexusClient, input converter.RawValue, _ temporalnexus.StartTemporalOperationOptions) (temporalnexus.TemporalOperationResult[any], error) {
 				var id string
-				if err := input.Consume(&id); err != nil {
+				if err := converter.GetDefaultDataConverter().FromPayload(input.Payload(), &id); err != nil {
 					return temporalnexus.TemporalOperationResult[any]{}, err
 				}
 				return temporalnexus.StartUntypedWorkflow[any](ctx, nc, client.StartWorkflowOptions{ID: id}, waitForCancel, id)
@@ -207,7 +211,7 @@ func TestNexusDynamicWorkflowTestEnvironmentError(t *testing.T) {
 			service := nexus.NewService("tools")
 			require.NoError(t, service.RegisterDynamic(temporalnexus.MustNewDynamicTemporalOperation(
 				temporalnexus.DynamicTemporalOperationOptions{
-					Start: func(context.Context, temporalnexus.NexusClient, *nexus.LazyValue, temporalnexus.StartTemporalOperationOptions) (temporalnexus.TemporalOperationResult[any], error) {
+					Start: func(context.Context, temporalnexus.NexusClient, converter.RawValue, temporalnexus.StartTemporalOperationOptions) (temporalnexus.TemporalOperationResult[any], error) {
 						return temporalnexus.TemporalOperationResult[any]{}, nexus.NewHandlerErrorf(errorType, "rejected by fallback")
 					},
 				},

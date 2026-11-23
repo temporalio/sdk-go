@@ -6,17 +6,18 @@ import (
 
 	"github.com/nexus-rpc/sdk-go/nexus"
 	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/converter"
 )
 
 // DynamicTemporalOperationOptions configures an unnamed Temporal-backed fallback.
-// Start receives raw input and the original operation name through
-// nexus.ExtractHandlerInfo(ctx). It must consume the input before returning.
+// Start receives input as converter.RawValue, with payload codecs already applied,
+// and the original operation name through nexus.ExtractHandlerInfo(ctx).
 // Results use any because different operation names may return different types.
 // Handlers may run concurrently.
 //
 // NOTE: Experimental
 type DynamicTemporalOperationOptions struct {
-	Start func(context.Context, NexusClient, *nexus.LazyValue, StartTemporalOperationOptions) (TemporalOperationResult[any], error)
+	Start func(context.Context, NexusClient, converter.RawValue, StartTemporalOperationOptions) (TemporalOperationResult[any], error)
 	// Nil cancellation handlers use the same defaults as TemporalOperationOptions.
 	CancelWorkflowRun       func(context.Context, client.Client, CancelTemporalWorkflowRunOptions, nexus.CancelOperationOptions) error
 	CancelWorkflowUpdate    func(context.Context, client.Client, CancelTemporalUpdateWorkflowOptions, nexus.CancelOperationOptions) error
@@ -32,7 +33,13 @@ func NewDynamicTemporalOperation(opts DynamicTemporalOperationOptions) (nexus.Op
 		return nil, errors.New("invalid dynamic operation options: Start is required")
 	}
 	options := TemporalOperationOptions[*nexus.LazyValue, any]{
-		Start:                   opts.Start,
+		Start: func(ctx context.Context, nc NexusClient, input *nexus.LazyValue, startOpts StartTemporalOperationOptions) (TemporalOperationResult[any], error) {
+			var raw converter.RawValue
+			if err := input.Consume(&raw); err != nil {
+				return TemporalOperationResult[any]{}, err
+			}
+			return opts.Start(ctx, nc, raw, startOpts)
+		},
 		CancelWorkflowRun:       opts.CancelWorkflowRun,
 		CancelWorkflowUpdate:    opts.CancelWorkflowUpdate,
 		CancelActivityExecution: opts.CancelActivityExecution,
