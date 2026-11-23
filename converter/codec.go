@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"sync"
 
 	commonpb "go.temporal.io/api/common/v1"
 	commonconverter "go.temporal.io/sdk/internal/common/converter"
@@ -46,6 +47,19 @@ type ZlibCodecOptions struct {
 
 type zlibCodec struct{ options ZlibCodecOptions }
 
+// A zlib writer has an internal state, about 1 MB, when it is created, so writers are
+// reused across payloads. Reset returns a writer to its initial state.
+var zlibWriters = sync.Pool{New: func() any { return zlib.NewWriter(nil) }}
+
+// Readers are reused too.
+var zlibReaders sync.Pool
+
+// zlibReader is what zlib.NewReader returns: it is documented to implement zlib.Resetter as well.
+type zlibReader interface {
+	io.ReadCloser
+	zlib.Resetter
+}
+
 // NewZlibCodec creates a PayloadCodec for use in NewCodecDataConverter
 // to support zlib payload compression.
 //
@@ -62,19 +76,25 @@ func (z *zlibCodec) Encode(payloads []*commonpb.Payload) ([]*commonpb.Payload, e
 			return payloads, err
 		}
 		var buf bytes.Buffer
-		w := zlib.NewWriter(&buf)
+		w := zlibWriters.Get().(*zlib.Writer)
+		w.Reset(&buf)
 		_, err = w.Write(b)
 		if closeErr := w.Close(); closeErr != nil && err == nil {
 			err = closeErr
 		}
+		compressed := buf.Bytes()
+		// The pooled writer still points at buf.
+		// Drop buf's reference to the output so that it does not stay there when returned to the pool.
+		buf = bytes.Buffer{}
+		zlibWriters.Put(w)
 		if err != nil {
 			return payloads, err
 		}
 		// Only set if smaller than original amount or has option to always encode
-		if buf.Len() < len(b) || z.options.AlwaysEncode {
+		if len(compressed) < len(b) || z.options.AlwaysEncode {
 			result[i] = &commonpb.Payload{
 				Metadata: map[string][]byte{MetadataEncoding: []byte("binary/zlib")},
-				Data:     buf.Bytes(),
+				Data:     compressed,
 			}
 		} else {
 			result[i] = p
@@ -91,7 +111,17 @@ func (*zlibCodec) Decode(payloads []*commonpb.Payload) ([]*commonpb.Payload, err
 			result[i] = p
 			continue
 		}
-		r, err := zlib.NewReader(bytes.NewReader(p.Data))
+		src := bytes.NewReader(p.Data)
+		r, reused := zlibReaders.Get().(zlibReader)
+		var err error
+		if reused {
+			err = r.Reset(src, nil)
+		} else {
+			var zr io.ReadCloser
+			if zr, err = zlib.NewReader(src); err == nil {
+				r = zr.(zlibReader)
+			}
+		}
 		if err != nil {
 			return payloads, err
 		}
@@ -100,6 +130,9 @@ func (*zlibCodec) Decode(payloads []*commonpb.Payload) ([]*commonpb.Payload, err
 		if closeErr := r.Close(); closeErr != nil && err == nil {
 			err = closeErr
 		}
+		// Clear src so that the last buffer is not stored in the pool.
+		src.Reset(nil)
+		zlibReaders.Put(r)
 		if err != nil {
 			return payloads, err
 		}

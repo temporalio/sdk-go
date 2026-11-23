@@ -1046,11 +1046,6 @@ func (w *Workflows) ChildWorkflowAndParentCancel(ctx workflow.Context) error {
 		return err
 	}
 
-	cwo := workflow.ChildWorkflowOptions{
-		WorkflowRunTimeout: time.Second * 2,
-	}
-	ctx = workflow.WithChildOptions(ctx, cwo)
-
 	childWorkflowFuture := workflow.ExecuteChildWorkflow(ctx, w.childWorkflowWaitOnContextCancel)
 
 	var childWorkflowExecution workflow.Execution
@@ -2406,23 +2401,6 @@ func (w *Workflows) ActivityWaitForWorkerStop(ctx workflow.Context, timeout time
 	var s string
 	err := workflow.ExecuteActivity(ctx, "WaitForWorkerStop", timeout).Get(ctx, &s)
 	return s, err
-}
-
-func (w *Workflows) ActivityHeartbeatUntilSignal(ctx workflow.Context) error {
-	ch := workflow.GetSignalChannel(ctx, "cancel")
-	actCtx, actCancel := workflow.WithCancel(workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
-		StartToCloseTimeout: 5 * time.Hour,
-		RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 1},
-		WaitForCancellation: true,
-		HeartbeatTimeout:    1 * time.Second,
-	}))
-	var a *Activities
-	actFut := workflow.ExecuteActivity(actCtx, a.HeartbeatUntilCanceled, 100*time.Millisecond)
-
-	// Wait for signal then cancel
-	ch.Receive(ctx, nil)
-	actCancel()
-	return actFut.Get(ctx, nil)
 }
 
 func (w *Workflows) CancelChildAndExecuteActivityRace(ctx workflow.Context) error {
@@ -4799,7 +4777,6 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ActivityRetryOnTimeout)
 	worker.RegisterWorkflow(w.ActivityRetryOptionsChange)
 	worker.RegisterWorkflow(w.ActivityWaitForWorkerStop)
-	worker.RegisterWorkflow(w.ActivityHeartbeatUntilSignal)
 	worker.RegisterWorkflow(w.ShutdownDuringActiveTimerActivityWorkflow)
 	worker.RegisterWorkflowWithOptions(
 		w.StickyCacheSharedWorkerLifecycle,
