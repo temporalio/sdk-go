@@ -295,6 +295,7 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		ts.registerStandaloneNexusOperations(ts.worker)
 	}
 	if strings.Contains(ts.T().Name(), "NoWorker") ||
+		ts.T().Name() == "TestIntegrationSuite/TestStaleQueryReplayBoundary" ||
 		strings.HasPrefix(ts.T().Name(), "TestIntegrationSuite/TestMultipleUpdateOrdering") {
 		// Don't even start the worker
 		ts.workerStopped = true
