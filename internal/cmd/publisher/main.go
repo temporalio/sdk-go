@@ -525,15 +525,18 @@ func (c *vetApp) run() (retErr error) {
 
 type tagApp struct {
 	app
-	modules []pure.VersionedModule
-	commit  string
+	modules     []pure.VersionedModule
+	commit      string
+	vetOverride bool
 }
 
 func newTagApp(eff effects, args []string) (*tagApp, error) {
-	const usage = "usage: publisher tag COMMIT MODULE=VERSION [MODULE=VERSION ...]\n" +
+	const usage = "usage: publisher tag [-vet-override] COMMIT MODULE=VERSION [MODULE=VERSION ...]\n" +
 		"MODULE is 'sdk' for the Go SDK or a slash-separated contrib module directory like 'contrib/envconfig'"
+	var vetOverride bool
 	flags := flag.NewFlagSet("publisher tag", flag.ContinueOnError)
 	flags.SetOutput(errorWriter{eff: eff})
+	flags.BoolVar(&vetOverride, "vet-override", false, "skip the entire vet step before creating draft releases")
 	flags.Usage = func() {
 		eff.err("%s\n", usage)
 		flags.PrintDefaults()
@@ -553,9 +556,10 @@ func newTagApp(eff effects, args []string) (*tagApp, error) {
 		return nil, err
 	}
 	return &tagApp{
-		app:     app{repo: r},
-		modules: modules,
-		commit:  flags.Arg(0),
+		app:         app{repo: r},
+		modules:     modules,
+		commit:      flags.Arg(0),
+		vetOverride: vetOverride,
 	}, nil
 }
 
@@ -584,9 +588,13 @@ func (c *tagApp) run() (retErr error) {
 	}()
 
 	printLine(c.eff, "[2/4] Vet released modules")
-	err = c.vetModules(worktree, c.modules, coreTool)
-	if err != nil {
-		return err
+	if c.vetOverride {
+		printDetail(c.eff, "Skipped (-vet-override)")
+	} else {
+		err = c.vetModules(worktree, c.modules, coreTool)
+		if err != nil {
+			return err
+		}
 	}
 
 	printLine(c.eff, "[3/4] Get release notes")

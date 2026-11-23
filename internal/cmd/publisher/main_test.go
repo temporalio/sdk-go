@@ -1444,10 +1444,11 @@ func TestCoreToolSetupFailure(t *testing.T) {
 
 func TestNewCommand(t *testing.T) {
 	tests := []struct {
-		name     string
-		args     []string
-		wantDirs []string
-		wantErr  string
+		name            string
+		args            []string
+		wantDirs        []string
+		wantErr         string
+		wantVetOverride bool
 	}{
 		{name: "gate changelog", args: []string{"gate", "abc123"}},
 		{name: "skip changelog", args: []string{"gate", "-skip-changelog=true", "abc123"}},
@@ -1461,6 +1462,8 @@ func TestNewCommand(t *testing.T) {
 		{name: "trailing slash", args: []string{"stage", "contrib/envconfig/=1.0.3"}, wantDirs: []string{"contrib/envconfig"}},
 		{name: "vet release commit", args: []string{"vet", "abc123", "sdk=1.48.0"}},
 		{name: "tag SDK", args: []string{"tag", "abc123", "sdk=1.48.0"}},
+		{name: "tag with vet override", args: []string{"tag", "-vet-override", "abc123", "sdk=1.48.0"}, wantVetOverride: true},
+		{name: "tag without vet override", args: []string{"tag", "-vet-override=false", "abc123", "sdk=1.48.0"}},
 		{name: "tag contrib", args: []string{"tag", "abc123", "contrib/envconfig=1.0.3"}, wantDirs: []string{"contrib/envconfig"}},
 		{name: "unknown command", args: []string{"unknown"}, wantErr: "unknown command \"unknown\"\n" + usage},
 		{name: "old invocation", args: []string{"1.48.0"}, wantErr: "unknown command \"1.48.0\"\n" + usage},
@@ -1508,6 +1511,9 @@ func TestNewCommand(t *testing.T) {
 				name, commit, modules = "vet", got.commit, got.modules
 			case *tagApp:
 				name, commit, modules = "tag", got.commit, got.modules
+				if got.vetOverride != test.wantVetOverride {
+					t.Fatalf("vet-override: got %t, want %t", got.vetOverride, test.wantVetOverride)
+				}
 			default:
 				t.Fatalf("unexpected command type: %T", got)
 			}
