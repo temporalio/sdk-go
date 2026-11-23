@@ -296,6 +296,7 @@ func (ts *IntegrationTestSuite) SetupTest() {
 	}
 	if strings.Contains(ts.T().Name(), "NoWorker") ||
 		strings.HasPrefix(ts.T().Name(), "TestIntegrationSuite/TestMultipleUpdateOrdering") {
+        // Don't even start the worker
 		ts.workerStopped = true
 		return
 	}
