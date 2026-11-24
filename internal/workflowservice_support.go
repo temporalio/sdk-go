@@ -5,7 +5,6 @@ import (
 
 	common "go.temporal.io/api/common/v1"
 	enums "go.temporal.io/api/enums/v1"
-	failurepb "go.temporal.io/api/failure/v1"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	workflowpb "go.temporal.io/api/workflow/v1"
 	"go.temporal.io/sdk/converter"
@@ -141,25 +140,6 @@ func PayloadsFromProto(dc converter.DataConverter, payloads *common.Payloads) ([
 		values = append(values, value)
 	}
 	return values, nil
-}
-
-// --- Failure (temporal.api.failure.v1.Failure) ---
-
-func FailureToProto(dc converter.DataConverter, value error) (*failurepb.Failure, error) {
-	failureConverter := NewDefaultFailureConverter(DefaultFailureConverterOptions{
-		DataConverter: dc,
-	})
-	return failureConverter.ErrorToFailure(value), nil
-}
-
-func FailureFromProto(dc converter.DataConverter, failure *failurepb.Failure) (error, error) {
-	if failure == nil {
-		return nil, nil
-	}
-	failureConverter := NewDefaultFailureConverter(DefaultFailureConverterOptions{
-		DataConverter: dc,
-	})
-	return failureConverter.FailureToError(failure), nil
 }
 
 // --- Memo (temporal.api.common.v1.Memo) ---

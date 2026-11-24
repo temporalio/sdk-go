@@ -118,6 +118,9 @@ If you update the `go.temporal.io/api` dependency, run the following command to 
 go run . generate
 ```
 
+Use the NexGen revision pinned in [CI](.github/workflows/ci.yml) to reproduce
+the checked-in bindings.
+
 ### Test output and logs
 
 By default, the internal build tool only reports test failures. Full test output is written to `.build/test-logs` at 

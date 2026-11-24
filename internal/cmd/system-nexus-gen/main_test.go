@@ -58,22 +58,38 @@ func TestUpdateGeneratedFiles(t *testing.T) {
 			a.options.check = check
 			implementation := filepath.Join(a.tmp.generatedDir(), "workflowservice.go")
 			facade := filepath.Join(a.tmp.generatedDir(), "workflowservice_facade.go")
+			notification := filepath.Join(a.tmp.generatedDir(), "notificationservice.go")
 			writeTestFile(t, implementation, "implementation")
 			writeTestFile(t, facade, "facade")
+			writeTestFile(t, notification, "notification")
+			writeTestFile(t, filepath.Join(a.tmp.generatedDir(), "notificationservice_facade.go"), "notification facade")
 			for _, file := range []struct{ path, contents string }{
 				{"internal/workflowservice.go", "implementation"},
 				{"workflow/workflowservice.go", "facade"},
+				{"internal/notificationservice.go", "notification"},
+				{"temporalnexus/notification.go", "notification facade"},
 			} {
 				contents := "stale"
-				if check {
+				if check && file.contents != "notification facade" {
 					contents = file.contents
 				}
 				writeTestFile(t, filepath.Join(string(a.sdk), file.path), contents)
 			}
 
-			if err := a.updateGeneratedFiles(); err != nil {
-				t.Fatal(err)
+			notificationFacade := filepath.Join(string(a.sdk), "temporalnexus", "notification.go")
+			err := a.updateGeneratedFiles()
+			if check {
+				if err == nil || err.Error() != notificationFacade+" is out of date" {
+					t.Fatalf("check notification facade: got %v, want out-of-date error for %s", err, notificationFacade)
+				}
+				requireTestFile(t, notificationFacade, "stale")
+			} else {
+				if err != nil {
+					t.Fatal(err)
+				}
+				requireTestFile(t, notificationFacade, "notification facade")
 			}
+			requireTestFile(t, filepath.Join(string(a.sdk), "internal", "notificationservice.go"), "notification")
 			requireTestFile(t, filepath.Join(string(a.sdk), "internal/workflowservice.go"), "implementation")
 			requireTestFile(t, filepath.Join(string(a.sdk), "workflow/workflowservice.go"), "facade")
 			requireTestFile(t, implementation, "implementation")
@@ -106,17 +122,18 @@ func TestStageWitFiles(t *testing.T) {
 	a := newTestApp(t)
 	upstream := filepath.Join(a.api.witDir(), "workflowservice", "v1", "workflow-service.wit")
 	dependency := filepath.Join(a.api.witDir(), "deps", "nexus-temporal-types", "model.wit")
+	notification := filepath.Join(a.api.witDir(), "notificationservice", "v1", "notification-service.wit")
 	writeTestFile(t, upstream, "upstream")
 	writeTestFile(t, dependency, "dependency")
+	writeTestFile(t, notification, "notification")
 
 	if err := a.stageWitFiles(); err != nil {
 		t.Fatal(err)
 	}
 
-	requireTestFile(t, a.tmp.witFile(), "upstream")
+	requireTestFile(t, a.tmp.serviceWIT("workflowservice", "workflow-service.wit"), "upstream")
 	requireTestFile(t, filepath.Join(a.tmp.witDepsDir(), "nexus-temporal-types", "model.wit"), "dependency")
-	requireTestFile(t, upstream, "upstream")
-	requireTestFile(t, dependency, "dependency")
+	requireTestFile(t, a.tmp.serviceWIT("notificationservice", "notification-service.wit"), "notification")
 }
 
 // -----------------------------------------------------------------------------
@@ -141,6 +158,9 @@ func TestGenProtoDescriptors(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := files.FindDescriptorByName("temporal.api.workflowservice.v1.SignalWithStartWorkflowExecutionRequest"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := files.FindDescriptorByName("temporal.api.notificationservice.v1.OnCompleteRequest"); err != nil {
 		t.Fatal(err)
 	}
 }
