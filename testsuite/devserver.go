@@ -263,7 +263,8 @@ func requestCLI(ctx context.Context, client *http.Client, address string, logger
 }
 
 func installDownloadedCLI(body io.Reader, archiveURL, fileToExtract, exePath string, logger log.Logger) error {
-	// Stage in the destination directory so the rename stays on the same filesystem.
+	// Concurrent downloads use separate files beside the cached executable.
+	// A same-filesystem rename puts only a complete download at the cache path.
 	f, err := os.CreateTemp(filepath.Dir(exePath), "temporal-cli-downloading-")
 	if err != nil {
 		return fmt.Errorf("failed creating temp file: %w", err)
