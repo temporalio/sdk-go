@@ -2,6 +2,10 @@
 
 ## [0.1.1] - 2026-11-24
 
+### Fixed
+
+- Use `otlpworker` v0.1.1 so the plugin can initialize its default OpenTelemetry providers without a resource schema conflict.
+
 ### Security
 
 - Updated OpenTelemetry to v1.47.0 to fix an [attribute length limit bypass](https://github.com/open-telemetry/opentelemetry-go/security/advisories/GHSA-q7gw-24fr-5p69) and [excessive memory allocation when parsing baggage](https://github.com/open-telemetry/opentelemetry-go/security/advisories/GHSA-rrfc-gjm9-cgrj).
