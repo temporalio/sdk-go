@@ -417,13 +417,19 @@ func (ts *IntegrationTestSuite) TestNexusUpdateWithStartWorkflowOperation() {
 
 	callerWorkflow := getCallerWorkflow(addOp, endpoint)
 
-	// start request IDs of every update-with-start sent by the handler worker, by workflow ID
-	var startRequestIDsMu sync.Mutex
+	// start and update request IDs of every update-with-start sent by the handler worker, by workflow ID
+	var requestIDsMu sync.Mutex
 	startRequestIDs := map[string][]string{}
+	updateRequestIDs := map[string][]string{}
 	startRequestIDsFor := func(workflowID string) []string {
-		startRequestIDsMu.Lock()
-		defer startRequestIDsMu.Unlock()
+		requestIDsMu.Lock()
+		defer requestIDsMu.Unlock()
 		return slices.Clone(startRequestIDs[workflowID])
+	}
+	updateRequestIDsFor := func(workflowID string) []string {
+		requestIDsMu.Lock()
+		defer requestIDsMu.Unlock()
+		return slices.Clone(updateRequestIDs[workflowID])
 	}
 	handlerClient, err := ts.newIntegrationTestClient(func(options *client.Options) {
 		options.ConnectionOptions.DialOptions = append(options.ConnectionOptions.DialOptions,
@@ -433,9 +439,11 @@ func (ts *IntegrationTestSuite) TestNexusUpdateWithStartWorkflowOperation() {
 			) error {
 				if r, ok := req.(*workflowservice.ExecuteMultiOperationRequest); ok {
 					start := r.GetOperations()[0].GetStartWorkflow()
-					startRequestIDsMu.Lock()
+					requestIDsMu.Lock()
 					startRequestIDs[start.GetWorkflowId()] = append(startRequestIDs[start.GetWorkflowId()], start.GetRequestId())
-					startRequestIDsMu.Unlock()
+					update := r.GetOperations()[1].GetUpdateWorkflow().GetRequest()
+					updateRequestIDs[start.GetWorkflowId()] = append(updateRequestIDs[start.GetWorkflowId()], update.GetRequestId())
+					requestIDsMu.Unlock()
 				}
 				return invoker(ctx, method, req, reply, cc, opts...)
 			}))
@@ -481,19 +489,22 @@ func (ts *IntegrationTestSuite) TestNexusUpdateWithStartWorkflowOperation() {
 		counterRun := ts.client.GetWorkflow(ctx, counterWorkflowID, "")
 		callerRequestID, err := getNexusOpRequestID(ctx, ts.client, callerRun)
 		ts.NoError(err)
-		// the start carries the operation's request ID, so a retried Nexus task is deduplicated
-		requestIDs := startRequestIDsFor(counterWorkflowID)
-		ts.Require().NotEmpty(requestIDs, "handler sent no ExecuteMultiOperation request")
-		ts.Equal(callerRequestID, requestIDs[0])
+		// the start gets a stable request ID derived from the operation's, so a retried Nexus task is
+		// deduplicated without sharing the update's request ID
+		startIDs := startRequestIDsFor(counterWorkflowID)
+		ts.Require().NotEmpty(startIDs, "handler sent no ExecuteMultiOperation request")
+		ts.Equal(uuid.NewSHA1(uuid.Nil, []byte(callerRequestID+":start")).String(), startIDs[0])
+		// the update carries the operation's request ID, as in the standalone update operation
+		ts.Equal(callerRequestID, updateRequestIDsFor(counterWorkflowID)[0])
 
-		// the server links the update to the start event when the same request started the workflow
+		// the update's link names the operation's request ID and the Accepted event it records
 		forwardLink := &common.Link{Variant: &common.Link_WorkflowEvent_{WorkflowEvent: &common.Link_WorkflowEvent{
 			Namespace:  ts.config.Namespace,
 			WorkflowId: counterWorkflowID,
 			RunId:      counterRun.GetRunID(),
 			Reference: &common.Link_WorkflowEvent_RequestIdRef{RequestIdRef: &common.Link_WorkflowEvent_RequestIdReference{
 				RequestId: callerRequestID,
-				EventType: enums.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED,
+				EventType: enums.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_ACCEPTED,
 			}},
 		}}}
 		backwardLink := &common.Link{Variant: &common.Link_WorkflowEvent_{WorkflowEvent: &common.Link_WorkflowEvent{

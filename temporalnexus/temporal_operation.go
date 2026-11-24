@@ -331,10 +331,12 @@ func startUpdate[R any](
 	internal.SetLinksOnNexusOperation(updateWorkflowOptions, links)
 	internal.SetRequestIDOnNexusOperation(updateWorkflowOptions, nc.startOperationOptions.RequestID)
 	if startWorkflowOptions != nil {
-		// The request ID dedupes the start on a retried Nexus task. Callbacks go only on the update,
-		// since the operation completes when the update does.
+		// No callbacks on the start: the operation completes when the update does.
 		internal.SetLinksOnNexusOperation(startWorkflowOptions, links)
-		internal.SetRequestIDOnNexusOperation(startWorkflowOptions, nc.startOperationOptions.RequestID)
+		// A stable ID dedupes the start on a retried Nexus task. It must differ from the update's
+		// because the server records one event per request ID.
+		startRequestID := uuid.NewSHA1(uuid.Nil, []byte(nc.startOperationOptions.RequestID+":start")).String()
+		internal.SetRequestIDOnNexusOperation(startWorkflowOptions, startRequestID)
 	}
 	header := nc.startOperationOptions.CallbackHeader
 	if header == nil {
