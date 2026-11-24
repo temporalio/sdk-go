@@ -1,0 +1,1 @@
+Fixed session-worker updates overwriting ordinary activity-worker gauges and distorting worker heartbeats. Session metrics are exported under the task queues they poll, and the activity heartbeat reports only the ordinary activity worker.
