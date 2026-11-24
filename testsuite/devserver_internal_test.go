@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+	"testing/iotest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
@@ -85,6 +86,52 @@ func TestMoveDownloadedCLI(t *testing.T) {
 type downloadTransport func(*http.Request) (*http.Response, error)
 
 func (f downloadTransport) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
+
+func TestDownloadIfNeededRetriesTransientFailures(t *testing.T) {
+	original := http.DefaultTransport
+	t.Cleanup(func() { http.DefaultTransport = original })
+
+	var archive bytes.Buffer
+	writer := zip.NewWriter(&archive)
+	file, err := writer.Create("cli")
+	require.NoError(t, err)
+	_, err = file.Write([]byte("downloaded CLI"))
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+
+	var metadataRequests, archiveRequests int
+	http.DefaultTransport = downloadTransport(func(req *http.Request) (*http.Response, error) {
+		if req.URL.Host == "temporal.download" {
+			metadataRequests++
+			if metadataRequests == 1 {
+				return &http.Response{StatusCode: http.StatusServiceUnavailable, Body: http.NoBody}, nil
+			}
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewBufferString(`{"archiveUrl":"https://archive.test/cli.zip","fileToExtract":"cli"}`))}, nil
+		}
+		archiveRequests++
+		switch archiveRequests {
+		case 1:
+			return nil, io.ErrUnexpectedEOF
+		case 2:
+			truncated := io.MultiReader(bytes.NewReader(archive.Bytes()[:8]), iotest.ErrReader(io.ErrUnexpectedEOF))
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(truncated)}, nil
+		default:
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(archive.Bytes()))}, nil
+		}
+	})
+
+	options := &DevServerOptions{CachedDownload: CachedDownload{Version: "test", DestDir: t.TempDir()}}
+	path, err := downloadIfNeeded(t.Context(), options, log.NewNopLogger())
+	require.NoError(t, err)
+	contents, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.Equal(t, "downloaded CLI", string(contents))
+	require.Equal(t, 2, metadataRequests)
+	require.Equal(t, 3, archiveRequests)
+	leftovers, err := filepath.Glob(filepath.Join(options.CachedDownload.DestDir, "temporal-cli-downloading-*"))
+	require.NoError(t, err)
+	require.Empty(t, leftovers)
+}
 
 func TestDownloadIfNeededTemporaryFiles(t *testing.T) {
 	for _, outcome := range []string{"invalid archive", "published", "destination directory"} {
