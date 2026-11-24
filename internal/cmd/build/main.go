@@ -26,6 +26,7 @@ import (
 	_ "honnef.co/go/tools/staticcheck"
 
 	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/internal/temporalcli"
 	sdklog "go.temporal.io/sdk/log"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/testsuite"
@@ -410,7 +411,7 @@ func (b *builder) integrationTest() error {
 			devServerLogger := sdklog.NewStructuredLogger(slog.New(slog.NewTextHandler(devServerStdout, nil)))
 			devServer, err := testsuite.StartDevServer(context.Background(), testsuite.DevServerOptions{
 				CachedDownload: testsuite.CachedDownload{
-					Version: "v1.9.4-time-skipping",
+					Version: temporalcli.IntegrationServerVersion,
 				},
 				ClientOptions: &client.Options{
 					HostPort:  "127.0.0.1:7233",
