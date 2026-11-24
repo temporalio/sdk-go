@@ -1,0 +1,1 @@
+Nexus workers decode marked System Nexus envelopes separately and use the configured data converter and codecs for embedded user values. Unrecognized envelope types produce retryable internal handler errors; other invalid envelopes produce bad-request handler errors.
