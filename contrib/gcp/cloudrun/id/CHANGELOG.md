@@ -1,16 +1,4 @@
-## [Unreleased]
-
-### Added
-
-### Changed
-
-### Deprecated
-
-### :boom: Breaking Changes
-
-### Fixed
-
-### Security
+# Changelog
 
 ## [0.1.0] - 2026-09-29
 
