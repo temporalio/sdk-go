@@ -1,0 +1,1 @@
+Session creation signals now use the worker client's data converter, interceptors, and context propagators instead of an internal client with default settings, so payload codecs such as encryption apply to them.

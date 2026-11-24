@@ -2516,6 +2516,55 @@ func (ts *IntegrationTestSuite) TestBasicSession() {
 		ts.tracer.GetTrace("BasicSession"))
 }
 
+func (ts *IntegrationTestSuite) TestSessionCreationSignalUsesClientDataConverter() {
+	// The codec rejects payloads it did not encode, so a creation signal that bypasses the
+	// client's data converter is dropped as corrupted and the session is never created.
+	c, err := ts.newDefaultClient(func(options *client.Options) {
+		options.DataConverter = converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), &intTestSigningCodec{})
+	})
+	ts.NoError(err)
+	defer c.Close()
+
+	sessionWorkflow := func(ctx workflow.Context) error {
+		sessionCtx, err := workflow.CreateSession(ctx, &workflow.SessionOptions{
+			CreationTimeout:  time.Minute,
+			ExecutionTimeout: time.Minute,
+		})
+		if err != nil {
+			return err
+		}
+		workflow.CompleteSession(sessionCtx)
+		return nil
+	}
+	taskQueue := "session-codec-" + uuid.NewString()
+	w := worker.New(c, taskQueue, worker.Options{EnableSessionWorker: true})
+	w.RegisterWorkflowWithOptions(sessionWorkflow, workflow.RegisterOptions{Name: "session-codec-workflow"})
+	ts.NoError(w.Start())
+	defer w.Stop()
+
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+	run, err := c.ExecuteWorkflow(ctx, client.StartWorkflowOptions{ID: uuid.NewString(), TaskQueue: taskQueue}, "session-codec-workflow")
+	ts.NoError(err)
+	ts.NoError(run.Get(ctx, nil), "session was not created; check the worker log for a corrupted signal")
+
+	history, err := ts.getHistory(run.GetID(), run.GetRunID())
+	ts.NoError(err)
+	var signaled bool
+	for _, event := range history.Events {
+		attrs := event.GetWorkflowExecutionSignaledEventAttributes()
+		if attrs == nil {
+			continue
+		}
+		signaled = true
+		payloads := attrs.GetInput().GetPayloads()
+		ts.Len(payloads, 1)
+		ts.Equal(run.GetID(), string(payloads[0].GetMetadata()["ctx-signature"]),
+			"session creation signal %q was not encoded by the client data converter", attrs.GetSignalName())
+	}
+	ts.True(signaled, "expected a session creation signal in history")
+}
+
 func (ts *IntegrationTestSuite) TestSessionWorkerShutdownWithPollComplete() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
