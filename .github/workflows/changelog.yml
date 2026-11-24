@@ -11,4 +11,42 @@ permissions:
 jobs:
   changelog-check:
     name: Changelog checkpoint
-    uses: temporalio/.github/.github/workflows/changelog.yml@d8129c755fbd1d3f18c5a7a5420d5754acc63e3f
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          path: sdk-go
+          fetch-depth: 0
+      - name: Read changelog tool revision
+        id: tool
+        working-directory: sdk-go
+        run: echo "revision=$(cat internal/cmd/publisher/sdk-rust-revision)" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          repository: temporalio/sdk-rust
+          ref: ${{ steps.tool.outputs.revision }}
+          path: sdk-rust
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: sdk-go/go.mod
+          cache-dependency-path: sdk-go/go.sum
+      - name: Validate changelog fragments
+        working-directory: sdk-go
+        env:
+          BASE_COMMIT: ${{ github.event.pull_request.base.sha }}
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Events can run out of order, so read current labels rather than the event snapshot.
+          labels=$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '.labels[].name')
+          skip_changelog=false
+          if grep -Fxq 'skip-changelog' <<< "$labels"; then
+            skip_changelog=true
+          fi
+
+          go run ./internal/cmd/publisher gate -skip-changelog="$skip_changelog" "$BASE_COMMIT"

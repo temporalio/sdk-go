@@ -1,0 +1,201 @@
+package pure
+
+import (
+	"path/filepath"
+	"slices"
+	"strings"
+	"testing"
+	"time"
+)
+
+func TestModuleFilePaths(t *testing.T) {
+	root := t.TempDir()
+	contrib, err := ContribModule("contrib/aws/s3driver/awssdkv2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name         string
+		module       Module
+		prefix       string
+		goMod        string
+		changelog    string
+		fragments    string
+		versionFile  string
+		hasVersion   bool
+		releaseFiles []string
+	}{
+		{
+			name: "relative SDK", module: SDKModule(),
+			goMod: "go.mod", changelog: "CHANGELOG.md", fragments: "changelog",
+			versionFile: "internal/version.go", hasVersion: true,
+			releaseFiles: []string{"CHANGELOG.md", "internal/version.go"},
+		},
+		{
+			name: "absolute SDK", module: SDKModule(), prefix: root,
+			goMod: filepath.Join(root, "go.mod"), changelog: filepath.Join(root, "CHANGELOG.md"),
+			fragments:   filepath.Join(root, "changelog"),
+			versionFile: filepath.Join(root, "internal", "version.go"), hasVersion: true,
+			releaseFiles: []string{filepath.Join(root, "CHANGELOG.md"), filepath.Join(root, "internal", "version.go")},
+		},
+		{
+			name: "relative contrib", module: contrib,
+			goMod:        "contrib/aws/s3driver/awssdkv2/go.mod",
+			changelog:    "contrib/aws/s3driver/awssdkv2/CHANGELOG.md",
+			fragments:    "contrib/aws/s3driver/awssdkv2/changelog",
+			releaseFiles: []string{"contrib/aws/s3driver/awssdkv2/CHANGELOG.md"},
+		},
+		{
+			name: "absolute contrib", module: contrib, prefix: root,
+			goMod:        filepath.Join(root, "contrib", "aws", "s3driver", "awssdkv2", "go.mod"),
+			changelog:    filepath.Join(root, "contrib", "aws", "s3driver", "awssdkv2", "CHANGELOG.md"),
+			fragments:    filepath.Join(root, "contrib", "aws", "s3driver", "awssdkv2", "changelog"),
+			releaseFiles: []string{filepath.Join(root, "contrib", "aws", "s3driver", "awssdkv2", "CHANGELOG.md")},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := test.module.GoMod(test.prefix); got != test.goMod {
+				t.Errorf("go.mod path: got %q, want %q", got, test.goMod)
+			}
+			if got := test.module.Changelog(test.prefix); got != test.changelog {
+				t.Errorf("changelog path: got %q, want %q", got, test.changelog)
+			}
+			if got := test.module.Fragments(test.prefix); got != test.fragments {
+				t.Errorf("changelog directory: got %q, want %q", got, test.fragments)
+			}
+			if got, ok := test.module.VersionFile(test.prefix); got != test.versionFile || ok != test.hasVersion {
+				t.Errorf("version file: got (%q, %t), want (%q, %t)", got, ok, test.versionFile, test.hasVersion)
+			}
+			if got := test.module.ReleaseFiles(test.prefix); !slices.Equal(got, test.releaseFiles) {
+				t.Errorf("release files: got %q, want %q", got, test.releaseFiles)
+			}
+		})
+	}
+}
+
+func TestListContribModules(t *testing.T) {
+	paths := []string{
+		"go.mod",
+		"contrib/envconfig/go.mod",
+		"contrib/envconfig/CHANGELOG.md",
+		"contrib/envconfig/test/go.mod",
+		"contrib/aws/s3driver/go.mod",
+		"contrib/aws/s3driver/awssdkv2/go.mod",
+		"contrib/aws/s3driver/awssdkv2/CHANGELOG.md",
+		"contrib/aws/s3driver/awssdkv2/internal/foo.go",
+		"contrib/fragments/go.mod",
+		"contrib/fragments/changelog/added/first-release.md",
+		"contrib/not-a-module/CHANGELOG.md",
+	}
+	modules := ContribModules(paths)
+	want := []Module{
+		{Dir: "contrib/aws/s3driver/awssdkv2"},
+		{Dir: "contrib/envconfig"},
+		{Dir: "contrib/fragments"},
+	}
+	if !slices.Equal(modules, want) {
+		t.Fatalf("unexpected modules: got %+v, want %+v", modules, want)
+	}
+}
+
+func TestModuleIsReleasable(t *testing.T) {
+	contrib, err := ContribModule("contrib/envconfig")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name   string
+		module Module
+		paths  []string
+		want   bool
+	}{
+		{name: "SDK changelog", paths: []string{"CHANGELOG.md"}, want: true},
+		{name: "SDK fragments", paths: []string{"changelog/fixed/fix.md"}, want: true},
+		{name: "SDK without changelog", paths: []string{"go.mod"}},
+		{name: "contrib changelog", module: contrib, paths: []string{"contrib/envconfig/CHANGELOG.md"}, want: true},
+		{name: "contrib fragments", module: contrib, paths: []string{"contrib/envconfig/changelog/fixed/fix.md"}, want: true},
+		{name: "fragment directory README", module: contrib, paths: []string{"contrib/envconfig/changelog/README.md"}, want: true},
+		{name: "no changelog", module: contrib, paths: []string{"contrib/envconfig/go.mod"}},
+		{name: "root changelog only", module: contrib, paths: []string{"CHANGELOG.md"}},
+		{name: "nested changelog only", module: contrib, paths: []string{"contrib/envconfig/test/CHANGELOG.md"}},
+		{name: "nested fragments only", module: contrib, paths: []string{"contrib/envconfig/test/changelog/fixed/fix.md"}},
+		{name: "similarly named directory", module: contrib, paths: []string{"contrib/envconfig/changelog-other/fix.md"}},
+		{name: "file named changelog", module: contrib, paths: []string{"contrib/envconfig/changelog"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := test.module.IsReleasable(test.paths); got != test.want {
+				t.Fatalf("IsReleasable(%q): got %t, want %t", test.paths, got, test.want)
+			}
+		})
+	}
+}
+
+func TestParseVersionedModules(t *testing.T) {
+	args := []string{"sdk=1.48.0", "contrib/aws/s3driver/awssdkv2=0.2.0"}
+	modules, err := ParseVersionedModules(args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := FormatVersionedModules(modules); got != strings.Join(args, " ") {
+		t.Fatalf("unexpected versioned modules: %s", got)
+	}
+	if modules[0].Module != SDKModule() || modules[0].Version != (Version{1, 48, 0}) {
+		t.Fatalf("unexpected versioned SDK module: %+v", modules[0])
+	}
+	if got := modules[1].Module.Tag(modules[1].Version); got != "contrib/aws/s3driver/awssdkv2/v0.2.0" {
+		t.Fatalf("unexpected contrib tag: %s", got)
+	}
+	date := time.Date(2026, time.August, 4, 0, 0, 0, 0, time.UTC)
+	if got := ReleaseBranchName(date, "abc234de"); got != "chore/release-2026-08-04-abc234de" {
+		t.Fatalf("unexpected branch: %s", got)
+	}
+	if got := ReleaseCommitMessage(modules, date); got != "Prepare release 2026-08-04\n\n"+strings.Join(args, " ") {
+		t.Fatalf("unexpected commit message: %s", got)
+	}
+}
+
+func TestParseVersionedModulesRejectsDuplicateModules(t *testing.T) {
+	for _, args := range [][]string{
+		{"sdk=1.48.0", "sdk=1.48.1"},
+		{"contrib/envconfig=0.2.0", "./contrib/envconfig/=0.3.0"},
+	} {
+		if _, err := ParseVersionedModules(args); err == nil || !strings.Contains(err.Error(), "specified more than once") {
+			t.Errorf("expected duplicate module error for %q, got %v", args, err)
+		}
+	}
+}
+
+func TestContribModuleRegexp(t *testing.T) {
+	testRegexp(t, contribModuleRE,
+		[]string{"contrib/envconfig", "contrib/opentelemetry-v2", "contrib/aws/s3driver/awssdkv2"},
+		[]string{
+			"contrib",
+			"contrib/",
+			"/contrib/envconfig",
+			"contrib//envconfig",
+			"contrib/../internal",
+			"contrib/-envconfig",
+			"contrib/Envconfig",
+			"internal",
+			"",
+		})
+}
+
+func TestContribModuleRejectsInvalidModules(t *testing.T) {
+	for _, dir := range []string{"", "contrib", "internal", "/contrib/envconfig", "../contrib/envconfig", "contrib/../internal", "contrib/envconfig/../tally"} {
+		assertInvalidModule(t, dir)
+	}
+}
+
+func TestContribModuleRejectsBackslashSeparators(t *testing.T) {
+	for _, dir := range []string{`contrib\envconfig`, `.\contrib\envconfig`, `contrib\..\internal`, `C:\contrib\envconfig`} {
+		assertInvalidModule(t, dir)
+	}
+}
+
+func assertInvalidModule(t *testing.T, dir string) {
+	t.Helper()
+	if _, err := ContribModule(dir); err == nil || !strings.Contains(err.Error(), "invalid module") {
+		t.Errorf("expected %q to be rejected, got %v", dir, err)
+	}
+}

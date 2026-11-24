@@ -1,0 +1,1 @@
+Internal refactor to build providers, resolve configuration, install the metrics handler and tracing interceptor, and flush through the shared `go.temporal.io/sdk/contrib/opentelemetry/otlpworker` module. No public API change.

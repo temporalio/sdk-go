@@ -65,7 +65,7 @@ Good pull requests are focused and easy to review:
 * Include tests for behavior changes.
 * Update public API documentation or doc comments when public behavior changes.
 * Add a high-level changelog entry for user-facing changes according to the
-  repository's local changelog convention.
+  [changelog fragment convention](changelog/README.md).
 * Describe what changed, why it changed, and what validation you ran.
 
 Run the relevant local checks when practical. CI must pass before a pull request can
