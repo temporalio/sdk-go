@@ -221,6 +221,7 @@ func (c *findApp) run() (retErr error) {
 			includeGoMod:  true,
 			includeGoSum:  true,
 			includeReadme: true,
+			includeTests:  true,
 		})
 		changed, err := w.hasCommits(ref, pathspecs...)
 		if err != nil {
