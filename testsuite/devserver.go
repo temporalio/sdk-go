@@ -234,9 +234,9 @@ func requestCLI(ctx context.Context, client *http.Client, address string, logger
 		retryable := err != nil
 		if err == nil {
 			if resp.StatusCode == http.StatusOK {
-				err = consume(resp.Body)
-				var networkError net.Error
-				retryable = errors.Is(err, io.ErrUnexpectedEOF) || errors.As(err, &networkError)
+				err = consume(cliResponseReader{resp.Body})
+				var readErr cliNetworkReadError
+				retryable = errors.Is(err, io.ErrUnexpectedEOF) || errors.As(err, &readErr)
 			} else {
 				err = fmt.Errorf("HTTP status %d from %s", resp.StatusCode, req.URL)
 				retryable = resp.StatusCode == http.StatusRequestTimeout ||
@@ -261,6 +261,25 @@ func requestCLI(ctx context.Context, client *http.Client, address string, logger
 		}
 	}
 }
+
+type cliResponseReader struct{ io.Reader }
+
+func (r cliResponseReader) Read(p []byte) (int, error) {
+	n, err := r.Reader.Read(p)
+	if err == nil {
+		return n, nil
+	}
+	// Filesystem errors can also implement net.Error. Classify it at the HTTP body boundary.
+	var networkErr net.Error
+	if errors.As(err, &networkErr) {
+		return n, cliNetworkReadError{err}
+	}
+	return n, err
+}
+
+type cliNetworkReadError struct{ error }
+
+func (e cliNetworkReadError) Unwrap() error { return e.error }
 
 func installDownloadedCLI(body io.Reader, archiveURL, fileToExtract, exePath string, logger log.Logger) error {
 	// Concurrent downloads use separate files beside the cached executable.

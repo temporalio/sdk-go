@@ -152,6 +152,7 @@ func TestDownloadIfNeededTemporaryFiles(t *testing.T) {
 				require.NoError(t, err)
 				require.NoError(t, writer.Close())
 			}
+			var archiveRequests int
 			http.DefaultTransport = downloadTransport(func(req *http.Request) (*http.Response, error) {
 				body := archive.Bytes()
 				if req.URL.Host == "temporal.download" {
@@ -159,6 +160,8 @@ func TestDownloadIfNeededTemporaryFiles(t *testing.T) {
 						require.NoError(t, os.Mkdir(exePath, 0700))
 					}
 					body = []byte(`{"archiveUrl":"https://archive.test/cli.zip","fileToExtract":"cli"}`)
+				} else {
+					archiveRequests++
 				}
 				return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(body)), Header: make(http.Header)}, nil
 			})
@@ -184,6 +187,7 @@ func TestDownloadIfNeededTemporaryFiles(t *testing.T) {
 				require.Equal(t, "rename", renameErr.Op)
 				require.Equal(t, exePath, renameErr.New)
 			}
+			require.Equal(t, 1, archiveRequests)
 			leftovers, err := filepath.Glob(filepath.Join(dir, "temporal-cli-downloading-*"))
 			require.NoError(t, err)
 			require.Empty(t, leftovers)
