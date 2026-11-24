@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.0] - 2026-11-24
+
+### :boom: Breaking Changes
+
+- Raised the minimum Temporal Go SDK requirement from v1.49.0 to v1.50.0 to match the `gcsdriver` module.
+
 ## [0.2.0] - 2026-10-08
 
 ### Breaking Changes
