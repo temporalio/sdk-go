@@ -665,11 +665,12 @@ func (c *app) vetModule(w *worktree, module pure.VersionedModule, coreTool *core
 		if version := pure.LatestReleasedVersion(tags, m.TagPrefix()); version != nil {
 			latest = *version
 		}
+		major := pure.Version{latest[0] + 1, 0, 0}
 		minor := pure.Version{latest[0], latest[1] + 1, 0}
 		patch := pure.Version{latest[0], latest[1], latest[2] + 1}
-		if module.Version != minor && module.Version != patch {
-			problems = append(problems, fmt.Errorf("%s: proposed version %s must be a minor or patch increment of %s; choose %s or %s",
-				modulePath, module.Version, latest, minor, patch))
+		if module.Version != major && module.Version != minor && module.Version != patch {
+			problems = append(problems, fmt.Errorf("%s: proposed version %s must be a major, minor, or patch increment of %s; choose %s, %s, or %s",
+				modulePath, module.Version, latest, major, minor, patch))
 		}
 	}
 

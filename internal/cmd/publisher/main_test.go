@@ -930,7 +930,7 @@ func TestVetReportsAllBlockedModules(t *testing.T) {
 		$ git worktree remove --force /tmp/prepare-go-release-123456
 	`)
 	testEqual(t, fmt.Sprint(err), `
-		go.temporal.io/sdk/contrib/envconfig: proposed version 0.2.0 must be a minor or patch increment of 0.0.0; choose 0.1.0 or 0.0.1
+		go.temporal.io/sdk/contrib/envconfig: proposed version 0.2.0 must be a major, minor, or patch increment of 0.0.0; choose 1.0.0, 0.1.0, or 0.0.1
 		go.temporal.io/sdk/contrib/envconfig: go.temporal.io/api v1.63.4 is not published on the Go module proxy
 		go.temporal.io/sdk/contrib/envconfig: look up go.temporal.io/sdk v1.47.0: proxy unavailable
 		go.temporal.io/sdk/contrib/envconfig: changelog-tool release-notes: missing release section for 0.2.0
