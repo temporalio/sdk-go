@@ -155,6 +155,9 @@ type (
 		queryHandler    func(queryType string, queryArgs *commonpb.Payloads, header *commonpb.Header) (*commonpb.Payloads, error)
 		updateHandler   func(name string, id string, args *commonpb.Payloads, header *commonpb.Header, callbacks UpdateCallbacks)
 
+		cancellationRequested bool
+		cancellationReason    string
+
 		logger                log.Logger
 		isReplay              bool // flag to indicate if workflow is in replay mode
 		enableLoggingInReplay bool // flag to indicate if workflow should enable logging in replay mode
@@ -418,15 +421,19 @@ func (wc *workflowEnvironmentImpl) Complete(result *commonpb.Payloads, err error
 	wc.completeHandler(result, err)
 }
 
-func (wc *workflowEnvironmentImpl) RequestCancelChildWorkflow(namespace string, workflowID string) {
-	// For cancellation of child workflow only, we do not use cancellation ID and run ID
-	wc.commandsHelper.requestCancelExternalWorkflowExecution(namespace, workflowID, "", "", true, nil)
+func (wc *workflowEnvironmentImpl) GetCancellationReason() string {
+	return wc.cancellationReason
 }
 
-func (wc *workflowEnvironmentImpl) RequestCancelExternalWorkflow(namespace, workflowID, runID string, eventGroupMarkers []*sdk.EventGroupMarker, callback ResultHandler) {
+func (wc *workflowEnvironmentImpl) RequestCancelChildWorkflow(namespace, workflowID, reason string) {
+	// For cancellation of child workflow only, we do not use cancellation ID and run ID
+	wc.commandsHelper.requestCancelExternalWorkflowExecution(namespace, workflowID, "", "", true, reason, nil)
+}
+
+func (wc *workflowEnvironmentImpl) RequestCancelExternalWorkflow(namespace, workflowID, runID, reason string, eventGroupMarkers []*sdk.EventGroupMarker, callback ResultHandler) {
 	// for cancellation of external workflow, we have to use cancellation ID and set isChildWorkflowOnly to false
 	cancellationID := wc.GenerateSequenceID()
-	command := wc.commandsHelper.requestCancelExternalWorkflowExecution(namespace, workflowID, runID, cancellationID, false, eventGroupMarkers)
+	command := wc.commandsHelper.requestCancelExternalWorkflowExecution(namespace, workflowID, runID, cancellationID, false, reason, eventGroupMarkers)
 	command.setData(&scheduledCancellation{callback: callback})
 }
 
@@ -561,10 +568,7 @@ func validateAndSerializeMemo(memoMap map[string]any, dc converter.DataConverter
 }
 
 func (wc *workflowEnvironmentImpl) RegisterCancelHandler(handler func()) {
-	wrappedHandler := func() {
-		handler()
-	}
-	wc.cancelHandler = wrappedHandler
+	wc.cancelHandler = handler
 }
 
 func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
@@ -1402,7 +1406,7 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 		weh.commandsHelper.handleTimerCanceled(event.GetTimerCanceledEventAttributes().GetTimerId())
 
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_CANCEL_REQUESTED:
-		weh.handleWorkflowExecutionCancelRequested()
+		weh.handleWorkflowExecutionCancelRequested(event)
 
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_CANCELED:
 		// No Operation.
@@ -1705,7 +1709,11 @@ func (weh *workflowExecutionEventHandlerImpl) handleTimerFired(event *historypb.
 	timer.handle(nil, nil)
 }
 
-func (weh *workflowExecutionEventHandlerImpl) handleWorkflowExecutionCancelRequested() {
+func (weh *workflowExecutionEventHandlerImpl) handleWorkflowExecutionCancelRequested(event *historypb.HistoryEvent) {
+	if !weh.cancellationRequested {
+		weh.cancellationRequested = true
+		weh.cancellationReason = event.GetWorkflowExecutionCancelRequestedEventAttributes().GetCause()
+	}
 	weh.cancelHandler()
 }
 
