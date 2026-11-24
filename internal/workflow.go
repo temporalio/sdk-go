@@ -707,6 +707,10 @@ type (
 	//
 	// Exposed as: [go.temporal.io/sdk/workflow.CancelExternalWorkflowOptions]
 	CancelExternalWorkflowOptions struct {
+		// Reason is the reason for requesting cancellation.
+		// If empty, the cancellation cause of the context is used, if any.
+		Reason string
+
 		// EventGroups are combined with any groups on the context.
 		//
 		// NOTE: Experimental (Event Groups)
@@ -1535,7 +1539,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 					assertNotInReadOnlyStateCancellation(ctx)
 					if ctx.Err() == ErrCanceled && !mainFuture.IsReady() {
 						// child workflow started, and ctx canceled
-						GetWorkflowEnvironment(ctx).RequestCancelChildWorkflow(options.Namespace, r.ID)
+						GetWorkflowEnvironment(ctx).RequestCancelChildWorkflow(options.Namespace, r.ID, getWorkflowCancellationReason(ctx))
 					}
 					return false
 				}
@@ -1905,10 +1909,14 @@ func (wc *workflowEnvironmentInterceptor) RequestCancelExternalWorkflowWithOptio
 		settable.Set(result, err)
 	}
 
+	if options.Reason == "" {
+		options.Reason = getWorkflowCancellationReason(ctx)
+	}
 	wc.env.RequestCancelExternalWorkflow(
 		envOptions.Namespace,
 		workflowID,
 		runID,
+		options.Reason,
 		eventGroupMarkersToProto(ctx, options.EventGroups),
 		resultCallback,
 	)
