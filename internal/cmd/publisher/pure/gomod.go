@@ -50,12 +50,10 @@ func NewValidatedGoMod(goMod, modulePath string) (GoMod, error) {
 	return GoMod{ModulePath: modulePath, Requirements: requirements}, nil
 }
 
-// SortGoMods topologically sorts modules and then greedily partitions
-// that order into consecutive groups with no dependencies within a group.
-// For example, given modules C B A D E, with dependencies A → B → C and
-// E → D, we'd first produce the topological sort [C, B, A, D, E] and then
-// group them as [[C], [B], [A, D], [E]] because C -> B and A -> B and E -> D.
-// Notice A and D are grouped because module A doesn't require D.
+// SortGoMods partitions modules into the minimum number of release groups.
+// Dependencies in the input must be in earlier groups; other requirements are ignored.
+// Each module goes in the group after its deepest dependency, so the number of
+// groups equals the longest dependency chain. Modules within a group retain input order.
 func SortGoMods(modules []GoMod) ([][]GoMod, error) {
 	byPath := make(map[string]int, len(modules))
 	for i, module := range modules {
@@ -73,7 +71,7 @@ func SortGoMods(modules []GoMod) ([][]GoMod, error) {
 		visited  = 2
 	)
 	state := make([]int, len(modules))
-	sorted := make([]GoMod, 0, len(modules))
+	group := make([]int, len(modules))
 	var visit func(int) error
 	visit = func(i int) error {
 		switch state[i] {
@@ -88,10 +86,10 @@ func SortGoMods(modules []GoMod) ([][]GoMod, error) {
 				if err := visit(dependency); err != nil {
 					return err
 				}
+				group[i] = max(group[i], group[dependency]+1)
 			}
 		}
 		state[i] = visited
-		sorted = append(sorted, modules[i])
 		return nil
 	}
 	for i := range modules {
@@ -100,22 +98,11 @@ func SortGoMods(modules []GoMod) ([][]GoMod, error) {
 		}
 	}
 	var partitions [][]GoMod
-	var partition []GoMod
-	members := make(map[string]bool)
-	for _, module := range sorted {
-		for _, requirement := range module.Requirements {
-			if members[requirement.ModulePath] {
-				partitions = append(partitions, partition)
-				partition = nil
-				clear(members)
-				break
-			}
+	for i, module := range modules {
+		for len(partitions) <= group[i] {
+			partitions = append(partitions, nil)
 		}
-		partition = append(partition, module)
-		members[module.ModulePath] = true
-	}
-	if len(partition) > 0 {
-		partitions = append(partitions, partition)
+		partitions[group[i]] = append(partitions[group[i]], module)
 	}
 	return partitions, nil
 }

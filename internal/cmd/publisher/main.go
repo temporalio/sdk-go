@@ -421,7 +421,7 @@ func (c *stageApp) run() (retErr error) {
 
 	printLine(c.eff, "\nNext steps:")
 	printLine(c.eff, "1. Vet the release branch:")
-	printDetail(c.eff, "go run ./internal/cmd/publisher vet %s %s", branchName, pure.FormatVersionedModules(c.modules))
+	printDetail(c.eff, "go run ./internal/cmd/publisher vet origin/%s %s", branchName, pure.FormatVersionedModules(c.modules))
 	printLine(c.eff, "2. Fix errors and mark the PR as \"ready for review\".")
 	printLine(c.eff, "3. Merge the PR and copy the commit hash.")
 	printLine(c.eff, "4. Create draft github releases:")

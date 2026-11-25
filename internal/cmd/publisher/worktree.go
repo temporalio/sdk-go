@@ -99,7 +99,22 @@ func (w *worktree) pushBranch() error {
 }
 
 func (w *worktree) openDraftPR(modules []pure.VersionedModule) (string, error) {
-	title, body, _ := strings.Cut(pure.ReleaseCommitMessage(modules, w.eff.today()), "\n\n")
+	var releases, entries []string
+	for _, module := range modules {
+		name := module.Module.Name()
+		if name == "sdk" {
+			name = "Go SDK"
+		}
+		release := name + " v" + module.Version.String()
+		releases = append(releases, release)
+		entries = append(entries, "- "+release)
+	}
+	title := "Release " + strings.Join(releases, ", ")
+	body := fmt.Sprintf("Prepare release files for:\n\n%s\n\n"+
+		"## Checklist\n\n"+
+		"- [ ] Validate the release before marking this PR ready: `go run ./internal/cmd/publisher vet origin/%s %s`.\n"+
+		"- [x] Update module changelogs.",
+		strings.Join(entries, "\n"), w.branch, pure.FormatVersionedModules(modules))
 	url, err := w.eff.runCommand(w.worktreeRoot, "gh", "pr", "create", "--draft",
 		"--base", "main",
 		"--head", w.branch,

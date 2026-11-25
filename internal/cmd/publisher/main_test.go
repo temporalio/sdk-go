@@ -287,6 +287,20 @@ func TestStage(t *testing.T) {
 	delete(output, "changelog/fixed/dancing-duck.md")
 	delete(output, "contrib/envconfig/changelog/added/singing-swan.md")
 
+	prBody := stripIndentation(`
+		Prepare release files for:
+
+		- Go SDK v1.48.0
+		- contrib/envconfig v1.0.3
+
+		## Checklist
+
+		- [ ] Validate the release before marking this PR ready: ` + "`go run ./internal/cmd/publisher vet origin/chore/release-2026-08-04-abc234de sdk=1.48.0 contrib/envconfig=1.0.3`." + `
+		- [x] Update module changelogs.
+	`)
+	prCommand := formatCommand("gh", "pr", "create", "--draft", "--base", "main",
+		"--head", "chore/release-2026-08-04-abc234de", "--label", "skip-changelog",
+		"--title", "Release Go SDK v1.48.0, contrib/envconfig v1.0.3", "--body", prBody)
 	a, eff := newMockStage(stageApp{modules: modules}, input, nil)
 	eff.commandHandler = func(cmd string) (string, error) {
 		switch cmd {
@@ -308,7 +322,7 @@ func TestStage(t *testing.T) {
 			return "contrib/envconfig/changelog/added/singing-swan.md\x00", nil
 		case `git commit -m "Prepare release 2026-08-04\n\nsdk=1.48.0 contrib/envconfig=1.0.3"`:
 			testEqualMaps(t, eff.files, output)
-		case `gh pr create --draft --base main --head chore/release-2026-08-04-abc234de --label skip-changelog --title "Prepare release 2026-08-04" --body "sdk=1.48.0 contrib/envconfig=1.0.3"`:
+		case prCommand:
 			return "https://github.com/temporalio/sdk-go/pull/123\n", nil
 		}
 		return "", nil
@@ -355,7 +369,7 @@ func TestStage(t *testing.T) {
 		$ git push --set-upstream origin chore/release-2026-08-04-abc234de
 
 		# Running in /tmp/prepare-go-release-123456:
-		$ gh pr create --draft --base main --head chore/release-2026-08-04-abc234de --label skip-changelog --title "Prepare release 2026-08-04" --body "sdk=1.48.0 contrib/envconfig=1.0.3"
+		$ `+prCommand+`
 		https://github.com/temporalio/sdk-go/pull/123
 
 		# Running in /repo:
@@ -371,7 +385,7 @@ func TestStage(t *testing.T) {
 
 		Next steps:
 		1. Vet the release branch:
-		      go run ./internal/cmd/publisher vet chore/release-2026-08-04-abc234de sdk=1.48.0 contrib/envconfig=1.0.3
+		      go run ./internal/cmd/publisher vet origin/chore/release-2026-08-04-abc234de sdk=1.48.0 contrib/envconfig=1.0.3
 		2. Fix errors and mark the PR as "ready for review".
 		3. Merge the PR and copy the commit hash.
 		4. Create draft github releases:
