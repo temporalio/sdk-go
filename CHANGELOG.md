@@ -29,45 +29,6 @@
 - Workers let the server complete outstanding worker-command polls on namespaces that support graceful poll shutdown.
 
 - Fixed session-worker updates overwriting ordinary activity-worker gauges and distorting worker heartbeats. Session metrics are exported under the task queues they poll, and the activity heartbeat reports only the ordinary activity worker.
-## [Unreleased]
-
-### Added
-
-- **Experimental**: `converter.StorageDriverStoreContext` and
-  `converter.StorageDriverSelectContext` have a `Namespace` field holding the
-  namespace of the client or worker performing the operation, so drivers and
-  selectors can partition by namespace even when there is no `Target`.
-- Added experimental `worker.GetSlotUsage`, which returns a snapshot of a worker's task slot usage.
-- Added experimental `worker.GetInfo`, which returns a snapshot of a worker's state, currently its task
-  slot usage.
-- Nexus workers decode marked System Nexus inputs with the system protobuf converter and use the
-  configured data converter and codecs for embedded user values, keeping the outer envelope out of
-  user codecs. Unrecognized system envelope types produce retryable internal handler errors. Other
-  invalid system envelopes produce bad-request handler errors.
-
-### Changed
-
-- Reduced gRPC interceptor allocations when the effective metrics handler is a
-  no-op.
-- `converter.NewZlibCodec` reuses zlib writers and readers across payloads instead of creating them
-  for every payload. A writer is about 1 MB of allocation, so encoding allocates far less, which
-  reduces garbage collection in workers that encode many payloads. The encoded output is unchanged.
-
-### Deprecated
-
-### :boom: Breaking Changes
-
-### Fixed
-
-- Marked `workflow.SignalWithStart` as experimental.
-- `client.Options.SdkName` and `client.Options.SdkVersion` now also apply to the
-  SDK metadata of workflow task completions, not only to worker heartbeats.
-- Workers no longer advertise a worker control task queue unless worker heartbeats and commands
-  are supported and the shared namespace command poller is running.
-- Workers let the server complete outstanding worker-command polls on namespaces that support
-  graceful poll shutdown.
-
-### Security
 
 ## [1.51.0] - 2026-11-10
 
