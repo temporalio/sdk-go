@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"strings"
 
 	"go.temporal.io/sdk/internal/cmd/publisher/pure"
 )
@@ -396,14 +397,21 @@ func (c *stewardApp) offerCommand(name string, args ...string) error {
 		}
 		switch answer {
 		case '\n':
-			stdout, err := c.eff.runCommand(c.repoRoot, name, args...)
+			printLine(c.eff, "\n╔═══ Subcommand output ═════════════════════")
+			printLine(c.eff, "$ %s", formatCommand(name, args...))
+			err := c.eff.runInteractiveCommand(c.repoRoot, name, args...)
 			if err != nil {
-				printDetail(c.eff, "%v", err)
+				printLine(c.eff, "\n║═══ Subcommand failed ═════════════════════")
+				for line := range strings.SplitSeq(err.Error(), "\n") {
+					printLine(c.eff, "║ %s", line)
+				}
+				printLine(c.eff, "╚═══════════════════════════════════════════")
 				printLine(c.eff, "")
 				heading = "Retry command:"
 				continue
 			}
-			return c.eff.page(stdout)
+			printLine(c.eff, "\n╚═══ Subcommand succeeded ══════════════════\n")
+			return nil
 		default:
 			printLine(c.eff, "Press Enter when you're ready.")
 		}

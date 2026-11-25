@@ -242,9 +242,12 @@ func TestStewardRetryPrompt(t *testing.T) {
 		testEqual(t, cmd, "go run ./internal/cmd/publisher vet origin/release sdk=1.48.0")
 		attempts++
 		if attempts == 1 {
-			return "", errors.New("validation failed")
+			return "Checking release readiness\n", errors.Join(
+				errors.New("validation failed"),
+				errors.New("dependency is not published"),
+			)
 		}
-		return "", nil
+		return "Validation passed\n", nil
 	})
 	eff.input = "\n\n"
 	c := stewardApp{app: *a}
@@ -259,12 +262,26 @@ func TestStewardRetryPrompt(t *testing.T) {
 		      go run ./internal/cmd/publisher vet origin/release sdk=1.48.0
 
 		Press Enter to run.
-		      validation failed
+
+		╔═══ Subcommand output ═════════════════════
+		$ go run ./internal/cmd/publisher vet origin/release sdk=1.48.0
+		Checking release readiness
+
+		║═══ Subcommand failed ═════════════════════
+		║ validation failed
+		║ dependency is not published
+		╚═══════════════════════════════════════════
 
 		Retry command:
 		      go run ./internal/cmd/publisher vet origin/release sdk=1.48.0
 
 		Press Enter to run.
+
+		╔═══ Subcommand output ═════════════════════
+		$ go run ./internal/cmd/publisher vet origin/release sdk=1.48.0
+		Validation passed
+
+		╚═══ Subcommand succeeded ══════════════════
 	`)
 	if eff.input != "" {
 		t.Fatalf("retry did not consume its own Enter: unused input %q", eff.input)
