@@ -171,7 +171,7 @@ func TestFindNoChanges(t *testing.T) {
 		}
 		return "", nil
 	})
-	c := findApp{app: *a}
+	c := stewardApp{app: *a}
 	if err := c.run(); err != nil {
 		t.Fatal(err)
 	}
@@ -214,7 +214,7 @@ func TestFindReleasableModules(t *testing.T) {
 		}
 	})
 	eff.input = "mmm"
-	c := findApp{app: *a}
+	c := stewardApp{app: *a}
 	if err := c.run(); err != nil {
 		t.Fatal(err)
 	}
@@ -1468,7 +1468,7 @@ func TestNewCommand(t *testing.T) {
 		{name: "skip changelog", args: []string{"gate", "-skip-changelog=true", "abc123"}},
 		{name: "missing changelog base", args: []string{"gate"}, wantErr: "usage: publisher gate [-skip-changelog] BASE_COMMIT"},
 		{name: "extra changelog argument", args: []string{"gate", "abc123", "extra"}, wantErr: "usage: publisher gate [-skip-changelog] BASE_COMMIT"},
-		{name: "find releases", args: []string{"find"}},
+		{name: "find releases", args: []string{"steward"}},
 		{name: "stage SDK", args: []string{"stage", "sdk=1.48.0"}},
 		{name: "explicit stage branch", args: []string{"stage", "-branch", "dplyukhin/custom-release", "sdk=1.48.0"}},
 		{name: "stage contrib", args: []string{"stage", "contrib/envconfig=1.0.3"}, wantDirs: []string{"contrib/envconfig"}},
@@ -1514,7 +1514,7 @@ func TestNewCommand(t *testing.T) {
 					t.Fatalf("skip-changelog: got %t, want %t", got.skipChangelog, want)
 				}
 				return
-			case *findApp:
+			case *stewardApp:
 				return
 			case *stageApp:
 				name, modules = "stage", got.modules

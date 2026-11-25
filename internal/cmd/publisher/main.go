@@ -11,10 +11,10 @@ import (
 	"go.temporal.io/sdk/internal/cmd/publisher/pure"
 )
 
-const usage = `usage: publisher (gate|find|stage|vet|tag)
+const usage = `usage: publisher (gate|steward|stage|vet|tag)
 
   gate   Verify changed modules have changelog fragments in a non-release PR
-  find   Find modules that changed since their last release
+  steward Find modules that changed since their last release
   stage  Create a draft release PR
   vet    Find mistakes in a release commit
   tag    Create draft GitHub releases
@@ -22,7 +22,7 @@ const usage = `usage: publisher (gate|find|stage|vet|tag)
 Windows is not supported. Use Linux, macOS, or WSL.
 The command assumes you have cargo and gh on your PATH.
 
-The command guides you through the release process. Start with "publisher find".
+The command guides you through the release process. Start with "publisher steward".
 If anything goes wrong, publisher prints an audit log with the commands it ran`
 
 type command interface {
@@ -81,8 +81,8 @@ func newCommand(eff effects, args []string) (command, error) {
 	switch name {
 	case "gate":
 		return newGateApp(eff, args[1:])
-	case "find":
-		return newFindApp(eff, args[1:])
+	case "steward":
+		return newStewardApp(eff, args[1:])
 	case "stage":
 		return newStageApp(eff, args[1:])
 	case "vet":
@@ -163,15 +163,15 @@ func (c *gateApp) run() error {
 	return nil
 }
 
-// FIND
+// STEWARD
 
-type findApp struct {
+type stewardApp struct {
 	app
 }
 
-func newFindApp(eff effects, args []string) (*findApp, error) {
-	const usage = "usage: publisher find"
-	flags := flag.NewFlagSet("publisher find", flag.ContinueOnError)
+func newStewardApp(eff effects, args []string) (*stewardApp, error) {
+	const usage = "usage: publisher steward"
+	flags := flag.NewFlagSet("publisher steward", flag.ContinueOnError)
 	flags.SetOutput(errorWriter{eff: eff})
 	flags.Usage = func() { eff.err("%s\n", usage) }
 	if err := flags.Parse(args); err != nil {
@@ -184,10 +184,10 @@ func newFindApp(eff effects, args []string) (*findApp, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &findApp{app: app{repo: r}}, nil
+	return &stewardApp{app: app{repo: r}}, nil
 }
 
-func (c *findApp) run() (retErr error) {
+func (c *stewardApp) run() (retErr error) {
 	if err := c.fetchOrigin(); err != nil {
 		return err
 	}
@@ -204,6 +204,8 @@ func (c *findApp) run() (retErr error) {
 		return err
 	}
 	modules := append([]pure.Module{pure.SDKModule()}, contribModules...)
+
+	// 1. FIND MODULES TO RELEASE
 
 	var toRelease []pure.VersionedModule
 	for _, module := range modules {
@@ -243,6 +245,8 @@ func (c *findApp) run() (retErr error) {
 		return nil
 	}
 
+	// 2. COLLECT MODULES THAT DON'T DEPEND ON EACH OTHER INTO BATCHES
+
 	var goMods []pure.GoMod
 	byPath := make(map[string]pure.VersionedModule, len(toRelease))
 	for _, module := range toRelease {
@@ -258,28 +262,70 @@ func (c *findApp) run() (retErr error) {
 		goMods = append(goMods, goMod)
 		byPath[goMod.ModulePath] = module
 	}
-
-	batches, err := pure.SortGoMods(goMods)
+	batchedModules, err := pure.SortGoMods(goMods)
 	if err != nil {
 		return fmt.Errorf("sort modules for release: %w", err)
 	}
+
 	switch {
-	case len(batches) == 1:
-		printLine(c.eff, "To create a release PR, run the command:")
+	case len(batchedModules) <= 1:
 	default:
-		printLine(c.eff, "I found dependencies between the modules. Release them in the following order:")
+		printLine(c.eff, "Releasing the modules in %d batches:", len(batchedModules))
+		for i, batch := range batchedModules {
+			var releases []pure.VersionedModule
+			for _, module := range batch {
+				releases = append(releases, byPath[module.ModulePath])
+			}
+			printDetail(c.eff, "Batch %d: %s", i+1, pure.FormatVersionedModules(releases))
+		}
+		printDetail(c.eff, "")
 	}
-	for _, batch := range batches {
+
+	// 3. STAGE, VET, AND TAG EACH BATCH OF MODULES
+
+	for _, batch := range batchedModules {
 		var releases []pure.VersionedModule
 		for _, module := range batch {
 			releases = append(releases, byPath[module.ModulePath])
 		}
-		printDetail(c.eff, "go run ./internal/cmd/publisher stage %s", pure.FormatVersionedModules(releases))
+
+		printLine(c.eff, "Create a release PR\n")
+		branch := pure.ReleaseBranchName(c.eff.today(), c.eff.randomSuffix())
+		err = c.offerCommand(w, "go run ./internal/cmd/publisher stage -branch %s %s", branch, pure.FormatVersionedModules(releases))
+		if err != nil {
+			return err
+		}
+
+		printLine(c.eff, "After you've reviewed the PR and made changes, validate the PR\n")
+		err = c.offerCommand(w, "go run ./internal/cmd/publisher vet origin/%s %s", branch, pure.FormatVersionedModules(releases))
+		if err != nil {
+			return err
+		}
+
+		// merge-loop and get the commit hash
+		printLine(c.eff, "Merge the PR if it passes checks\n")
+		err = c.offerCommand(w, "gh pr merge origin/%s --merge", branch)
+		if err != nil {
+			return err
+		}
+		// TODO Parse stdout to get the merge commit, maybe rewriting the command above
+		var commit string
+
+		// tag-loop
+		printLine(c.eff, "Create draft GitHub releases\n")
+		err = c.offerCommand(w, "go run ./internal/cmd/publisher tag %s %s", commit, pure.FormatVersionedModules(releases))
+		if err != nil {
+			return err
+		}
+
+		// mark tag as ready or skip
+		printLine(c.eff, "Mark the draft releases as ready for review\n")
+		// TODO
 	}
 	return nil
 }
 
-func (c *findApp) chooseVersion(w *worktree, module pure.Module, latestVersion *pure.Version, pathspecs []string) (*pure.Version, error) {
+func (c *stewardApp) chooseVersion(w *worktree, module pure.Module, latestVersion *pure.Version, pathspecs []string) (*pure.Version, error) {
 	var latest pure.Version
 	var baseline string
 	if latestVersion != nil {
@@ -324,6 +370,30 @@ func (c *findApp) chooseVersion(w *worktree, module pure.Module, latestVersion *
 			}
 		default:
 			printLine(c.eff, "Invalid choice; enter m, p, c, d, or s.")
+		}
+	}
+}
+
+func (c *stewardApp) offerCommand(w *worktree, cmd string, args... string) error {
+	printDetail(c.eff, formatCommand(cmd, args...))
+	printLine(c.eff, "\n[Enter] Run the command for me. ")
+	for {
+		answer, err := c.eff.readCharacter()
+		if err != nil {
+			return err
+		}
+		switch answer {
+		case '\n':
+			stdout, err := c.eff.runCommand(w.worktreeRoot, cmd, args...)
+			if err != nil {
+				printDetail(c.eff, "%v", err)
+				err = nil
+				continue
+			}
+			c.eff.page(stdout)
+			return nil
+		default:
+			printLine(c.eff, "Invalid choice.")
 		}
 	}
 }
