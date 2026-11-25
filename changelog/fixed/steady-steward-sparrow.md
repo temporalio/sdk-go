@@ -1,1 +1,1 @@
-Fix steward command execution and discovery cleanup, clarify retries and framed output, and remove redundant `stage`/`tag` instructions.
+Rename `publisher find` to `steward` and guide batched releases through staging, manual review, vetting, squash merging, tagging, and publication with numbered progress and automatic merge and publication polling; clarify command output and remove redundant `stage`/`tag` instructions.

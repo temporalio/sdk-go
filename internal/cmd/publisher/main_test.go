@@ -8,6 +8,8 @@ import (
 	"maps"
 	"strings"
 	"testing"
+	"testing/synctest"
+	"time"
 
 	"go.temporal.io/sdk/internal/cmd/publisher/pure"
 )
@@ -251,7 +253,7 @@ func TestStewardRetryPrompt(t *testing.T) {
 	})
 	eff.input = "\n\n"
 	c := stewardApp{app: *a}
-	if err := c.offerCommand("go", "run", "./internal/cmd/publisher", "vet", "origin/release", "sdk=1.48.0"); err != nil {
+	if err := c.waitForEnter("go", "run", "./internal/cmd/publisher", "vet", "origin/release", "sdk=1.48.0"); err != nil {
 		t.Fatal(err)
 	}
 	if attempts != 2 {
@@ -286,6 +288,177 @@ func TestStewardRetryPrompt(t *testing.T) {
 	if eff.input != "" {
 		t.Fatalf("retry did not consume its own Enter: unused input %q", eff.input)
 	}
+}
+
+func TestStewardReleasesBatches(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		const branch = "chore/release-2026-08-04-abc234de"
+		sdkCommit := strings.Repeat("a", 40)
+		contribCommit := strings.Repeat("b", 40)
+		sdkMergedOutput := fmt.Sprintf(`{"state":"MERGED","mergeCommit":{"oid":%q}}`, sdkCommit)
+		calls := []struct {
+			command string
+			output  string
+			err     error
+		}{
+			{"go run ./internal/cmd/publisher stage -branch " + branch + " sdk=1.48.0", "", nil},
+			{"go run ./internal/cmd/publisher vet origin/" + branch + " sdk=1.48.0", "", nil},
+			{"gh pr merge " + branch + " --squash", "", nil},
+			{"gh pr view " + branch + " --json state,mergeCommit", "", errors.New("network unavailable")},
+			{"gh pr view " + branch + " --json state,mergeCommit", `{"state":"OPEN","mergeCommit":null}`, nil},
+			{"gh pr view " + branch + " --json state,mergeCommit", "invalid JSON", nil},
+			{"gh pr view " + branch + " --json state,mergeCommit", `{"state":"MERGED","mergeCommit":null}`, nil},
+			{"gh pr view " + branch + " --json state,mergeCommit", sdkMergedOutput + "\n", nil},
+			{"go run ./internal/cmd/publisher tag " + sdkCommit + " sdk=1.48.0", "", nil},
+			{"gh release edit v1.48.0 --draft=false --latest=true", "", nil},
+			{"go list -m go.temporal.io/sdk@v1.48.0", "", errors.New("module is not available on the proxy yet")},
+			{"go list -m go.temporal.io/sdk@v1.48.0", "", nil},
+			{"go run ./internal/cmd/publisher stage -branch " + branch + " contrib/envconfig=1.0.4 contrib/tally=1.0.1", "", nil},
+			{"go run ./internal/cmd/publisher vet origin/" + branch + " contrib/envconfig=1.0.4 contrib/tally=1.0.1", "", nil},
+			{"gh pr merge " + branch + " --squash", "", nil},
+			{"gh pr view " + branch + " --json state,mergeCommit", fmt.Sprintf(`{"state":"MERGED","mergeCommit":{"oid":%q}}`, contribCommit), nil},
+			{"go run ./internal/cmd/publisher tag " + contribCommit + " contrib/envconfig=1.0.4 contrib/tally=1.0.1", "", nil},
+			{"gh release edit contrib/envconfig/v1.0.4 --draft=false --latest=false", "", nil},
+			{"gh release edit contrib/tally/v1.0.1 --draft=false --latest=false", "", nil},
+			{"go list -m go.temporal.io/sdk/contrib/envconfig@v1.0.4 go.temporal.io/sdk/contrib/tally@v1.0.1", "", nil},
+		}
+		nextCall := func(command string) (string, error) {
+			if len(calls) == 0 {
+				t.Fatalf("unexpected command: %s", command)
+			}
+			call := calls[0]
+			calls = calls[1:]
+			testEqual(t, command, call.command)
+			return call.output, call.err
+		}
+		input := map[string]string{
+			"go.mod": "module go.temporal.io/sdk\n",
+			"contrib/envconfig/go.mod": stripIndentation(`
+			module go.temporal.io/sdk/contrib/envconfig
+			require go.temporal.io/sdk v1.47.0
+		`),
+			"contrib/tally/go.mod": stripIndentation(`
+			module go.temporal.io/sdk/contrib/tally
+			require go.temporal.io/sdk v1.47.0
+		`),
+		}
+		a, eff := newMockApp(app{}, input, func(cmd string) (string, error) {
+			switch {
+			case cmd == "git ls-tree -r --name-only -z HEAD -- contrib/":
+				return "contrib/envconfig/go.mod\x00contrib/envconfig/CHANGELOG.md\x00contrib/tally/go.mod\x00contrib/tally/CHANGELOG.md\x00", nil
+			case cmd == "git tag --list v*":
+				return "v1.47.0", nil
+			case cmd == "git tag --list contrib/envconfig/v*":
+				return "contrib/envconfig/v1.0.3", nil
+			case cmd == "git tag --list contrib/tally/v*":
+				return "contrib/tally/v1.0.0", nil
+			case strings.HasPrefix(cmd, "git log"):
+				return strings.Repeat("c", 40), nil
+			case strings.HasPrefix(cmd, "git "):
+				return "", nil
+			default:
+				return nextCall(cmd)
+			}
+		})
+		eff.input = "mpp" + strings.Repeat("\n", 11)
+		c := stewardApp{app: *a}
+		if err := c.run(); err != nil {
+			t.Fatal(err)
+		}
+		if len(calls) != 0 {
+			t.Fatalf("release walkthrough stopped before %s", calls[0].command)
+		}
+		if eff.input != "" {
+			t.Fatalf("unused release confirmations: %q", eff.input)
+		}
+		var progress []string
+		for line := range strings.SplitSeq(eff.output.String(), "\n") {
+			if strings.HasPrefix(line, "[") ||
+				line == "Fetching the merge commit..." ||
+				line == "Done." ||
+				line == "Waiting for released modules to be available..." {
+				progress = append(progress, line)
+			}
+		}
+		testEqual(t, strings.Join(progress, "\n"), `
+		[1/10] Create a release PR
+		[2/10] Check the PR for common mistakes
+		[3/10] Squash merge the PR once it's been approved
+		Fetching the merge commit...
+		Done.
+		[4/10] Create draft GitHub releases
+		[5/10] Review the draft releases, then publish them
+		Waiting for released modules to be available...
+		[6/10] Create a release PR
+		[7/10] Check the PR for common mistakes
+		[8/10] Squash merge the PR once it's been approved
+		Fetching the merge commit...
+		Done.
+		[9/10] Create draft GitHub releases
+		[10/10] Review the draft releases, then publish them
+		Waiting for released modules to be available...
+	`)
+	})
+}
+
+func TestStewardWaitForMergeBackoff(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		delays := []time.Duration{0, time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second, 16 * time.Second, 30 * time.Second, 30 * time.Second}
+		lastCall := time.Now()
+		attempts := 0
+		commit := strings.Repeat("a", 40)
+		a, _ := newMockApp(app{}, nil, func(cmd string) (string, error) {
+			testEqual(t, cmd, "gh pr view release --json state,mergeCommit")
+			if attempts >= len(delays) {
+				t.Fatal("queried PR status after confirming the merge")
+			}
+			if elapsed := time.Since(lastCall); elapsed != delays[attempts] {
+				t.Fatalf("attempt %d: delay %s, want %s", attempts+1, elapsed, delays[attempts])
+			}
+			lastCall = time.Now()
+			attempts++
+			if attempts < len(delays) {
+				return `{"state":"OPEN","mergeCommit":null}`, nil
+			}
+			return fmt.Sprintf(`{"state":"MERGED","mergeCommit":{"oid":" %s "}}`, commit), nil
+		})
+		c := stewardApp{app: *a}
+		testEqual(t, c.waitForMerge("release"), commit)
+		if attempts != len(delays) {
+			t.Fatalf("queried PR status %d times, want %d", attempts, len(delays))
+		}
+	})
+}
+
+func TestStewardWaitForPublicationBackoff(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		delays := []time.Duration{0, time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second, 16 * time.Second, 30 * time.Second, 30 * time.Second}
+		lastCall := time.Now()
+		attempts := 0
+		a, _ := newMockApp(app{}, nil, func(cmd string) (string, error) {
+			testEqual(t, cmd, "go list -m go.temporal.io/sdk@v1.48.0 go.temporal.io/sdk/contrib/envconfig@v1.0.4")
+			if attempts >= len(delays) {
+				t.Fatal("queried module availability after publication completed")
+			}
+			if elapsed := time.Since(lastCall); elapsed != delays[attempts] {
+				t.Fatalf("attempt %d: delay %s, want %s", attempts+1, elapsed, delays[attempts])
+			}
+			lastCall = time.Now()
+			attempts++
+			if attempts < len(delays) {
+				return "", errors.New("module is not available yet")
+			}
+			return "", nil
+		})
+		c := stewardApp{app: *a}
+		c.waitForPublication([]pure.VersionedModule{
+			{Module: pure.SDKModule(), Version: pure.Version{1, 48, 0}},
+			{Module: contribEnvconfig(t), Version: pure.Version{1, 0, 4}},
+		})
+		if attempts != len(delays) {
+			t.Fatalf("queried module availability %d times, want %d", attempts, len(delays))
+		}
+	})
 }
 
 // -- STAGE -------------------------------------------------

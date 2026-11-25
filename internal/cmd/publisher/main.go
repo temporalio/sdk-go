@@ -2,12 +2,14 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"os"
 	"runtime"
 	"strings"
+	"time"
 
 	"go.temporal.io/sdk/internal/cmd/publisher/pure"
 )
@@ -15,7 +17,7 @@ import (
 const usage = `usage: publisher (gate|steward|stage|vet|tag)
 
   gate   Verify changed modules have changelog fragments in a non-release PR
-  steward Find modules that changed since their last release
+  steward Guide module releases from selection through publication
   stage  Create a draft release PR
   vet    Find mistakes in a release commit
   tag    Create draft GitHub releases
@@ -204,44 +206,60 @@ func (c *stewardApp) run() error {
 		printDetail(c.eff, "")
 	}
 
+	const stepsPerBatch = 5
+	totalSteps := stepsPerBatch * len(batches)
+	step := 0
 	for _, releases := range batches {
 		var moduleArgs []string
 		for _, release := range releases {
 			moduleArgs = append(moduleArgs, release.Module.Name()+"="+release.Version.String())
 		}
 
-		printLine(c.eff, "Create a release PR\n")
+		step++
+		printLine(c.eff, "[%d/%d] Create a release PR\n", step, totalSteps)
 		branch := pure.ReleaseBranchName(c.eff.today(), c.eff.randomSuffix())
-		err = c.offerCommand("go", append([]string{"run", "./internal/cmd/publisher", "stage", "-branch", branch}, moduleArgs...)...)
+		err = c.waitForEnter("go", append([]string{"run", "./internal/cmd/publisher", "stage", "-branch", branch}, moduleArgs...)...)
 		if err != nil {
 			return err
 		}
 
-		printLine(c.eff, "After you've reviewed the PR and made changes, validate the PR\n")
-		err = c.offerCommand("go", append([]string{"run", "./internal/cmd/publisher", "vet", "origin/" + branch}, moduleArgs...)...)
+		step++
+		printLine(c.eff, "[%d/%d] Check the PR for common mistakes\n", step, totalSteps)
+		err = c.waitForEnter("go", append([]string{"run", "./internal/cmd/publisher", "vet", "origin/" + branch}, moduleArgs...)...)
 		if err != nil {
 			return err
 		}
 
-		// merge-loop and get the commit hash
-		printLine(c.eff, "Merge the PR if it passes checks\n")
-		err = c.offerCommand("gh", "pr", "merge", "origin/"+branch, "--merge")
-		if err != nil {
-			return err
-		}
-		// TODO Parse stdout to get the merge commit, maybe rewriting the command above
-		var commit string
-
-		// tag-loop
-		printLine(c.eff, "Create draft GitHub releases\n")
-		err = c.offerCommand("go", append([]string{"run", "./internal/cmd/publisher", "tag", commit}, moduleArgs...)...)
+		step++
+		printLine(c.eff, "[%d/%d] Squash merge the PR once it's been approved\n", step, totalSteps)
+		err = c.waitForEnter("gh", "pr", "merge", branch, "--squash")
 		if err != nil {
 			return err
 		}
 
-		// mark tag as ready or skip
-		printLine(c.eff, "Mark the draft releases as ready for review\n")
-		// TODO
+		printLine(c.eff, "Fetching the merge commit...")
+		commit := c.waitForMerge(branch)
+		printLine(c.eff, "Done.\n")
+
+		step++
+		printLine(c.eff, "[%d/%d] Create draft GitHub releases\n", step, totalSteps)
+		err = c.waitForEnter("go", append([]string{"run", "./internal/cmd/publisher", "tag", commit}, moduleArgs...)...)
+		if err != nil {
+			return err
+		}
+
+		step++
+		printLine(c.eff, "[%d/%d] Review the draft releases, then publish them\n", step, totalSteps)
+		for _, release := range releases {
+			err = c.waitForEnter("gh", "release", "edit", release.Module.Tag(release.Version),
+				"--draft=false", fmt.Sprintf("--latest=%t", release.Module.MarkLatest()))
+			if err != nil {
+				return err
+			}
+		}
+		printLine(c.eff, "Waiting for released modules to be available...")
+		c.waitForPublication(releases)
+		printLine(c.eff, "Batch published.\n")
 	}
 	return nil
 }
@@ -385,7 +403,7 @@ func (c *stewardApp) chooseVersion(w *worktree, module pure.Module, latestVersio
 	}
 }
 
-func (c *stewardApp) offerCommand(name string, args ...string) error {
+func (c *stewardApp) waitForEnter(name string, args ...string) error {
 	heading := "Next command:"
 	for {
 		printLine(c.eff, "%s", heading)
@@ -415,6 +433,45 @@ func (c *stewardApp) offerCommand(name string, args ...string) error {
 		default:
 			printLine(c.eff, "Press Enter when you're ready.")
 		}
+	}
+}
+
+func (c *stewardApp) waitForMerge(branch string) string {
+	for delay := time.Second; ; delay = min(2*delay, 30*time.Second) {
+		output, err := c.eff.runCommand(c.repoRoot, "gh", "pr", "view", branch, "--json", "state,mergeCommit")
+		var pr struct {
+			State       string
+			MergeCommit struct {
+				OID string `json:"oid"`
+			}
+		}
+		if err == nil {
+			err = json.Unmarshal([]byte(output), &pr)
+		}
+		if err != nil {
+			printLine(c.eff, "Could not read PR status for %s: %v. Retrying in %s.", branch, err, delay)
+		} else if commit := strings.TrimSpace(pr.MergeCommit.OID); pr.State == "MERGED" && commit != "" {
+			return commit
+		} else {
+			printLine(c.eff, "PR %s has no confirmed merge commit yet (state: %q). Checking again in %s.", branch, pr.State, delay)
+		}
+		time.Sleep(delay)
+	}
+}
+
+func (c *stewardApp) waitForPublication(releases []pure.VersionedModule) {
+	args := []string{"list", "-m"}
+	for _, release := range releases {
+		args = append(args, release.Module.ModulePath()+"@v"+release.Version.String())
+	}
+	printDetail(c.eff, "%s", formatCommand("go", args...))
+	for delay := time.Second; ; delay = min(2*delay, 30*time.Second) {
+		if _, err := c.eff.runCommand(c.repoRoot, "go", args...); err == nil {
+			return
+		} else {
+			printLine(c.eff, "Released modules are not available yet: %v. Retrying in %s.", err, delay)
+		}
+		time.Sleep(delay)
 	}
 }
 
