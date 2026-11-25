@@ -1102,10 +1102,12 @@ func (w *workflowExecutionContextImpl) ProcessWorkflowTask(workflowTask *workflo
 	skipReplayCheck := w.skipReplayCheck()
 	isInReplayer := IsReplayNamespace(w.wth.namespace)
 	shouldForceReplayCheck := func() bool {
-		// If we are in the replayer we should always check the history replay, even if the workflow is completed
-		// Skip if the workflow panicked to avoid potentially breaking old histories
+		// Always check the history replay even if the workflow completed during this task,
+		// so non-deterministic command mismatches (e.g. swapped activities completing on the
+		// last pending activity after a worker restart) are still detected.
+		// Skip if the workflow panicked to avoid potentially breaking old histories.
 		_, wfPanicked := w.err.(*workflowPanicError)
-		return !wfPanicked && isInReplayer
+		return !wfPanicked
 	}
 
 	curReplayCmdsIndex := -1
