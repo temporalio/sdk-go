@@ -25,6 +25,7 @@ const (
 	defaultStickyCacheSize                         = 100
 
 	envTaskQueue      = "TEMPORAL_TASK_QUEUE"
+	envIdleTimeout    = "TEMPORAL_SERVERLESS_WORKER_IDLE_TIMEOUT"
 	envLambdaTaskRoot = "LAMBDA_TASK_ROOT"
 	envConfigFile     = "TEMPORAL_CONFIG_FILE"
 	defaultConfigFile = "temporal.toml"

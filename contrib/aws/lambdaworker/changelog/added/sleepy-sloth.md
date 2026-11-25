@@ -1,0 +1,1 @@
+**Experimental**: Added idle shutdown. Set `Options.IdleTimeout` or the `TEMPORAL_SERVERLESS_WORKER_IDLE_TIMEOUT` environment variable to end an invocation early once the worker has been idle that long. Disabled by default.

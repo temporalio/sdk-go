@@ -85,6 +85,13 @@ are cached across warm invocations. The Lambda execution role needs
 [`secretsmanager` README](../secretsmanager/README.md) for the full set of
 options, validation rules, caching behavior, and observability metrics.
 
+## Idle shutdown (experimental)
+
+By default, each invocation polls for tasks until shortly before the invocation deadline. To shut
+down early once the worker has been idle for a while, set `Options.IdleTimeout` in the configure
+callback, or the `TEMPORAL_SERVERLESS_WORKER_IDLE_TIMEOUT` environment variable in seconds (e.g.
+`120`). See the docstrings for more details on idle shutdown behavior.
+
 ## Lambda-tuned worker defaults
 
 The package applies conservative concurrency limits suited to Lambda's resource constraints, see the
