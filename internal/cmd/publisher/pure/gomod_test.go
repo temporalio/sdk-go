@@ -285,13 +285,12 @@ func TestSortGoMods(t *testing.T) {
 			`,
 		},
 		{
-			name:  "greedy partitioning across AWS and OpenTelemetry",
+			name:  "minimum partitioning across AWS and OpenTelemetry",
 			input: []GoMod{secretsmanager, envconfig, sdk, otlpworker, opentelemetry},
 			want: `
 				go.temporal.io/sdk
-				go.temporal.io/sdk/contrib/envconfig
-				go.temporal.io/sdk/contrib/aws/secretsmanager go.temporal.io/sdk/contrib/opentelemetry
-				go.temporal.io/sdk/contrib/opentelemetry/otlpworker
+				go.temporal.io/sdk/contrib/envconfig go.temporal.io/sdk/contrib/opentelemetry
+				go.temporal.io/sdk/contrib/aws/secretsmanager go.temporal.io/sdk/contrib/opentelemetry/otlpworker
 			`,
 		},
 		{
@@ -300,6 +299,35 @@ func TestSortGoMods(t *testing.T) {
 			want: `
 				go.temporal.io/sdk/contrib/envconfig go.temporal.io/sdk/contrib/opentelemetry
 				go.temporal.io/sdk/contrib/aws/secretsmanager
+			`,
+		},
+		{
+			name: "disconnected dependency chains",
+			input: []GoMod{
+				{ModulePath: "C"},
+				{ModulePath: "B", Requirements: []ModuleRequirement{{ModulePath: "C"}}},
+				{ModulePath: "A", Requirements: []ModuleRequirement{{ModulePath: "B"}}},
+				{ModulePath: "D"},
+				{ModulePath: "E", Requirements: []ModuleRequirement{{ModulePath: "D"}}},
+			},
+			want: `
+				C D
+				B E
+				A
+			`,
+		},
+		{
+			name: "deepest dependency is not the last requirement",
+			input: []GoMod{
+				{ModulePath: "A", Requirements: []ModuleRequirement{{ModulePath: "B"}, {ModulePath: "C"}}},
+				{ModulePath: "B", Requirements: []ModuleRequirement{{ModulePath: "D"}}},
+				{ModulePath: "C"},
+				{ModulePath: "D"},
+			},
+			want: `
+				C D
+				B
+				A
 			`,
 		},
 		{
