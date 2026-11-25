@@ -437,17 +437,6 @@ func TestStage(t *testing.T) {
 		[2/3] Update release files
 		[3/3] Commit and publish draft PR
 		      Draft PR: https://github.com/temporalio/sdk-go/pull/123
-
-		Next steps:
-		1. Vet the release branch:
-		      go run ./internal/cmd/publisher vet origin/chore/release-2026-08-04-abc234de sdk=1.48.0 contrib/envconfig=1.0.3
-		2. Fix errors and mark the PR as "ready for review".
-		3. Merge the PR and copy the commit hash.
-		4. Create draft github releases:
-		      go run ./internal/cmd/publisher tag <YOUR_COMMIT_HASH> sdk=1.48.0 contrib/envconfig=1.0.3
-
-		Alternatively, you can close the PR and delete the branch:
-		      gh pr close https://github.com/temporalio/sdk-go/pull/123 --delete-branch
 	`)
 }
 
@@ -1178,10 +1167,6 @@ func TestTag(t *testing.T) {
 		      Draft release: https://github.com/temporalio/sdk-go/releases/tag/untagged-sdk
 		      Draft release: https://github.com/temporalio/sdk-go/releases/tag/untagged-contrib
 		      WARNING: Editing on GitHub enables "Set as the latest release". Make sure to toggle it back off when you release contrib/envconfig/v1.0.3.
-
-		To roll back successful draft releases, run:
-		      gh release delete v1.48.0 --yes
-		      gh release delete contrib/envconfig/v1.0.3 --yes
 	`)
 }
 
@@ -1262,9 +1247,6 @@ func TestTagEmpty(t *testing.T) {
 		[4/4] Create draft release(s)
 		      Draft release: https://github.com/temporalio/sdk-go/releases/tag/draft
 		      WARNING: Editing on GitHub enables "Set as the latest release". Make sure to toggle it back off when you release contrib/envconfig/v1.0.3.
-
-		To roll back successful draft releases, run:
-		      gh release delete contrib/envconfig/v1.0.3 --yes
 	`)
 }
 
@@ -1461,9 +1443,6 @@ func TestTagStillReportsCreatedDraftsOnFailure(t *testing.T) {
 		[4/4] Create draft release(s)
 		      Draft release: https://github.com/temporalio/sdk-go/releases/tag/untagged-envconfig
 		      WARNING: Editing on GitHub enables "Set as the latest release". Make sure to toggle it back off when you release contrib/envconfig/v0.1.0.
-
-		To roll back successful draft releases, run:
-		      gh release delete contrib/envconfig/v0.1.0 --yes
 	`)
 	testEqual(t, fmt.Sprint(err), "create draft release contrib/tally/v0.1.0: command failed")
 }

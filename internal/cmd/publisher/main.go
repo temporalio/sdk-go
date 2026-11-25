@@ -504,23 +504,8 @@ func (c *stageApp) run() (retErr error) {
 	if err != nil {
 		return err
 	}
-	prURL, err := worktree.openDraftPR(c.modules)
-	if err != nil {
-		return err
-	}
-
-	printLine(c.eff, "\nNext steps:")
-	printLine(c.eff, "1. Vet the release branch:")
-	printDetail(c.eff, "go run ./internal/cmd/publisher vet origin/%s %s", branchName, pure.FormatVersionedModules(c.modules))
-	printLine(c.eff, "2. Fix errors and mark the PR as \"ready for review\".")
-	printLine(c.eff, "3. Merge the PR and copy the commit hash.")
-	printLine(c.eff, "4. Create draft github releases:")
-	printDetail(c.eff, "go run ./internal/cmd/publisher tag <YOUR_COMMIT_HASH> %s", pure.FormatVersionedModules(c.modules))
-
-	printLine(c.eff, "\nAlternatively, you can close the PR and delete the branch:")
-	printDetail(c.eff, formatCommand("gh", "pr", "close", prURL, "--delete-branch"))
-
-	return nil
+	_, err = worktree.openDraftPR(c.modules)
+	return err
 }
 
 func (c *stageApp) goReleaseFiles(w *worktree, module pure.VersionedModule) error {
@@ -697,22 +682,11 @@ func (c *tagApp) run() (retErr error) {
 	}
 
 	printLine(c.eff, "[4/4] Create draft release(s)")
-	releaseCount := 0
-	defer func() {
-		if releaseCount == 0 {
-			return
-		}
-		printLine(c.eff, "\nTo roll back successful draft releases, run:")
-		for _, module := range c.modules[:releaseCount] {
-			printDetail(c.eff, formatCommand("gh", "release", "delete", module.Module.Tag(module.Version), "--yes"))
-		}
-	}()
 	for i, module := range c.modules {
 		_, err = worktree.createDraftRelease(module, commit, releaseNotes[i])
 		if err != nil {
 			return err
 		}
-		releaseCount++
 	}
 	return nil
 }
