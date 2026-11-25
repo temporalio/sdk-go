@@ -187,13 +187,71 @@ func newStewardApp(eff effects, args []string) (*stewardApp, error) {
 	return &stewardApp{app: app{repo: r}}, nil
 }
 
-func (c *stewardApp) run() (retErr error) {
-	if err := c.fetchOrigin(); err != nil {
+func (c *stewardApp) run() error {
+	batches, err := c.findReleases()
+	if err != nil {
 		return err
+	}
+
+	switch {
+	case len(batches) <= 1:
+	default:
+		printLine(c.eff, "Releasing the modules in %d batches:", len(batches))
+		for i, releases := range batches {
+			printDetail(c.eff, "Batch %d: %s", i+1, pure.FormatVersionedModules(releases))
+		}
+		printDetail(c.eff, "")
+	}
+
+	for _, releases := range batches {
+		var moduleArgs []string
+		for _, release := range releases {
+			moduleArgs = append(moduleArgs, release.Module.Name()+"="+release.Version.String())
+		}
+
+		printLine(c.eff, "Create a release PR\n")
+		branch := pure.ReleaseBranchName(c.eff.today(), c.eff.randomSuffix())
+		err = c.offerCommand("go", append([]string{"run", "./internal/cmd/publisher", "stage", "-branch", branch}, moduleArgs...)...)
+		if err != nil {
+			return err
+		}
+
+		printLine(c.eff, "After you've reviewed the PR and made changes, validate the PR\n")
+		err = c.offerCommand("go", append([]string{"run", "./internal/cmd/publisher", "vet", "origin/" + branch}, moduleArgs...)...)
+		if err != nil {
+			return err
+		}
+
+		// merge-loop and get the commit hash
+		printLine(c.eff, "Merge the PR if it passes checks\n")
+		err = c.offerCommand("gh", "pr", "merge", "origin/"+branch, "--merge")
+		if err != nil {
+			return err
+		}
+		// TODO Parse stdout to get the merge commit, maybe rewriting the command above
+		var commit string
+
+		// tag-loop
+		printLine(c.eff, "Create draft GitHub releases\n")
+		err = c.offerCommand("go", append([]string{"run", "./internal/cmd/publisher", "tag", commit}, moduleArgs...)...)
+		if err != nil {
+			return err
+		}
+
+		// mark tag as ready or skip
+		printLine(c.eff, "Mark the draft releases as ready for review\n")
+		// TODO
+	}
+	return nil
+}
+
+func (c *stewardApp) findReleases() (_ [][]pure.VersionedModule, retErr error) {
+	if err := c.fetchOrigin(); err != nil {
+		return nil, err
 	}
 	w, err := c.createWorktree("origin/main")
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer func() {
 		retErr = errors.Join(retErr, w.cleanup())
@@ -201,7 +259,7 @@ func (c *stewardApp) run() (retErr error) {
 
 	contribModules, err := listContribModules(c.eff, w.worktreeRoot)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	modules := append([]pure.Module{pure.SDKModule()}, contribModules...)
 
@@ -211,7 +269,7 @@ func (c *stewardApp) run() (retErr error) {
 	for _, module := range modules {
 		tags, err := w.listTags(module.TagPattern())
 		if err != nil {
-			return err
+			return nil, err
 		}
 		latestVersion := pure.LatestReleasedVersion(tags, module.TagPrefix())
 		ref := "HEAD"
@@ -226,7 +284,7 @@ func (c *stewardApp) run() (retErr error) {
 		})
 		changed, err := w.hasCommits(ref, pathspecs...)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if !changed {
 			continue
@@ -234,7 +292,7 @@ func (c *stewardApp) run() (retErr error) {
 
 		nextVersion, err := c.chooseVersion(w, module, latestVersion, pathspecs)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if nextVersion != nil {
 			toRelease = append(toRelease, pure.VersionedModule{Module: module, Version: *nextVersion})
@@ -242,7 +300,7 @@ func (c *stewardApp) run() (retErr error) {
 		printLine(c.eff, "")
 	}
 	if len(toRelease) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	// 2. COLLECT MODULES THAT DON'T DEPEND ON EACH OTHER INTO BATCHES
@@ -253,76 +311,28 @@ func (c *stewardApp) run() (retErr error) {
 		file := module.Module.GoMod(w.worktreeRoot)
 		contents, err := w.eff.readFile(file)
 		if err != nil {
-			return fmt.Errorf("read %s: %w", file, err)
+			return nil, fmt.Errorf("read %s: %w", file, err)
 		}
 		goMod, err := pure.NewValidatedGoMod(contents, module.Module.ModulePath())
 		if err != nil {
-			return fmt.Errorf("validate %s: %w", file, err)
+			return nil, fmt.Errorf("validate %s: %w", file, err)
 		}
 		goMods = append(goMods, goMod)
 		byPath[goMod.ModulePath] = module
 	}
 	batchedModules, err := pure.SortGoMods(goMods)
 	if err != nil {
-		return fmt.Errorf("sort modules for release: %w", err)
+		return nil, fmt.Errorf("sort modules for release: %w", err)
 	}
-
-	switch {
-	case len(batchedModules) <= 1:
-	default:
-		printLine(c.eff, "Releasing the modules in %d batches:", len(batchedModules))
-		for i, batch := range batchedModules {
-			var releases []pure.VersionedModule
-			for _, module := range batch {
-				releases = append(releases, byPath[module.ModulePath])
-			}
-			printDetail(c.eff, "Batch %d: %s", i+1, pure.FormatVersionedModules(releases))
-		}
-		printDetail(c.eff, "")
-	}
-
-	// 3. STAGE, VET, AND TAG EACH BATCH OF MODULES
-
+	var batches [][]pure.VersionedModule
 	for _, batch := range batchedModules {
 		var releases []pure.VersionedModule
 		for _, module := range batch {
 			releases = append(releases, byPath[module.ModulePath])
 		}
-
-		printLine(c.eff, "Create a release PR\n")
-		branch := pure.ReleaseBranchName(c.eff.today(), c.eff.randomSuffix())
-		err = c.offerCommand(w, "go run ./internal/cmd/publisher stage -branch %s %s", branch, pure.FormatVersionedModules(releases))
-		if err != nil {
-			return err
-		}
-
-		printLine(c.eff, "After you've reviewed the PR and made changes, validate the PR\n")
-		err = c.offerCommand(w, "go run ./internal/cmd/publisher vet origin/%s %s", branch, pure.FormatVersionedModules(releases))
-		if err != nil {
-			return err
-		}
-
-		// merge-loop and get the commit hash
-		printLine(c.eff, "Merge the PR if it passes checks\n")
-		err = c.offerCommand(w, "gh pr merge origin/%s --merge", branch)
-		if err != nil {
-			return err
-		}
-		// TODO Parse stdout to get the merge commit, maybe rewriting the command above
-		var commit string
-
-		// tag-loop
-		printLine(c.eff, "Create draft GitHub releases\n")
-		err = c.offerCommand(w, "go run ./internal/cmd/publisher tag %s %s", commit, pure.FormatVersionedModules(releases))
-		if err != nil {
-			return err
-		}
-
-		// mark tag as ready or skip
-		printLine(c.eff, "Mark the draft releases as ready for review\n")
-		// TODO
+		batches = append(batches, releases)
 	}
-	return nil
+	return batches, nil
 }
 
 func (c *stewardApp) chooseVersion(w *worktree, module pure.Module, latestVersion *pure.Version, pathspecs []string) (*pure.Version, error) {
@@ -374,8 +384,8 @@ func (c *stewardApp) chooseVersion(w *worktree, module pure.Module, latestVersio
 	}
 }
 
-func (c *stewardApp) offerCommand(w *worktree, cmd string, args... string) error {
-	printDetail(c.eff, formatCommand(cmd, args...))
+func (c *stewardApp) offerCommand(name string, args ...string) error {
+	printDetail(c.eff, "%s", formatCommand(name, args...))
 	printLine(c.eff, "\n[Enter] Run the command for me. ")
 	for {
 		answer, err := c.eff.readCharacter()
@@ -384,14 +394,13 @@ func (c *stewardApp) offerCommand(w *worktree, cmd string, args... string) error
 		}
 		switch answer {
 		case '\n':
-			stdout, err := c.eff.runCommand(w.worktreeRoot, cmd, args...)
+			stdout, err := c.eff.runCommand(c.repoRoot, name, args...)
 			if err != nil {
 				printDetail(c.eff, "%v", err)
 				err = nil
 				continue
 			}
-			c.eff.page(stdout)
-			return nil
+			return c.eff.page(stdout)
 		default:
 			printLine(c.eff, "Invalid choice.")
 		}

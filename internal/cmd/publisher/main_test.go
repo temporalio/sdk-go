@@ -215,13 +215,16 @@ func TestFindReleasableModules(t *testing.T) {
 	})
 	eff.input = "mmm"
 	c := stewardApp{app: *a}
-	if err := c.run(); err != nil {
+	batches, err := c.findReleases()
+	if err != nil {
 		t.Fatal(err)
 	}
-	output := eff.output.String()
-	if !strings.Contains(output, "go run ./internal/cmd/publisher stage sdk=0.1.0 contrib/envconfig=0.1.0 contrib/fragments=0.1.0") {
-		t.Fatalf("missing release command for eligible modules:\n%s", output)
+	var releases []pure.VersionedModule
+	for _, batch := range batches {
+		releases = append(releases, batch...)
 	}
+	testEqual(t, pure.FormatVersionedModules(releases), "sdk=0.1.0 contrib/envconfig=0.1.0 contrib/fragments=0.1.0")
+	output := eff.output.String()
 	if strings.Contains(output, "contrib/envconfig/test") || strings.Contains(output, "contrib/test-only") {
 		t.Fatalf("offered a module without a changelog:\n%s", output)
 	}
