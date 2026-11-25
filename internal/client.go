@@ -1382,6 +1382,8 @@ type (
 
 	withStartWorkflowOperationImpl struct {
 		input *ClientExecuteWorkflowInput
+		// idGenerated indicates that StartWorkflowOptions.ID was empty and the SDK generated one.
+		idGenerated bool
 		// flag to ensure the operation is only executed once
 		executed atomic.Bool
 		// doneCh is closed by withStartWorkflowOperationImpl.set() once workflowRun/err is available.
@@ -2023,6 +2025,23 @@ func SetRequestIDOnNexusOperation(opts nexusTemporalOperationOptions, requestID 
 		return
 	}
 	opts.setRequestID(requestID)
+}
+
+// StartWorkflowOptionsFromWithStartOperation is an internal only method returning a pointer to the
+// start options held by a WithStartWorkflowOperation, so Nexus operations can set links and a
+// request ID on the start request of an update-with-start.
+func StartWorkflowOptionsFromWithStartOperation(op WithStartWorkflowOperation) (*StartWorkflowOptions, error) {
+	impl, ok := op.(*withStartWorkflowOperationImpl)
+	if !ok {
+		return nil, fmt.Errorf("%w: startOperation must be created by NewWithStartWorkflowOperation", errInvalidWithStartWorkflowOperation)
+	}
+	if impl.err != nil {
+		return nil, fmt.Errorf("%w: %w", errInvalidWithStartWorkflowOperation, impl.err)
+	}
+	if impl.idGenerated {
+		return nil, fmt.Errorf("%w: StartWorkflowOptions.ID must be set", errInvalidWithStartWorkflowOperation)
+	}
+	return impl.input.Options, nil
 }
 
 // SetOnConflictOptionsOnStartWorkflowOptions is an internal only method for setting conflict
