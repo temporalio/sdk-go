@@ -385,9 +385,11 @@ func (c *stewardApp) chooseVersion(w *worktree, module pure.Module, latestVersio
 }
 
 func (c *stewardApp) offerCommand(name string, args ...string) error {
-	printDetail(c.eff, "%s", formatCommand(name, args...))
-	printLine(c.eff, "\n[Enter] Run the command for me. ")
+	heading := "Next command:"
 	for {
+		printLine(c.eff, "%s", heading)
+		printDetail(c.eff, "%s", formatCommand(name, args...))
+		printLine(c.eff, "\nPress Enter to run.")
 		answer, err := c.eff.readCharacter()
 		if err != nil {
 			return err
@@ -397,12 +399,13 @@ func (c *stewardApp) offerCommand(name string, args ...string) error {
 			stdout, err := c.eff.runCommand(c.repoRoot, name, args...)
 			if err != nil {
 				printDetail(c.eff, "%v", err)
-				err = nil
+				printLine(c.eff, "")
+				heading = "Retry command:"
 				continue
 			}
 			return c.eff.page(stdout)
 		default:
-			printLine(c.eff, "Invalid choice.")
+			printLine(c.eff, "Press Enter when you're ready.")
 		}
 	}
 }

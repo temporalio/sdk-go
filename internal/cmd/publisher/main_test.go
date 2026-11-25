@@ -236,6 +236,41 @@ func TestFindReleasableModules(t *testing.T) {
 	}
 }
 
+func TestStewardRetryPrompt(t *testing.T) {
+	attempts := 0
+	a, eff := newMockApp(app{}, nil, func(cmd string) (string, error) {
+		testEqual(t, cmd, "go run ./internal/cmd/publisher vet origin/release sdk=1.48.0")
+		attempts++
+		if attempts == 1 {
+			return "", errors.New("validation failed")
+		}
+		return "", nil
+	})
+	eff.input = "\n\n"
+	c := stewardApp{app: *a}
+	if err := c.offerCommand("go", "run", "./internal/cmd/publisher", "vet", "origin/release", "sdk=1.48.0"); err != nil {
+		t.Fatal(err)
+	}
+	if attempts != 2 {
+		t.Fatalf("expected two command attempts, got %d", attempts)
+	}
+	testEqual(t, eff.output.String(), `
+		Next command:
+		      go run ./internal/cmd/publisher vet origin/release sdk=1.48.0
+
+		Press Enter to run.
+		      validation failed
+
+		Retry command:
+		      go run ./internal/cmd/publisher vet origin/release sdk=1.48.0
+
+		Press Enter to run.
+	`)
+	if eff.input != "" {
+		t.Fatalf("retry did not consume its own Enter: unused input %q", eff.input)
+	}
+}
+
 // -- STAGE -------------------------------------------------
 
 func TestStage(t *testing.T) {
