@@ -80,8 +80,10 @@ func (eff *mockEffects) page(string) error {
 	return nil
 }
 
-func (eff *mockEffects) runInteractiveCommand(string, string, ...string) error {
-	return nil
+func (eff *mockEffects) runInteractiveCommand(root, name string, args ...string) error {
+	output, err := eff.runCommand(root, name, args...)
+	eff.out("%s", output)
+	return err
 }
 
 func (eff *mockEffects) readCharacter() (byte, error) {

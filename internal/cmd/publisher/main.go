@@ -2,19 +2,22 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"os"
 	"runtime"
+	"strings"
+	"time"
 
 	"go.temporal.io/sdk/internal/cmd/publisher/pure"
 )
 
-const usage = `usage: publisher (gate|find|stage|vet|tag)
+const usage = `usage: publisher (gate|steward|stage|vet|tag)
 
   gate   Verify changed modules have changelog fragments in a non-release PR
-  find   Find modules that changed since their last release
+  steward Guide module releases from selection through publication
   stage  Create a draft release PR
   vet    Find mistakes in a release commit
   tag    Create draft GitHub releases
@@ -22,7 +25,7 @@ const usage = `usage: publisher (gate|find|stage|vet|tag)
 Windows is not supported. Use Linux, macOS, or WSL.
 The command assumes you have cargo and gh on your PATH.
 
-The command guides you through the release process. Start with "publisher find".
+The command guides you through the release process. Start with "publisher steward".
 If anything goes wrong, publisher prints an audit log with the commands it ran`
 
 type command interface {
@@ -81,8 +84,8 @@ func newCommand(eff effects, args []string) (command, error) {
 	switch name {
 	case "gate":
 		return newGateApp(eff, args[1:])
-	case "find":
-		return newFindApp(eff, args[1:])
+	case "steward":
+		return newStewardApp(eff, args[1:])
 	case "stage":
 		return newStageApp(eff, args[1:])
 	case "vet":
@@ -163,15 +166,15 @@ func (c *gateApp) run() error {
 	return nil
 }
 
-// FIND
+// STEWARD
 
-type findApp struct {
+type stewardApp struct {
 	app
 }
 
-func newFindApp(eff effects, args []string) (*findApp, error) {
-	const usage = "usage: publisher find"
-	flags := flag.NewFlagSet("publisher find", flag.ContinueOnError)
+func newStewardApp(eff effects, args []string) (*stewardApp, error) {
+	const usage = "usage: publisher steward"
+	flags := flag.NewFlagSet("publisher steward", flag.ContinueOnError)
 	flags.SetOutput(errorWriter{eff: eff})
 	flags.Usage = func() { eff.err("%s\n", usage) }
 	if err := flags.Parse(args); err != nil {
@@ -184,16 +187,90 @@ func newFindApp(eff effects, args []string) (*findApp, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &findApp{app: app{repo: r}}, nil
+	return &stewardApp{app: app{repo: r}}, nil
 }
 
-func (c *findApp) run() (retErr error) {
-	if err := c.fetchOrigin(); err != nil {
+func (c *stewardApp) run() error {
+	batches, err := c.findReleases()
+	if err != nil {
 		return err
+	}
+
+	switch {
+	case len(batches) <= 1:
+	default:
+		printLine(c.eff, "Releasing the modules in %d batches:", len(batches))
+		for i, releases := range batches {
+			printDetail(c.eff, "Batch %d: %s", i+1, pure.FormatVersionedModules(releases))
+		}
+		printDetail(c.eff, "")
+	}
+
+	const stepsPerBatch = 5
+	totalSteps := stepsPerBatch * len(batches)
+	step := 0
+	for _, releases := range batches {
+		var moduleArgs []string
+		for _, release := range releases {
+			moduleArgs = append(moduleArgs, release.Module.Name()+"="+release.Version.String())
+		}
+
+		step++
+		printLine(c.eff, "[%d/%d] Create a release PR\n", step, totalSteps)
+		branch := pure.ReleaseBranchName(c.eff.today(), c.eff.randomSuffix())
+		err = c.waitForEnter("go", append([]string{"run", "./internal/cmd/publisher", "stage", "-branch", branch}, moduleArgs...)...)
+		if err != nil {
+			return err
+		}
+
+		step++
+		printLine(c.eff, "[%d/%d] Check the PR for common mistakes\n", step, totalSteps)
+		err = c.waitForEnter("go", append([]string{"run", "./internal/cmd/publisher", "vet", "origin/" + branch}, moduleArgs...)...)
+		if err != nil {
+			return err
+		}
+
+		step++
+		printLine(c.eff, "[%d/%d] Squash merge the PR once it's been approved\n", step, totalSteps)
+		err = c.waitForEnter("gh", "pr", "merge", branch, "--squash")
+		if err != nil {
+			return err
+		}
+
+		printLine(c.eff, "Fetching the merge commit...")
+		commit := c.waitForMerge(branch)
+		printLine(c.eff, "Done.\n")
+
+		step++
+		printLine(c.eff, "[%d/%d] Create draft GitHub releases\n", step, totalSteps)
+		err = c.waitForEnter("go", append([]string{"run", "./internal/cmd/publisher", "tag", commit}, moduleArgs...)...)
+		if err != nil {
+			return err
+		}
+
+		step++
+		printLine(c.eff, "[%d/%d] Review the draft releases, then publish them\n", step, totalSteps)
+		for _, release := range releases {
+			err = c.waitForEnter("gh", "release", "edit", release.Module.Tag(release.Version),
+				"--draft=false", fmt.Sprintf("--latest=%t", release.Module.MarkLatest()))
+			if err != nil {
+				return err
+			}
+		}
+		printLine(c.eff, "Waiting for released modules to be available...")
+		c.waitForPublication(releases)
+		printLine(c.eff, "Batch published.\n")
+	}
+	return nil
+}
+
+func (c *stewardApp) findReleases() (_ [][]pure.VersionedModule, retErr error) {
+	if err := c.fetchOrigin(); err != nil {
+		return nil, err
 	}
 	w, err := c.createWorktree("origin/main")
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer func() {
 		retErr = errors.Join(retErr, w.cleanup())
@@ -201,15 +278,17 @@ func (c *findApp) run() (retErr error) {
 
 	contribModules, err := listContribModules(c.eff, w.worktreeRoot)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	modules := append([]pure.Module{pure.SDKModule()}, contribModules...)
+
+	// 1. FIND MODULES TO RELEASE
 
 	var toRelease []pure.VersionedModule
 	for _, module := range modules {
 		tags, err := w.listTags(module.TagPattern())
 		if err != nil {
-			return err
+			return nil, err
 		}
 		latestVersion := pure.LatestReleasedVersion(tags, module.TagPrefix())
 		ref := "HEAD"
@@ -224,7 +303,7 @@ func (c *findApp) run() (retErr error) {
 		})
 		changed, err := w.hasCommits(ref, pathspecs...)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if !changed {
 			continue
@@ -232,7 +311,7 @@ func (c *findApp) run() (retErr error) {
 
 		nextVersion, err := c.chooseVersion(w, module, latestVersion, pathspecs)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if nextVersion != nil {
 			toRelease = append(toRelease, pure.VersionedModule{Module: module, Version: *nextVersion})
@@ -240,8 +319,10 @@ func (c *findApp) run() (retErr error) {
 		printLine(c.eff, "")
 	}
 	if len(toRelease) == 0 {
-		return nil
+		return nil, nil
 	}
+
+	// 2. COLLECT MODULES THAT DON'T DEPEND ON EACH OTHER INTO BATCHES
 
 	var goMods []pure.GoMod
 	byPath := make(map[string]pure.VersionedModule, len(toRelease))
@@ -249,37 +330,31 @@ func (c *findApp) run() (retErr error) {
 		file := module.Module.GoMod(w.worktreeRoot)
 		contents, err := w.eff.readFile(file)
 		if err != nil {
-			return fmt.Errorf("read %s: %w", file, err)
+			return nil, fmt.Errorf("read %s: %w", file, err)
 		}
 		goMod, err := pure.NewValidatedGoMod(contents, module.Module.ModulePath())
 		if err != nil {
-			return fmt.Errorf("validate %s: %w", file, err)
+			return nil, fmt.Errorf("validate %s: %w", file, err)
 		}
 		goMods = append(goMods, goMod)
 		byPath[goMod.ModulePath] = module
 	}
-
-	batches, err := pure.SortGoMods(goMods)
+	batchedModules, err := pure.SortGoMods(goMods)
 	if err != nil {
-		return fmt.Errorf("sort modules for release: %w", err)
+		return nil, fmt.Errorf("sort modules for release: %w", err)
 	}
-	switch {
-	case len(batches) == 1:
-		printLine(c.eff, "To create a release PR, run the command:")
-	default:
-		printLine(c.eff, "I found dependencies between the modules. Release them in the following order:")
-	}
-	for _, batch := range batches {
+	var batches [][]pure.VersionedModule
+	for _, batch := range batchedModules {
 		var releases []pure.VersionedModule
 		for _, module := range batch {
 			releases = append(releases, byPath[module.ModulePath])
 		}
-		printDetail(c.eff, "go run ./internal/cmd/publisher stage %s", pure.FormatVersionedModules(releases))
+		batches = append(batches, releases)
 	}
-	return nil
+	return batches, nil
 }
 
-func (c *findApp) chooseVersion(w *worktree, module pure.Module, latestVersion *pure.Version, pathspecs []string) (*pure.Version, error) {
+func (c *stewardApp) chooseVersion(w *worktree, module pure.Module, latestVersion *pure.Version, pathspecs []string) (*pure.Version, error) {
 	var latest pure.Version
 	var baseline string
 	if latestVersion != nil {
@@ -325,6 +400,78 @@ func (c *findApp) chooseVersion(w *worktree, module pure.Module, latestVersion *
 		default:
 			printLine(c.eff, "Invalid choice; enter m, p, c, d, or s.")
 		}
+	}
+}
+
+func (c *stewardApp) waitForEnter(name string, args ...string) error {
+	heading := "Next command:"
+	for {
+		printLine(c.eff, "%s", heading)
+		printDetail(c.eff, "%s", formatCommand(name, args...))
+		printLine(c.eff, "\nPress Enter to run.")
+		answer, err := c.eff.readCharacter()
+		if err != nil {
+			return err
+		}
+		switch answer {
+		case '\n':
+			printLine(c.eff, "\n╔═══ Subcommand output ═════════════════════")
+			printLine(c.eff, "$ %s", formatCommand(name, args...))
+			err := c.eff.runInteractiveCommand(c.repoRoot, name, args...)
+			if err != nil {
+				printLine(c.eff, "\n║═══ Subcommand failed ═════════════════════")
+				for line := range strings.SplitSeq(err.Error(), "\n") {
+					printLine(c.eff, "║ %s", line)
+				}
+				printLine(c.eff, "╚═══════════════════════════════════════════")
+				printLine(c.eff, "")
+				heading = "Retry command:"
+				continue
+			}
+			printLine(c.eff, "\n╚═══ Subcommand succeeded ══════════════════\n")
+			return nil
+		default:
+			printLine(c.eff, "Press Enter when you're ready.")
+		}
+	}
+}
+
+func (c *stewardApp) waitForMerge(branch string) string {
+	for delay := time.Second; ; delay = min(2*delay, 30*time.Second) {
+		output, err := c.eff.runCommand(c.repoRoot, "gh", "pr", "view", branch, "--json", "state,mergeCommit")
+		var pr struct {
+			State       string
+			MergeCommit struct {
+				OID string `json:"oid"`
+			}
+		}
+		if err == nil {
+			err = json.Unmarshal([]byte(output), &pr)
+		}
+		if err != nil {
+			printLine(c.eff, "Could not read PR status for %s: %v. Retrying in %s.", branch, err, delay)
+		} else if commit := strings.TrimSpace(pr.MergeCommit.OID); pr.State == "MERGED" && commit != "" {
+			return commit
+		} else {
+			printLine(c.eff, "PR %s has no confirmed merge commit yet (state: %q). Checking again in %s.", branch, pr.State, delay)
+		}
+		time.Sleep(delay)
+	}
+}
+
+func (c *stewardApp) waitForPublication(releases []pure.VersionedModule) {
+	args := []string{"list", "-m"}
+	for _, release := range releases {
+		args = append(args, release.Module.ModulePath()+"@v"+release.Version.String())
+	}
+	printDetail(c.eff, "%s", formatCommand("go", args...))
+	for delay := time.Second; ; delay = min(2*delay, 30*time.Second) {
+		if _, err := c.eff.runCommand(c.repoRoot, "go", args...); err == nil {
+			return
+		} else {
+			printLine(c.eff, "Released modules are not available yet: %v. Retrying in %s.", err, delay)
+		}
+		time.Sleep(delay)
 	}
 }
 
@@ -414,23 +561,8 @@ func (c *stageApp) run() (retErr error) {
 	if err != nil {
 		return err
 	}
-	prURL, err := worktree.openDraftPR(c.modules)
-	if err != nil {
-		return err
-	}
-
-	printLine(c.eff, "\nNext steps:")
-	printLine(c.eff, "1. Vet the release branch:")
-	printDetail(c.eff, "go run ./internal/cmd/publisher vet origin/%s %s", branchName, pure.FormatVersionedModules(c.modules))
-	printLine(c.eff, "2. Fix errors and mark the PR as \"ready for review\".")
-	printLine(c.eff, "3. Merge the PR and copy the commit hash.")
-	printLine(c.eff, "4. Create draft github releases:")
-	printDetail(c.eff, "go run ./internal/cmd/publisher tag <YOUR_COMMIT_HASH> %s", pure.FormatVersionedModules(c.modules))
-
-	printLine(c.eff, "\nAlternatively, you can close the PR and delete the branch:")
-	printDetail(c.eff, formatCommand("gh", "pr", "close", prURL, "--delete-branch"))
-
-	return nil
+	_, err = worktree.openDraftPR(c.modules)
+	return err
 }
 
 func (c *stageApp) goReleaseFiles(w *worktree, module pure.VersionedModule) error {
@@ -607,22 +739,11 @@ func (c *tagApp) run() (retErr error) {
 	}
 
 	printLine(c.eff, "[4/4] Create draft release(s)")
-	releaseCount := 0
-	defer func() {
-		if releaseCount == 0 {
-			return
-		}
-		printLine(c.eff, "\nTo roll back successful draft releases, run:")
-		for _, module := range c.modules[:releaseCount] {
-			printDetail(c.eff, formatCommand("gh", "release", "delete", module.Module.Tag(module.Version), "--yes"))
-		}
-	}()
 	for i, module := range c.modules {
 		_, err = worktree.createDraftRelease(module, commit, releaseNotes[i])
 		if err != nil {
 			return err
 		}
-		releaseCount++
 	}
 	return nil
 }

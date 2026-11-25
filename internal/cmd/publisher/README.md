@@ -2,7 +2,7 @@
 
 The package is organized as follows:
 
-- `main.go` contains the entry point and the `gate`, `find`, `stage`, `vet`, and `tag` commands.
+- `main.go` contains the entry point and the `gate`, `steward`, `stage`, `vet`, and `tag` commands.
 - `main_test.go` shows you how each command affects the filesystem and what commands it runs.
 - `repo.go` owns operations on the original git checkout.
 - `worktree.go` owns operations on the git worktree created by most commands.
