@@ -18,6 +18,7 @@ import (
 	enumspb "go.temporal.io/api/enums/v1"
 	failurepb "go.temporal.io/api/failure/v1"
 	nexuspb "go.temporal.io/api/nexus/v1"
+	"go.temporal.io/api/proxy"
 	apinexus "go.temporal.io/api/temporalnexus"
 	"go.temporal.io/api/workflowservice/v1"
 	"google.golang.org/grpc/codes"
@@ -25,6 +26,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 
 	"go.temporal.io/sdk/converter"
+	commonconverter "go.temporal.io/sdk/internal/common/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/log"
 )
@@ -676,8 +678,31 @@ type payloadSerializer struct {
 	payload   *common.Payload
 }
 
+// systemPayloadErrorToHandlerError converts an invalid system envelope error from payload visitation to a Nexus
+// handler error. Only an unknown message type is retryable, because a worker with a newer API version can know it.
+func systemPayloadErrorToHandlerError(err *proxy.SystemPayloadError) *nexus.HandlerError {
+	if err.Reason == proxy.SystemPayloadErrorUnknownMessageType {
+		return &nexus.HandlerError{
+			Type:          nexus.HandlerErrorTypeInternal,
+			Message:       fmt.Sprintf("unrecognized system Nexus envelope message type %q", err.MessageType),
+			Cause:         err,
+			RetryBehavior: nexus.HandlerErrorRetryBehaviorRetryable,
+		}
+	}
+	return &nexus.HandlerError{
+		Type:    nexus.HandlerErrorTypeBadRequest,
+		Message: "invalid system Nexus operation input",
+		Cause:   err,
+	}
+}
+
 func (p *payloadSerializer) Deserialize(_ *nexus.Content, v any) error {
-	err := p.converter.FromPayload(p.payload, v)
+	dc := p.converter
+	// The poller validates the envelope during payload visitation, before the handler reads the input.
+	if string(p.payload.GetMetadata()[proxy.SystemPayloadMetadataKey]) == "true" {
+		dc = commonconverter.WithDataConverterSystemNexusContext(systemNexusDataConverter, dc)
+	}
+	err := dc.FromPayload(p.payload, v)
 	if err == nil {
 		return nil
 	}
