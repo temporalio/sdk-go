@@ -38,6 +38,7 @@ type modulePathspecOptions struct {
 	includeGoMod  bool
 	includeGoSum  bool
 	includeReadme bool
+	includeTests  bool
 }
 
 func modulePathspecs(module pure.Module, contribModules []pure.Module, opts modulePathspecOptions) []string {
@@ -55,6 +56,13 @@ func modulePathspecs(module pure.Module, contribModules []pure.Module, opts modu
 	}
 	if !opts.includeReadme {
 		pathspecs = append(pathspecs, ":(exclude,glob)"+path.Join(dir, "**", "README.md"))
+	}
+	if !opts.includeTests {
+		pathspecs = append(pathspecs,
+			":(exclude,glob)"+path.Join(dir, "**", "*_test.go"),
+			":(exclude,glob)"+path.Join(dir, "**", "test", "**"),
+			":(exclude,glob)"+path.Join(dir, "**", "testdata", "**"),
+		)
 	}
 	// Nested contrib modules are released independently.
 	for _, nested := range contribModules {
