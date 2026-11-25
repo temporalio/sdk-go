@@ -995,10 +995,12 @@ processWorkflowLoop:
 	for {
 		startTime := time.Now()
 		var heartbeatNotification <-chan struct{}
-		// Query marks a standalone query task, which cannot heartbeat; Queries can accompany a normal WFT.
+		// Register this WFT for server-requested Workflow Heartbeat Notifications (WHN).
+		// Standalone Query tasks cannot heartbeat; normal WFTs carrying Queries remain eligible.
 		if workflowTask.task.Query == nil {
-			heartbeatNotification, unregisterHeartbeat = wth.workflowTaskHeartbeatNotifications.register(workflowTask.task.TaskToken)
+			heartbeatNotification, unregisterHeartbeat = wth.workflowTaskHeartbeatNotifications.register(workflowTask.task.TaskToken, workflowTask.task.WorkflowExecution)
 		}
+		// Process all history and messages before acting on a queued notification, including after a heartbeat.
 		response, err = workflowContext.ProcessWorkflowTask(workflowTask)
 		if err == nil && response == nil {
 		waitLocalActivityLoop:

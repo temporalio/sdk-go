@@ -33,7 +33,7 @@ require (
 	github.com/robfig/cron v1.2.0 // indirect
 	github.com/stretchr/objx v0.5.3 // indirect
 	go.opentelemetry.io/otel/metric v1.47.0 // indirect
-	go.temporal.io/api v1.64.3
+	go.temporal.io/api v1.64.4-0.20261117233744-5f6f53d07565
 	golang.org/x/net v0.58.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/text v0.41.0 // indirect

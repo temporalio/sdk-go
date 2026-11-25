@@ -125,9 +125,6 @@ func (m *heartbeatManager) registerWorker(
 	if hw.started.CompareAndSwap(false, true) {
 		hw.workerCommandsSupported = nsData.capabilities.GetWorkerCommands()
 		hw.workerPollCompleteOnShutdown = nsData.capabilities.GetWorkerPollCompleteOnShutdown()
-		if hw.workflowTaskHeartbeatNotifications != nil {
-			hw.workflowTaskHeartbeatNotifications.commandWorkerEnabled.Store(hw.workerCommandsSupported)
-		}
 		go hw.run()
 	}
 
@@ -205,10 +202,6 @@ func (hw *sharedNamespaceWorker) controlTaskQueue() string {
 
 func (hw *sharedNamespaceWorker) run() {
 	defer close(hw.stoppedC)
-	if hw.workflowTaskHeartbeatNotifications != nil {
-		// Stop advertising WHN if this worker exits on Unimplemented while workflow workers keep polling.
-		defer hw.workflowTaskHeartbeatNotifications.commandWorkerEnabled.Store(false)
-	}
 
 	if hw.workerCommandsSupported {
 		// Use a separate poll context so the server can finish in-flight polls after heartbeats stop.
@@ -424,11 +417,11 @@ func (hw *sharedNamespaceWorker) handleWorkerCommandTask(task *workflowservice.P
 	results := make([]*workerpb.WorkerCommandResult, 0, len(execReq.GetCommands()))
 	for _, command := range execReq.GetCommands() {
 		switch cmd := command.GetType().(type) {
-		case *workerpb.WorkerCommand_WorkflowTaskHeartbeatNotification:
-			outcome := hw.workflowTaskHeartbeatNotifications.notify(cmd.WorkflowTaskHeartbeatNotification.GetTaskToken())
+		case *workerpb.WorkerCommand_WorkflowHeartbeatNotification:
+			result := hw.workflowTaskHeartbeatNotifications.notify(cmd.WorkflowHeartbeatNotification.GetTaskToken(), cmd.WorkflowHeartbeatNotification.GetExecution())
 			results = append(results, &workerpb.WorkerCommandResult{
-				Type: &workerpb.WorkerCommandResult_WorkflowTaskHeartbeatNotification{
-					WorkflowTaskHeartbeatNotification: &workerpb.WorkflowTaskHeartbeatNotificationResult{Outcome: outcome},
+				Type: &workerpb.WorkerCommandResult_WorkflowHeartbeatNotification{
+					WorkflowHeartbeatNotification: result,
 				},
 			})
 		case *workerpb.WorkerCommand_CancelActivity:

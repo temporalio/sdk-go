@@ -21,6 +21,7 @@ import (
 	workerpb "go.temporal.io/api/worker/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
+	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
 	ilog "go.temporal.io/sdk/internal/log"
 	"google.golang.org/grpc"
@@ -30,15 +31,20 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 )
 
-func TestWorkflowTaskHeartbeatNotificationRouting(t *testing.T) {
+func TestWorkflowHeartbeatNotificationRouting(t *testing.T) {
 	r := &workflowTaskHeartbeatNotifications{}
-	first, retireFirst := r.register([]byte("first"))
-	second, retireSecond := r.register([]byte("second"))
+	execution := &commonpb.WorkflowExecution{WorkflowId: "workflow", RunId: "run"}
+	first, retireFirst := r.register([]byte("first"), execution)
+	second, retireSecond := r.register([]byte("second"), &commonpb.WorkflowExecution{WorkflowId: "other-workflow", RunId: "other-run"})
 	defer retireSecond()
-	require.Equal(t, workerpb.WorkflowTaskHeartbeatNotificationResult_OUTCOME_TASK_TOKEN_MISMATCH, r.notify([]byte("unknown")))
-	require.Equal(t, workerpb.WorkflowTaskHeartbeatNotificationResult_OUTCOME_HANDLED, r.notify([]byte("first")))
+	mismatch := r.notify([]byte("unknown"), execution)
+	require.Equal(t, workerpb.WorkflowHeartbeatNotificationResult_OUTCOME_TASK_TOKEN_MISMATCH, mismatch.Outcome)
+	require.Equal(t, []byte("first"), mismatch.CurrentTaskToken)
+	otherRun := &commonpb.WorkflowExecution{WorkflowId: execution.WorkflowId, RunId: "another-run"}
+	require.Equal(t, &workerpb.WorkflowHeartbeatNotificationResult{Outcome: workerpb.WorkflowHeartbeatNotificationResult_OUTCOME_TASK_TOKEN_MISMATCH}, r.notify([]byte("first"), otherRun))
+	require.Equal(t, workerpb.WorkflowHeartbeatNotificationResult_OUTCOME_ACCEPTED, r.notify([]byte("first"), execution).GetOutcome())
 	<-first
-	require.Equal(t, workerpb.WorkflowTaskHeartbeatNotificationResult_OUTCOME_ALREADY_RECEIVED, r.notify([]byte("first")))
+	require.Equal(t, workerpb.WorkflowHeartbeatNotificationResult_OUTCOME_ACCEPTED, r.notify([]byte("first"), execution).GetOutcome())
 	select {
 	case <-first:
 		t.Fatal("duplicate notification was delivered")
@@ -47,34 +53,37 @@ func TestWorkflowTaskHeartbeatNotificationRouting(t *testing.T) {
 	default:
 	}
 	retireFirst()
-	require.Equal(t, workerpb.WorkflowTaskHeartbeatNotificationResult_OUTCOME_TASK_TOKEN_MISMATCH, r.notify([]byte("first")))
-	replacement, retireReplacement := r.register([]byte("first"))
+	require.Equal(t, workerpb.WorkflowHeartbeatNotificationResult_OUTCOME_TASK_TOKEN_MISMATCH, r.notify([]byte("first"), execution).GetOutcome())
+	replacement, retireReplacement := r.register([]byte("replacement"), execution)
 	defer retireReplacement()
 	retireFirst()
-	require.Equal(t, workerpb.WorkflowTaskHeartbeatNotificationResult_OUTCOME_HANDLED, r.notify([]byte("first")))
+	require.Equal(t, []byte("replacement"), r.notify([]byte("first"), execution).CurrentTaskToken)
+	require.Equal(t, workerpb.WorkflowHeartbeatNotificationResult_OUTCOME_ACCEPTED, r.notify([]byte("replacement"), execution).GetOutcome())
 	<-replacement
 	retireReplacement()
 	retireReplacement()
 	retireSecond()
-	require.Equal(t, workerpb.WorkflowTaskHeartbeatNotificationResult_OUTCOME_NO_WORKFLOW_TASK, r.notify([]byte("first")))
+	require.Equal(t, workerpb.WorkflowHeartbeatNotificationResult_OUTCOME_TASK_TOKEN_MISMATCH, r.notify([]byte("first"), execution).GetOutcome())
 }
 
-func TestWorkflowTaskHeartbeatNotificationRetirementRace(t *testing.T) {
+func TestWorkflowHeartbeatNotificationRetirementRace(t *testing.T) {
 	r := &workflowTaskHeartbeatNotifications{}
+	execution := &commonpb.WorkflowExecution{WorkflowId: "workflow", RunId: "run"}
 	for range 100 {
-		_, retire := r.register([]byte("task"))
+		_, retire := r.register([]byte("task"), execution)
 		var wg sync.WaitGroup
-		wg.Go(func() { r.notify([]byte("task")) })
+		wg.Go(func() { r.notify([]byte("task"), execution).GetOutcome() })
 		wg.Go(retire)
 		wg.Wait()
-		require.Equal(t, workerpb.WorkflowTaskHeartbeatNotificationResult_OUTCOME_NO_WORKFLOW_TASK, r.notify([]byte("task")))
+		require.Equal(t, workerpb.WorkflowHeartbeatNotificationResult_OUTCOME_TASK_TOKEN_MISMATCH, r.notify([]byte("task"), execution).GetOutcome())
 	}
 }
 
-func TestWorkerCommandWorkflowTaskHeartbeatNotificationBatch(t *testing.T) {
+func TestWorkerCommandWorkflowHeartbeatNotificationBatch(t *testing.T) {
 	service := workflowservicemock.NewMockWorkflowServiceClient(gomock.NewController(t))
 	r := &workflowTaskHeartbeatNotifications{}
-	ready, retire := r.register([]byte("active"))
+	execution := &commonpb.WorkflowExecution{WorkflowId: "workflow", RunId: "run"}
+	ready, retire := r.register([]byte("active"), execution)
 	defer retire()
 	cancellations := newActivityCancellationCallbacks()
 	activityCtx, cancel := context.WithCancelCause(t.Context())
@@ -83,8 +92,8 @@ func TestWorkerCommandWorkflowTaskHeartbeatNotificationBatch(t *testing.T) {
 	defer retireActivity()
 	commands := []*workerpb.WorkerCommand{}
 	for _, token := range [][]byte{[]byte("active"), []byte("active"), []byte("missing"), nil} {
-		commands = append(commands, &workerpb.WorkerCommand{Type: &workerpb.WorkerCommand_WorkflowTaskHeartbeatNotification{
-			WorkflowTaskHeartbeatNotification: &workerpb.WorkflowTaskHeartbeatNotificationCommand{TaskToken: token},
+		commands = append(commands, &workerpb.WorkerCommand{Type: &workerpb.WorkerCommand_WorkflowHeartbeatNotification{
+			WorkflowHeartbeatNotification: &workerpb.WorkflowHeartbeatNotificationCommand{TaskToken: token, Execution: execution},
 		}})
 	}
 	commands = append(commands, &workerpb.WorkerCommand{Type: &workerpb.WorkerCommand_CancelActivity{
@@ -96,13 +105,16 @@ func TestWorkerCommandWorkflowTaskHeartbeatNotificationBatch(t *testing.T) {
 			var response workerservicepb.ExecuteCommandsResponse
 			require.NoError(t, proto.Unmarshal(req.Response.GetStartOperation().GetSyncSuccess().GetPayload().GetData(), &response))
 			require.Len(t, response.Results, len(commands))
-			for i, outcome := range []workerpb.WorkflowTaskHeartbeatNotificationResult_Outcome{
-				workerpb.WorkflowTaskHeartbeatNotificationResult_OUTCOME_HANDLED,
-				workerpb.WorkflowTaskHeartbeatNotificationResult_OUTCOME_ALREADY_RECEIVED,
-				workerpb.WorkflowTaskHeartbeatNotificationResult_OUTCOME_TASK_TOKEN_MISMATCH,
-				workerpb.WorkflowTaskHeartbeatNotificationResult_OUTCOME_TASK_TOKEN_MISMATCH,
+			for i, outcome := range []workerpb.WorkflowHeartbeatNotificationResult_Outcome{
+				workerpb.WorkflowHeartbeatNotificationResult_OUTCOME_ACCEPTED,
+				workerpb.WorkflowHeartbeatNotificationResult_OUTCOME_ACCEPTED,
+				workerpb.WorkflowHeartbeatNotificationResult_OUTCOME_TASK_TOKEN_MISMATCH,
+				workerpb.WorkflowHeartbeatNotificationResult_OUTCOME_TASK_TOKEN_MISMATCH,
 			} {
-				require.Equal(t, outcome, response.Results[i].GetWorkflowTaskHeartbeatNotification().GetOutcome())
+				require.Equal(t, outcome, response.Results[i].GetWorkflowHeartbeatNotification().GetOutcome())
+				if i >= 2 {
+					require.Equal(t, []byte("active"), response.Results[i].GetWorkflowHeartbeatNotification().CurrentTaskToken)
+				}
 			}
 			require.NotNil(t, response.Results[4].GetCancelActivity())
 			require.Nil(t, response.Results[5].GetType())
@@ -128,7 +140,7 @@ func TestWorkerCommandWorkflowTaskHeartbeatNotificationBatch(t *testing.T) {
 	require.True(t, IsCanceledError(context.Cause(activityCtx)))
 }
 
-func TestWorkflowTaskHeartbeatNotificationCommandWorkerExit(t *testing.T) {
+func TestWorkflowHeartbeatNotificationCommandWorkerExit(t *testing.T) {
 	for _, scenario := range []struct {
 		name           string
 		heartbeatError error
@@ -151,9 +163,8 @@ func TestWorkflowTaskHeartbeatNotificationCommandWorkerExit(t *testing.T) {
 				worker := client.heartbeatManager.sharedNamespaceWorkerFor(client.namespace)
 				worker.callbacks["worker"] = func() *workerpb.WorkerHeartbeat { return &workerpb.WorkerHeartbeat{} }
 				worker.workerCommandsSupported = true
-				worker.workflowTaskHeartbeatNotifications.commandWorkerEnabled.Store(true)
 				worker.started.Store(true)
-				processor := &workflowTaskProcessor{workflowTaskHeartbeatNotifications: worker.workflowTaskHeartbeatNotifications}
+				processor := &workflowTaskProcessor{basePoller: basePoller{namespaceWorker: worker}}
 				processor.capabilities = &workflowservice.GetSystemInfoResponse_Capabilities{}
 				poller := processor.createPoller(NonSticky, nil)
 				go worker.run()
@@ -161,16 +172,16 @@ func TestWorkflowTaskHeartbeatNotificationCommandWorkerExit(t *testing.T) {
 				if status.Code(scenario.heartbeatError) == codes.Unimplemented {
 					<-worker.stoppedC
 				} else {
-					require.True(t, poller.getNextPollRequest().SupportsWorkflowTaskHeartbeatNotification)
+					require.True(t, poller.getNextPollRequest().GetCapabilities().GetSupportsWorkflowHeartbeatNotification())
 				}
 				worker.stop()
-				require.False(t, poller.getNextPollRequest().SupportsWorkflowTaskHeartbeatNotification)
+				require.False(t, poller.getNextPollRequest().GetCapabilities().GetSupportsWorkflowHeartbeatNotification())
 			})
 		})
 	}
 }
 
-func TestWorkflowTaskHeartbeatNotificationAvailability(t *testing.T) {
+func TestWorkflowHeartbeatNotificationAvailability(t *testing.T) {
 	for _, scenario := range []struct {
 		name       string
 		heartbeats bool
@@ -218,17 +229,18 @@ func TestWorkflowTaskHeartbeatNotificationAvailability(t *testing.T) {
 					if mode == Sticky {
 						require.Equal(t, enumspb.TASK_QUEUE_KIND_STICKY, request.TaskQueue.Kind)
 					}
-					require.Equal(t, available, request.SupportsWorkflowTaskHeartbeatNotification)
+					require.Equal(t, available, request.GetCapabilities().GetSupportsWorkflowHeartbeatNotification())
 				}
 				client.eagerDispatcher.registerWorker(worker.workflowWorker)
 				request := &workflowservice.StartWorkflowExecutionRequest{TaskQueue: &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue}}
 				executor := client.eagerDispatcher.applyToRequest(request)
 				require.NotNil(t, executor)
 				executor.releaseUnused()
+				require.Equal(t, available, request.GetEagerWorkerCapabilities().GetSupportsWorkflowHeartbeatNotification())
 				if available {
-					require.Equal(t, worker.executionParams.workerControlTaskQueue, request.WorkerControlTaskQueue)
+					require.Equal(t, worker.executionParams.namespaceWorker.controlTaskQueue(), request.EagerWorkerControlTaskQueue)
 				} else {
-					require.Empty(t, request.WorkerControlTaskQueue)
+					require.Empty(t, request.EagerWorkerControlTaskQueue)
 				}
 				worker.unregisterHeartbeatWorker()
 			})
@@ -236,15 +248,16 @@ func TestWorkflowTaskHeartbeatNotificationAvailability(t *testing.T) {
 	}
 }
 
-func (s *TaskHandlersTestSuite) TestWorkflowTaskHeartbeatNotificationQueries() {
+func (s *TaskHandlersTestSuite) TestWorkflowHeartbeatNotificationQueries() {
 	for _, standalone := range []bool{true, false} {
 		s.Run(map[bool]string{true: "standalone", false: "on normal WFT"}[standalone], func() {
 			r := &workflowTaskHeartbeatNotifications{}
+			execution := &commonpb.WorkflowExecution{WorkflowId: "workflow", RunId: "run"}
 			token := []byte("query-task")
-			var outcome workerpb.WorkflowTaskHeartbeatNotificationResult_Outcome
+			var outcome workerpb.WorkflowHeartbeatNotificationResult_Outcome
 			s.registry.RegisterWorkflowWithOptions(func(ctx Context) error {
 				if err := SetQueryHandler(ctx, "status", func() (string, error) {
-					outcome = r.notify(token)
+					outcome = r.notify(token, execution).GetOutcome()
 					return "ready", nil
 				}); err != nil {
 					return err
@@ -260,9 +273,13 @@ func (s *TaskHandlersTestSuite) TestWorkflowTaskHeartbeatNotificationQueries() {
 				}),
 			}, 0, "WHNQuery")}
 			task.task.TaskToken = token
+			task.task.WorkflowExecution = execution
 			query := &querypb.WorkflowQuery{QueryType: "status"}
 			if standalone {
 				task.task.Query = query
+				task.task.PreviousStartedEventId = 3
+				task.task.History.Events = append(task.task.History.Events,
+					createTestEventWorkflowTaskCompleted(4, &historypb.WorkflowTaskCompletedEventAttributes{ScheduledEventId: 2, StartedEventId: 3}))
 			} else {
 				task.task.Queries = map[string]*querypb.WorkflowQuery{"query": query}
 			}
@@ -275,18 +292,18 @@ func (s *TaskHandlersTestSuite) TestWorkflowTaskHeartbeatNotificationQueries() {
 			s.Require().NoError(err)
 			s.Require().NotNil(response)
 			if standalone {
-				s.Equal(workerpb.WorkflowTaskHeartbeatNotificationResult_OUTCOME_NO_WORKFLOW_TASK, outcome)
+				s.Equal(workerpb.WorkflowHeartbeatNotificationResult_OUTCOME_TASK_TOKEN_MISMATCH, outcome)
 				s.Equal(enumspb.QUERY_RESULT_TYPE_ANSWERED, response.rawRequest.(*workflowservice.RespondQueryTaskCompletedRequest).CompletedType)
 			} else {
-				s.Equal(workerpb.WorkflowTaskHeartbeatNotificationResult_OUTCOME_HANDLED, outcome)
+				s.Equal(workerpb.WorkflowHeartbeatNotificationResult_OUTCOME_ACCEPTED, outcome)
 				s.Equal(enumspb.QUERY_RESULT_TYPE_ANSWERED, response.rawRequest.(*workflowservice.RespondWorkflowTaskCompletedRequest).QueryResults["query"].ResultType)
 			}
-			s.Equal(workerpb.WorkflowTaskHeartbeatNotificationResult_OUTCOME_NO_WORKFLOW_TASK, r.notify(token))
+			s.Equal(workerpb.WorkflowHeartbeatNotificationResult_OUTCOME_TASK_TOKEN_MISMATCH, r.notify(token, execution).GetOutcome())
 		})
 	}
 }
 
-func (s *TaskHandlersTestSuite) TestWorkflowTaskHeartbeatNotificationSafeYield() {
+func (s *TaskHandlersTestSuite) TestWorkflowHeartbeatNotificationSafeYield() {
 	for _, scenario := range []struct {
 		name           string
 		localActivity  bool
@@ -307,6 +324,7 @@ func (s *TaskHandlersTestSuite) TestWorkflowTaskHeartbeatNotificationSafeYield()
 		s.Run(scenario.name, func() {
 			synctest.Test(s.T(), func(t *testing.T) {
 				r := &workflowTaskHeartbeatNotifications{}
+				execution := &commonpb.WorkflowExecution{WorkflowId: "workflow", RunId: "run"}
 				started, yield := make(chan struct{}), make(chan struct{})
 				s.registry.RegisterWorkflowWithOptions(func(ctx Context) error {
 					if scenario.readyResult {
@@ -345,6 +363,7 @@ func (s *TaskHandlersTestSuite) TestWorkflowTaskHeartbeatNotificationSafeYield()
 					}),
 				}, 0, "WHNSafeYield"), laResultCh: make(chan *localActivityResult)}
 				task.task.TaskToken = []byte("executing")
+				task.task.WorkflowExecution = execution
 				wfctx, err := handler.GetOrCreateWorkflowContext(task.task, nil)
 				require.NoError(t, err)
 				done := make(chan struct{})
@@ -377,8 +396,8 @@ func (s *TaskHandlersTestSuite) TestWorkflowTaskHeartbeatNotificationSafeYield()
 					}
 				}
 				if !scenario.timedHeartbeat {
-					require.Equal(t, workerpb.WorkflowTaskHeartbeatNotificationResult_OUTCOME_HANDLED, r.notify(task.task.TaskToken))
-					require.Equal(t, workerpb.WorkflowTaskHeartbeatNotificationResult_OUTCOME_ALREADY_RECEIVED, r.notify(task.task.TaskToken))
+					require.Equal(t, workerpb.WorkflowHeartbeatNotificationResult_OUTCOME_ACCEPTED, r.notify(task.task.TaskToken, execution).GetOutcome())
+					require.Equal(t, workerpb.WorkflowHeartbeatNotificationResult_OUTCOME_ACCEPTED, r.notify(task.task.TaskToken, execution).GetOutcome())
 				}
 				synctest.Wait()
 				require.Zero(t, heartbeats)
@@ -405,26 +424,35 @@ func (s *TaskHandlersTestSuite) TestWorkflowTaskHeartbeatNotificationSafeYield()
 				} else {
 					require.NoError(t, taskErr)
 				}
-				require.Equal(t, workerpb.WorkflowTaskHeartbeatNotificationResult_OUTCOME_NO_WORKFLOW_TASK, r.notify(task.task.TaskToken))
+				require.Equal(t, workerpb.WorkflowHeartbeatNotificationResult_OUTCOME_TASK_TOKEN_MISMATCH, r.notify(task.task.TaskToken, execution).GetOutcome())
 			})
 		})
 	}
 }
 
-func (s *TaskHandlersTestSuite) TestWorkflowTaskHeartbeatNotificationReplacement() {
+func (s *TaskHandlersTestSuite) TestWorkflowHeartbeatNotificationReplacement() {
 	synctest.Test(s.T(), func(t *testing.T) {
 		r := &workflowTaskHeartbeatNotifications{}
+		execution := &commonpb.WorkflowExecution{WorkflowId: "workflow", RunId: "run"}
 		firstToken, nextToken := []byte("first"), []byte("next")
-		var signalSeen bool
+		var signalSeen, secondSignalSeen bool
 		s.registry.RegisterWorkflowWithOptions(func(ctx Context) error {
+			if err := SetQueryHandler(ctx, "state", func() ([]bool, error) {
+				return []bool{signalSeen, secondSignalSeen}, nil
+			}); err != nil {
+				return err
+			}
 			ctx = WithLocalActivityOptions(ctx, LocalActivityOptions{ScheduleToCloseTimeout: time.Minute})
-			ExecuteLocalActivity(ctx, func() error { return nil })
-			require.Equal(t, workerpb.WorkflowTaskHeartbeatNotificationResult_OUTCOME_HANDLED, r.notify(firstToken))
+			activity := ExecuteLocalActivity(ctx, func() error { return nil })
+			require.Equal(t, workerpb.WorkflowHeartbeatNotificationResult_OUTCOME_ACCEPTED, r.notify(firstToken, execution).GetOutcome())
 			GetSignalChannel(ctx, "interrupt").Receive(ctx, nil)
 			signalSeen = true
-			require.Equal(t, workerpb.WorkflowTaskHeartbeatNotificationResult_OUTCOME_TASK_TOKEN_MISMATCH, r.notify(firstToken))
-			require.Equal(t, workerpb.WorkflowTaskHeartbeatNotificationResult_OUTCOME_HANDLED, r.notify(nextToken))
-			return Await(ctx, func() bool { return false })
+			NewTimer(ctx, time.Hour)
+			require.Equal(t, workerpb.WorkflowHeartbeatNotificationResult_OUTCOME_TASK_TOKEN_MISMATCH, r.notify(firstToken, execution).GetOutcome())
+			GetSignalChannel(ctx, "second").Receive(ctx, nil)
+			secondSignalSeen = true
+			NewTimer(ctx, 2*time.Hour)
+			return activity.Get(ctx, nil)
 		}, RegisterWorkflowOptions{Name: "WHNReplacement"})
 		params := s.getTestWorkerExecutionParams()
 		var cacheLock sync.Mutex
@@ -439,41 +467,292 @@ func (s *TaskHandlersTestSuite) TestWorkflowTaskHeartbeatNotificationReplacement
 				WorkflowTaskTimeout: durationpb.New(10 * time.Second),
 				TaskQueue:           &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue},
 			}),
-		}, 0, "WHNReplacement")}
+		}, 0, "WHNReplacement"), laResultCh: make(chan *localActivityResult, 1)}
 		first.task.TaskToken = firstToken
+		first.task.WorkflowExecution = execution
 		first.task.StartedEventId = 3
 		next := &workflowTask{task: createWorkflowTaskWithQueries([]*historypb.HistoryEvent{
 			createTestEventWorkflowTaskCompleted(4, &historypb.WorkflowTaskCompletedEventAttributes{ScheduledEventId: 2, StartedEventId: 3}),
 			createTestEventWorkflowExecutionSignaled(5, "interrupt"),
-			createTestEventWorkflowTaskScheduled(6, &historypb.WorkflowTaskScheduledEventAttributes{}),
-			createTestEventWorkflowTaskStarted(7),
-		}, 3, "WHNReplacement", nil, false)}
+			createTestEventWorkflowExecutionSignaled(6, "second"),
+			createTestEventWorkflowTaskScheduled(7, &historypb.WorkflowTaskScheduledEventAttributes{}),
+			createTestEventWorkflowTaskStarted(8),
+		}, 3, "WHNReplacement", map[string]*querypb.WorkflowQuery{"state": {QueryType: "state"}}, false), laResultCh: first.laResultCh}
 		next.task.WorkflowExecution = first.task.WorkflowExecution
 		next.task.TaskToken = nextToken
-		next.task.StartedEventId = 7
+		next.task.StartedEventId = 8
 		wfctx, err := handler.GetOrCreateWorkflowContext(first.task, nil)
 		require.NoError(t, err)
+		defer func() { wfctx.Unlock(err) }()
 		heartbeats := 0
+		remainingEvents := next.task.History.Events[2:]
+		next.task.History.Events = next.task.History.Events[:2]
+		next.historyIterator = MockHistoryIterator{
+			HasNextPageImpl: func() bool { return len(remainingEvents) > 0 },
+			GetNextPageImpl: func() (*historypb.History, error) {
+				// Queue WHN while the replacement task still has unread history.
+				require.Equal(t, workerpb.WorkflowHeartbeatNotificationResult_OUTCOME_ACCEPTED, r.notify(nextToken, execution).GetOutcome())
+				require.Equal(t, 1, heartbeats)
+				events := remainingEvents
+				remainingEvents = nil
+				return &historypb.History{Events: events}, nil
+			},
+		}
 		result, err := handler.ProcessWorkflowTask(first, wfctx, func(completion *workflowTaskCompletion, start time.Time) (*workflowTask, error) {
 			heartbeats++
 			require.Less(t, time.Since(start), 8*time.Second)
 			require.True(t, completion.rawRequest.(*workflowservice.RespondWorkflowTaskCompletedRequest).ForceCreateNewWorkflowTask)
 			if heartbeats == 1 {
-				require.Equal(t, workerpb.WorkflowTaskHeartbeatNotificationResult_OUTCOME_NO_WORKFLOW_TASK, r.notify(firstToken))
+				require.Equal(t, workerpb.WorkflowHeartbeatNotificationResult_OUTCOME_TASK_TOKEN_MISMATCH, r.notify(firstToken, execution).GetOutcome())
 				return next, nil
 			}
-			return nil, nil
+			require.True(t, signalSeen)
+			require.True(t, secondSignalSeen)
+			require.Equal(t, int64(8), wfctx.lastHandledEventID)
+			request := completion.rawRequest.(*workflowservice.RespondWorkflowTaskCompletedRequest)
+			var state []bool
+			require.Equal(t, enumspb.QUERY_RESULT_TYPE_ANSWERED, request.QueryResults["state"].ResultType)
+			require.NoError(t, converter.GetDefaultDataConverter().FromPayloads(request.QueryResults["state"].Answer, &state))
+			require.Equal(t, []bool{true, true}, state)
+			events := []*historypb.HistoryEvent{createTestEventWorkflowTaskCompleted(9, &historypb.WorkflowTaskCompletedEventAttributes{ScheduledEventId: 7, StartedEventId: 8})}
+			timers := 0
+			for _, command := range request.Commands {
+				if command.GetCommandType() == enumspb.COMMAND_TYPE_START_TIMER {
+					event := createTestEventTimerStarted(int64(10+timers), 0)
+					event.GetTimerStartedEventAttributes().TimerId = command.GetStartTimerCommandAttributes().TimerId
+					events = append(events, event)
+					timers++
+				}
+			}
+			require.Equal(t, 2, timers)
+			events = append(events, createTestEventWorkflowTaskScheduled(12, &historypb.WorkflowTaskScheduledEventAttributes{}), createTestEventWorkflowTaskStarted(13))
+			third := &workflowTask{task: createWorkflowTaskWithQueries(events, 8, "WHNReplacement", nil, false), laResultCh: first.laResultCh}
+			third.task.WorkflowExecution = execution
+			third.task.TaskToken, third.task.StartedEventId = []byte("third"), 13
+			for _, activity := range wfctx.getEventHandler().pendingLaTasks {
+				first.laResultCh <- &localActivityResult{task: activity}
+			}
+			return third, nil
 		})
-		wfctx.Unlock(err)
 		require.NoError(t, err)
-		require.Nil(t, result)
+		require.NotNil(t, result)
+		request := result.rawRequest.(*workflowservice.RespondWorkflowTaskCompletedRequest)
+		require.False(t, request.ForceCreateNewWorkflowTask)
+		require.Empty(t, request.QueryResults)
+		require.Len(t, request.Commands, 2)
+		require.Equal(t, enumspb.COMMAND_TYPE_RECORD_MARKER, request.Commands[0].CommandType)
+		require.Equal(t, enumspb.COMMAND_TYPE_COMPLETE_WORKFLOW_EXECUTION, request.Commands[1].CommandType)
 		require.True(t, signalSeen)
 		require.Equal(t, 2, heartbeats)
-		require.Equal(t, workerpb.WorkflowTaskHeartbeatNotificationResult_OUTCOME_NO_WORKFLOW_TASK, r.notify(nextToken))
+		require.Equal(t, workerpb.WorkflowHeartbeatNotificationResult_OUTCOME_TASK_TOKEN_MISMATCH, r.notify(nextToken, execution).GetOutcome())
 	})
 }
 
-func TestWorkflowTaskHeartbeatNotificationRPC(t *testing.T) {
+func workflowHeartbeatNotificationReplayWorkflow(ctx Context) (string, error) {
+	ctx = WithLocalActivityOptions(ctx, LocalActivityOptions{ScheduleToCloseTimeout: time.Minute})
+	NewTimer(ctx, time.Hour)
+	long := ExecuteLocalActivity(ctx, "whn-long")
+	short := ExecuteLocalActivity(ctx, "whn-short")
+	GetSignalChannel(ctx, "interrupt").Receive(ctx, nil)
+	NewTimer(ctx, 2*time.Hour)
+	var shortResult, longResult string
+	if err := short.Get(ctx, &shortResult); err != nil {
+		return "", err
+	}
+	if err := long.Get(ctx, &longResult); err != nil {
+		return "", err
+	}
+	return shortResult + "/" + longResult, nil
+}
+
+func (s *TaskHandlersTestSuite) TestWorkflowHeartbeatNotificationCompletionReplay() {
+	synctest.Test(s.T(), func(t *testing.T) {
+		const workflowName = "WHNCompletionReplay"
+		r := &workflowTaskHeartbeatNotifications{}
+		execution := &commonpb.WorkflowExecution{WorkflowId: "workflow", RunId: "run"}
+		firstToken, nextToken := []byte("first"), []byte("next")
+		s.registry.RegisterWorkflowWithOptions(func(ctx Context) (string, error) {
+			require.Equal(t, workerpb.WorkflowHeartbeatNotificationResult_OUTCOME_ACCEPTED, r.notify(firstToken, execution).Outcome)
+			return workflowHeartbeatNotificationReplayWorkflow(ctx)
+		}, RegisterWorkflowOptions{Name: workflowName, DisableAlreadyRegisteredCheck: true})
+		for _, name := range []string{"whn-long", "whn-short"} {
+			s.registry.RegisterActivityWithOptions(func() (string, error) { return "unused", nil }, RegisterActivityOptions{Name: name, DisableAlreadyRegisteredCheck: true})
+		}
+		params := s.getTestWorkerExecutionParams()
+		var cacheLock sync.Mutex
+		var lease *workerCacheLease
+		params.cache, lease = newWorkerCache(&sharedWorkerCache{}, &cacheLock, defaultStickyCacheSize)
+		t.Cleanup(lease.release)
+		params.workflowTaskHeartbeatNotifications = r
+		handler := newWorkflowTaskHandler(params, nil, s.registry).(*workflowTaskHandlerImpl)
+		handler.laTunnel = newLocalActivityTunnel(make(chan struct{}))
+		results := make(chan *localActivityResult, 2)
+		first := &workflowTask{task: createWorkflowTask([]*historypb.HistoryEvent{
+			createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
+				WorkflowType:        &commonpb.WorkflowType{Name: workflowName},
+				WorkflowTaskTimeout: durationpb.New(10 * time.Second),
+				TaskQueue:           &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue},
+			}),
+		}, 0, workflowName), laResultCh: results}
+		first.task.WorkflowExecution = execution
+		first.task.TaskToken, first.task.StartedEventId = firstToken, 3
+		wfctx, err := handler.GetOrCreateWorkflowContext(first.task, nil)
+		require.NoError(t, err)
+		defer func() { wfctx.Unlock(err) }()
+		history := &historypb.History{Events: append([]*historypb.HistoryEvent(nil), first.task.History.Events...)}
+		var longTask, shortTask *localActivityTask
+		heartbeats := 0
+		completion, err := handler.ProcessWorkflowTask(first, wfctx, func(completion *workflowTaskCompletion, start time.Time) (*workflowTask, error) {
+			heartbeats++
+			require.Less(t, time.Since(start), 8*time.Second)
+			request := completion.rawRequest.(*workflowservice.RespondWorkflowTaskCompletedRequest)
+			require.True(t, request.ForceCreateNewWorkflowTask)
+			// Both heartbeats precede LA result application, so each contains only its timer.
+			require.Len(t, request.Commands, 1)
+			timer := request.Commands[0].GetStartTimerCommandAttributes()
+			require.NotNil(t, timer)
+			completedID := int64(len(history.Events) + 1)
+			history.Events = append(history.Events, createTestEventWorkflowTaskCompleted(completedID, &historypb.WorkflowTaskCompletedEventAttributes{
+				ScheduledEventId: completedID - 2, StartedEventId: completedID - 1, SdkMetadata: request.SdkMetadata,
+			}))
+			started := createTestEventTimerStarted(completedID+1, 0)
+			started.GetTimerStartedEventAttributes().TimerId = timer.TimerId
+			started.GetTimerStartedEventAttributes().StartToFireTimeout = timer.StartToFireTimeout
+			started.GetTimerStartedEventAttributes().WorkflowTaskCompletedEventId = completedID
+			events := []*historypb.HistoryEvent{history.Events[len(history.Events)-1], started}
+			if heartbeats == 1 {
+				for _, activity := range wfctx.getEventHandler().pendingLaTasks {
+					if activity.params.ActivityType == "whn-short" {
+						shortTask = activity
+					} else {
+						longTask = activity
+					}
+				}
+				require.NotNil(t, shortTask)
+				require.NotNil(t, longTask)
+				events = append(events, createTestEventWorkflowExecutionSignaled(6, "interrupt"))
+			}
+			scheduledID := completedID + int64(len(events))
+			events = append(events, createTestEventWorkflowTaskScheduled(scheduledID, &historypb.WorkflowTaskScheduledEventAttributes{}), createTestEventWorkflowTaskStarted(scheduledID+1))
+			history.Events = append(history.Events, events[1:]...)
+			next := &workflowTask{task: createWorkflowTaskWithQueries(events, completedID-1, workflowName, nil, false), laResultCh: results}
+			next.task.WorkflowExecution = execution
+			next.task.StartedEventId = scheduledID + 1
+			if heartbeats == 1 {
+				next.task.TaskToken = nextToken
+				remaining := events[2:]
+				next.task.History.Events = events[:2]
+				next.historyIterator = MockHistoryIterator{
+					HasNextPageImpl: func() bool { return len(remaining) > 0 },
+					GetNextPageImpl: func() (*historypb.History, error) {
+						require.Equal(t, workerpb.WorkflowHeartbeatNotificationResult_OUTCOME_ACCEPTED, r.notify(nextToken, execution).Outcome)
+						payloads, encodeErr := converter.GetDefaultDataConverter().ToPayloads("short")
+						require.NoError(t, encodeErr)
+						results <- &localActivityResult{task: shortTask, result: payloads}
+						page := &historypb.History{Events: remaining}
+						remaining = nil
+						return page, nil
+					},
+				}
+			} else {
+				require.Equal(t, 2, heartbeats)
+				require.Len(t, wfctx.getEventHandler().pendingLaTasks, 2)
+				next.task.TaskToken = []byte("third")
+				payloads, encodeErr := converter.GetDefaultDataConverter().ToPayloads("long")
+				require.NoError(t, encodeErr)
+				results <- &localActivityResult{task: longTask, result: payloads}
+			}
+			return next, nil
+		})
+		require.NoError(t, err)
+		require.Equal(t, 2, heartbeats)
+		request := completion.rawRequest.(*workflowservice.RespondWorkflowTaskCompletedRequest)
+		require.False(t, request.ForceCreateNewWorkflowTask)
+		require.Equal(t, []byte("third"), request.TaskToken)
+		require.Len(t, request.Commands, 3)
+		history.Events = append(history.Events, createTestEventWorkflowTaskCompleted(13, &historypb.WorkflowTaskCompletedEventAttributes{ScheduledEventId: 11, StartedEventId: 12, SdkMetadata: request.SdkMetadata}))
+		for i, activity := range []*localActivityTask{shortTask, longTask} {
+			marker := request.Commands[i].GetRecordMarkerCommandAttributes()
+			require.NotNil(t, marker)
+			var data localActivityMarkerData
+			require.NoError(t, converter.GetDefaultDataConverter().FromPayloads(marker.Details[localActivityMarkerDataName], &data))
+			require.Equal(t, activity.activityID, data.ActivityID)
+			history.Events = append(history.Events, createTestEventMarkerRecorded(int64(14+i), &historypb.MarkerRecordedEventAttributes{MarkerName: marker.MarkerName, Details: marker.Details, WorkflowTaskCompletedEventId: 13}))
+		}
+		result := request.Commands[2].GetCompleteWorkflowExecutionCommandAttributes().Result
+		var value string
+		require.NoError(t, converter.GetDefaultDataConverter().FromPayloads(result, &value))
+		require.Equal(t, "short/long", value)
+		history.Events = append(history.Events, createTestEventWorkflowExecutionCompleted(16, &historypb.WorkflowExecutionCompletedEventAttributes{WorkflowTaskCompletedEventId: 13, Result: result}))
+		replayer, err := NewWorkflowReplayer(WorkflowReplayerOptions{})
+		require.NoError(t, err)
+		replayer.RegisterWorkflowWithOptions(workflowHeartbeatNotificationReplayWorkflow, RegisterWorkflowOptions{Name: workflowName})
+		require.NoError(t, replayer.ReplayWorkflowHistory(ilog.NewNopLogger(), history))
+	})
+}
+
+func (s *TaskHandlersTestSuite) TestWorkflowHeartbeatNotificationColdReplay() {
+	synctest.Test(s.T(), func(t *testing.T) {
+		history, err := extractHistoryFromFile("../test/replaytests/workflow-heartbeat-notification.json", 12)
+		require.NoError(t, err)
+		r := &workflowTaskHeartbeatNotifications{}
+		s.registry.RegisterWorkflowWithOptions(workflowHeartbeatNotificationReplayWorkflow, RegisterWorkflowOptions{Name: "WHNCompletionReplay", DisableAlreadyRegisteredCheck: true})
+		for _, name := range []string{"whn-long", "whn-short"} {
+			s.registry.RegisterActivityWithOptions(func() (string, error) { return "unused", nil }, RegisterActivityOptions{Name: name, DisableAlreadyRegisteredCheck: true})
+		}
+		params := s.getTestWorkerExecutionParams()
+		var cacheLock sync.Mutex
+		var lease *workerCacheLease
+		params.cache, lease = newWorkerCache(&sharedWorkerCache{}, &cacheLock, defaultStickyCacheSize)
+		t.Cleanup(lease.release)
+		params.workflowTaskHeartbeatNotifications = r
+		handler := newWorkflowTaskHandler(params, nil, s.registry).(*workflowTaskHandlerImpl)
+		handler.laTunnel = newLocalActivityTunnel(make(chan struct{}))
+		// A fresh context must replay two completed WFTs before reaching this live WFT.
+		task := &workflowTask{task: createWorkflowTaskWithQueries(history.Events[:6], 8, "WHNCompletionReplay", nil, false)}
+		task.task.TaskToken, task.task.StartedEventId = []byte("cold"), 12
+		heartbeats := 0
+		remaining := history.Events[6:]
+		task.historyIterator = MockHistoryIterator{
+			HasNextPageImpl: func() bool { return len(remaining) > 0 },
+			GetNextPageImpl: func() (*historypb.History, error) {
+				require.Equal(t, workerpb.WorkflowHeartbeatNotificationResult_OUTCOME_ACCEPTED, r.notify(task.task.TaskToken, task.task.WorkflowExecution).Outcome)
+				require.Zero(t, heartbeats)
+				require.Nil(t, handler.laTunnel.taskQueueHead)
+				page := &historypb.History{Events: remaining}
+				remaining = nil
+				return page, nil
+			},
+		}
+		wfctx, err := handler.GetOrCreateWorkflowContext(task.task, task.historyIterator)
+		require.NoError(t, err)
+		defer func() { wfctx.Unlock(err) }()
+		result, err := handler.ProcessWorkflowTask(task, wfctx, func(completion *workflowTaskCompletion, start time.Time) (*workflowTask, error) {
+			heartbeats++
+			require.Less(t, time.Since(start), 8*time.Second)
+			require.Empty(t, remaining)
+			require.Equal(t, int64(12), wfctx.lastHandledEventID)
+			require.False(t, wfctx.getEventHandler().isReplay)
+			require.Len(t, wfctx.getEventHandler().pendingLaTasks, 2)
+			queued := 0
+			for activity := handler.laTunnel.taskQueueHead; activity != nil; activity = activity.nextQueuedTask {
+				queued++
+			}
+			require.Equal(t, 2, queued)
+			request := completion.rawRequest.(*workflowservice.RespondWorkflowTaskCompletedRequest)
+			require.Equal(t, task.task.TaskToken, request.TaskToken)
+			require.True(t, request.ForceCreateNewWorkflowTask)
+			// Historical timers have been matched during replay, not emitted a second time.
+			require.Empty(t, request.Commands)
+			return nil, nil
+		})
+		require.NoError(t, err)
+		require.Nil(t, result)
+		require.Equal(t, 1, heartbeats)
+	})
+}
+
+func TestWorkflowHeartbeatNotificationRPC(t *testing.T) {
 	for _, scenario := range []struct {
 		name    string
 		eager   bool
@@ -543,7 +822,7 @@ func TestWorkflowTaskHeartbeatNotificationRPC(t *testing.T) {
 					DoAndReturn(func(_ context.Context, req *workflowservice.RespondNexusTaskCompletedRequest, _ ...grpc.CallOption) (*workflowservice.RespondNexusTaskCompletedResponse, error) {
 						var response workerservicepb.ExecuteCommandsResponse
 						require.NoError(t, proto.Unmarshal(req.Response.GetStartOperation().GetSyncSuccess().GetPayload().GetData(), &response))
-						require.Equal(t, workerpb.WorkflowTaskHeartbeatNotificationResult_OUTCOME_HANDLED, response.Results[0].GetWorkflowTaskHeartbeatNotification().GetOutcome())
+						require.Equal(t, workerpb.WorkflowHeartbeatNotificationResult_OUTCOME_ACCEPTED, response.Results[0].GetWorkflowHeartbeatNotification().GetOutcome())
 						return &workflowservice.RespondNexusTaskCompletedResponse{}, nil
 					})
 				processor := worker.workflowWorker.taskProcessor
@@ -567,8 +846,8 @@ func TestWorkflowTaskHeartbeatNotificationRPC(t *testing.T) {
 				<-activityStarted
 				synctest.Wait()
 				payload, err := proto.Marshal(&workerservicepb.ExecuteCommandsRequest{
-					Commands: []*workerpb.WorkerCommand{{Type: &workerpb.WorkerCommand_WorkflowTaskHeartbeatNotification{
-						WorkflowTaskHeartbeatNotification: &workerpb.WorkflowTaskHeartbeatNotificationCommand{TaskToken: first.TaskToken},
+					Commands: []*workerpb.WorkerCommand{{Type: &workerpb.WorkerCommand_WorkflowHeartbeatNotification{
+						WorkflowHeartbeatNotification: &workerpb.WorkflowHeartbeatNotificationCommand{TaskToken: first.TaskToken, Execution: first.WorkflowExecution},
 					}}},
 				})
 				require.NoError(t, err)
@@ -586,7 +865,7 @@ func TestWorkflowTaskHeartbeatNotificationRPC(t *testing.T) {
 				close(finishActivity)
 				require.NoError(t, <-activityDone)
 				require.NoError(t, <-workflowDone)
-				require.Equal(t, workerpb.WorkflowTaskHeartbeatNotificationResult_OUTCOME_NO_WORKFLOW_TASK, shared.workflowTaskHeartbeatNotifications.notify(next.TaskToken))
+				require.Equal(t, workerpb.WorkflowHeartbeatNotificationResult_OUTCOME_TASK_TOKEN_MISMATCH, shared.workflowTaskHeartbeatNotifications.notify(next.TaskToken, next.WorkflowExecution).GetOutcome())
 			})
 		})
 	}

@@ -149,8 +149,7 @@ type (
 		inboundPayloadVisitor PayloadVisitor
 		storageParams         extstore.StorageParameters
 
-		pollerGroups                       *pollerGroupManager
-		workflowTaskHeartbeatNotifications *workflowTaskHeartbeatNotifications
+		pollerGroups *pollerGroupManager
 	}
 
 	// workflowTaskProcessor implements processing of a workflow task and can create
@@ -183,8 +182,7 @@ type (
 		outboundPayloadVisitor PayloadVisitor
 		storageParams          extstore.StorageParameters
 
-		workflowTaskCompletionPagination   *workflowTaskCompletionPaginationConfig
-		workflowTaskHeartbeatNotifications *workflowTaskHeartbeatNotifications
+		workflowTaskCompletionPagination *workflowTaskCompletionPaginationConfig
 	}
 
 	// activityTaskPoller implements polling/processing a workflow task
@@ -490,26 +488,25 @@ func newWorkflowTaskProcessor(
 			pollerGroupSnapshotStore:     params.pollerGroupSnapshotStore,
 			workerPollCompleteOnShutdown: params.workerPollCompleteOnShutdown,
 		},
-		service:                            service,
-		namespace:                          params.Namespace,
-		taskQueueName:                      params.TaskQueue,
-		identity:                           params.Identity,
-		taskHandler:                        taskHandler,
-		contextManager:                     contextManager,
-		logger:                             params.Logger,
-		dataConverter:                      params.DataConverter,
-		failureConverter:                   params.FailureConverter,
-		stickyUUID:                         stickyUUID,
-		StickyScheduleToStartTimeout:       params.StickyScheduleToStartTimeout,
-		stickyCacheSize:                    params.cache.MaxWorkflowCacheSize(),
-		eagerActivityExecutor:              params.eagerActivityExecutor,
-		numNormalPollerMetric:              newNumPollerMetric(params.MetricsHandler, metrics.PollerTypeWorkflowTask),
-		numStickyPollerMetric:              newNumPollerMetric(params.MetricsHandler, metrics.PollerTypeWorkflowStickyTask),
-		inboundPayloadVisitor:              params.inboundPayloadVisitor,
-		outboundPayloadVisitor:             params.outboundPayloadVisitor,
-		storageParams:                      params.storageParams,
-		workflowTaskCompletionPagination:   params.workflowTaskCompletionPagination,
-		workflowTaskHeartbeatNotifications: params.workflowTaskHeartbeatNotifications,
+		service:                          service,
+		namespace:                        params.Namespace,
+		taskQueueName:                    params.TaskQueue,
+		identity:                         params.Identity,
+		taskHandler:                      taskHandler,
+		contextManager:                   contextManager,
+		logger:                           params.Logger,
+		dataConverter:                    params.DataConverter,
+		failureConverter:                 params.FailureConverter,
+		stickyUUID:                       stickyUUID,
+		StickyScheduleToStartTimeout:     params.StickyScheduleToStartTimeout,
+		stickyCacheSize:                  params.cache.MaxWorkflowCacheSize(),
+		eagerActivityExecutor:            params.eagerActivityExecutor,
+		numNormalPollerMetric:            newNumPollerMetric(params.MetricsHandler, metrics.PollerTypeWorkflowTask),
+		numStickyPollerMetric:            newNumPollerMetric(params.MetricsHandler, metrics.PollerTypeWorkflowStickyTask),
+		inboundPayloadVisitor:            params.inboundPayloadVisitor,
+		outboundPayloadVisitor:           params.outboundPayloadVisitor,
+		storageParams:                    params.storageParams,
+		workflowTaskCompletionPagination: params.workflowTaskCompletionPagination,
 	}
 }
 
@@ -531,30 +528,29 @@ func (wtp *workflowTaskProcessor) createPoller(
 	pollerGroups *pollerGroupManager,
 ) *workflowTaskPoller {
 	return &workflowTaskPoller{
-		basePoller:                         wtp.basePoller,
-		mode:                               mode,
-		namespace:                          wtp.namespace,
-		taskQueueName:                      wtp.taskQueueName,
-		identity:                           wtp.identity,
-		service:                            wtp.service,
-		taskHandler:                        wtp.taskHandler,
-		contextManager:                     wtp.contextManager,
-		logger:                             wtp.logger,
-		dataConverter:                      wtp.dataConverter,
-		failureConverter:                   wtp.failureConverter,
-		stickyUUID:                         wtp.stickyUUID,
-		StickyScheduleToStartTimeout:       wtp.StickyScheduleToStartTimeout,
-		pendingRegularPollCount:            wtp.pendingRegularPollCount,
-		pendingStickyPollCount:             wtp.pendingStickyPollCount,
-		mixedStickyBacklog:                 wtp.mixedStickyBacklog,
-		stickyCacheSize:                    wtp.stickyCacheSize,
-		eagerActivityExecutor:              wtp.eagerActivityExecutor,
-		numNormalPollerMetric:              wtp.numNormalPollerMetric,
-		numStickyPollerMetric:              wtp.numStickyPollerMetric,
-		inboundPayloadVisitor:              wtp.inboundPayloadVisitor,
-		storageParams:                      wtp.storageParams,
-		pollerGroups:                       pollerGroups,
-		workflowTaskHeartbeatNotifications: wtp.workflowTaskHeartbeatNotifications,
+		basePoller:                   wtp.basePoller,
+		mode:                         mode,
+		namespace:                    wtp.namespace,
+		taskQueueName:                wtp.taskQueueName,
+		identity:                     wtp.identity,
+		service:                      wtp.service,
+		taskHandler:                  wtp.taskHandler,
+		contextManager:               wtp.contextManager,
+		logger:                       wtp.logger,
+		dataConverter:                wtp.dataConverter,
+		failureConverter:             wtp.failureConverter,
+		stickyUUID:                   wtp.stickyUUID,
+		StickyScheduleToStartTimeout: wtp.StickyScheduleToStartTimeout,
+		pendingRegularPollCount:      wtp.pendingRegularPollCount,
+		pendingStickyPollCount:       wtp.pendingStickyPollCount,
+		mixedStickyBacklog:           wtp.mixedStickyBacklog,
+		stickyCacheSize:              wtp.stickyCacheSize,
+		eagerActivityExecutor:        wtp.eagerActivityExecutor,
+		numNormalPollerMetric:        wtp.numNormalPollerMetric,
+		numStickyPollerMetric:        wtp.numStickyPollerMetric,
+		inboundPayloadVisitor:        wtp.inboundPayloadVisitor,
+		storageParams:                wtp.storageParams,
+		pollerGroups:                 pollerGroups,
 	}
 }
 
@@ -1532,6 +1528,7 @@ func (wtp *workflowTaskPoller) getPollRequestForKind(queueKind enumspb.TaskQueue
 		taskQueue.NormalName = wtp.taskQueueName
 	}
 
+	controlTaskQueue := wtp.namespaceWorker.controlTaskQueue()
 	builtRequest := &workflowservice.PollWorkflowTaskQueueRequest{
 		Namespace: wtp.namespace,
 		TaskQueue: taskQueue,
@@ -1548,10 +1545,11 @@ func (wtp *workflowTaskPoller) getPollRequestForKind(queueKind enumspb.TaskQueue
 			wtp.useBuildIDVersioning,
 			wtp.workerDeploymentVersion,
 		),
-		WorkerInstanceKey:                         wtp.workerInstanceKey,
-		WorkerControlTaskQueue:                    wtp.namespaceWorker.controlTaskQueue(),
-		PollerPoolInfo:                            wtp.getPollerPoolInfo(),
-		SupportsWorkflowTaskHeartbeatNotification: wtp.workflowTaskHeartbeatNotifications.canReceiveNotifications(),
+		WorkerInstanceKey:      wtp.workerInstanceKey,
+		WorkerControlTaskQueue: controlTaskQueue,
+		PollerPoolInfo:         wtp.getPollerPoolInfo(),
+		// This SDK supports WHN whenever the shared command poller is running.
+		Capabilities: &workflowservice.PollWorkflowTaskQueueRequest_Capabilities{SupportsWorkflowHeartbeatNotification: controlTaskQueue != ""},
 	}
 	if wtp.getCapabilities().BuildIdBasedVersioning {
 		//lint:ignore SA1019 ignore deprecated versioning APIs

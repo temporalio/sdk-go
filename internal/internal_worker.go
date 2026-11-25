@@ -259,7 +259,8 @@ type (
 		sdkVersion string
 
 		activityCancellationCallbacks *activityCancellationCallbacks
-		workerPollCompleteOnShutdown  *atomic.Bool
+
+		workerPollCompleteOnShutdown *atomic.Bool
 
 		// Set to true during start() when the namespace has the poller_autoscaling capability.
 		serverSupportsAutoscaling *atomic.Bool
@@ -404,8 +405,7 @@ func newWorkflowTaskWorkerInternal(
 			taskQueue:     params.TaskQueue,
 			taskQueueKind: enumspb.TASK_QUEUE_KIND_UNSPECIFIED,
 		},
-		workflowTaskHeartbeatNotifications: params.workflowTaskHeartbeatNotifications,
-		namespaceWorker:                    params.namespaceWorker,
+		namespaceWorker: params.namespaceWorker,
 	}
 
 	worker := newBaseWorker(bwo)

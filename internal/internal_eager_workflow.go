@@ -50,7 +50,9 @@ func (e *eagerWorkflowDispatcher) applyToRequest(request *workflowservice.StartW
 		maybePermit := worker.tryReserveSlot()
 		if maybePermit != nil {
 			request.RequestEagerExecution = true
-			request.WorkerControlTaskQueue = worker.getWorkerControlTaskQueue()
+			request.EagerWorkerControlTaskQueue = worker.getWorkerControlTaskQueue()
+			// This SDK supports WHN whenever the shared command poller is running.
+			request.EagerWorkerCapabilities = &workflowservice.StartWorkflowExecutionRequest_Capabilities{SupportsWorkflowHeartbeatNotification: request.EagerWorkerControlTaskQueue != ""}
 			// Attach deployment options if worker has deployment versioning enabled
 			deploymentOpts := worker.getDeploymentOptions()
 			if (deploymentOpts.Version != WorkerDeploymentVersion{}) {

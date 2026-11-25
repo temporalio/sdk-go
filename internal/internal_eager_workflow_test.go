@@ -78,7 +78,7 @@ func TestEagerWorkflowDispatchAvailableWorker(t *testing.T) {
 	exec := dispatcher.applyToRequest(request)
 	require.Equal(t, exec.worker, availableWorker)
 	require.True(t, request.GetRequestEagerExecution())
-	require.Equal(t, "worker-control", request.WorkerControlTaskQueue)
+	require.Equal(t, "worker-control", request.EagerWorkerControlTaskQueue)
 }
 
 func TestEagerWorkflowDispatchWithDeploymentOptions(t *testing.T) {

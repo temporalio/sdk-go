@@ -1,0 +1,184 @@
+{
+  "events": [
+    {
+      "eventId": "1",
+      "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_STARTED",
+      "workflowExecutionStartedEventAttributes": {
+        "workflowType": {
+          "name": "WHNCompletionReplay"
+        },
+        "taskQueue": {
+          "name": "tq1"
+        },
+        "workflowTaskTimeout": "10s"
+      }
+    },
+    {
+      "eventId": "2",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "taskQueue"
+        }
+      }
+    },
+    {
+      "eventId": "3",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED"
+    },
+    {
+      "eventId": "4",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "2",
+        "startedEventId": "3",
+        "sdkMetadata": {
+          "langUsedFlags": [
+            3
+          ],
+          "sdkName": "temporal-go",
+          "sdkVersion": "1.51.0"
+        }
+      }
+    },
+    {
+      "eventId": "5",
+      "eventType": "EVENT_TYPE_TIMER_STARTED",
+      "timerStartedEventAttributes": {
+        "timerId": "5",
+        "startToFireTimeout": "3600s",
+        "workflowTaskCompletedEventId": "4"
+      }
+    },
+    {
+      "eventId": "6",
+      "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_SIGNALED",
+      "workflowExecutionSignaledEventAttributes": {
+        "signalName": "interrupt",
+        "identity": "test-identity"
+      }
+    },
+    {
+      "eventId": "7",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "workflowTaskScheduledEventAttributes": {}
+    },
+    {
+      "eventId": "8",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED"
+    },
+    {
+      "eventId": "9",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "7",
+        "startedEventId": "8",
+        "sdkMetadata": {}
+      }
+    },
+    {
+      "eventId": "10",
+      "eventType": "EVENT_TYPE_TIMER_STARTED",
+      "timerStartedEventAttributes": {
+        "timerId": "10",
+        "startToFireTimeout": "7200s",
+        "workflowTaskCompletedEventId": "9"
+      }
+    },
+    {
+      "eventId": "11",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "workflowTaskScheduledEventAttributes": {}
+    },
+    {
+      "eventId": "12",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED"
+    },
+    {
+      "eventId": "13",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "11",
+        "startedEventId": "12",
+        "sdkMetadata": {}
+      }
+    },
+    {
+      "eventId": "14",
+      "eventType": "EVENT_TYPE_MARKER_RECORDED",
+      "markerRecordedEventAttributes": {
+        "markerName": "LocalActivity",
+        "details": {
+          "data": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "eyJBY3Rpdml0eUlEIjoiMiIsIkFjdGl2aXR5VHlwZSI6Indobi1zaG9ydCIsIlJlcGxheVRpbWUiOiIxOTcwLTAxLTAxVDAwOjAwOjAwWiIsIkF0dGVtcHQiOjEsIkJhY2tvZmYiOjB9"
+              }
+            ]
+          },
+          "result": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "InNob3J0Ig=="
+              }
+            ]
+          }
+        },
+        "workflowTaskCompletedEventId": "13"
+      }
+    },
+    {
+      "eventId": "15",
+      "eventType": "EVENT_TYPE_MARKER_RECORDED",
+      "markerRecordedEventAttributes": {
+        "markerName": "LocalActivity",
+        "details": {
+          "data": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "eyJBY3Rpdml0eUlEIjoiMSIsIkFjdGl2aXR5VHlwZSI6Indobi1sb25nIiwiUmVwbGF5VGltZSI6IjE5NzAtMDEtMDFUMDA6MDA6MDBaIiwiQXR0ZW1wdCI6MSwiQmFja29mZiI6MH0="
+              }
+            ]
+          },
+          "result": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "Imxvbmci"
+              }
+            ]
+          }
+        },
+        "workflowTaskCompletedEventId": "13"
+      }
+    },
+    {
+      "eventId": "16",
+      "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED",
+      "workflowExecutionCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "InNob3J0L2xvbmci"
+            }
+          ]
+        },
+        "workflowTaskCompletedEventId": "13"
+      }
+    }
+  ]
+}
