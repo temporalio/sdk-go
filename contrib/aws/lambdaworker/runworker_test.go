@@ -68,6 +68,10 @@ func newTestDeps() (workerDeps, *mockWorker, *mockClient) {
 		extractLambdaCtx: func(context.Context) (string, string, bool) {
 			return "req-123", "arn:aws:lambda:us-east-1:123:function:my-func", true
 		},
+		workerInfo: func(worker.Worker) (worker.Info, error) {
+			return worker.Info{}, nil
+		},
+		jitter: func(time.Duration) time.Duration { return 0 },
 	}
 	return deps, w, c
 }
@@ -559,12 +563,15 @@ func TestRunWorkerInternal_TightDeadlineReturnsError(t *testing.T) {
 }
 
 type capturingLogger struct {
+	infos  []string
 	warns  []string
 	errors []string
 }
 
 func (l *capturingLogger) Debug(string, ...any) {}
-func (l *capturingLogger) Info(string, ...any)  {}
+func (l *capturingLogger) Info(msg string, _ ...any) {
+	l.infos = append(l.infos, msg)
+}
 func (l *capturingLogger) Warn(msg string, _ ...any) {
 	l.warns = append(l.warns, msg)
 }

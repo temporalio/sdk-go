@@ -588,8 +588,16 @@ func newSessionWorker(client *WorkflowClient, params workerExecutionParameters, 
 	sessionEnvironment := newSessionEnvironment(params.SessionResourceID, maxConcurrentSessionExecutionSize)
 
 	creationTaskqueue := getCreationTaskqueue(params.TaskQueue)
+	// Session workers export their own metrics. Keep their updates out of the
+	// ordinary activity worker's Worker Heartbeat.
+	metricsHandler := params.MetricsHandler
+	if heartbeatHandler, ok := metricsHandler.(*heartbeatMetricsHandler); ok {
+		metricsHandler = heartbeatHandler.Unwrap()
+	}
+	params.pollTimeTracker = nil
 	params.BackgroundContext = context.WithValue(params.BackgroundContext, sessionEnvironmentContextKey, sessionEnvironment)
 	params.TaskQueue = sessionEnvironment.GetResourceSpecificTaskqueue()
+	params.MetricsHandler = metricsHandler.WithTags(metrics.TaskQueueTags(params.TaskQueue))
 	params.pollerGroupSnapshotStore = newPollerGroupSnapshotStore()
 	// For the resource specific task queue, we don't need to include deployment options
 	// Save them to restore later
@@ -609,6 +617,7 @@ func newSessionWorker(client *WorkflowClient, params workerExecutionParameters, 
 		},
 	)
 	params.TaskQueue = creationTaskqueue
+	params.MetricsHandler = metricsHandler.WithTags(metrics.TaskQueueTags(params.TaskQueue))
 	params.pollerGroupSnapshotStore = nil
 	params.DeploymentOptions = deployments
 	params.UseBuildIDForVersioning = useBuildIDForVersioning

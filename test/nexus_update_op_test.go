@@ -53,6 +53,7 @@ const (
 )
 
 func (ts *IntegrationTestSuite) TestNexusUpdateWorkflowOperation() {
+	skipOnCloud(ts.T(), cloudRequiresProvisioning, "Nexus update tests create namespace endpoints through Operator Service")
 	if os.Getenv("DISABLE_STANDALONE_NEXUS_TESTS") != "" {
 		ts.T().SkipNow()
 	}

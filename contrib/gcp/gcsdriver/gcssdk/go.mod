@@ -7,8 +7,8 @@ require (
 	github.com/fsouza/fake-gcs-server v1.50.2
 	github.com/stretchr/testify v1.11.1
 	go.temporal.io/api v1.64.3
-	go.temporal.io/sdk v1.50.0
-	go.temporal.io/sdk/contrib/gcp/gcsdriver v0.2.0
+	go.temporal.io/sdk v1.52.0
+	go.temporal.io/sdk/contrib/gcp/gcsdriver v0.3.0
 )
 
 require (

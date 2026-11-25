@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.3.0] - 2026-11-25
+
+### :boom: Breaking Changes
+
+- Now requires `gcsdriver` v0.3.0 and Temporal Go SDK v1.52.0.
+
+### Security
+
+- Updated the indirect `github.com/go-jose/go-jose/v4` dependency to v4.1.6 to address vulnerabilities in earlier versions.
+
 ## [0.2.0] - 2026-10-08
 
 ### Breaking Changes

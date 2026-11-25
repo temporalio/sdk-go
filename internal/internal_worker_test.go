@@ -3808,6 +3808,74 @@ func TestWorkerBuildIDAndSessionPanic(t *testing.T) {
 	require.Equal(t, "cannot set both EnableSessionWorker and UseBuildIDForVersioning", recovered)
 }
 
+func (s *internalWorkerTestSuite) TestSessionWorkerMetricsAndHeartbeatIsolation() {
+	const taskQueue = "session-metrics-task-queue"
+	handler := metrics.NewCapturingHandler()
+	client := NewServiceClient(s.service, nil, ClientOptions{
+		Namespace:               "testNamespace",
+		MetricsHandler:          handler,
+		WorkerHeartbeatInterval: time.Second,
+	})
+	worker := NewAggregatedWorker(client, taskQueue, WorkerOptions{
+		EnableSessionWorker:                true,
+		DisableWorkflowWorker:              true,
+		MaxConcurrentActivityExecutionSize: 2,
+		MaxConcurrentSessionExecutionSize:  3,
+	})
+	s.T().Cleanup(worker.cacheLease.release)
+
+	ordinary := worker.activityWorker
+	ordinarySlots := ordinary.worker.slotSupplier
+	permit, err := ordinarySlots.ReserveSlot(s.T().Context(), &ordinary.worker.options.slotReservationData)
+	s.Require().NoError(err)
+	ordinarySlots.MarkSlotUsed(permit)
+	defer ordinarySlots.ReleaseSlot(permit, SlotReleaseReasonTaskProcessed)
+	ordinaryPollers := ordinary.poller.(*activityTaskPoller).numPollerMetric
+	ordinaryPollers.increment()
+	defer ordinaryPollers.decrement()
+	ordinary.executionParameters.MetricsHandler.Timer(metrics.ActivityExecutionLatency).Record(time.Second)
+	ordinary.executionParameters.MetricsHandler.Counter(metrics.ActivityExecutionFailedCounter).Inc(1)
+
+	session := worker.sessionWorker
+	for _, sessionActivityWorker := range []*activityWorker{session.activityWorker, session.creationWorker} {
+		slots := sessionActivityWorker.worker.slotSupplier
+		permit, err := slots.ReserveSlot(s.T().Context(), &sessionActivityWorker.worker.options.slotReservationData)
+		s.Require().NoError(err)
+		slots.ReleaseSlot(permit, SlotReleaseReasonUnused)
+		poller := sessionActivityWorker.poller.(*activityTaskPoller)
+		poller.numPollerMetric.increment()
+		poller.numPollerMetric.decrement()
+		poller.pollTimeTracker.recordPollSuccess(metrics.PollerTypeActivityTask)
+		poller.metricsHandler.Timer(metrics.ActivityExecutionLatency).Record(time.Second)
+		poller.metricsHandler.Counter(metrics.ActivityExecutionFailedCounter).Inc(1)
+	}
+
+	gauges := make(map[string]map[string]float64)
+	for _, gauge := range handler.Gauges() {
+		switch gauge.Name {
+		case metrics.WorkerTaskSlotsUsed, metrics.WorkerTaskSlotsAvailable, metrics.NumPoller:
+			if gauges[gauge.Name] == nil {
+				gauges[gauge.Name] = make(map[string]float64)
+			}
+			gauges[gauge.Name][gauge.Tags[metrics.TaskQueueTagName]] = gauge.Value()
+		}
+	}
+	sessionQueue := session.getActivityWorkerTaskQueue()
+	creationQueue := session.getCreationWorkerTaskQueue()
+	s.Equal(map[string]float64{taskQueue: 1, sessionQueue: 0, creationQueue: 0}, gauges[metrics.WorkerTaskSlotsUsed])
+	s.Equal(map[string]float64{taskQueue: 1, sessionQueue: 2, creationQueue: 3}, gauges[metrics.WorkerTaskSlotsAvailable])
+	s.Equal(map[string]float64{taskQueue: 1, sessionQueue: 0, creationQueue: 0}, gauges[metrics.NumPoller])
+
+	heartbeat := worker.heartbeatCallback()
+	slots := heartbeat.GetActivityTaskSlotsInfo()
+	s.Equal(int32(1), slots.GetCurrentUsedSlots())
+	s.Equal(int32(1), slots.GetCurrentAvailableSlots())
+	s.Equal(int32(1), slots.GetTotalProcessedTasks())
+	s.Equal(int32(1), slots.GetTotalFailedTasks())
+	s.Equal(int32(1), heartbeat.GetActivityPollerInfo().GetCurrentPollers())
+	s.Nil(heartbeat.GetActivityPollerInfo().GetLastSuccessfulPollTime())
+}
+
 func (s *internalWorkerTestSuite) TestSessionWorkerShutdownSendsShutdownWorkerForSessionTaskQueues() {
 	var requestsMu sync.Mutex
 	var requests []*workflowservice.ShutdownWorkerRequest
