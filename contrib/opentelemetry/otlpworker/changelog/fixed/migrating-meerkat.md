@@ -1,1 +1,0 @@
-Fixed `NewProviders` failing with a resource schema conflict when used with OpenTelemetry SDK v1.45.0. The resource containing `service.name` no longer specifies a schema URL, allowing it to inherit the default resource's schema.
