@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"strings"
 
+	notificationservice "go.temporal.io/api/notificationservice/v1"
 	workflowservice "go.temporal.io/api/workflowservice/v1"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protodesc"
@@ -91,8 +92,8 @@ func (d buildDir) witDir() string {
 	return filepath.Join(string(d), "wit")
 }
 
-func (d buildDir) witFile() string {
-	return filepath.Join(d.witDir(), filepath.FromSlash("workflowservice/v1/workflow-service.wit"))
+func (d buildDir) serviceWIT(service, name string) string {
+	return filepath.Join(d.witDir(), service, "v1", name)
 }
 
 func (d buildDir) witDepsDir() string {
@@ -187,16 +188,24 @@ func (a app) run() (err error) {
 		return fmt.Errorf("generating proto descriptors: %w", err)
 	}
 
-	if err := nexgen(nexgenOptions{
+	generation := nexgenOptions{
 		language:       "go",
-		inputs:         []string{a.tmp.witFile(), a.tmp.witDepsDir()},
+		inputs:         []string{a.tmp.serviceWIT("workflowservice", "workflow-service.wit"), a.tmp.witDepsDir()},
 		descriptors:    []string{a.tmp.descriptorsFile()},
 		supportPackage: "go.temporal.io/sdk/internal",
 		output:         a.tmp.generatedDir(),
 		systemNexus:    true,
 		format:         true,
-	}); err != nil {
-		return fmt.Errorf("nexgen: %w", err)
+		targets:        []string{"workflow"},
+	}
+	if err := nexgen(generation); err != nil {
+		return fmt.Errorf("generating workflow service bindings: %w", err)
+	}
+
+	generation.inputs[0] = a.tmp.serviceWIT("notificationservice", "notification-service.wit")
+	generation.targets = nil // Models and facade only.
+	if err := nexgen(generation); err != nil {
+		return fmt.Errorf("generating notification service models: %w", err)
 	}
 
 	return a.updateGeneratedFiles()
@@ -206,6 +215,8 @@ func (a app) updateGeneratedFiles() error {
 	for _, file := range []struct{ generated, destination string }{
 		{"workflowservice.go", "internal/workflowservice.go"},
 		{"workflowservice_facade.go", "workflow/workflowservice.go"},
+		{"notificationservice.go", "internal/notificationservice.go"},
+		{"notificationservice_facade.go", "temporalnexus/notification.go"},
 	} {
 		generatedFile := filepath.Join(a.tmp.generatedDir(), file.generated)
 		checkedInFile := filepath.Join(string(a.sdk), filepath.FromSlash(file.destination))
@@ -239,7 +250,7 @@ func (a app) stageWitFiles() error {
 	return nil
 }
 
-// genProtoDescriptors generates a proto descriptor set for the workflowservice API.
+// genProtoDescriptors generates a proto descriptor set for the System Nexus APIs.
 // Equivalent to running protoc with --include_imports.
 func (a app) genProtoDescriptors() error {
 	outputFile := a.tmp.descriptorsFile()
@@ -250,6 +261,7 @@ func (a app) genProtoDescriptors() error {
 	set := &descriptorpb.FileDescriptorSet{}
 	seen := make(map[string]struct{})
 	addProtoDescriptor(set, seen, workflowservice.File_temporal_api_workflowservice_v1_request_response_proto)
+	addProtoDescriptor(set, seen, notificationservice.File_temporal_api_notificationservice_v1_request_response_proto)
 
 	contents, err := proto.Marshal(set)
 	if err != nil {
@@ -281,6 +293,7 @@ type nexgenOptions struct {
 	output         string
 	systemNexus    bool
 	format         bool
+	targets        []string
 }
 
 func nexgen(options nexgenOptions) error {
@@ -302,7 +315,9 @@ func nexgen(options nexgenOptions) error {
 	if options.systemNexus {
 		args = append(args, "--system-nexus")
 	}
-	args = append(args, "--targets", "workflow")
+	for _, target := range options.targets {
+		args = append(args, "--targets", target)
+	}
 	if options.format {
 		args = append(args, "--format")
 	}
