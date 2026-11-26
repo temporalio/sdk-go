@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	enumspb "go.temporal.io/api/enums/v1"
 	failurepb "go.temporal.io/api/failure/v1"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/log"
@@ -1365,4 +1366,85 @@ func TestExecuteActivitiesInWorkflow(t *testing.T) {
 	require.Error(t, err)
 	_, err = env.ExecuteActivity(checkActivityInfo, true)
 	require.NoError(t, err)
+}
+
+func TestChildWorkflowCancelOnParentCloseBeforeStart(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name   string
+		policy enumspb.ParentClosePolicy
+	}{
+		{name: "request_cancel", policy: enumspb.PARENT_CLOSE_POLICY_REQUEST_CANCEL},
+		{name: "terminate", policy: enumspb.PARENT_CLOSE_POLICY_TERMINATE},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			var childErr error
+			childWf := func(ctx Context) error {
+				childErr = Sleep(ctx, time.Hour)
+				return childErr
+			}
+			parentWf := func(ctx Context) error {
+				childCtx := WithChildWorkflowOptions(ctx, ChildWorkflowOptions{
+					ParentClosePolicy: tc.policy,
+				})
+				ExecuteChildWorkflow(childCtx, childWf)
+				return nil
+			}
+
+			testSuite := &WorkflowTestSuite{}
+			env := testSuite.NewTestWorkflowEnvironment()
+			env.RegisterWorkflow(parentWf)
+			env.RegisterWorkflow(childWf)
+			env.ExecuteWorkflow(parentWf)
+
+			require.True(t, env.IsWorkflowCompleted())
+			require.NoError(t, env.GetWorkflowError())
+			if tc.policy == enumspb.PARENT_CLOSE_POLICY_REQUEST_CANCEL {
+				require.True(t, IsCanceledError(childErr))
+			} else {
+				require.NoError(t, childErr)
+			}
+		})
+	}
+}
+
+func TestManyChildWorkflowsParentCloseCancel(t *testing.T) {
+	t.Parallel()
+
+	childWf := func(ctx Context, fail bool) error {
+		if fail {
+			return errors.New("test")
+		}
+		return Sleep(ctx, time.Hour)
+	}
+	parentWf := func(ctx Context) (string, error) {
+		childCtx := WithChildWorkflowOptions(ctx, ChildWorkflowOptions{
+			WorkflowExecutionTimeout: time.Minute,
+			WorkflowRunTimeout:       time.Minute,
+			WorkflowTaskTimeout:      time.Second,
+			ParentClosePolicy:        enumspb.PARENT_CLOSE_POLICY_REQUEST_CANCEL,
+		})
+		futures := make([]ChildWorkflowFuture, 0, 500)
+		for i := range 500 {
+			futures = append(futures, ExecuteChildWorkflow(childCtx, childWf, i == 0))
+		}
+		for _, future := range futures {
+			if err := future.Get(childCtx, nil); err != nil {
+				return "", err
+			}
+		}
+		return "done", nil
+	}
+
+	testSuite := &WorkflowTestSuite{}
+	env := testSuite.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(parentWf)
+	env.RegisterWorkflow(childWf)
+	env.ExecuteWorkflow(parentWf)
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.ErrorContains(t, env.GetWorkflowError(), "test")
 }
