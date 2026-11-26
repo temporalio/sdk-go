@@ -303,6 +303,12 @@ type (
 )
 
 func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *registry) *testWorkflowEnvironmentImpl {
+	// The activity task handler, built on the first activity a workflow starts, needs the build id, which
+	// defaults to the binary checksum: a hash of the whole executable. Compute it here so that work does not
+	// run inside a workflow goroutine, where a large test binary can take longer than the deadlock
+	// detection timeout.
+	warmBinaryChecksum()
+
 	var r *registry
 	if parentRegistry == nil {
 		r = newRegistryWithOptions(registryOptions{disableAliasing: s.disableRegistrationAliasing})

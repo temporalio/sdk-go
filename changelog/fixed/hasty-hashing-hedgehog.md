@@ -1,0 +1,1 @@
+The test workflow environment now computes the binary checksum when it is created, not inside the first workflow goroutine that starts an activity, where hashing a large test binary could trip the deadlock detector (`TMPRL1101`).
