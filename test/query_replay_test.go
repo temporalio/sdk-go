@@ -149,7 +149,7 @@ func (ts *IntegrationTestSuite) TestStaleQueryReplayBoundary() {
 			value, err := ts.client.QueryWorkflow(ctx, run.GetID(), run.GetRunID(), "progress")
 			if err != nil {
 				if ctx.Err() == nil {
-					result.err = err
+					result.err = fmt.Errorf("progress query %d: %w", result.count+1, err)
 					cancel()
 				}
 				return
@@ -168,7 +168,7 @@ func (ts *IntegrationTestSuite) TestStaleQueryReplayBoundary() {
 			result.count++
 			if result.count == 1 {
 				if err := ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "finish", nil); err != nil {
-					result.err = err
+					result.err = fmt.Errorf("send finish signal: %w", err)
 					cancel()
 					return
 				}
@@ -189,7 +189,7 @@ func (ts *IntegrationTestSuite) TestStaleQueryReplayBoundary() {
 	cancel()
 	select {
 	case result := <-results:
-		ts.NoError(result.err, "progress queries must succeed during replay")
+		ts.NoError(result.err, "query and signal loop must succeed during replay")
 		ts.Positive(result.count, "workflow must be queried before it completes")
 	case <-time.After(10 * time.Second):
 		ts.FailNow("progress query goroutine did not stop after cancellation")
