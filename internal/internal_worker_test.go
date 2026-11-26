@@ -4150,3 +4150,22 @@ func (s *internalWorkerTestSuite) TestRegisterMultipleDynamicWorkflow() {
 	require.Error(s.T(), err)
 	require.Contains(s.T(), err.Error(), "dynamic activity already registered")
 }
+
+func TestNewTestWorkflowEnvironmentComputesBinaryChecksum(t *testing.T) {
+	binaryChecksumLock.Lock()
+	previousChecksum := binaryChecksum
+	binaryChecksum = ""
+	binaryChecksumLock.Unlock()
+	t.Cleanup(func() {
+		binaryChecksumLock.Lock()
+		binaryChecksum = previousChecksum
+		binaryChecksumLock.Unlock()
+	})
+
+	var suite WorkflowTestSuite
+	_ = suite.NewTestWorkflowEnvironment()
+
+	binaryChecksumLock.Lock()
+	defer binaryChecksumLock.Unlock()
+	require.NotEmpty(t, binaryChecksum, "the test environment must compute the binary checksum before any workflow goroutine runs")
+}

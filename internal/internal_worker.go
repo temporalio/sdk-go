@@ -1709,6 +1709,17 @@ func getBinaryChecksum() string {
 	return binaryChecksum
 }
 
+// warmBinaryChecksum computes the binary checksum if it is not set yet. An error is left for
+// getBinaryChecksum to report when the checksum is actually needed.
+func warmBinaryChecksum() {
+	binaryChecksumLock.Lock()
+	defer binaryChecksumLock.Unlock()
+
+	if len(binaryChecksum) == 0 {
+		_ = initBinaryChecksumLocked()
+	}
+}
+
 // Run the worker in a blocking fashion. Stop the worker when interruptCh receives signal.
 // Pass worker.InterruptCh() to stop the worker with SIGINT or SIGTERM.
 // Pass nil to stop the worker with external Stop() call.
