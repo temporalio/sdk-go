@@ -15,6 +15,8 @@ import (
 // and [StorageDriverActivityInfo] to access the concrete values.
 //
 // NOTE: Experimental
+//
+// Exposed as: [go.temporal.io/sdk/converter.StorageDriverTargetInfo]
 type StorageDriverTargetInfo interface {
 	isStorageDriverTargetInfo()
 }
@@ -22,6 +24,8 @@ type StorageDriverTargetInfo interface {
 // StorageDriverWorkflowInfo carries workflow identity for a storage operation.
 //
 // NOTE: Experimental
+//
+// Exposed as: [go.temporal.io/sdk/converter.StorageDriverWorkflowInfo]
 type StorageDriverWorkflowInfo struct {
 	// Namespace is the Temporal namespace of the workflow execution.
 	Namespace string
@@ -116,6 +120,8 @@ func (c StorageDriverStoreContext) GetLimiter() StorageDriverLimiter[*commonpb.P
 // StorageDriverSelector.SelectDriver operations.
 //
 // NOTE: Experimental
+//
+// Exposed as: [go.temporal.io/sdk/converter.StorageDriverSelectContext]
 type StorageDriverSelectContext struct {
 	// Context is the context of the operation that triggered the selector call.
 	// Drivers should use it to respect cancellation and to propagate deadlines
@@ -136,6 +142,8 @@ type StorageDriverSelectContext struct {
 // operations.
 //
 // NOTE: Experimental
+//
+// Exposed as: [go.temporal.io/sdk/converter.StorageDriverRetrieveContext]
 type StorageDriverRetrieveContext struct {
 	// Context is the context of the operation that triggered the driver call.
 	// Drivers should use it to respect cancellation and to propagate deadlines
@@ -162,7 +170,10 @@ func (c StorageDriverRetrieveContext) GetLimiter() StorageDriverLimiter[StorageD
 // object key) into the Data map.
 //
 // NOTE: Experimental
+//
+// Exposed as: [go.temporal.io/sdk/converter.StorageDriverClaim]
 type StorageDriverClaim struct {
+	// ClaimData contains driver-specific addressing information for the stored payload.
 	ClaimData map[string]string `json:"claim_data"`
 }
 
@@ -174,6 +185,8 @@ type StorageDriverClaim struct {
 // the data converter.
 //
 // NOTE: Experimental
+//
+// Exposed as: [go.temporal.io/sdk/converter.StorageDriver]
 type StorageDriver interface {
 	// Name returns a stable, unique identifier for this driver instance. The
 	// name is stored in the Temporal history alongside each claim so that the
@@ -210,6 +223,8 @@ type StorageDriver interface {
 // threshold.
 //
 // NOTE: Experimental
+//
+// Exposed as: [go.temporal.io/sdk/converter.StorageDriverSelector]
 type StorageDriverSelector interface {
 	SelectDriver(ctx StorageDriverSelectContext, payload *commonpb.Payload) (StorageDriver, error)
 }
@@ -218,6 +233,8 @@ type StorageDriverSelector interface {
 // operations.
 //
 // NOTE: Experimental
+//
+// Exposed as: [go.temporal.io/sdk/converter.ExternalStorageConcurrency]
 type ExternalStorageConcurrency struct {
 	// MaxDriverOperations is the maximum number of concurrent external storage
 	// operations that drivers can execute for a single client or worker. Each
@@ -243,6 +260,8 @@ type ExternalStorageConcurrency struct {
 // original payloads before they reach the data converter or application code.
 //
 // NOTE: Experimental
+//
+// Exposed as: [go.temporal.io/sdk/converter.ExternalStorage]
 type ExternalStorage struct {
 	// Drivers is the list of available storage drivers. At least one driver
 	// must be provided. If no DriverSelector is set, the first driver is used
