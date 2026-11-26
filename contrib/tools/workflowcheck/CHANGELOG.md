@@ -1,30 +1,4 @@
-<!--
-Release notes for go.temporal.io/sdk/contrib/tools/workflowcheck.
-Loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
-
-Add user-facing changes below under the appropriate heading (create the heading
-if it does not yet exist): Added, Changed, Deprecated, Breaking Changes, Fixed,
-or Security.
--->
-
 # Changelog
-
-## [Unreleased]
-
-### Added
-
-### Changed
-
-- Update README to recommend running `workflowcheck` as a module tool so it uses the Go toolchain
-  selected by the module being analyzed.
-
-### Deprecated
-
-### :boom: Breaking Changes
-
-### Fixed
-
-### Security
 
 ## [0.6.0] - 2026-10-08
 

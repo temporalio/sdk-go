@@ -255,6 +255,9 @@ type (
 		namespaceWorker          *sharedNamespaceWorker
 		pollerGroupSnapshotStore *pollerGroupSnapshotStore
 
+		sdkName    string
+		sdkVersion string
+
 		activityCancellationCallbacks *activityCancellationCallbacks
 
 		workerPollCompleteOnShutdown *atomic.Bool
@@ -585,8 +588,16 @@ func newSessionWorker(client *WorkflowClient, params workerExecutionParameters, 
 	sessionEnvironment := newSessionEnvironment(params.SessionResourceID, maxConcurrentSessionExecutionSize)
 
 	creationTaskqueue := getCreationTaskqueue(params.TaskQueue)
+	// Session workers export their own metrics. Keep their updates out of the
+	// ordinary activity worker's Worker Heartbeat.
+	metricsHandler := params.MetricsHandler
+	if heartbeatHandler, ok := metricsHandler.(*heartbeatMetricsHandler); ok {
+		metricsHandler = heartbeatHandler.Unwrap()
+	}
+	params.pollTimeTracker = nil
 	params.BackgroundContext = context.WithValue(params.BackgroundContext, sessionEnvironmentContextKey, sessionEnvironment)
 	params.TaskQueue = sessionEnvironment.GetResourceSpecificTaskqueue()
+	params.MetricsHandler = metricsHandler.WithTags(metrics.TaskQueueTags(params.TaskQueue))
 	params.pollerGroupSnapshotStore = newPollerGroupSnapshotStore()
 	// For the resource specific task queue, we don't need to include deployment options
 	// Save them to restore later
@@ -606,6 +617,7 @@ func newSessionWorker(client *WorkflowClient, params workerExecutionParameters, 
 		},
 	)
 	params.TaskQueue = creationTaskqueue
+	params.MetricsHandler = metricsHandler.WithTags(metrics.TaskQueueTags(params.TaskQueue))
 	params.pollerGroupSnapshotStore = nil
 	params.DeploymentOptions = deployments
 	params.UseBuildIDForVersioning = useBuildIDForVersioning
@@ -2580,6 +2592,8 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		pollTimeTracker:                  &pollTimeTracker{},
 		workerInstanceKey:                workerInstanceKey,
 		namespaceWorker:                  namespaceWorker,
+		sdkName:                          client.sdkName,
+		sdkVersion:                       client.sdkVersion,
 		pollerGroupSnapshotStore:         newPollerGroupSnapshotStore(),
 		activityCancellationCallbacks:    activityCancellationCallbacks,
 		workerPollCompleteOnShutdown:     workerPollCompleteOnShutdown,
@@ -2896,8 +2910,7 @@ func getFunctionName(i any) (name string, isMethod bool) {
 	// Full function name that has a struct pointer receiver has the following format
 	// <prefix>.(*<type>).<function>
 	isMethod = strings.ContainsAny(fullName, "*")
-	elements := strings.Split(fullName, ".")
-	shortName := elements[len(elements)-1]
+	shortName := fullName[strings.LastIndexByte(fullName, '.')+1:]
 	// This allows to call activities by method pointer
 	// Compiler adds -fm suffix to a function name which has a receiver
 	// Note that this works even if struct pointer used to get the function is nil

@@ -4,6 +4,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/internal/temporalcli"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/testsuite"
 	"go.temporal.io/sdk/workflow"
@@ -21,7 +22,9 @@ func TestStartDevServer_Defaults(t *testing.T) {
 }
 
 func TestStartDevServer_SpecificVersion(t *testing.T) {
-	server, err := testsuite.StartDevServer(t.Context(), testsuite.DevServerOptions{CachedDownload: testsuite.CachedDownload{Version: "v1.6.1"}})
+	server, err := testsuite.StartDevServer(t.Context(), testsuite.DevServerOptions{
+		CachedDownload: testsuite.CachedDownload{Version: temporalcli.IntegrationServerVersion},
+	})
 	require.NoError(t, err)
 	defer func() { _ = server.Stop() }()
 	info, err := server.Client().WorkflowService().GetSystemInfo(t.Context(), &workflowservice.GetSystemInfoRequest{})

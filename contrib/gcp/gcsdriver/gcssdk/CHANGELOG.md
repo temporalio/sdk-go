@@ -1,30 +1,14 @@
-<!--
-Release notes for go.temporal.io/sdk/contrib/gcp/gcsdriver/gcssdk.
-Loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
-
-Add user-facing changes below under the appropriate heading (create the heading
-if it does not yet exist): Added, Changed, Deprecated, Breaking Changes, Fixed,
-or Security.
--->
-
 # Changelog
 
-## [Unreleased]
-
-### Added
-
-### Changed
-
-### Deprecated
+## [0.3.0] - 2026-11-25
 
 ### :boom: Breaking Changes
 
-- Raised the minimum Temporal Go SDK requirement from v1.49.0 to v1.50.0 to
-  match the `gcsdriver` module.
-
-### Fixed
+- Now requires `gcsdriver` v0.3.0 and Temporal Go SDK v1.52.0.
 
 ### Security
+
+- Updated the indirect `github.com/go-jose/go-jose/v4` dependency to v4.1.6 to address vulnerabilities in earlier versions.
 
 ## [0.2.0] - 2026-10-08
 

@@ -34,6 +34,9 @@ func NewGRPCInterceptor(defaultHandler Handler, suffix string, disableRequestFai
 		if handler == nil {
 			handler = defaultHandler
 		}
+		if _, ok := handler.(nopHandler); ok {
+			return invoker(ctx, method, req, reply, cc, opts...)
+		}
 		longPoll, ok := ctx.Value(LongPollContextKey{}).(bool)
 		if !ok {
 			longPoll = false

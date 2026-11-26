@@ -81,6 +81,7 @@ type (
 		*commandStateMachineBase
 		attributes    *commandpb.StartChildWorkflowExecutionCommandAttributes
 		startMetadata *sdk.UserMetadata
+		cancelReason  *string
 	}
 
 	naiveCommandStateMachine struct {
@@ -736,6 +737,7 @@ func (d *childWorkflowCommandStateMachine) getCommand() *commandpb.Command {
 			Namespace:         d.attributes.Namespace, //lint:ignore SA1019 deprecated namespace field
 			WorkflowId:        d.attributes.WorkflowId,
 			ChildWorkflowOnly: true,
+			Reason:            *d.cancelReason,
 		}}
 		command.EventGroupMarkers = d.eventGroupMarkers
 		return command
@@ -783,6 +785,14 @@ func (d *childWorkflowCommandStateMachine) handleCancelFailedEvent() {
 }
 
 func (d *childWorkflowCommandStateMachine) cancel() {
+	d.cancelWithReason("")
+}
+
+func (d *childWorkflowCommandStateMachine) cancelWithReason(reason string) {
+	// Keep the first reason, even when it is empty or a cancellation request fails.
+	if d.cancelReason == nil {
+		d.cancelReason = &reason
+	}
 	switch d.state {
 	case commandStateStarted:
 		d.moveState(commandStateCanceledAfterStarted, eventCancel)
@@ -1449,7 +1459,7 @@ func (h *commandsHelper) handleStartChildWorkflowExecutionFailed(workflowID stri
 	return command
 }
 
-func (h *commandsHelper) requestCancelExternalWorkflowExecution(namespace, workflowID, runID string, cancellationID string, childWorkflowOnly bool, eventGroupMarkers []*sdk.EventGroupMarker) commandStateMachine {
+func (h *commandsHelper) requestCancelExternalWorkflowExecution(namespace, workflowID, runID string, cancellationID string, childWorkflowOnly bool, reason string, eventGroupMarkers []*sdk.EventGroupMarker) commandStateMachine {
 	if childWorkflowOnly {
 		// For cancellation of child workflow only, we do not use cancellation ID
 		// since the child workflow cancellation go through the existing child workflow
@@ -1468,7 +1478,7 @@ func (h *commandsHelper) requestCancelExternalWorkflowExecution(namespace, workf
 		}
 		// targeting child workflow
 		command := h.getCommand(makeCommandID(commandTypeChildWorkflow, workflowID))
-		command.cancel()
+		command.(*childWorkflowCommandStateMachine).cancelWithReason(reason)
 		return command
 	}
 
@@ -1489,6 +1499,7 @@ func (h *commandsHelper) requestCancelExternalWorkflowExecution(namespace, workf
 		//lint:ignore SA1019 control correlates command state with initiated history
 		Control:           cancellationID,
 		ChildWorkflowOnly: false,
+		Reason:            reason,
 	}
 	command := h.newCancelExternalWorkflowStateMachine(attributes, cancellationID, eventGroupMarkers)
 	h.addCommand(command)

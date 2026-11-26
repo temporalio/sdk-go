@@ -53,8 +53,7 @@ const (
 )
 
 func (ts *IntegrationTestSuite) TestNexusUpdateWorkflowOperation() {
-	// TODO: Re-enable this test once https://github.com/temporalio/sdk-go/issues/2479 is resolved.
-	ts.T().SkipNow()
+	skipOnCloud(ts.T(), cloudRequiresProvisioning, "Nexus update tests create namespace endpoints through Operator Service")
 	if os.Getenv("DISABLE_STANDALONE_NEXUS_TESTS") != "" {
 		ts.T().SkipNow()
 	}

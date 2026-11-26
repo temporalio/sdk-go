@@ -39,9 +39,9 @@ quick reference for coding-agent work and pull requests.
 - Preserve public API compatibility and documented behavior unless a breaking
   change is explicit and reviewed. User-facing changes, including new features,
   behavior changes, deprecations, breaking changes, notable bug fixes, and
-  security fixes, require a `CHANGELOG.md` entry under `## [Unreleased]`.
-  Use the affected module's `CHANGELOG.md` for independently released `contrib`
-  modules and the repository-root `CHANGELOG.md` for the main SDK module.
+  security fixes, require a changelog fragment. Follow `changelog/README.md`.
+  Use the affected module's `changelog/` directory for independently released
+  `contrib` modules and the repository-root `changelog/` for the main SDK module.
 - Behavior changes require tests. Public API or public behavior changes also
   need documentation or examples when existing user-facing guidance would become
   incomplete or misleading.

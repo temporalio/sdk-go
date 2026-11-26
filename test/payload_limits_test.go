@@ -58,9 +58,6 @@ func (ts *PayloadLimitsTestSuite) SetupSuite() {
 
 	// Start dev server with low payload limits
 	ts.server, err = testsuite.StartDevServer(context.Background(), testsuite.DevServerOptions{
-		CachedDownload: testsuite.CachedDownload{
-			Version: "v1.6.0",
-		},
 		ClientOptions: &client.Options{
 			HostPort:  ts.config.ServiceAddr,
 			Namespace: ts.config.Namespace,
