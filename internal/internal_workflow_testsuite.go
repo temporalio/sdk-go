@@ -2578,15 +2578,16 @@ func (m *mockWrapper) executeMock(ctx any, input *commonpb.Payloads, mockRet moc
 func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskQueue string, dataConverter converter.DataConverter) ActivityTaskHandler {
 	setWorkerOptionsDefaults(&env.workerOptions)
 	params := workerExecutionParameters{
-		TaskQueue:          taskQueue,
-		Identity:           env.identity,
-		MetricsHandler:     env.metricsHandler,
-		Logger:             env.logger,
-		BackgroundContext:  env.workerOptions.BackgroundActivityContext,
-		FailureConverter:   env.failureConverter,
-		DataConverter:      dataConverter,
-		WorkerStopChannel:  env.workerStopChannel,
-		ContextPropagators: env.contextPropagators,
+		TaskQueue:               taskQueue,
+		Identity:                env.identity,
+		MetricsHandler:          env.metricsHandler,
+		Logger:                  env.logger,
+		BackgroundContext:       env.workerOptions.BackgroundActivityContext,
+		activityResponseContext: env.workerOptions.BackgroundActivityContext,
+		FailureConverter:        env.failureConverter,
+		DataConverter:           dataConverter,
+		WorkerStopChannel:       env.workerStopChannel,
+		ContextPropagators:      env.contextPropagators,
 	}
 	ensureRequiredParams(&params)
 	if params.BackgroundContext == nil {

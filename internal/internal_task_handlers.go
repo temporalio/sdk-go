@@ -166,6 +166,7 @@ type (
 		metricsHandler                   metrics.Handler
 		logger                           log.Logger
 		backgroundContext                context.Context
+		activityResponseContext          context.Context
 		registry                         *registry
 		activityProvider                 activityProvider
 		dataConverter                    converter.DataConverter
@@ -2158,6 +2159,7 @@ func newActivityTaskHandlerWithCustomProvider(
 		logger:                           params.Logger,
 		metricsHandler:                   params.MetricsHandler,
 		backgroundContext:                params.BackgroundContext,
+		activityResponseContext:          params.activityResponseContext,
 		registry:                         registry,
 		activityProvider:                 activityProvider,
 		dataConverter:                    params.DataConverter,
@@ -2605,9 +2607,9 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 				ActivityType: t.ActivityType.GetName(),
 			}
 		}
-		// Use backgroundContext as base so a cancelled activity context (e.g. pause/reset)
-		// does not prevent the outbound storage visitor from making HTTP calls.
-		outboundBase := ath.backgroundContext
+		// Preserve caller cancellation and deadlines, but do not let activity
+		// cancellation or worker shutdown replace the activity response.
+		outboundBase := ath.activityResponseContext
 		if outboundBase == nil {
 			outboundBase = context.Background()
 		}

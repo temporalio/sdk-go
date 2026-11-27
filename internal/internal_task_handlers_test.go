@@ -25,6 +25,7 @@ import (
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
 	protocolpb "go.temporal.io/api/protocol/v1"
+	"go.temporal.io/api/proxy"
 	querypb "go.temporal.io/api/query/v1"
 	"go.temporal.io/api/sdk/v1"
 	"go.temporal.io/api/serviceerror"
@@ -36,6 +37,7 @@ import (
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/cache"
 	"go.temporal.io/sdk/internal/common/metrics"
+	"go.temporal.io/sdk/internal/extstore"
 	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/internal/protocol"
 	"go.temporal.io/sdk/log"
@@ -3425,6 +3427,121 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionWorkerStop() {
 	r := res.response
 	t.NoError(err)
 	t.NotNil(r)
+}
+
+func (t *TaskHandlersTestSuite) TestActivityFailurePreservedWhenWorkerShutsDownBeforePostprocess() {
+	t.Run("worker shutdown", func() { t.testActivityPostprocessContext(false) })
+	t.Run("caller cancellation", func() { t.testActivityPostprocessContext(true) })
+}
+
+func (t *TaskHandlersTestSuite) testActivityPostprocessContext(cancelCallerDuringVisit bool) {
+	activityName := "activityFailureDuringWorkerShutdown"
+	tt := t.T()
+	type contextKey struct{}
+	deadline := time.Now().Add(time.Hour)
+	deadlineCtx, stopDeadline := context.WithDeadline(context.WithValue(tt.Context(), contextKey{}, "caller"), deadline)
+	defer stopDeadline()
+	callerCtx, cancelCaller := context.WithCancelCause(deadlineCtx)
+	defer cancelCaller(nil)
+	callerCause := errors.New("caller canceled")
+	ctx, cancelWorker := context.WithCancelCause(callerCtx)
+	defer cancelWorker(nil)
+	shutdownActivity := func(context.Context) error {
+		cancelWorker(ErrWorkerShutdown)
+		return NewApplicationErrorWithOptions(
+			"session failed due to worker shutdown",
+			"SessionWorkerShutdown",
+			ApplicationErrorOptions{NonRetryable: true, Details: []any{"detail"}},
+		)
+	}
+	t.registry.RegisterActivityWithOptions(
+		shutdownActivity,
+		RegisterActivityOptions{Name: activityName, DisableAlreadyRegisteredCheck: true},
+	)
+
+	wep := t.getTestWorkerExecutionParams()
+	wep.BackgroundContext = ctx
+	wep.BackgroundContextCancel = cancelWorker
+	wep.activityResponseContext = callerCtx
+	var visited atomic.Bool
+	// Behaves like a visitor doing I/O: it fails if its context is already canceled.
+	wep.outboundPayloadVisitor = visitorFunc(
+		func(vpc *proxy.VisitPayloadsContext, payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+			visited.Store(true)
+			if err := vpc.Context.Err(); err != nil {
+				return nil, err
+			}
+			if got, ok := vpc.Context.Deadline(); !ok || !got.Equal(deadline) {
+				tt.Errorf("outbound deadline = %v, %t, want %v, true", got, ok, deadline)
+			}
+			if got := vpc.Context.Value(contextKey{}); got != "caller" {
+				tt.Errorf("outbound context value = %v, want caller", got)
+			}
+			target := converter.StorageDriverWorkflowInfo{
+				Namespace: wep.Namespace, WorkflowID: "wID", RunID: "rID", WorkflowType: "wType",
+			}
+			if got := extstore.StorageTargetFromContext(vpc.Context); got != target {
+				tt.Errorf("outbound storage target = %#v, want %#v", got, target)
+			}
+			if cancelCallerDuringVisit {
+				cancelCaller(callerCause)
+				if got := context.Cause(vpc.Context); got != callerCause {
+					tt.Errorf("outbound context cause = %v, want %v", got, callerCause)
+				}
+				return nil, vpc.Context.Err()
+			}
+			return payloads, nil
+		},
+	)
+
+	mockCtrl := gomock.NewController(t.T())
+	client := WorkflowClient{workflowService: workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)}
+	activityHandler := newActivityTaskHandler(&client, wep, t.registry)
+	now := time.Now()
+	pats := &workflowservice.PollActivityTaskQueueResponse{
+		Attempt:   1,
+		TaskToken: []byte("token"),
+		WorkflowExecution: &commonpb.WorkflowExecution{
+			WorkflowId: "wID",
+			RunId:      "rID",
+		},
+		ActivityType:           &commonpb.ActivityType{Name: activityName},
+		ActivityId:             uuid.NewString(),
+		ScheduledTime:          timestamppb.New(now),
+		ScheduleToCloseTimeout: durationpb.New(time.Minute),
+		StartedTime:            timestamppb.New(now),
+		StartToCloseTimeout:    durationpb.New(time.Minute),
+		WorkflowType:           &commonpb.WorkflowType{Name: "wType"},
+		WorkflowNamespace:      "namespace",
+	}
+
+	res, err := activityHandler.Execute(taskqueue, pats)
+	if err != nil {
+		tt.Fatalf("Execute() error = %v", err)
+	}
+	if !visited.Load() {
+		tt.Fatal("outbound payload visitor was not called")
+	}
+	if cancelCallerDuringVisit {
+		if !errors.Is(res.failureErr, context.Canceled) {
+			tt.Errorf("Execute() failureErr = %v, want context.Canceled", res.failureErr)
+		}
+		return
+	}
+	if res.failureErr != nil {
+		tt.Fatalf("Execute() failureErr = %v, want nil", res.failureErr)
+	}
+	failed, ok := res.response.(*workflowservice.RespondActivityTaskFailedRequest)
+	if !ok {
+		tt.Fatalf("Execute() response type = %T, want *RespondActivityTaskFailedRequest", res.response)
+	}
+	appInfo := failed.Failure.GetApplicationFailureInfo()
+	if got, want := appInfo.GetType(), "SessionWorkerShutdown"; got != want {
+		tt.Errorf("failure type = %q, want %q", got, want)
+	}
+	if !appInfo.GetNonRetryable() {
+		tt.Error("failure is retryable, want non-retryable")
+	}
 }
 
 func (t *TaskHandlersTestSuite) TestActivityCancellationUsesIsCanceledError() {
