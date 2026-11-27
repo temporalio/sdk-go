@@ -427,8 +427,11 @@ func (c *collector) applyFacts() PackageNonDeterminisms {
 		}
 	}
 
-	// Export package fact
-	c.pass.ExportPackageFact(&p)
+	// Synthetic packages such as "unsafe" have no files, which causes
+	// analysis checkers to panic when formatting debug fact output.
+	if len(c.pass.Files) > 0 {
+		c.pass.ExportPackageFact(&p)
+	}
 	return p
 }
 
