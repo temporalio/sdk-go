@@ -1,0 +1,1 @@
+Worker shutdown no longer replaces activity results or failures (including non-retryable `SessionWorkerShutdown` failures) with a retryable `context canceled` error during outbound payload processing.

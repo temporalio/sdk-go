@@ -188,6 +188,9 @@ type (
 		// Context cancel function to cancel user context
 		BackgroundContextCancel context.CancelCauseFunc
 
+		// Caller context before worker shutdown cancellation is added.
+		activityResponseContext context.Context
+
 		StickyScheduleToStartTimeout time.Duration
 
 		// WorkflowPanicPolicy is used for configuring how client's workflow task handler deals with workflow
@@ -2568,6 +2571,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		EnableLoggingInReplay:            options.EnableLoggingInReplay,
 		BackgroundContext:                backgroundActivityContext,
 		BackgroundContextCancel:          backgroundActivityContextCancel,
+		activityResponseContext:          ctx,
 		StickyScheduleToStartTimeout:     options.StickyScheduleToStartTimeout,
 		TaskQueueActivitiesPerSecond:     options.TaskQueueActivitiesPerSecond,
 		WorkflowPanicPolicy:              options.WorkflowPanicPolicy,
